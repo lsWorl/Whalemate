@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#edf6f3;font-family:system-ui;color:#214438}
+canvas{display:block}#status{position:absolute;left:20px;bottom:18px;font-size:13px;max-width:90%}
+</style></head>
+<body><canvas id="scene"></canvas><div id="status">加载 Live2D…</div>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="vendor/live2dcubismcore.min.js"></script>
+<script src="vendor/pixi.min.js"></script><script src="vendor/cubism4.min.js"></script>
+<script>
+let app,model,bridge,mouth=0,mood='calm';
+window.avatarState=function(state){mouth=state.mouth||0;mood=state.mood||'calm';};
+function layout(){if(!model)return;const width=innerWidth,height=innerHeight;
+ app.renderer.resize(width,height);const bounds=model.internalModel; 
+ const scale=Math.min(width/bounds.width*.9,height/bounds.height*.96);
+ model.scale.set(scale);model.anchor.set(.5,.5);model.position.set(width/2,height/2);}
+async function loadModel(url){
+ if(model){app.stage.removeChild(model);model.destroy();model=null;}
+ try {model=await PIXI.live2d.Live2DModel.from(url,{autoInteract:false});app.stage.addChild(model);layout();
+ model.internalModel.on('beforeModelUpdate',()=>{const core=model.internalModel.coreModel;
+ core.setParameterValueById('ParamMouthOpenY',mouth);
+ core.setParameterValueById('ParamMouthForm',mood==='happy'?.5:mood==='sad'?-.3:0);
+ core.setParameterValueById('ParamBrowLY',mood==='angry'?-.5:mood==='sad'?.3:0);
+ core.setParameterValueById('ParamBrowRY',mood==='angry'?-.5:mood==='sad'?.3:0);
+ core.setParameterValueById('ParamCheek',mood==='shy'?.8:0);});
+ document.getElementById('status').textContent='Haru · Live2D 示例模型';
+ if(bridge)bridge.report('ready');
+ }catch(error){document.getElementById('status').textContent='模型加载失败：'+error.message;if(bridge)bridge.report('error:'+error.message);}}
+try{app=new PIXI.Application({view:document.getElementById('scene'),width:innerWidth,height:innerHeight,
+ backgroundAlpha:0,antialias:true,resolution:devicePixelRatio,autoDensity:true});
+ addEventListener('resize',layout);
+ new QWebChannel(qt.webChannelTransport,channel=>{bridge=channel.objects.avatar;
+ bridge.stateChanged.connect(raw=>window.avatarState(JSON.parse(raw)));
+ bridge.modelChanged.connect(loadModel);bridge.initialModel(url=>loadModel(url));});
+}catch(error){document.getElementById('status').textContent='Live2D 渲染不可用：'+error.message;}
+</script></body></html>
