@@ -4,12 +4,12 @@
 
 本文第 1–6 节是 **T5 出图（鲸娘）和 T6 代码共同遵守的规格**，改规格要在这个文件里改并在 PR 里说明。
 
-## 规格状态（2026-11-07 范围调整，待双方确认）
+## 规格状态（2026-11-07 范围调整；第 A 节已经 Codex 确认）
 
 用户决定：**本阶段只用已经确认的原鲸娘（`art/deepseek-whale/approved-poses-preview.png` 的十个动作），保留原设计和标志，不重画成统一站姿，不套用大肥鱼的朝向和比例。**
-所以下面第 1–6 节的"单站姿全身骨骼"规格（v1）**暂缓**，保留作以后参考；当前按第 A 节的"十姿态分层包"契约实现。第 A 节在 Codex 确认前不算冻结。
+所以下面第 1–6 节的"单站姿全身骨骼"规格（v1）**暂缓**，保留作以后参考；当前按第 A 节的"十姿态分层包"契约实现（Codex 已确认，见 PR #2）。
 
-## A. 十姿态分层包（AICompanionPosePack v1，提案）
+## A. 十姿态分层包（AICompanionPosePack v1）
 
 ### A.1 输入：沿用已有的 `pose-layered-v2`
 
@@ -60,7 +60,7 @@ art/deepseek-whale/
 
 ### A.4 编译与接入
 
-- `tools/rig_studio.py compile-poses art/deepseek-whale` → `src/aicompanion/characters/deepseek-whale/rig/posepack.json` + `textures/`：把十个姿态换算到统一的骨骼空间（`x = 128 + (x−anchor_x)×0.2`，`y = 256 + (y−anchor_y)×0.2`），检查每个姿态的必需图层、variants 引用、补画边缘。
+- `tools/rig_studio.py compile-poses art/deepseek-whale [--verify]` → `src/aicompanion/characters/deepseek-whale/rig/rig.json`（`format: AICompanionPoseRig`）+ `textures/`：把十个姿态换算到统一的骨骼空间（`x = 128 + (x−anchor_x)×0.2`，`y = 256 + (y−anchor_y)×0.2`），检查每个姿态的必需图层、variants 引用、补画边缘。
 - 渲染：在现有骨骼渲染页里新增"十姿态"模式（`posepack.js`），对外接口和现在的骨骼形象完全一样（姿态、表情、动作、拎起、命中检测、遮罩），桌宠其他代码不用改。
 - 形象来源顺序：自己的十姿态包 → 本机 Coopanion 大肥鱼 → 整张立绘。
 - 已完成的单站姿编译器（第 1–6 节、`body/rig_pack.py`）保留，供以后做新形象时用。
@@ -71,7 +71,23 @@ art/deepseek-whale/
 2. A.2 的幅度和"手臂腿不动"是否接受？
 3. A.3 的补画清单和尺寸是否可行；`pose-layered-v2` 要提交进仓库的 `art/deepseek-whale/`（原图和切片都是本项目自己的素材）。
 
-确认后我开始写 `compile-poses` 和 `posepack.js`。
+Codex 已确认（附兼容点：按实际 `crop_file` 路径读、鳍和呆毛没有独立节点时不能绕头部枢轴转、`edge_residual` 只随身体、grabbed 的 anchor 是挂点、幅度都按源像素×0.2）。
+
+### A.6 实现（第一版）
+
+| 文件 | 做什么 |
+| --- | --- |
+| `body/pose_pack.py` | 读 `pose-layered-v2`（没有 `format` 字段时按 `version: pose-layered-v2` 识别并记为 `source_version`）；检查十个姿态、必需图层、替换层引用和 box；换算坐标；贴图缩到 0.5 倍；`--verify` 回拼比对 |
+| `assets/rig/posepack.js` | 渲染与动作，接口同 `rig.js` 的引擎，另有 `dispose()` |
+| `assets/rig/rig.html` | 按 `rig.json` 的 `format` 选渲染器；换模型时释放旧贴图；帧回调只挂一次；加载中途又换模型时丢弃旧结果 |
+| `body/rig_import.load_rig` | 也接受 `AICompanionPoseRig`（只检查贴图在不在，不需要 Pillow） |
+
+- **局部摆动的开关**：源 `poses/<姿态>/model.json` 里 `motion_ready: ["tail", ...]` 且 `nodes` 里有同名节点（自己的枢轴）时才摆；否则幅度为 0，编译报告列出。补画（A.3）完成后由出图方加这两项。
+- 每个姿态可以写 `motion: {"head": 1.5, ...}` 降低幅度，编译时按 A.2 上限截断。
+- `hair` 节点在源包里挂在 `body` 下，头转时它要跟着转，所以渲染时 `head` 和 `hair` 用同一个枢轴（`head` 的）和角度。
+- 声音驱动口型：平常姿势（idle / talking / thinking / wait / working）有声音时切 `talking`，按音量在原图（张嘴）和 `mouth_closed` 之间切；眨眼同时闭嘴用 `eyes_closed_mouth_closed`。
+- 宿主的其他姿势：`falling`→`grabbed` + 整体晃动，`dizzy`→`error` + 整体摇摆，`patted`→`idle` + 腮红 + 轻摇头。
+
 
 ## 0. 目标
 

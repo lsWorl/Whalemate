@@ -2,6 +2,9 @@
 
   python tools/rig_studio.py compile art/deepseek-whale src/aicompanion/characters/deepseek-whale/rig
   python tools/rig_studio.py studio  art/deepseek-whale [--out <编译输出目录>]
+  python tools/rig_studio.py compile-poses <pose-layered-v2 目录> [输出目录] [--verify] [--texture-scale 0.5]
+     十姿态分层包（原鲸娘逐姿态切片）→ AICompanionPoseRig；默认输出到 characters/deepseek-whale/rig。
+     --verify 把切片按 z 回拼，和 originals/ 逐像素比对，任何一张不为 0 就失败。
 
 需要 Pillow（pip install -e .[studio]）。studio 里：拖动彩色圆点标注支点，拖动虚线框的两个角调整头部范围；
 "保存并编译"写回 pack.json 并编译；右侧预览用的是和桌宠完全相同的渲染器，可以切姿势、表情、动作。
@@ -37,6 +40,29 @@ def cmd_compile(art: Path, out: Path) -> int:
     except PackError as error:
         print(error); return 1
     print(f'已编译到 {out}：{report.parts} 个部件，表情 {"、".join(report.expressions)}')
+    for warning in report.warnings: print('提示：', warning)
+    return 0
+
+
+def cmd_compile_poses(art: Path, out: Path | None, verify: bool, texture_scale: float) -> int:
+    from aicompanion.body.pose_pack import compile_posepack, read_source
+    try:
+        if out is None:
+            character = str(read_source(art).get('id') or 'deepseek-whale')
+            if not PACK_ID.match(character): raise PackError([f'model.json 的 id「{character}」不合法'])
+            out = ROOT/'src'/'aicompanion'/'characters'/character/'rig'
+        report = compile_posepack(art, out, texture_scale=texture_scale, verify=verify)
+    except PackError as error:
+        print(error); return 1
+    print(f'已编译到 {out}：{len(report.poses)} 个姿态，{report.parts} 个图层，{report.variants} 个替换层')
+    if verify:
+        bad = {k: v for k, v in report.verified.items() if v}
+        missing = [k for k, v in report.verified.items() if v is None]
+        print('回拼比对：' + ('全部零差异' if not bad else '、'.join(f'{k} 差 {v} 像素' for k, v in bad.items()))
+              + (f'；没有原图可比：{"、".join(missing)}' if missing else ''))
+        if bad: return 2
+    if report.disabled:
+        print(f'局部摆动未就绪（没有标注支点，幅度为 0）：{len(report.disabled)} 处，如 {"、".join(report.disabled[:6])}')
     for warning in report.warnings: print('提示：', warning)
     return 0
 
@@ -172,8 +198,13 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     c = sub.add_parser('compile'); c.add_argument('art'); c.add_argument('out', nargs='?')
     s = sub.add_parser('studio'); s.add_argument('art'); s.add_argument('--out')
+    p = sub.add_parser('compile-poses'); p.add_argument('art'); p.add_argument('out', nargs='?')
+    p.add_argument('--verify', action='store_true'); p.add_argument('--texture-scale', type=float, default=0.5)
     args = parser.parse_args()
     art = Path(args.art).resolve()
+    if args.command == 'compile-poses':
+        if not 0.1 <= args.texture_scale <= 1: print('--texture-scale 应在 0.1 到 1 之间'); return 1
+        return cmd_compile_poses(art, Path(args.out).resolve() if args.out else None, args.verify, args.texture_scale)
     try: out = Path(args.out).resolve() if args.out else default_out(art)
     except PackError as error: print(error); return 1
     return cmd_compile(art, out) if args.command == 'compile' else cmd_studio(art, out)

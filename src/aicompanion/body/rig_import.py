@@ -170,6 +170,11 @@ def ensure_whale_rig(project_root: Path, configured: str = '', scheme: str = 'de
 
 def load_rig(path: Path) -> dict:
     data = json.loads(Path(path).read_text(encoding='utf-8'))
+    if data.get('format') == 'AICompanionPoseRig':     # 十姿态分层包（posepack.js 渲染）
+        from aicompanion.body.pose_pack import check_runtime
+        problems = check_runtime(data, Path(path).parent)
+        if problems: raise RigImportError('；'.join(problems[:3]))
+        return data
     if data.get('format') != RIG_FORMAT or data.get('version') != RIG_VERSION:
         raise RigImportError(f'{path} 不是受支持的骨骼模型。')
     base = Path(path).parent

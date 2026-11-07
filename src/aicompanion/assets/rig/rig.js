@@ -456,8 +456,14 @@
       if (name === 'jump') { hop(22, 0.45); return true; }
       motion = { name, start: t, dur: MOTIONS[name] }; S.squash.kick(-0.8); return true;
     }
+    function dispose() {
+      // 换模型时释放贴图（同一贴图可能被多个网格共用，按贴图去重）
+      const seen = new Set(meshes.map(m => m.texture));
+      figure.destroy({ children: true });
+      for (const tex of seen) tex.destroy(true);
+    }
     return {
-      tick, hop, bounce, setPose, hitmap, probe, state, express, playMotion,
+      tick, hop, bounce, setPose, hitmap, probe, state, express, playMotion, dispose,
       busy: () => busy() || !!motion || !!exprOverride,
       set(values) { const { pose, ...rest } = values; Object.assign(state, rest); if (pose) setPose(pose); },
       diagnostics: () => ({ frames, t, pose: state.pose, face, hopping: hopping(), armNear: P.armNear.a, neck: P.neck.a,
@@ -465,5 +471,5 @@
     };
   }
 
-  window.RigRenderer = { createFigure, createEngine, Spring };
+  window.RigRenderer = { createFigure, createEngine, Spring, readJSON, alphaOf, meshHit, gridMesh };
 })();

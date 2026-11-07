@@ -115,7 +115,7 @@ def check_output(art: Path, out: Path) -> list[str]:
         if rig.exists():
             try: kind = json.loads(rig.read_text(encoding='utf-8')).get('source', {}).get('kind')
             except (OSError, ValueError, AttributeError): kind = None
-            if kind != 'pack': return [f'{rig} 不是形象包编译出来的（可能是别的模型），不覆盖']
+            if kind not in ('pack', 'posepack'): return [f'{rig} 不是形象包编译出来的（可能是别的模型），不覆盖']
     return []
 
 
