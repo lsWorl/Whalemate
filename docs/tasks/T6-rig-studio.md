@@ -28,8 +28,8 @@ src/aicompanion/characters/<角色>/rig/rig.json + textures/   AICompanionRig v1
 ## 2. 画布与坐标（出图必须遵守）
 
 - **每个图层都是一张 2048 × 2048 的透明 PNG，所有图层严格对齐在同一张画布上**（就像 PSD 的图层原样导出，不要裁切、不要挪位置）。`rig_studio` 会自己裁出有内容的区域。
-- 角色：**三分之四侧身站姿，面朝画面左侧**（近侧手臂、前腿在画面左边），双脚着地。
-- 原点：角色中线 `x = 1024 px`，**脚底所在的地面 `y = 1984 px`**；头顶大约在 `y = 180 px`，身高约 1800 px。
+- 角色：**三分之四侧身站姿，脸朝画面右侧**，双脚着地。后发和尾巴在画面左后方；画面左边的手臂（`arm_near`）、耳鳍（`fin_near`）离观众近，画面右边的（`arm_far`、`fin_far`）远。这和大肥鱼的朝向一致，动作参数（甩头发、尾巴、走路）是按这个朝向调的；走路往左时程序会整体镜像。
+- 原点：角色中线 `x = 1024 px`，**脚底所在的地面 `y = 1984 px`**；呆毛顶端大约在 `y = 100 px`，头部（含头发）大约占上面 60%（Q 版大头），身体和腿约占下面 40%。
 - 换算到骨骼空间（运行时用）：`x_rig = 128 + (x_px − 1024) × 0.125`，`y_rig = 256 + (y_px − 1984) × 0.125`。即中线 x=128、地面 y=256，和大肥鱼相同，动作参数可以直接复用。
 - sRGB，8 位 RGBA，**不要预乘 alpha**；边缘干净，不要有半透明的白边或杂点。
 - **被遮挡的部分要补画完整**：手臂后面的衣服、刘海后面的额头和脸、裙子里面的腿根、身体后面的尾巴根。动起来时这些地方会露出来。
@@ -41,27 +41,32 @@ src/aicompanion/characters/<角色>/rig/rig.json + textures/   AICompanionRig v1
 
 | 文件 | 内容 | 跟随的变形器 | 默认 z | 必需 |
 | --- | --- | --- | --- | --- |
-| `hair_back.png` | 后发（披在身后的长发） | `hairSway` | 1.0 | ✓ |
-| `hair_back_curl.png` | 后发卷 / 发尾 | `hairSway` | 1.1 | |
-| `fin_far.png` | 远侧耳鳍（白龙：远侧龙角；Claude 少女：远侧发饰） | `finFar` | 1.5 | ✓ |
-| `tail.png` | 尾巴（鲸尾 / 龙尾；Claude 少女可以是书包挂件或留空） | `tailBend`（根部在**右端**） | 2.0 | |
-| `leg_back.png` | 后腿（从裙子里的腿根画起） | `legBack` | 2.5 | ✓ |
-| `arm_far.png` | 远侧手臂（含挡在身前的手） | `armFar` | 3.0 | ✓ |
-| `leg_front.png` | 前腿 | `legFront` | 3.4 | ✓ |
-| `body.png` | 上身（躯干、领口、袖口以内） | `waist` | 4.0 | ✓ |
-| `skirt.png` | 站姿裙子 | `skirt` | 4.5 | ✓ |
-| `skirt_shadow.png` | 裙子投在腿上的阴影（会用正片叠底） | `skirt` | 4.6 | |
-| `waist_bow.png` | 腰部蝴蝶结 / 腰饰 | `waist` | 4.8 | |
-| `skirt_sit.png` | 坐姿裙子（坐下时替换站姿裙子） | `skirtSit` | 4.5 | |
-| `face.png` | 脸（**不含五官**），含耳朵 | `headMid` | 7.0 | ✓ |
-| `sidelocks.png` | 左右鬓发（可合在一张） | `headFront` | 8.6 | ✓ |
-| `bangs.png` | 刘海 | `bangsSway` | 9.0 | ✓ |
-| `fin_near.png` | 近侧耳鳍 / 龙角 / 发饰 | `finNear` | 9.2 | ✓ |
-| `headdress.png` | 头饰（女仆头饰、发箍） | `headFront` | 9.4 | |
-| `bow.png` | 头上的蝴蝶结 | `headFront` | 9.5 | |
-| `ahoge.png` | 呆毛 | `ahoge` | 9.6 | |
-| `arm_near.png` | 近侧手臂（在身体前面） | `armNear` | 10.0 | ✓ |
+| `hair_back.png` | 后发（披在身后的长发，主要在画面左侧） | `hairSway` | 1.0 | ✓ |
+| `tail.png` | 尾巴（鲸尾 / 龙尾），从腰后伸向画面左边，**根部在图层右端** | `tailBend` | 1.5 | |
+| `hair_back_curl.png` | 后发卷 / 发尾 | `hairSway` | 1.75 | |
+| `leg_front.png` | 画面右边的腿（从裙子里的腿根画起） | `legFront` | 3.0 | ✓ |
+| `leg_back.png` | 画面左边的腿 | `legBack` | 4.0 | ✓ |
+| `skirt_shadow.png` | 裙子投在腿上的阴影（会用正片叠底） | `skirt` | 4.2 | |
+| `arm_far.png` | 远侧手臂（画面右边） | `armFar` | 4.5 | ✓ |
+| `body.png` | 上身（躯干、领口、袖口以内） | `body` | 5.0 | ✓ |
+| `hair_front_right.png` | 垂在右肩前的头发 | `hairSway` | 5.05 | |
+| `arm_far_hand.png` | 远侧手里挡在身前的那部分（手掌） | `armFar` | 5.1 | |
+| `skirt.png` | 站姿裙子 | `skirt` | 5.2 | ✓ |
+| `skirt_sit.png` | 坐姿裙子（坐下时替换站姿裙子） | `skirtSit` | 5.3 | |
+| `hair_front_left.png` | 垂在左肩前的头发 | `hairSway` | 5.4 | |
+| `waist_bow.png` | 腰部蝴蝶结 / 腰饰 | `skirt` | 5.5 | |
+| `arm_near.png` | 近侧手臂（画面左边，在身体前面） | `armNear` | 6.0 | ✓ |
+| `fin_far.png` | 远侧耳鳍（白龙：远侧龙角；Claude 少女：远侧发饰） | `finFar` | 7.0 | ✓ |
+| `sidelocks.png` | 鬓发（左右可合在一张，在脸后面） | `bangsSway` | 7.5 | ✓ |
+| `face.png` | 脸（**不含五官**），含耳朵 | `headMid` | 8.0 | ✓ |
+| （五官） | 见第 4 节 | `headFeat` | 8.3 | ✓ |
+| `fin_near.png` | 近侧耳鳍 / 龙角 / 发饰（画面左边） | `finNear` | 11.0 | ✓ |
+| `headdress.png` | 头饰（女仆头饰、发箍） | `headMid` | 12.5 | |
+| `bangs.png` | 刘海 | `bangsSway` | 13.0 | ✓ |
+| `bow.png` | 头上的蝴蝶结 | `headMid` | 13.8 | |
+| `ahoge.png` | 呆毛 | `ahoge` | 14.0 | |
 
+层次和挂接关系照搬大肥鱼那套（已经实测过动作自然）。
 变形器名字是动作引擎写死的（`body`、`waist`、`neck`、`armNear`、`armFar`、`legBack`、`legFront`、`tail`、`tailBend`、`skirt`、`skirtSit`、`hairSway`、`bangsSway`、`headBack`、`headMid`、`headFeat`、`headFront`、`finNear`、`finFar`、`ahoge`），不新增、不改名；某个部件不存在就不出那张图。
 
 ## 4. 五官与表情（文件名固定）
@@ -76,7 +81,7 @@ face/neutral/eyeR_ball.png   eyeR_iris.png   eyeR_hl.png   eyeR_lash.png
 face/neutral/mouth.png       face/neutral/brows.png（可选）
 ```
 
-`eyeL` 指**画面左边**的眼睛（近侧眼）。虹膜层要比眼眶略大一圈地画完整（移动时不露白边，眼白层会把多余部分遮住——眼白层就是眼眶形状）。
+`eyeL` 指**画面左边**的眼睛。虹膜层要比眼眶略大一圈地画完整（移动时不露白边，眼白层会把多余部分遮住——眼白层就是眼眶形状）。
 
 **其他表情每种一组**（整块贴片：一只眼一张，嘴一张，眉可选）：
 
@@ -115,18 +120,18 @@ T5 交图时给出初稿（至少 `name`、`credits`、`palette`），支点可�
   "credits": [{"role": "原画", "by": "…", "tool": "…", "license": "…", "notes": "生成工具与提示词、人工修图说明"}],
   "palette": {"blush": [255, 120, 140], "skin": [255, 232, 220], "accent": "#4D6BFE"},
   "pivots": {
-    "body": [1024, 1700], "waist": [1024, 1300], "neck": [1010, 900],
-    "armNear": [880, 1020], "armFar": [1150, 1020],
-    "legBack": [1080, 1500], "legFront": [960, 1500],
-    "tail": [1240, 1450],
-    "finNear": [820, 600], "finFar": [1230, 600], "ahoge": [1000, 220]
+    "body": [1024, 1984], "waist": [1024, 1447], "neck": [1039, 1174],
+    "armNear": [906, 1265], "armFar": [1229, 1288],
+    "legBack": [899, 1601], "legFront": [1153, 1601],
+    "tail": [729, 1624],
+    "finNear": [671, 1081], "finFar": [1410, 1066], "ahoge": [972, 416]
   },
-  "head": [600, 160, 1440, 960],
+  "head": [580, 90, 1550, 1270],
   "parts": {"bangs": {"z": 9.0, "grid": [6, 4]}}
 }
 ```
 
-- `pivots`：各旋转变形器的支点（关节位置）。上面的数字只是示意，以实际图为准。
+- `pivots`：各旋转变形器的支点（关节位置）。`body` 固定在两脚之间的地面上；其余是关节：腰、脖子根、肩、髋、尾巴根、耳鳍根、呆毛根。上面的数字只是示意，以实际图为准。
 - `head`：头部视差变形器作用的矩形（覆盖整个头和头发，到脖子为止）。不填时按头部图层的范围自动算。
 - `parts`：只写需要覆盖默认值的部件（z、网格密度 `grid`、`blend`）。默认网格 4×4，头发和裙子建议 6×4 以上。
 
@@ -141,9 +146,10 @@ T5 交图时给出初稿（至少 `name`、`credits`、`palette`），支点可�
 1. `tools/rig_studio.py`
    - `compile <art目录> <输出目录>`：读 `pack.json` 和图层，按 alpha 裁剪每个图层（留 4 px 边），算出 `box`，像素坐标换算到骨骼空间，生成 `rig.json`（`source.kind: "pack"`）和 `textures/`；检查必需图层、表情是否齐全、支点是否落在对应图层附近、尺寸和对齐是否一致，问题逐条报出来。
    - `studio <art目录>`：PySide6 小窗口，显示合成后的角色，拖动点标注支点和头部矩形，旁边实时预览（复用 `RigAvatar`，可切姿势、表情、拎起），保存写回 `pack.json` 并重新编译。
-2. 角色包接入：`character.json` 的 `renderer.rig` 支持 `{"source": "pack", "path": "rig/rig.json"}`；有自己的形象包时优先用它，没有时才找本机 Coopanion，再不行退回整张立绘。改动集中在 `body/rig_view.py`、`body/rig_import.py`（`load_rig` 校验）和角色包注册处；`ui/main_window.py` 如需改动只动形象选择那一处，会在 PR 里写清楚。
+2. 角色包接入：`character.json` 的 `renderer.rig` 支持 `{"source": "pack", "path": "rig/rig.json"}`；有自己的形象包时优先用它，没有时才找本机 Coopanion，再不行退回整张立绘。改动集中在 `body/rig_pack.py`（新）、`body/rig_import.py`（`load_rig` 校验五官贴图）；`ui/main_window.py` 只改 `_rig_path` 一个方法（形象来源顺序：环境变量 `AICOMPANION_RIG` → 角色包 `rig/rig.json` → 本机 Coopanion）。`tools/smoke_pet.py` 在本机没有 Coopanion 时自动生成占位形象包来自检。
 3. `rig.js` 增补：支持 `shy`、`smug` 表情贴片和 `talk_mouth`（没有时保持现在的替代做法）。
-4. 占位素材：`tools/make_placeholder_pack.py` 用简单几何图形按本规格生成一套合成占位图层（编进测试，不当正式形象），用来验证编译和渲染，不等 T5 的美术。
+4. 依赖：`pyproject.toml` 新增可选依赖组 `studio = ["Pillow>=11,<13"]`，只有编译和标注需要，桌宠运行不需要（公共文件里 T6 只动 `pyproject.toml` 这一行和 `main_window.py` 的 `_rig_path`）。
+5. 占位素材：`tools/make_placeholder_pack.py` 用简单几何图形按本规格生成一套合成占位图层（编进测试，不当正式形象），用来验证编译和渲染，不等 T5 的美术。
 
 ## 8. 验收
 

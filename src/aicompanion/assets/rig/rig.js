@@ -141,7 +141,7 @@
   }
 
   /* ---------- 表情 ---------- */
-  const EXPRESSIONS = ['neutral', 'happy', 'love', 'surprised', 'sleep', 'drag', 'dizzy'];
+  const EXPRESSIONS = ['neutral', 'happy', 'love', 'surprised', 'sleep', 'drag', 'dizzy', 'shy', 'smug'];   // shy / smug 只有自己的形象包才有贴片
   const POSE_FACE = { idle: 'neutral', talking: 'neutral', thinking: 'neutral', working: 'neutral', celebrate: 'happy',
     error: 'dizzy', wait: 'neutral', sleepy: 'sleep', grabbed: 'drag', poked: 'surprised', patted: 'love', falling: 'drag', dizzy: 'dizzy' };
 
@@ -172,7 +172,7 @@
       const mesh = gridMesh(await load(item.tex), item.rect, [2, 2], featDeformer);
       mesh.zIndex = z; mesh.baseRect = item.rect; figure.addChild(mesh); meshes.push(mesh); return mesh;
     };
-    faceSets.neutral = { eyes: [], movers: [], mouth: null };
+    faceSets.neutral = { eyes: [], movers: [], mouth: null, brows: null };
     for (const side of ['eyeL', 'eyeR']) {
       const eye = F.eyes[side] || {};
       for (const [layer, dz] of [['ball', 0], ['iris', 0.01], ['hl', 0.02], ['lash', 0.03]]) {
@@ -182,18 +182,21 @@
       }
     }
     for (const name of EXPRESSIONS) {
-      faceSets[name] ||= { eyes: [], movers: [], mouth: null };
+      faceSets[name] ||= { eyes: [], movers: [], mouth: null, brows: null };
       for (const side of ['eyeL', 'eyeR']) {
         const item = F.sprites[`${name}_${side}`];
         if (item) faceSets[name].eyes.push(await featMesh(item, featZ + 0.05));
       }
       const mouth = F.sprites[`${name}_mouth`];
       if (mouth) faceSets[name].mouth = await featMesh(mouth, featZ + 0.06);
+      const brows = F.sprites[`${name}_brows`];   // 眉毛跟着表情走，眨眼时不消失
+      if (brows) faceSets[name].brows = await featMesh(brows, featZ + 0.04);
     }
-    // 说话时张开的嘴：用开心的嘴按开口程度纵向缩放
-    const talkMouth = F.sprites.happy_mouth ? await featMesh(F.sprites.happy_mouth, featZ + 0.07) : null;
+    // 说话时张开的嘴：形象包有专门的张嘴贴片就用它，否则用开心的嘴；按开口程度纵向缩放
+    const openMouth = F.sprites.talk_mouth || F.sprites.happy_mouth;
+    const talkMouth = openMouth ? await featMesh(openMouth, featZ + 0.07) : null;
     const blush = new PIXI.Graphics(); blush.zIndex = featZ - 0.02; figure.addChild(blush);
-    for (const set of Object.values(faceSets)) { for (const m of set.eyes) m.visible = false; if (set.mouth) set.mouth.visible = false; }
+    for (const set of Object.values(faceSets)) { for (const m of set.eyes) m.visible = false; if (set.mouth) set.mouth.visible = false; if (set.brows) set.brows.visible = false; }
     if (talkMouth) talkMouth.visible = false;
     figure.sortChildren();
     const arms = { near: meshes.filter(m => m.deformer === 'armNear'), far: meshes.filter(m => m.deformer === 'armFar') };
@@ -249,9 +252,11 @@
       if (name !== face) { faceSwapUntil = t + 0.08; face = name; }
       const swapping = t < faceSwapUntil;
       const shown = swapping || (blinking && name === 'neutral') ? 'sleep' : name;
+      const browsSet = faceSets[name]?.brows ? name : 'neutral';
       for (const [key, set] of Object.entries(faceSets)) {
         for (const m of set.eyes) m.visible = key === shown;
         if (set.mouth) set.mouth.visible = false;
+        if (set.brows) set.brows.visible = key === browsSet;
       }
       const set = faceSets[name] || faceSets.neutral;
       // 嘴：说话时在闭嘴贴片和张嘴贴片之间切换，张嘴按开口程度纵向缩放
@@ -399,7 +404,8 @@
       // 标注表情只在"平常"姿势下生效，被拎起、摔晕等强烈状态优先
       if (exprOverride && ['idle', 'talking', 'thinking', 'wait', 'working'].includes(pose)) {
         const name = exprOverride.name;
-        expr = name === 'smug' ? 'happy' : name === 'shy' ? 'neutral' : name;
+        // 形象包有 shy / smug 贴片时直接用；没有时（大肥鱼）用开心 / 平静代替
+        expr = faceSets[name]?.eyes.length ? name : name === 'smug' ? 'happy' : name === 'shy' ? 'neutral' : name;
         if (!faceSets[expr] || !faceSets[expr].eyes.length) expr = 'neutral';
       }
       if (pose === 'talking' && state.mood === 'happy' && open < 0.12) expr = 'happy';

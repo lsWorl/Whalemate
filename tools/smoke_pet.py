@@ -18,15 +18,36 @@ from aicompanion.ui.emilia_smoke_check import schedule_emilia_smoke_check
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def use_placeholder_rig(mode: str, temp: Path) -> None:
+    """自检不依赖本机 Coopanion：没有它（或指定 placeholder）时，生成并编译一套占位形象包，通过 AICOMPANION_RIG 交给桌宠。"""
+    import os, sys
+    if mode == 'coopanion': return
+    if mode == 'auto':
+        from aicompanion.body.rig_import import find_whale
+        if find_whale(ROOT): return
+    try:
+        sys.path.insert(0, str(ROOT/'tools'))
+        from make_placeholder_pack import make
+        from aicompanion.body.rig_pack import compile_pack
+        compile_pack(make(temp/'placeholder-art', 1024), temp/'placeholder-rig')
+        os.environ['AICOMPANION_RIG'] = str(temp/'placeholder-rig'/'rig.json')
+        print('骨骼形象：合成占位形象包', flush=True)
+    except ImportError as error:   # 没装 Pillow：退回整张立绘
+        print('没有生成占位形象包（需要 Pillow）：', error, flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Offline desktop pet verification.')
     parser.add_argument('--preview', action='store_true', help='Show a temporary pet for up to 90 seconds.')
     parser.add_argument('--emilia', action='store_true', help='Verify the original illustration mesh effect, not Cubism.')
+    parser.add_argument('--rig', choices=('auto', 'placeholder', 'coopanion'), default='auto',
+                        help='骨骼形象来源：auto = 本机有 Coopanion 就用大肥鱼，没有就用合成的占位形象包')
     args = parser.parse_args()
     from aicompanion.body.webengine_flags import apply_webengine_flags
     apply_webengine_flags()
     app = QApplication([]); app.setQuitOnLastWindowClosed(False)
     with tempfile.TemporaryDirectory() as temp:
+        use_placeholder_rig(args.rig, Path(temp))
         database = Database(Path(temp)/'pet.sqlite3'); database.initialize()
         settings = Settings('AICompanion', database.database_path, 'mock', 'https://example.invalid', '', 'mock', .8, 10)
         registry = CharacterRegistry(database, settings); registry.sync()
