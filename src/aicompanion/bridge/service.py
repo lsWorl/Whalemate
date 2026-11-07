@@ -2,8 +2,10 @@
 
 谁在说话决定能用什么：
 - 已绑定的主人在私聊里：和桌面是同一段相处（频道 desktop、私下场景），读写聊天历史、摘要、记忆、心情；
-- 群聊（只限设置里允许的群）和陌生人私聊（默认关闭）：公开场合，只用公开范围的记忆；每个群 / 每个人一段独立的
-  历史（频道 qq:group:<群号> / qq:user:<号>），不进摘要和记忆整理，看不到桌面上的聊天。
+- 群聊（只限设置里允许的群）和陌生人私聊（默认关闭）：公开场合。每个群一段群里共享的历史（频道 qq:group:<群号>），
+  陌生人各自一段（qq:user:<号>），看不到桌面的聊天记录和对话摘要。
+- 记忆在桌面和聊天平台之间共享（用户 2026-11-07 决定）：群里听到的事会整理成记忆（写清楚是谁的），桌面上她也知道；
+  桌面上记住的事在群里也能用，只有主人在记忆页标成"只在私下用"的不会在群里用。
 聊天平台上不提议、也不执行"动手干活"。
 
 并发：一条消息的"检查额度 → 预留当日条数 → 记下用户消息 → 生成 → 记下回复"整段在一把进程级锁里串行完成
@@ -21,7 +23,7 @@ from aicompanion.domain.cancellation import CancellationToken
 
 PLATFORM_NAMES = {'qq': 'QQ'}
 MAX_TEXT = 1500
-DEFAULTS = {'bridge_enabled': False, 'bridge_port': 18765, 'bridge_token': '', 'bridge_owner:qq': '',
+DEFAULTS = {'bridge_memory_every': 6, 'bridge_enabled': False, 'bridge_port': 18765, 'bridge_token': '', 'bridge_owner:qq': '',
             'bridge_groups': [], 'bridge_strangers': False, 'bridge_public_daily': 100}
 
 
@@ -31,6 +33,7 @@ def setting(database, key):
 
 # 进程级：Runtime 重启服务实例时新旧实例共用，不会出现两把锁各放一条
 PROCESS_LOCK = threading.Lock()
+REMEMBERING_LOCK = threading.Lock(); REMEMBERING: set = set()   # 正在整理记忆的频道（同一频道不并发整理）
 
 
 def short_id(sender_id: str) -> str:
@@ -98,7 +101,7 @@ class BridgeService:
                              '回复像聊天软件里的消息，一两句，不用动作描写。')
             else:
                 # 公开场合：只记在这个群 / 这个人自己的频道，不改心情、不提取记忆；记下稳定 ID，群里按"昵称#号码后四位"区分人
-                line = f'{name}{short_id(sender_id)}：{text}' if mode['group'] else text
+                line = f'{"主人" if mode["owner"] else ""}{name}{short_id(sender_id)}：{text}' if mode['group'] else text
                 message_id = self.database.add_message('user', line, character.id, source=platform, channel=mode['channel'], sender=stable)
                 who = '你的主人' if mode['owner'] else f'{name}{short_id(sender_id)}'
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在跟你说话'
@@ -114,4 +117,28 @@ class BridgeService:
             except Exception as error:
                 return {'reply': '', 'silent': True, 'reason': 'error', 'error': str(error)[:200]}
         reply = strip_cues(''.join(parts), controller.vocabs.get(character.id) or Vocab()).strip()
+        if not private: self.maybe_remember(character.id, mode['channel'])
         return {'reply': reply, 'silent': not reply, 'reason': 'ok' if reply else 'empty_reply'}
+
+    # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------
+    def maybe_remember(self, character_id, channel, background=True):
+        memory = self.controller.memory_service
+        every = int(self.database.get_setting('bridge_memory_every', DEFAULTS['bridge_memory_every']) or 0)
+        if every <= 0 or memory.pending(character_id, channel) < every: return False
+        if self.quota.check_silent('memory') == 'stop': return False
+        with REMEMBERING_LOCK:
+            if channel in REMEMBERING: return False
+            REMEMBERING.add(channel)
+
+        def work():
+            try:
+                from aicompanion.usage.meter import using
+                with using('memory', character_id):
+                    memory.analyze(character_id, self.controller.llm_client, CancellationToken(), channel=channel)
+            except Exception:
+                pass   # 整理失败不影响聊天；下次够条数再试
+            finally:
+                with REMEMBERING_LOCK: REMEMBERING.discard(channel)
+        if background: threading.Thread(target=work, daemon=True, name='aicompanion-bridge-memory').start()
+        else: work()
+        return True

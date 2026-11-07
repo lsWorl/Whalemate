@@ -24,7 +24,7 @@ class BridgePage(QWidget):
         self.owner.setPlaceholderText('你自己的 QQ 号；只有这个号的私聊算"主人"')
         self.groups = QLineEdit('，'.join(str(g) for g in setting(database, 'bridge_groups') or []))
         self.groups.setPlaceholderText('允许她说话的群号，用逗号分开；留空 = 不进任何群')
-        self.strangers = QCheckBox('也回复陌生人的私聊（公开场合，看不到你们的私事）')
+        self.strangers = QCheckBox('也回复陌生人的私聊')
         self.strangers.setChecked(bool(setting(database, 'bridge_strangers')))
         self.daily = QSpinBox(); self.daily.setRange(0, 2000); self.daily.setValue(int(setting(database, 'bridge_public_daily')))
         self.daily.setSuffix(' 条 / 天')
@@ -35,8 +35,9 @@ class BridgePage(QWidget):
         self.status = QLabel(''); self.status.setWordWrap(True); layout.addWidget(self.status)
         note = QLabel('QQ 接入用 AstrBot + NapCat（另装），再装项目里的 astrbot_plugin_aicompanion 插件，'
                       '把这里的端口和令牌填进插件配置。步骤见 integrations/astrbot_plugin_aicompanion/README.md。\n'
-                      '主人的私聊和桌面是同一段相处（共用聊天记录和记忆）；群聊和陌生人只用"公开"范围的记忆，'
-                      '各自一段独立的记录，看不到你们私下的内容。聊天平台上她不会动手干活。')
+                      '主人的私聊和桌面是同一段相处（共用聊天记录）；每个群共用一段群聊记录。记忆在桌面和 QQ 之间共享：'
+                      '群里听来的事她在桌面上也记得，桌面上记住的事在群里也能用——不想在群里被提到的，到"记忆"页标成"只在私下用"。'
+                      '聊天平台上她不会动手干活。')
         note.setWordWrap(True); layout.addWidget(note); layout.addStretch(1)
         self._show_status()
 

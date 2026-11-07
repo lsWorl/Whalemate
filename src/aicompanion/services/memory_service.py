@@ -37,14 +37,27 @@ class MemoryService:
                 summary = {"name": "用户的名字是", "like": "用户喜欢", "dislike": "用户不喜欢", "remember": "用户明确希望记住："}[key] + value
                 self.database.upsert_memory(summary, character_id, fact_key, category, source_ids=[source_id] if source_id else [])
 
-    def analyze(self, character_id, client, cancellation: CancellationToken) -> None:
+    def pending(self, character_id, channel="desktop") -> int:
+        """这个频道还没整理进记忆的用户消息条数。"""
+        rows = self.database.recent_messages(40, character_id, channel=channel)
+        done = self.database.get_setting(self.marker(character_id, channel), 0)
+        return sum(1 for r in rows if r['role'] == 'user' and r['id'] > done)
+
+    @staticmethod
+    def marker(character_id, channel="desktop") -> str:
+        return f"memory_through:{character_id}" if channel == "desktop" else f"memory_through:{character_id}:{channel}"
+
+    def analyze(self, character_id, client, cancellation: CancellationToken, channel="desktop") -> None:
+        """把一段聊天整理成记忆。channel 不是 desktop 时是群聊 / 陌生人私聊：说话的不是主人，记忆写清楚是谁的，
+        记成 qq 来源（桌面和各处共享，用户 2026-11-07 决定），不写对话摘要（摘要只属于和主人的相处）。"""
         if self.database.has_deleted_memories(character_id):
             return
-        rows = self.database.recent_messages(40, character_id)
+        public = channel != "desktop"
+        rows = self.database.recent_messages(40, character_id, channel=channel)
         if not rows:
             return
         last_id = rows[-1]['id']
-        marker = f"memory_through:{character_id}"
+        marker = self.marker(character_id, channel)
         if last_id <= self.database.get_setting(marker, 0):
             return
         users = [r for r in rows if r['role'] == 'user']
@@ -55,7 +68,11 @@ class MemoryService:
             '"category":"identity|preference|event|relationship","importance":2,"confidence":0.9,"source_ids":[消息ID]}]}。'
             '使用已有相同事实键更新更正后的事实；无新事实返回空数组。不要输出 Markdown。'
         )
-        context = json.dumps({"previous_summary":self.database.load_summary(character_id),"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
+        if public:
+            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#号码后四位"（标着"主人"的是主人）。'
+                            '记忆必须写清楚是谁的事，例如"群友大壮#0002 是程序员"、"主人在群里说周末去爬山"；不要把群友的事记成主人的；'
+                            'fact_key 里带上说话人标记（如 "qq#0002:job"）。群里的玩笑、刷屏、对她的调侃不用记。summary 留空。')
+        context = json.dumps({"previous_summary":'' if public else self.database.load_summary(character_id),"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
                               "existing": [{"content":r['content'],"fact_key":r['fact_key']} for r in existing]}, ensure_ascii=False)
         # 使用可取消流式调用，即使这里仅需要完整结构化结果。
         from aicompanion.usage.meter import using
@@ -87,8 +104,8 @@ class MemoryService:
             importance, confidence = item.get('importance',2), item.get('confidence',0.8)
             if not isinstance(importance,int) or not isinstance(confidence,(float,int)):
                 continue
-            self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources)
+            self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources,scope='qq' if public else 'pet')
         self.database.set_setting(marker,last_id)
         summary=data.get('summary')
-        if isinstance(summary,str): self.database.save_summary(character_id,summary,last_id)
+        if isinstance(summary,str) and not public: self.database.save_summary(character_id,summary,last_id)
 

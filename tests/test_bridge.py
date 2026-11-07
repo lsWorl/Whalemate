@@ -70,15 +70,15 @@ class BridgeTests(unittest.TestCase):
     def test_group_is_public_and_isolated(self):
         self.db.add_message('user', '桌面上说的悄悄话', self.cid)
         self.db.save_summary(self.cid, '之前聊过搬家的事', 1)
-        self.db.upsert_memory('用户的秘密爱好是集邮', self.cid, 'hobby', scope='pet')
-        self.db.upsert_memory('她的公开爱好是看海', self.cid, 'public-hobby', scope='public')
+        self.db.upsert_memory('用户的秘密爱好是集邮', self.cid, 'hobby', scope='private')   # 标成"只在私下用"
+        self.db.upsert_memory('主人喜欢看海', self.cid, 'sea')                                  # 默认共享
         result = self.ask(STRANGER, '你好，我叫大壮', group=GROUP, name='大壮')
         self.assertEqual(result['reply'], '好呀')
         history, prompt = self.client.calls[-1]
         text = prompt+' '.join(t.content for t in history)
         for private in ('桌面上说的悄悄话', '之前聊过搬家的事', '集邮', '信任程度'):
             self.assertNotIn(private, text)
-        self.assertIn('看海', prompt); self.assertIn('公开场合', prompt); self.assertIn('群聊', prompt)
+        self.assertIn('看海', prompt); self.assertIn('公开场合', prompt); self.assertIn('群聊', prompt)   # 共享记忆在群里也能用
         self.assertIn('大壮#0002：你好', history[-1].content)       # 群里带上说话人（昵称 + 号码后四位）
         self.assertEqual(len(self.db.recent_messages(10, self.cid)), 1)   # 桌面频道没有多出群聊内容
         self.assertEqual(len(self.db.recent_messages(10, self.cid, channel=f'qq:group:{GROUP}')), 2)
@@ -121,6 +121,53 @@ class BridgeTests(unittest.TestCase):
         self.client.generate_reply_stream = boom
         result = self.ask(OWNER, '在吗')
         self.assertEqual((result['silent'], result['reason']), (True, 'error'))
+
+
+class MemorySharingTests(BridgeTests.__base__):
+    """群里听来的事整理进同一份记忆（写清楚是谁的），桌面上也能用；主人私下的对话摘要不进群。"""
+    setUp = BridgeTests.setUp; tearDown = BridgeTests.tearDown; ask = BridgeTests.ask
+
+    def test_group_talk_becomes_shared_memory(self):
+        channel = f'qq:group:{GROUP}'
+        self.db.set_setting('bridge_memory_every', 0)                       # 先关掉自动整理，下面同步跑一次
+        self.ask('11110001', '我是程序员，最近在学 Rust', group=GROUP, name='大壮')
+        self.ask('22220002', '大壮好厉害', group=GROUP, name='小美')
+        memory_service = self.controller.memory_service
+        self.assertEqual(memory_service.pending(self.cid, channel), 2)
+        source = [r['id'] for r in self.db.recent_messages(10, self.cid, channel=channel) if r['role'] == 'user']
+        analysis = {'summary': '不应保存', 'memories': [{'content': '群友大壮#0001 是程序员，在学 Rust', 'fact_key': 'qq#0001:job',
+                     'category': 'identity', 'importance': 2, 'confidence': 0.9, 'source_ids': source[:1]}]}
+        seen = []
+        class Analyzer:
+            def generate_reply_stream(self_, history, prompt, cancellation=None):
+                seen.append(prompt); yield json.dumps(analysis, ensure_ascii=False)
+        self.controller.llm_client = Analyzer()
+        self.assertFalse(self.service.maybe_remember(self.cid, channel, background=False))   # 关着时不整理
+        self.db.set_setting('bridge_memory_every', 2)
+        self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
+        memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#0001:job'), None)
+        self.assertIsNotNone(memory); self.assertEqual(memory['scope'], 'qq')
+        self.assertIn('不要把群友的事记成主人的', seen[-1])
+        self.assertEqual(self.db.load_summary(self.cid), '')                # 群聊不写对话摘要
+        self.assertEqual(memory_service.pending(self.cid, channel), 0)
+        history, prompt = self.controller.context.build(self.controller.character, '大壮')   # 桌面上她也知道
+        self.assertIn('大壮#0001 是程序员', prompt)
+
+    def test_owner_label_in_group_and_no_regex_memory_for_group(self):
+        self.ask(OWNER, '我叫阿青', group=GROUP, name='阿青')
+        self.assertIn('主人阿青#0001：我叫阿青', self.client.calls[-1][0][-1].content)
+        self.assertFalse(any('名字是阿青' in m['content'] for m in self.db.recent_memories(character_id=self.cid)))   # 群里不按"用户"套规则
+
+    def test_private_summary_and_marked_memories_stay_out_of_groups(self):
+        self.db.save_summary(self.cid, '主人最近在准备考试', 1)
+        self.db.upsert_memory('主人的病情', self.cid, 'health')
+        mid = next(m['id'] for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'health')
+        self.db.set_memory_scope([mid], self.cid, 'private')
+        self.ask(STRANGER, '她最近怎么样', group=GROUP)
+        prompt = self.client.calls[-1][1]
+        self.assertNotIn('准备考试', prompt); self.assertNotIn('病情', prompt)
+        self.ask(OWNER, '在吗')
+        self.assertIn('病情', self.client.calls[-1][1]); self.assertIn('准备考试', self.client.calls[-1][1])
 
 
 class ConcurrencyTests(BridgeTests.__base__):

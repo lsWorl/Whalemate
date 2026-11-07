@@ -189,6 +189,11 @@ class Database:
                                    (character_id, content[:1000], category, key, values[2], scope, values[4], 'updated' if row else 'created'))
             return True
 
+    def set_memory_scope(self, ids, character_id, scope) -> None:
+        """记忆页里"只在私下用 / 共享"的切换。"""
+        with self.transaction() as connection:
+            connection.executemany("UPDATE memories SET scope=? WHERE id=? AND character_id=?", [(scope, i, character_id) for i in ids])
+
     def recent_memories(self, limit=100, character_id="emilia"):
         with self.transaction() as connection:
             return connection.execute("SELECT * FROM memories WHERE character_id=? ORDER BY importance DESC,updated_at DESC,id DESC LIMIT ?", (character_id, limit)).fetchall()

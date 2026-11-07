@@ -5,7 +5,8 @@
 - 重要度 5 和身份类事实（名字等）不衰减。
 - 记忆卡容量有限，超出时把"重要度 × 清晰度"最低的移出（存档保留）。
 - 收件箱里的互动事件（摸头、戳、被甩、摔晕）按天汇总成小记忆，重要度低，很快就会淡忘。
-- 作用范围 scope：pet 为私下相处；qq / bili 等为公开场合。公开场合只注入公开记忆。
+- 作用范围 scope（用户 2026-11-07 决定：记忆在桌面和聊天平台之间全部共享）：pet = 桌面 / 主人私聊里记住的，qq / bili = 在群里、
+  陌生人那里听来的，这些在哪都能用；private = 主人在记忆页里标成"只在私下用"的，只在桌面和主人私聊里用。
 
 纯 Python，不依赖 Qt，时间可注入，便于测试。
 """
@@ -18,7 +19,8 @@ HALF_LIFE_DAYS = {1: 7, 2: 21, 3: 60, 4: 180}
 CLEAR, FUZZY = 0.6, 0.3
 CAPACITY = 150
 STABLE_CATEGORIES = {'identity'}
-PUBLIC_SCOPES = {'public', 'qq', 'bili'}
+PUBLIC_SCOPES = {'public', 'qq', 'bili'}   # 在公开场合听来的（标记来源用）
+PRIVATE_SCOPE = 'private'
 INTERACTION_TEXT = {
     'pat': ('被你摸了头', '次'), 'poke': ('被你戳', '下'), 'thrown': ('被你甩出去', '次'), 'dizzy': ('被摔晕', '次'),
 }
@@ -37,8 +39,8 @@ def level(clarity: float) -> str:
 
 
 def visible_in(scope: str, scene: str) -> bool:
-    """scene：当前在哪说话。私下（pet）能用全部记忆；公开场合只用公开记忆。"""
-    return scene == 'pet' or scope in PUBLIC_SCOPES
+    """scene：当前在哪说话。私下（pet）能用全部记忆；公开场合不用标成"只在私下用"的。"""
+    return scene == 'pet' or scope != PRIVATE_SCOPE
 
 
 def select_for_prompt(rows, query: str = '', limit: int = 8, scene: str = 'pet'):

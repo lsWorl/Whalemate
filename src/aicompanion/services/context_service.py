@@ -19,7 +19,7 @@ class ContextService:
         summary=self.database.load_summary(character.id) if private and not self.database.has_deleted_memories(character.id) else ''
         relationship=self.database.relationship(character.id)
         trust = (f"长期相处的信任程度：{relationship['trust']}（不要向用户直接报数值）。" if private else
-                 "这是公开场合：对方不是你的主人。不要透露主人的私事和你们私下聊过的内容，也不要假装和对方很熟。")
+                 "这是公开场合：对方不一定是你的主人，其他人也看得到你的回复；不要假装和对方很熟。")
         prompt = f"""你正在扮演 {character.name}，与用户进行自然的长期陪伴对话。
 人设：{character.description}
 说话风格：{character.speaking_style}

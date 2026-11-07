@@ -474,6 +474,12 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 容器：`tests/test_bridge.py` 14 项（含 5 项并发回归，断言模型调用次数和每轮历史）、`tests/test_astrbot_plugin.py` 4 项。
 - Windows：Codex 在 deb41d4 上跑 `run_checks.bat`，259 项 OK，桌宠自检 passed。
 
+- 用户 2026-11-07 决定记忆全部共享：
+  - 群聊记录在群内共享；
+  - 群里 / 陌生人那里听来的事在后台整理进同一份记忆（写清楚是谁的，scope=qq），桌面上也能用；
+  - 桌面记住的事在群里也能用，只有记忆页标成"只在私下用"（scope=private）的不在公开场合用；
+  - 和主人的对话摘要、信任度只在私下用。
+
 没验证的部分：
 - 真机 QQ（需要用户的 AstrBot / NapCat 环境）；
 - 主动消息、图片 / 语音消息（未做）；
