@@ -1,0 +1,18 @@
+# Windows 脚本必须是 CRLF，否则 cmd 解析中文和续行会出错
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+# 其余文本统一 LF
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.wav binary
+*.onnx binary
