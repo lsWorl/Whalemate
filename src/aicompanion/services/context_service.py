@@ -6,11 +6,12 @@ class ContextService:
     def __init__(self, database, memory):
         self.database, self.memory = database, memory
 
-    def build(self, character, query="", channel="desktop", scene="pet", situation=""):
+    def build(self, character, query="", channel="desktop", scene="pet", situation="", through_id=None):
         """channel：读哪一段聊天记录；scene：pet = 私下（桌面或已绑定的主人），其他 = 公开场合（群、陌生人）。
-        公开场合只用公开范围的记忆，不带桌面上的摘要和信任度，也看不到桌面的聊天记录。situation：这次在哪、和谁说话。"""
+        公开场合只用公开范围的记忆，不带桌面上的摘要和信任度，也看不到桌面的聊天记录。situation：这次在哪、和谁说话。
+        through_id：只看到这条消息为止（聊天平台的请求绑定自己那条消息，之后别人插进来的消息不算进这一轮）。"""
         private = scene == "pet"
-        history = self.database.recent_messages(30, character.id, channel=channel)
+        history = self.database.recent_messages(30, character.id, through_id+1 if through_id else None, channel=channel)
         # 删除记忆后不从旧聊天重新带回事实；新上下文从删除时的水位开始。
         watermark = self.database.get_setting(f"context_after:{character.id}",0)
         history = [r for r in history if r['id'] > watermark]

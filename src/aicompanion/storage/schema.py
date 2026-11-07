@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id),
     turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text',
-    channel TEXT NOT NULL DEFAULT 'desktop'
+    channel TEXT NOT NULL DEFAULT 'desktop', sender TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL,

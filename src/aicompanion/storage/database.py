@@ -63,9 +63,11 @@ class Database:
                 if version < 4 and "chat_messages" in tables:
                     # v4：聊天记录按"频道"隔离。desktop = 桌面和已绑定主人的私聊（同一个她、同一段相处）；
                     # qq:group:<群号> / qq:user:<号> = 公开场合，历史互不可见，也不进摘要和记忆整理。
+                    # sender：聊天平台上说话人的稳定 ID（平台:号），昵称会重名，不能只靠昵称区分群友。
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(chat_messages)")}
-                    if "channel" not in existing:
-                        connection.execute("ALTER TABLE chat_messages ADD COLUMN channel TEXT NOT NULL DEFAULT 'desktop'")
+                    for name, definition in (("channel", "TEXT NOT NULL DEFAULT 'desktop'"), ("sender", "TEXT NOT NULL DEFAULT ''")):
+                        if name not in existing:
+                            connection.execute(f"ALTER TABLE chat_messages ADD COLUMN {name} {definition}")
                 if version < 2 and "memories" in tables:
                     # v2：记忆卡增加清晰度、上次想起时间、作用范围
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(memories)")}
@@ -114,10 +116,20 @@ class Database:
         with self.transaction() as connection:
             connection.execute("UPDATE characters SET name=?,description=?,speaking_style=?,model_path=?,voice=? WHERE id=?", (character.name, character.description, character.speaking_style, character.model_path, character.voice, character.id))
 
-    def add_message(self, role: str, content: str, character_id="emilia", turn_id=None, status="complete", source="text", channel="desktop") -> int:
+    def add_message(self, role: str, content: str, character_id="emilia", turn_id=None, status="complete", source="text", channel="desktop", sender="") -> int:
         with self.transaction() as connection:
-            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel) VALUES (?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel))
+            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel,sender) VALUES (?,?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel, sender))
             return cursor.lastrowid
+
+    def reserve_daily(self, key: str, limit: int) -> bool:
+        """原子地"判断没到上限就加一"：同一事务里读和写，多个线程 / 多个服务实例同时来也不会超过 limit。"""
+        with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+            used = int(json.loads(row[0])) if row else 0
+            if used >= limit: return False
+            connection.execute("INSERT INTO app_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(used+1)))
+            return True
 
     def recent_messages(self, limit=30, character_id="emilia", before_id=None, channel="desktop") -> list[sqlite3.Row]:
         """只返回同一频道的记录：桌面（含已绑定主人的私聊）看不到群聊和陌生人，公开场合也看不到桌面。"""

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -77,7 +79,7 @@ class BridgeTests(unittest.TestCase):
         for private in ('桌面上说的悄悄话', '之前聊过搬家的事', '集邮', '信任程度'):
             self.assertNotIn(private, text)
         self.assertIn('看海', prompt); self.assertIn('公开场合', prompt); self.assertIn('群聊', prompt)
-        self.assertIn('大壮：你好', history[-1].content)            # 群里带上说话人
+        self.assertIn('大壮#0002：你好', history[-1].content)       # 群里带上说话人（昵称 + 号码后四位）
         self.assertEqual(len(self.db.recent_messages(10, self.cid)), 1)   # 桌面频道没有多出群聊内容
         self.assertEqual(len(self.db.recent_messages(10, self.cid, channel=f'qq:group:{GROUP}')), 2)
         self.assertFalse(any('大壮' in m['content'] for m in self.db.recent_memories(character_id=self.cid)))   # 不提取记忆
@@ -121,6 +123,75 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual((result['silent'], result['reason']), (True, 'error'))
 
 
+class ConcurrencyTests(BridgeTests.__base__):
+    """Codex 审计复现的并发问题：用线程屏障安排合法的并发时序，断言模型调用次数和每一轮看到的历史。"""
+    setUp = BridgeTests.setUp; tearDown = BridgeTests.tearDown; ask = BridgeTests.ask
+
+    def run_parallel(self, *calls):
+        results = [None]*len(calls); barrier = threading.Barrier(len(calls))
+        def worker(i, fn):
+            barrier.wait(); results[i] = fn()
+        threads = [threading.Thread(target=worker, args=(i, fn)) for i, fn in enumerate(calls)]
+        for t in threads: t.start()
+        for t in threads: t.join(10)
+        return results
+
+    def test_daily_limit_holds_under_concurrency(self):
+        self.db.set_setting('bridge_public_daily', 1)
+        results = self.run_parallel(lambda: self.ask(STRANGER, '一', group=GROUP), lambda: self.ask(STRANGER, '二', group=GROUP))
+        self.assertEqual(sorted(r['reason'] for r in results), ['daily_limit', 'ok'])
+        self.assertEqual(len(self.client.calls), 1)                        # 最多启动一次模型
+        from datetime import date
+        self.assertEqual(self.db.get_setting(f'bridge_public_count:{date.today().isoformat()}'), 1)
+
+    def test_reserve_daily_is_atomic_across_service_instances(self):
+        from aicompanion.bridge.service import BridgeService
+        other = BridgeService(self.db, self.controller, quota=self.quota)   # 设置保存后重建的新实例
+        self.db.set_setting('bridge_public_daily', 1)
+        results = self.run_parallel(lambda: self.ask(STRANGER, '一', group=GROUP),
+                                    lambda: other.handle({'platform': 'qq', 'sender_id': STRANGER, 'group_id': GROUP, 'text': '二'}))
+        self.assertEqual(sorted(r['reason'] for r in results), ['daily_limit', 'ok']); self.assertEqual(len(self.client.calls), 1)
+        hits = self.run_parallel(*[lambda i=i: self.db.reserve_daily('probe', 3) for i in range(8)])
+        self.assertEqual(hits.count(True), 3)
+
+    def test_quota_exhausted_while_queued_stops_next_request(self):
+        original = self.client.generate_reply_stream
+        def first_then_stop(history, prompt, cancellation=None):
+            self.quota.state = 'stop'                                   # 第一条生成期间额度用完
+            time.sleep(0.2)
+            yield from original(history, prompt, cancellation)
+        self.client.generate_reply_stream = first_then_stop
+        results = self.run_parallel(lambda: self.ask(STRANGER, '一', group=GROUP), lambda: self.ask(STRANGER, '二', group=GROUP))
+        self.assertEqual(sorted(r['reason'] for r in results), ['ok', 'quota'])
+        self.assertEqual(len(self.client.calls), 1)                        # 排队的那条没有再发给模型
+
+    def test_concurrent_owner_messages_each_answer_their_own_turn(self):
+        """第一条生成时第二条已经到达：第一轮只看到"第一条"，第二轮以"第二条"结尾、前面是第一轮的回复。"""
+        second_arrived = threading.Event(); original = self.client.generate_reply_stream
+        def slow(history, prompt, cancellation=None):
+            if len(self.client.calls) == 0: second_arrived.wait(2); time.sleep(0.1)
+            yield from original(history, prompt, cancellation)
+        self.client.generate_reply_stream = slow
+        def first(): return self.ask(OWNER, '第一条')
+        def second():
+            time.sleep(0.05); second_arrived.set(); return self.ask(OWNER, '第二条')
+        results = self.run_parallel(first, second)
+        self.assertEqual([r['reason'] for r in results], ['ok', 'ok'])
+        (h1, _), (h2, _) = self.client.calls
+        self.assertEqual((h1[-1].role, h1[-1].content), ('user', '第一条'))
+        self.assertEqual([(t.role, t.content) for t in h2[-3:]], [('user', '第一条'), ('assistant', '好呀'), ('user', '第二条')])
+
+    def test_same_nickname_in_group_is_told_apart(self):
+        self.ask('11110001', '我是一号', group=GROUP, name='小明')
+        self.ask('22220002', '我是二号', group=GROUP, name='小明')
+        history = self.client.calls[-1][0]
+        text = ' '.join(t.content for t in history)
+        self.assertIn('小明#0001：我是一号', text); self.assertIn('小明#0002：我是二号', text)
+        rows = self.db.recent_messages(10, self.cid, channel=f'qq:group:{GROUP}')
+        self.assertEqual([r['sender'] for r in rows if r['role'] == 'user'], ['qq:11110001', 'qq:22220002'])
+        self.assertNotIn('11110001', ' '.join(t.content for t in history))   # 完整号码不交给模型
+
+
 class MigrationTests(unittest.TestCase):
     def test_v3_database_gets_desktop_channel(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -140,7 +211,7 @@ class MigrationTests(unittest.TestCase):
                     PRAGMA user_version=3;""")
             db = Database(path); db.initialize()
             rows = db.recent_messages(5, 'emilia')
-            self.assertEqual([(r['content'], r['channel']) for r in rows], [('旧消息', 'desktop')])
+            self.assertEqual([(r['content'], r['channel'], r['sender']) for r in rows], [('旧消息', 'desktop', '')])
             self.assertTrue(list(Path(tmp).glob('old.backup-*.sqlite3')))   # 升级前自动备份
 
 

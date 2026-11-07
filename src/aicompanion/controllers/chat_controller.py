@@ -26,12 +26,12 @@ class ChatController:
         self.memory_service.maybe_extract_memory(content,self.character.id,message_id)
         return message_id
 
-    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion'):
+    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None):
         """channel / scene / situation 见 ContextService.build；聊天平台进来的消息 offer_tasks=False（不在聊天平台上提议动手）。"""
         self.database.start_turn(turn_id,character.id)
         parts,status,error = [],'complete',''
         try:
-            history,prompt = self.context.build(character,query,channel,scene,situation)
+            history,prompt = self.context.build(character,query,channel,scene,situation,through_id)
             if proactive:
                 prompt += '\n现在是角色主动开启话题：'+proactive+'。只发一句自然问候或追问，不编造经历。'
             vocab = self.vocabs.get(character.id)

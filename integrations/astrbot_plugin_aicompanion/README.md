@@ -22,13 +22,21 @@ QQ ⇄ NapCat ⇄ AstrBot ─(本插件，POST 127.0.0.1)→ AICompanion 桌宠 
 
 1. **桌宠**：设置 → 聊天平台，勾选"打开本机接口"，填你的 QQ 号和允许的群号，保存；点"复制令牌"。
 2. **AstrBot**：按官方文档安装并打开管理面板（默认 http://localhost:6185）：https://docs.astrbot.app/deploy/astrbot/desktop.html（桌面版）或 https://docs.astrbot.app/deploy/astrbot/windows.html
-3. **NapCat**：按 AstrBot 文档接入 QQ（OneBot v11 反向 WebSocket）：https://docs.astrbot.app/deploy/platform/aiocqhttp/napcat.html
+3. **NapCat**：把 QQ 接成 OneBot v11，用反向 WebSocket 连到 AstrBot：
+   AstrBot 的 OneBot v11 接入页 https://docs.astrbot.app/platform/aiocqhttp.html ，NapCat 官方的接入说明 https://napneko.github.io/use/integration 。
    建议用一个小号当机器人，不要用主号。
+   注意：NapCat 和 AstrBot 之间的 token（反向 WebSocket 的令牌）和桌宠的令牌是**两回事**，不要填混。
 4. **装插件**：把本文件夹整个复制到 AstrBot 的 `data/plugins/astrbot_plugin_aicompanion/`，在管理面板"插件"里重载；
    插件配置里填：桌宠接口地址（默认 `http://127.0.0.1:18765`）、令牌、交给桌宠的群号。
 5. 用主号私聊机器人说一句话，桌宠应该以她的口吻回复；在桌宠的聊天面板里也能看到这段对话。
 
 ## 说明
+
+- 第一版要求 AstrBot 和桌宠在**同一台 Windows 电脑**上运行：插件访问的是 `127.0.0.1`。AstrBot 如果跑在 Docker / 虚拟机里，
+  容器里的 127.0.0.1 指的是容器自己，连不到桌宠。
+- 群里是**群共享的公开上下文**：同一个群的人共用一段记录（每条前面是"昵称#号码后四位"，数据库里另存完整的稳定 ID），
+  她能看到群里最近大家说过的话；不同群、陌生人私聊、桌面之间互相看不到。
+- 首次验收请用合成的测试记忆（例如"主人喜欢蓝色杯子"设成私下、"她喜欢看海"设成公开）检查隔离，不要拿真实私事当探针。
 
 - 插件和桌宠只通过本机 HTTP 接口通信，不复制 AstrBot 代码；插件按 AstrBot 插件接口（AGPL-3.0）编写，随 AstrBot 使用时遵循其许可。
 - 依赖：`aiohttp`（AstrBot 自带）。
