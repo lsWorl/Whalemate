@@ -172,11 +172,15 @@ class Database:
             if connection.execute('SELECT 1 FROM memory_tombstones WHERE character_id=?',(character_id,)).fetchone(): return
             connection.execute('INSERT INTO conversation_summaries(character_id,summary,through_id) VALUES (?,?,?) ON CONFLICT(character_id) DO UPDATE SET summary=excluded.summary,through_id=excluded.through_id,updated_at=CURRENT_TIMESTAMP',(character_id,summary[:3000],through_id))
 
-    def upsert_memory(self, content, character_id="emilia", fact_key="", category="preference", importance=2, confidence=1, source_ids=(), scope="pet") -> bool:
+    def upsert_memory(self, content, character_id="emilia", fact_key="", category="preference", importance=2, confidence=1, source_ids=(), scope="pet", guard=None) -> bool:
+        """guard(connection, key) → bool：在同一个写事务里、写入之前做的检查（公开来源的记忆用它按此刻的 private 状态把关，
+        和设置页的 set_memory_scope 互斥，没有"检查完、写之前"的空隙）。"""
         key = fact_key or hashlib.sha256(content.strip().encode()).hexdigest()
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT 1 FROM memory_tombstones WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone():
+                return False
+            if guard is not None and not guard(connection, key):
                 return False
             row = connection.execute("SELECT id,content FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
             values = (content[:1000], category, max(1,min(5,importance)), max(0,min(1,confidence)), json.dumps(list(source_ids)))

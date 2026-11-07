@@ -179,6 +179,62 @@ class MemorySharingTests(BridgeTests.__base__):
         self.ask(STRANGER, '她有什么编号', group=GROUP)
         self.assertNotIn('SYNTHETIC-PRIVATE-4827', self.client.calls[-1][1])    # 之后的群回复也看不到
 
+    def test_marked_private_while_analyzing_is_not_copied(self):
+        """Codex 复现的竞态：共享事实进入整理输入 → 整理器挂起 → 用户标成私下 → 整理器返回换键副本。副本不能写成共享。"""
+        channel = f'qq:group:{GROUP}'
+        self.db.upsert_memory('主人的编号是 SYNTHETIC-PRIVATE-4827', self.cid, 'code')   # 起初是共享的
+        self.db.set_setting('bridge_memory_every', 0)
+        self.ask(STRANGER, '今天聊些什么', group=GROUP)
+        source = [r['id'] for r in self.db.recent_messages(10, self.cid, channel=channel) if r['role'] == 'user']
+        result = {'summary': '', 'memories': [
+            {'content': '群里提到 SYNTHETIC-PRIVATE-4827', 'fact_key': 'qq#2:copied-test', 'category': 'event', 'importance': 2, 'confidence': 0.9, 'source_ids': source},
+            {'content': '群友今天想聊天', 'fact_key': 'qq#2:mood', 'category': 'event', 'importance': 1, 'confidence': 0.9, 'source_ids': source}]}
+        started, release, inputs = threading.Event(), threading.Event(), []
+        class SlowAnalyzer:
+            def generate_reply_stream(self_, history, prompt, cancellation=None):
+                inputs.append(history[0].content); started.set(); release.wait(5)
+                yield json.dumps(result, ensure_ascii=False)
+        from aicompanion.domain.cancellation import CancellationToken
+        worker = threading.Thread(target=lambda: self.controller.memory_service.analyze(self.cid, SlowAnalyzer(), CancellationToken(), channel=channel))
+        worker.start(); self.assertTrue(started.wait(5))
+        self.assertIn('SYNTHETIC-PRIVATE-4827', inputs[0])                       # 开始时是共享的，合法进入了输入
+        mid = next(m['id'] for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'code')
+        self.db.set_memory_scope([mid], self.cid, 'private')                     # 整理期间用户收回
+        release.set(); worker.join(5)
+        keys = {m['fact_key']: m for m in self.db.recent_memories(character_id=self.cid)}
+        self.assertNotIn('qq#2:copied-test', keys); self.assertEqual(keys['code']['scope'], 'private')
+        self.assertEqual(keys['qq#2:mood']['scope'], 'qq')                       # 普通的群记忆照常写
+        self.ask(STRANGER, '她有什么编号', group=GROUP)
+        self.assertNotIn('SYNTHETIC-PRIVATE-4827', self.client.calls[-1][1])
+
+    def test_guard_and_scope_change_do_not_interleave(self):
+        """守卫在写事务里读最新的 private：检查与写入之间不能插进 set_memory_scope。"""
+        from aicompanion.services.memory_service import MemoryService
+        self.db.upsert_memory('主人的编号是 SYNTHETIC-PRIVATE-4827', self.cid, 'code')
+        mid = next(m['id'] for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'code')
+        inner = MemoryService.public_guard('群里提到 SYNTHETIC-PRIVATE-4827', self.cid)
+        changed = []
+        def guard(connection, key):
+            ok = inner(connection, key)                                          # 此刻还是共享 → 允许
+            t = threading.Thread(target=lambda: (self.db.set_memory_scope([mid], self.cid, 'private'), changed.append(True)))
+            t.start(); t.join(0.5)
+            self.assertEqual(changed, [])                                        # 设置页的写入被事务挡住，等这次写完
+            guard.thread = t; return ok
+        self.assertTrue(self.db.upsert_memory('群里提到 SYNTHETIC-PRIVATE-4827', self.cid, 'qq#2:copy', scope='qq', guard=guard))
+        guard.thread.join(10); self.assertEqual(changed, [True])
+
+    def test_marking_private_also_covers_existing_copies(self):
+        """副本在标记之前已经从群里整理出来：标成私下时一起收回，之后群里看不到。"""
+        self.db.upsert_memory('主人的编号是 SYNTHETIC-PRIVATE-4827', self.cid, 'code')
+        self.db.upsert_memory('群里提到主人的编号 SYNTHETIC-PRIVATE-4827', self.cid, 'qq#2:copy', scope='qq')
+        self.db.upsert_memory('群友大壮#1 是程序员', self.cid, 'qq#1:job', scope='qq')
+        mid = next(m['id'] for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'code')
+        self.controller.memory_service.set_scope([mid], self.cid, 'private')
+        scopes = {m['fact_key']: m['scope'] for m in self.db.recent_memories(character_id=self.cid)}
+        self.assertEqual(scopes, {'code': 'private', 'qq#2:copy': 'private', 'qq#1:job': 'qq'})
+        self.ask(STRANGER, '她有什么编号', group=GROUP)
+        self.assertNotIn('SYNTHETIC-PRIVATE-4827', self.client.calls[-1][1]); self.assertIn('程序员', self.client.calls[-1][1])
+
     def test_owner_label_in_group_and_no_regex_memory_for_group(self):
         self.ask(OWNER, '我叫阿青', group=GROUP, name='阿青')
         self.assertIn('主人阿青#1：我叫阿青', self.client.calls[-1][0][-1].content)

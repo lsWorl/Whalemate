@@ -269,7 +269,8 @@ class SettingsWindow(QDialog):
     def set_memory_scope(self,scope):
         """记忆默认在桌面和 QQ 共享；"只在私下用"的不会在群聊和陌生人私聊里用。"""
         rows={index.row() for index in self.table.selectedIndexes()}
-        self.database.set_memory_scope([self.table.item(r,0).data(Qt.ItemDataRole.UserRole) for r in rows],self.controller.character.id,scope)
+        # 标成私下时，内容高度重合的副本（例如之前从群里整理出来的）一起标成私下
+        self.controller.memory_service.set_scope([self.table.item(r,0).data(Qt.ItemDataRole.UserRole) for r in rows],self.controller.character.id,scope)
         self.refresh()
 
     def delete_memory(self):

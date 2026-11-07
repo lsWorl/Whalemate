@@ -33,12 +33,30 @@ class MemoryService:
         if recalled: self.database.touch_memories(recalled)
         return render(selected)
 
-    def _public_may_write(self, key, content, protected, character_id) -> bool:
-        """公开来源能写的记忆：不能落在已有的非公开事实键上（桌面 / 私下记住的只由桌面那边更新），
-        也不能和"只在私下用"的记忆内容高度重合（防止换个键把私下的事复制成共享）。"""
-        current = next((r for r in self.database.recent_memories(1000, character_id) if r['fact_key'] == key), None)
-        if current is not None and current['scope'] not in ('qq', 'bili', 'public'): return False
-        return not any(similar(content, r['content']) for r in protected)
+    def set_scope(self, ids, character_id, scope) -> list[int]:
+        """记忆页的"只在私下用 / 共享"。标成私下时，内容和它高度重合的其他记忆（例如之前从群里整理出的副本）一起标成私下，
+        在同一个写事务里完成。返回实际改动的记忆 id。"""
+        ids = list(ids); changed = list(ids)
+        with self.database.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if scope == 'private' and ids:
+                marks = connection.execute(f"SELECT content FROM memories WHERE character_id=? AND id IN ({','.join('?'*len(ids))})", (character_id, *ids)).fetchall()
+                for row in connection.execute("SELECT id,content FROM memories WHERE character_id=? AND scope!='private'", (character_id,)).fetchall():
+                    if row['id'] not in ids and any(similar(row['content'], m['content']) or similar(m['content'], row['content']) for m in marks):
+                        changed.append(row['id'])
+            connection.executemany("UPDATE memories SET scope=? WHERE id=? AND character_id=?", [(scope, i, character_id) for i in changed])
+        return changed
+
+    @staticmethod
+    def public_guard(content, character_id):
+        """公开来源能写的记忆（在写事务里按此刻的数据检查）：不能落在已有的非公开事实键上（桌面 / 私下记住的只由桌面那边更新），
+        也不能和"只在私下用"的记忆内容高度重合（防止换个键把私下的事复制成共享；整理期间才被标成私下的也算）。"""
+        def guard(connection, key):
+            row = connection.execute("SELECT scope FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
+            if row is not None and row['scope'] not in ('qq', 'bili', 'public'): return False
+            private = connection.execute("SELECT content FROM memories WHERE character_id=? AND scope='private'", (character_id,)).fetchall()
+            return not any(similar(content, r['content']) for r in private)
+        return guard
 
     def maybe_extract_memory(self, user_message: str, character_id="emilia", source_id=None) -> None:
         # 离线规则仅识别明确稳定信息，否定、假设和过去偏好交给模型分析。
@@ -81,10 +99,8 @@ class MemoryService:
             return
         users = [r for r in rows if r['role'] == 'user']
         existing = [dict(r) for r in self.database.recent_memories(character_id=character_id)]
-        protected = []
         if public:
-            # 公开来源的整理看不到"只在私下用"的记忆，也不能覆盖或复制它们（用户明确设为私下的例外）
-            protected = [r for r in existing if r['scope'] == 'private']
+            # 公开来源的整理看不到"只在私下用"的记忆；写入时再在同一事务里按最新状态把关（public_guard）
             existing = [r for r in existing if r['scope'] != 'private']
         instruction = (
             '仅提取用户明确表达的稳定事实、偏好、重要经历和关系事件。不要将假设、否定或角色猜测当事实。'
@@ -125,12 +141,11 @@ class MemoryService:
             # 删除与分析并发时再次检查，防止生成了新事实键绕过 tombstone。
             if self.database.has_deleted_memories(character_id):
                 return
-            if public and not self._public_may_write(key, content, protected, character_id):
-                continue
             importance, confidence = item.get('importance',2), item.get('confidence',0.8)
             if not isinstance(importance,int) or not isinstance(confidence,(float,int)):
                 continue
-            self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources,scope='qq' if public else 'pet')
+            self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources,scope='qq' if public else 'pet',
+                                        guard=self.public_guard(content,character_id) if public else None)
         self.database.set_setting(marker,last_id)
         summary=data.get('summary')
         if isinstance(summary,str) and not public: self.database.save_summary(character_id,summary,last_id)
