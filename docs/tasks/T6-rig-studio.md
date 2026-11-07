@@ -2,7 +2,11 @@
 
 负责：Claude（代码）　出图：Codex（T5）　审查：互相　分支：`task/t6-rig-studio`
 
-本文第 1–6 节是 **T5 出图和 T6 代码共同遵守的规格**，改规格要在这个文件里改并在 PR 里说明。
+本文第 1–6 节是 **T5 出图（鲸娘）和 T6 代码共同遵守的规格**，改规格要在这个文件里改并在 PR 里说明。
+
+## 规格状态
+
+**v1 已冻结**（以本 PR 合入时的版本为准）。只做 DeepSeek 鲸娘一个形象（Claude、ChatGPT 角色不做形象）。之后任何改动图层名、坐标、层次、表情清单的修改，都要先在 PR 描述里写明"规格变更"并得到对方确认，再出图或改代码。
 
 ## 0. 目标
 
@@ -42,7 +46,7 @@ src/aicompanion/characters/<角色>/rig/rig.json + textures/   AICompanionRig v1
 | 文件 | 内容 | 跟随的变形器 | 默认 z | 必需 |
 | --- | --- | --- | --- | --- |
 | `hair_back.png` | 后发（披在身后的长发，主要在画面左侧） | `hairSway` | 1.0 | ✓ |
-| `tail.png` | 尾巴（鲸尾 / 龙尾），从腰后伸向画面左边，**根部在图层右端** | `tailBend` | 1.5 | |
+| `tail.png` | 鲸尾，从腰后伸向画面左边，**根部在图层右端** | `tailBend` | 1.5 | |
 | `hair_back_curl.png` | 后发卷 / 发尾 | `hairSway` | 1.75 | |
 | `leg_front.png` | 画面右边的腿（从裙子里的腿根画起） | `legFront` | 3.0 | ✓ |
 | `leg_back.png` | 画面左边的腿 | `legBack` | 4.0 | ✓ |
@@ -56,11 +60,11 @@ src/aicompanion/characters/<角色>/rig/rig.json + textures/   AICompanionRig v1
 | `hair_front_left.png` | 垂在左肩前的头发 | `hairSway` | 5.4 | |
 | `waist_bow.png` | 腰部蝴蝶结 / 腰饰 | `skirt` | 5.5 | |
 | `arm_near.png` | 近侧手臂（画面左边，在身体前面） | `armNear` | 6.0 | ✓ |
-| `fin_far.png` | 远侧耳鳍（白龙：远侧龙角；Claude 少女：远侧发饰） | `finFar` | 7.0 | ✓ |
+| `fin_far.png` | 远侧耳鳍（画面右边） | `finFar` | 7.0 | ✓ |
 | `sidelocks.png` | 鬓发（左右可合在一张，在脸后面） | `bangsSway` | 7.5 | ✓ |
 | `face.png` | 脸（**不含五官**），含耳朵 | `headMid` | 8.0 | ✓ |
 | （五官） | 见第 4 节 | `headFeat` | 8.3 | ✓ |
-| `fin_near.png` | 近侧耳鳍 / 龙角 / 发饰（画面左边） | `finNear` | 11.0 | ✓ |
+| `fin_near.png` | 近侧耳鳍（画面左边） | `finNear` | 11.0 | ✓ |
 | `headdress.png` | 头饰（女仆头饰、发箍） | `headMid` | 12.5 | |
 | `bangs.png` | 刘海 | `bangsSway` | 13.0 | ✓ |
 | `bow.png` | 头上的蝴蝶结 | `headMid` | 13.8 | |
@@ -81,7 +85,15 @@ face/neutral/eyeR_ball.png   eyeR_iris.png   eyeR_hl.png   eyeR_lash.png
 face/neutral/mouth.png       face/neutral/brows.png（可选）
 ```
 
-`eyeL` 指**画面左边**的眼睛。虹膜层要比眼眶略大一圈地画完整（移动时不露白边，眼白层会把多余部分遮住——眼白层就是眼眶形状）。
+`eyeL` 指**画面左边**的眼睛。
+
+**眼睛的裁剪约定（渲染器、studio 预览、验收三处一致）：渲染器不做遮罩。** 视线跟随时虹膜和高光整体平移，最大偏移 ±1 骨骼单位（2048 画布上 ±8 px，高光 ±10 px）。所以：
+
+- `ball`（眼白）就是眼眶内的形状；
+- `iris`（虹膜）和 `hl`（高光）**画在眼白范围以内，并且四边都比眼白收进至少 10 px**，这样怎么移动都不会跑出眼眶；
+- `lash`（睫毛 / 上眼睑）画在最上层，盖住眼白和虹膜的上缘。
+
+`rig_studio compile` 会检查虹膜、高光是否在眼白范围内收进了 10 px，不满足就报错。大肥鱼的眼睛也是这个做法（没有遮罩，靠贴图本身留边）。
 
 **其他表情每种一组**（整块贴片：一只眼一张，嘴一张，眉可选）：
 

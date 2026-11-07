@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+import re
 import shutil
+import tempfile
 
 PACK_FORMAT, PACK_VERSION = 'AICompanionPackSource', 1
 RIG_FORMAT, RIG_VERSION = 'AICompanionRig', 1
@@ -86,6 +88,7 @@ class Space:
 class Layer:
     path: Path
     bbox: tuple[int, int, int, int]       # 裁剪后的像素范围（含留边）
+    content: tuple[int, int, int, int] = (0, 0, 0, 0)   # 不含留边的实际内容范围
 
 
 @dataclass
@@ -93,6 +96,27 @@ class Report:
     warnings: list[str] = field(default_factory=list)
     parts: int = 0
     expressions: list[str] = field(default_factory=list)
+
+
+OWNED = {'rig.json', 'textures'}          # 输出目录里只有这些归编译器所有，其他东西一概不动
+PACK_ID = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
+
+
+def check_output(art: Path, out: Path) -> list[str]:
+    """输出目录的边界：不能和源目录相同、互相包含；已存在的输出目录必须是编译器以前生成的（只含 rig.json 和 textures/）。"""
+    art, out = Path(art).resolve(), Path(out).resolve()
+    if out == art or art in out.parents: return [f'输出目录 {out} 在源目录里面（会覆盖源图），请换一个位置']
+    if out in art.parents: return [f'输出目录 {out} 包含了源目录（清理输出时会删掉源图），请换一个位置']
+    if out.exists():
+        if not out.is_dir(): return [f'输出位置 {out} 是一个文件']
+        others = sorted(p.name for p in out.iterdir() if p.name not in OWNED)
+        if others: return [f'输出目录 {out} 里还有不是编译器生成的东西（{"、".join(others[:5])}），为安全起见不覆盖；请换一个空目录']
+        rig = out/'rig.json'
+        if rig.exists():
+            try: kind = json.loads(rig.read_text(encoding='utf-8')).get('source', {}).get('kind')
+            except (OSError, ValueError, AttributeError): kind = None
+            if kind != 'pack': return [f'{rig} 不是形象包编译出来的（可能是别的模型），不覆盖']
+    return []
 
 
 def read_pack(art: Path) -> dict:
@@ -115,7 +139,7 @@ def _scan(path: Path, canvas, problems) -> Layer | None:
     if box is None:
         problems.append(f'{path.name} 是空的（全透明）'); return None
     x0, y0, x1, y1 = box
-    return Layer(path, (max(0, x0-PAD), max(0, y0-PAD), min(canvas[0], x1+PAD), min(canvas[1], y1+PAD)))
+    return Layer(path, (max(0, x0-PAD), max(0, y0-PAD), min(canvas[0], x1+PAD), min(canvas[1], y1+PAD)), box)
 
 
 def _near(point, bbox, slack) -> bool:
@@ -127,7 +151,9 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
     """编译 art/<角色>/ → out/（rig.json + textures/）。有问题时抛 PackError，列出全部问题而不是第一个。"""
     from PIL import Image
     art, out = Path(art), Path(out)
-    pack = read_pack(art); report = Report(); problems: list[str] = []
+    pack = read_pack(art); report = Report(); problems: list[str] = check_output(art, out)
+    if problems: raise PackError(problems)
+    if not PACK_ID.match(str(pack.get('id', ''))): problems.append('pack.json 的 id 只能用小写字母、数字和连字符（如 deepseek-whale）')
     canvas = tuple(pack.get('canvas') or (2048, 2048))
     origin = pack.get('origin') or {}
     space = Space(canvas, float(origin.get('center_x', canvas[0]/2)), float(origin.get('ground_y', canvas[1]*0.96875)))
@@ -155,6 +181,15 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
                 if scanned: features[f'eye:{side}:{layer}'] = scanned
             elif layer in ('ball', 'iris'):
                 problems.append(f'缺少中性眼 face/neutral/{side}_{layer}.png')
+    inset = 10*canvas[1]/2048   # 视线最大偏移 ±8 px（高光 ±10 px）：虹膜、高光要比眼白收进这么多，才不会跑出眼眶
+    for side in ('eyeL', 'eyeR'):
+        ball = features.get(f'eye:{side}:ball')
+        for layer in ('iris', 'hl'):
+            item = features.get(f'eye:{side}:{layer}')
+            if ball and item:
+                b, c = ball.content, item.content
+                if c[0] < b[0]+inset or c[1] < b[1]+inset or c[2] > b[2]-inset or c[3] > b[3]-inset:
+                    problems.append(f'face/neutral/{side}_{layer}.png 要画在眼白以内、四边各收进至少 {inset:.0f} px（视线移动时不跑出眼眶）')
     for name, required in EXPRESSIONS.items():
         pieces = ['mouth', 'brows'] if name == 'neutral' else ['eyeL', 'eyeR', 'mouth', 'brows']
         have = []
@@ -185,8 +220,24 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
                 problems.append(f'支点 {name} {pivots_px[name]} 离图层 {part} 太远，可能标错了')
     if problems: raise PackError(problems)
 
-    # ---- 输出 ----
-    if out.exists(): shutil.rmtree(out)
+    # ---- 输出：先完整编译到旁边的临时目录，成功后只替换 rig.json 和 textures/；中途失败旧模型保持可用 ----
+    out.parent.mkdir(parents=True, exist_ok=True)
+    final, out = out, Path(tempfile.mkdtemp(prefix=f'.{out.name}-', dir=out.parent))
+    try:
+        _write(pack, found, features, pivots_px, space, out, report)
+        final.mkdir(exist_ok=True)
+        for name in ('textures', 'rig.json'):
+            old = final/name
+            if old.is_dir(): shutil.rmtree(old)
+            elif old.exists(): old.unlink()
+            shutil.move(str(out/name), str(old))
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+    return report
+
+
+def _write(pack, found, features, pivots_px, space, out, report):
+    from PIL import Image
     textures = out/'textures'; textures.mkdir(parents=True)
 
     def save(layer: Layer, name: str) -> str:
@@ -244,7 +295,7 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
     palette = pack.get('palette') or {}
     rig = {
         'format': RIG_FORMAT, 'version': RIG_VERSION, 'name': pack.get('name', pack.get('id', '')),
-        'source': {'kind': 'pack', 'id': pack.get('id'), 'credits': pack.get('credits', []), 'canvas': list(canvas),
+        'source': {'kind': 'pack', 'id': pack.get('id'), 'credits': pack.get('credits', []), 'canvas': list(space.canvas),
                    'scale': space.scale},
         'space': {'view': pack.get('view') or VIEW, 'ground': GROUND_Y, 'center': CENTER_X},
         'pivots': pivots, 'head': head, 'deformers': deformers, 'parts': parts,
@@ -253,4 +304,3 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
         'accent': palette.get('accent', '#4D6BFE'), 'schemes': [],
     }
     (out/'rig.json').write_text(json.dumps(rig, ensure_ascii=False, indent=1), encoding='utf-8')
-    return report

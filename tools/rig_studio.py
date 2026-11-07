@@ -16,7 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 
-from aicompanion.body.rig_pack import LAYERS, PIVOTS, PackError, compile_pack, read_pack   # noqa: E402
+from aicompanion.body.rig_pack import LAYERS, PACK_ID, PIVOTS, PackError, compile_pack, read_pack   # noqa: E402
 
 POSES = ['idle', 'talking', 'thinking', 'working', 'celebrate', 'wait', 'sleepy', 'error', 'grabbed', 'poked', 'patted', 'dizzy']
 EXPRESSIONS = ['happy', 'love', 'surprised', 'sleep', 'drag', 'dizzy', 'shy', 'smug']
@@ -25,8 +25,10 @@ PIVOT_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4'
 
 
 def default_out(art: Path) -> Path:
-    pack = read_pack(art)
-    return ROOT/'src'/'aicompanion'/'characters'/pack.get('id', art.name)/'rig'
+    """默认输出到对应角色包的 rig/。id 只允许小写字母、数字、连字符，防止 ../ 之类让输出跑出角色目录。"""
+    pack_id = str(read_pack(art).get('id', ''))
+    if not PACK_ID.match(pack_id): raise PackError([f'pack.json 的 id「{pack_id}」不合法：只能用小写字母、数字和连字符'])
+    return ROOT/'src'/'aicompanion'/'characters'/pack_id/'rig'
 
 
 def cmd_compile(art: Path, out: Path) -> int:
@@ -171,7 +173,9 @@ def main():
     c = sub.add_parser('compile'); c.add_argument('art'); c.add_argument('out', nargs='?')
     s = sub.add_parser('studio'); s.add_argument('art'); s.add_argument('--out')
     args = parser.parse_args()
-    art = Path(args.art).resolve(); out = Path(args.out).resolve() if args.out else default_out(art)
+    art = Path(args.art).resolve()
+    try: out = Path(args.out).resolve() if args.out else default_out(art)
+    except PackError as error: print(error); return 1
     return cmd_compile(art, out) if args.command == 'compile' else cmd_studio(art, out)
 
 
