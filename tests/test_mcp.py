@@ -12,7 +12,7 @@ from unittest.mock import patch
 import urllib.error
 import urllib.request
 
-from aicompanion.agent.mcp_server import McpToolServer, tool_client
+from aicompanion.agent.mcp_server import McpToolServer, dependency_problem, tool_client
 from aicompanion.agent.tools_server import Task, ToolBox
 
 
@@ -62,6 +62,47 @@ class McpServerTests(unittest.TestCase):
         with socket.socket() as probe:
             probe.settimeout(1)
             self.assertNotEqual(probe.connect_ex(address), 0)
+
+    def test_partial_dependencies_are_reported_before_start(self):
+        for missing in ('uvicorn', 'httpx2', 'anyio'):
+            with self.subTest(missing=missing), patch(
+                    'aicompanion.agent.mcp_server.importlib.util.find_spec',
+                    side_effect=lambda name: None if name == missing else object()):
+                self.assertIn(missing, dependency_problem())
+                with self.assertRaisesRegex(RuntimeError, missing):
+                    _ = self.server.url
+                self.assertIsNone(self.server._thread)
+
+    def test_shutdown_timeout_does_not_abort_application_shutdown(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from aicompanion.ui.agent_session import AgentSession
+        server = McpToolServer(self.box)
+        thread = Mock()
+        thread.is_alive.return_value = True
+        server._thread = thread
+        session = SimpleNamespace(box=self.box, server=server, dsh=Mock())
+        with self.assertLogs('aicompanion.agent.mcp_server', level='WARNING'):
+            AgentSession.shutdown(session)
+        self.assertTrue(self.box.task.cancelled.is_set())
+        session.dsh.close.assert_called_once()
+        self.assertIn('等待期限', server.shutdown_problem)
+        self.assertIs(server._thread, thread)
+        thread.is_alive.return_value = False
+        self.assertTrue(server.close())
+        self.assertEqual(server.shutdown_problem, '')
+
+    def test_closed_loop_during_shutdown_is_harmless(self):
+        from unittest.mock import Mock
+        _ = self.server.url
+        loop = Mock()
+        loop.is_running.return_value = True
+        loop.call_soon_threadsafe.side_effect = RuntimeError('loop closed')
+        # 真循环在调用前退出；只模拟检查与通知之间的关闭竞态。
+        actual = self.server._loop
+        actual.call_soon_threadsafe(setattr, self.server._server, 'should_exit', True)
+        with patch.object(self.server, '_loop', loop):
+            self.assertTrue(self.server.close())
 
     def test_startup_failure_is_reported_and_thread_finishes(self):
         with patch.object(self.server, '_register', side_effect=ValueError('registration failed')):
@@ -155,6 +196,20 @@ class McpServerTests(unittest.TestCase):
         self.assertLess(time.monotonic()-started, .5)
         self.assertFalse(self.box.task.cancelled.is_set())
         self.assertEqual(notices, [])
+
+    def test_ui_approval_uses_thread_bound_task_before_emitting(self):
+        from types import SimpleNamespace
+        from aicompanion.ui.agent_session import AgentSession
+        original = Task(run_id=1, allowed=[self.inside])
+        current = Task(run_id=2, allowed=[self.inside])
+        original.cancelled.set()
+        session = SimpleNamespace(box=SimpleNamespace(current=original, task=current),
+            bridge=SimpleNamespace(ask=SimpleNamespace(emit=lambda *args: None),
+                                   event=SimpleNamespace(emit=lambda *args: None)))
+        started = time.monotonic()
+        self.assertEqual(AgentSession._wait_ui(session, {}), 'no')
+        self.assertLess(time.monotonic()-started, .5)
+        self.assertFalse(current.cancelled.is_set())
 
 
 if __name__ == '__main__':

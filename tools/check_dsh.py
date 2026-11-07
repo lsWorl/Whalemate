@@ -1,40 +1,59 @@
-"""DeepSeek Harness 实测：在临时工作区里让她跑一个小任务（统计文件 + 写一个文件），用桌宠自己的工具，记录耗时、用量和结果。
-读取 .env 里的 DeepSeek 接口，会产生少量词元用量。需要确认的步骤一律自动拒绝。结果写到 output/dsh-check/report.json。"""
+"""真实模型小任务（会计费），只用进程环境凭据和本次临时文件；不读取 .env。"""
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import tempfile
 import time
+from unittest.mock import patch
 
 from aicompanion.agent.dsh_backend import DshAgent, problem
 from aicompanion.agent.tools_server import Task, ToolBox
-from aicompanion.agent.mcp_server import McpToolServer
-from aicompanion.config import load_settings
+from aicompanion.agent.mcp_server import McpToolServer, dependency_problem
+from test_dsh_live import credentials, redact
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT/'output'/'dsh-check'
 
 
-def main():
+def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    report = {'problem': problem()}
-    if not report['problem']:
-        settings = load_settings()
-        workspace = Path(tempfile.mkdtemp(prefix='aic-dsh-check-'))
-        (workspace/'a.txt').write_text('hello', encoding='utf-8'); (workspace/'b.md').write_text('# hi', encoding='utf-8')
-        box = ToolBox(secrets=[ROOT/'.env', settings.database_path]); asked = []
-        box.approve = lambda kind, title, detail: (asked.append(title), 'no')[1]
-        box.task = Task(run_id=0, allowed=[workspace]); server = McpToolServer(box)
-        agent = DshAgent(); agent.mcp_servers = [server.acp_entry()]
-        start = time.monotonic()
-        result = agent.run(f'你是鲸娘，回复用一两句俏皮的中文口语。用 aicompanion 的工具做事。当前工作区：{workspace}。'
-                           '用户的原话：帮我统计一下当前文件夹里的文件按扩展名各有几个，再把统计结果写进 stats.txt。', workspace,
-                           api_key=settings.llm_api_key, base_url=settings.llm_base_url)
-        agent.close(); server.close()
-        report.update(seconds=round(time.monotonic()-start, 1), status=result.status, text=result.text, steps=[s[1] for s in result.steps],
-                      usage=vars(result.usage), asked=asked, stats=(workspace/'stats.txt').read_text(encoding='utf-8') if (workspace/'stats.txt').exists() else '')
-    print(json.dumps(report, ensure_ascii=False, indent=1))
-    (OUT/'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+    key, base = credentials()
+    report = {'passed': False, 'done': False, 'cases': [], 'settings_source': 'process-environment-only'}
+    issue = '未提供进程环境 API 凭据，未读取 .env，未执行真实模型测试。' if not key else problem() or dependency_problem()
+    if issue:
+        report.update(skipped=True, reason=issue)
+        code = 2
+    else:
+        try:
+            with ExitStack() as stack:
+                root = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='fixture-', dir=OUT)))
+                workspace = root/'workspace'; workspace.mkdir()
+                (workspace/'a.txt').write_text('hello', encoding='utf-8')
+                (workspace/'b.md').write_text('# hi', encoding='utf-8')
+                stack.enter_context(patch('aicompanion.agent.dsh_backend.dsh_home', return_value=root/'dsh-home'))
+                box = ToolBox(trash=root/'trash'); box.task = Task(allowed=[workspace])
+                asked = []
+                box.approve = lambda kind, title, detail: (asked.append(kind), 'no')[1]
+                server = McpToolServer(box); stack.callback(server.close)
+                agent = DshAgent(); stack.callback(agent.close); agent.mcp_servers = [server.acp_entry()]
+                start = time.monotonic()
+                result = agent.run(f'你是鲸娘，回复用一两句中文。只用 aicompanion 工具做事。当前工作区 {workspace} 只有两个合成文件。'
+                                   '统计文件按扩展名各有几个，用 write_file 写到 stats.txt，不使用命令、不访问其他路径。', workspace,
+                                   api_key=key, base_url=base)
+                stats = workspace/'stats.txt'
+                report.update(done=True, status=result.status, seconds=round(time.monotonic()-start, 2),
+                              text=result.text, usage=vars(result.usage), asked=asked,
+                              stats=stats.read_text(encoding='utf-8') if stats.exists() else '')
+                report['passed'] = result.status == 'done' and stats.is_file() and not asked
+        except Exception as error:
+            report['passed'] = False
+            report['error'] = str(error)
+        code = 0 if report['passed'] else 1
+    text = redact(json.dumps(report, ensure_ascii=False, indent=2), key)
+    (OUT/'report.json').write_text(text, encoding='utf-8')
+    print(text)
+    return code
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

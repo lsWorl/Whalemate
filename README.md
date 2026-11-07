@@ -48,8 +48,10 @@ By default, the app uses `LLM_PROVIDER=mock`, so it can run without an API key.
 ```
 
 MCP 服务仅在干活或协议自检时启动，使用本机回环 HTTP 和进程级随机令牌。
-基础聊天与桌宠不要求安装 Agent 可选依赖。`tools/setup_dsh.bat` 除安装外
-还会运行真实模型验收并产生用量；仅安装依赖时使用上面的命令。
+基础聊天与桌宠不要求安装 Agent 可选依赖。`tools/setup_dsh.bat` 只安装锁定依赖并运行
+`pip check`，不自动调用模型。真实验收另运行 `tools/run_agent_checks.bat`：只使用进程环境中的
+`LLM_API_KEY` / `DEEPSEEK_API_KEY` 及对应接口地址，不加载 `.env`；缺少凭据时退出 2 并记录未执行。
+验收的文件、假密钥、回收区及 DSH 会话均位于新建临时目录，不访问博客或真实用户文件。
 
 To use a real model API, copy `.env.example` to `.env` and set:
 

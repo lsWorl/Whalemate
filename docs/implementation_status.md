@@ -384,3 +384,15 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 验证：194 项离线单元测试全部通过；Qt 桌宠自检 `passed=true`、`tools_listed=10`、`env_blocked=true`、`tools_gate=true`、退出剩余工作线程 0；`pip check` 通过。自检不再清理用户真正的回收区，也不加载私人面板背景。
 - 性能：`tools/measure_pet.ps1` 本轮空闲预览总工作集 452.2 MB、私有内存 360.0 MB、整机 CPU 1.4%（20 逻辑核，采样 10 秒）；历史记录约 440 MB 不是本轮受控前后对照，不能据此归因差值。独立 MCP 进程测量：加载 SDK 前 27.2 MB → 服务启动后 75.1 MB → 官方客户端调用后 78.0 MB，关闭后 77.8 MB（模块仍驻留）。桌宠尚未达到 350 MB 目标，继续由 T7 优化；延迟加载可避免未使用干活时的 SDK 常驻开销。
 - 未验证：真实 DSH/模型的六个收费场景、真实点击确认气泡、Windows 打包后 MCP 运行。真实验收脚本会读取本机 `.env`，本轮按协作规则未执行，也没有把模拟结果标成真实接口验收。报告和截图位于忽略的 `output/t2-check/` 与 `docs/pet-v2/smoke/`。
+
+### T2 审查修正与安全验收工具（2026-11-07，待 Claude 复审）
+
+- 按 PR #4 意见修正 MCP 生命周期：close 超时记录日志和 shutdown_problem、返回 False，保留线程引用以便继续清理，不再抛异常打断应用退出；循环在关闭检查之后退出的竞态不再报错。正常关闭仍等待线程结束并释放端口。
+- dependency_problem 同时检查 mcp / uvicorn / httpx2 / anyio，保持可选依赖的延迟导入；明确 abandon_on_cancel 仅放弃 HTTP 等待，真实停止仍依靠所属 Task.cancelled。
+- UI 审批优先绑定 T11 的 box.current，未合入 T11 时兼容 box.task；已取消的旧任务不再弹确认，也不会看新任务的取消状态。本轮没有修改 ToolBox 的规则，T11 的安全修复仍在 PR #3 独立进行。
+- 两个真实模型验收脚本改为只读进程环境凭据，不加载本机 .env；合成文档、假密钥、回收区及 DSH 会话全部在每次新建的临时目录，不再访问 MyBlog，也不递归删除旧测试目录。case 记录独立布尔检查和 passed；最终清理完成后才写通过。API 凭据不写入报告。
+- setup_dsh.bat 只安装锁定依赖并 pip check，收费测试改为显式运行；run_agent_checks.bat 将失败或未执行状态作为真实退出码传出。两个批处理均使用 CRLF。首次 LF 实测解析失败，修正后重跑通过，失败时产生的自建临时日志已精确核对并移回项目 output，没有保留盘根散落输出。
+- 验证：tools/run_checks.bat 的单元测试与桌宠自检均 exit=0；总计 201 项单测通过，自检 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、remaining_workers=0。新增 4 项 MCP 回归和 3 项验收器保护回归；原 7 项 MCP 回归继续通过。
+- 使用 T11 的 3c727b8 ToolBox 在隔离组合中运行 11 项 MCP 回归，全部通过；只用于兼容测试，没有合入尚在修复的 T11 代码。禁止联网的安装脚本实测 exit=0、pip check 无冲突，未下载或更改现有版本。
+- 实测 tools/run_agent_checks.bat：离线两步仍通过；真实模型阶段因未提供进程环境 API 凭据，明确 skipped=true、passed=false，脚本 exit=2，没有调用模型或把跳过记成通过。此前内存记录保留，本轮关闭/提示改动不改变首次加载 SDK 的策略，未将历史约 440 MB 与初测 452.2 MB 当作受控前后差值。
+- 未验证：真实 DSH / 模型六类场景（8 次任务）、用户真实点击确认气泡、冻结打包与整合 T6 后性能；这些不是已完成项。所有测试日志在被忽略的 output，未提交私人配置、数据库或第三方形象资源。

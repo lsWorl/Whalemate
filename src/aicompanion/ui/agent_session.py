@@ -209,7 +209,9 @@ class AgentSession(QObject):
     # ---- 审批与提问（DSH 的后台线程调用，阻塞等待界面回答） ---------------------------------------
     def _wait_ui(self, spec) -> str:
         from time import monotonic
-        task = self.box.task
+        # T11 在工具线程绑定 current；兼容尚未合入 T11 的 ToolBox，不能把旧调用绑到新的全局任务。
+        task = getattr(self.box, 'current', self.box.task)
+        if task.cancelled.is_set(): return 'no'
         box = {'event': threading.Event(), 'answer': 'timeout'}
         self.bridge.ask.emit(spec, box)
         deadline = monotonic()+APPROVAL_TIMEOUT

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import importlib.util
+import logging
 import os
 import secrets
 import socket
@@ -15,10 +16,14 @@ import threading
 
 from aicompanion.agent.tools_server import ToolBox
 
+LOGGER = logging.getLogger(__name__)
+
 
 def dependency_problem() -> str:
-    if importlib.util.find_spec('mcp') is None:
-        return '未安装官方 MCP SDK，请安装 .[agent] 或运行 tools\\setup_dsh.bat。'
+    missing = [name for name in ('mcp', 'uvicorn', 'httpx2', 'anyio')
+               if importlib.util.find_spec(name) is None]
+    if missing:
+        return '干活所需依赖未安装（官方 MCP SDK 等）：'+ '、'.join(missing)+'。请安装 .[agent] 或运行 tools\\setup_dsh.bat。'
     return ''
 
 
@@ -54,6 +59,7 @@ class McpToolServer:
         self._address = None
         self._error = None
         self._closed = False
+        self.shutdown_problem = ''
 
     @property
     def url(self) -> str:
@@ -85,6 +91,7 @@ class McpToolServer:
 
         async def call(name, **args):
             # 确认气泡会等待 UI 回答；不占用 HTTP 事件循环。
+            # HTTP 请求取消只放弃等待，不会杀死 Python 工作线程；实际停止仍由所属 Task.cancelled 把关。
             text, error = await anyio.to_thread.run_sync(
                 self.box.call, name, args, abandon_on_cancel=True)
             return CallToolResult(content=[TextContent(text=text)], is_error=error)
@@ -167,19 +174,27 @@ class McpToolServer:
             self._server.should_exit = True
         await serving
 
-    def close(self):
+    def close(self, timeout: float = 8) -> bool:
+        """请求退出并有界等待；超时保留线程引用，记录状态，不能中断应用的退出流程。"""
         with self._lock:
             self._closed = True
             thread, server, loop = self._thread, self._server, self._loop
         if thread is None:
-            return
+            return True
         self.box.task.cancelled.set()
         if server is not None and loop is not None and loop.is_running():
-            loop.call_soon_threadsafe(setattr, server, 'should_exit', True)
+            try:
+                loop.call_soon_threadsafe(setattr, server, 'should_exit', True)
+            except RuntimeError:
+                pass   # 检查之后循环可能已经关闭；继续检查线程实际是否退出。
         if thread is not threading.current_thread():
-            thread.join(timeout=8)
+            thread.join(timeout=max(0, timeout))
             if thread.is_alive():
-                raise RuntimeError('MCP 服务尚未退出，请等待工具调用结束。')
+                self.shutdown_problem = 'MCP 服务未在等待期限内退出，已请求停止；后台线程仍在清理。'
+                LOGGER.warning(self.shutdown_problem)
+                return False
+        self.shutdown_problem = ''
+        return True
 
 
 @asynccontextmanager
