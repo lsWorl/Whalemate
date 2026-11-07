@@ -1,0 +1,421 @@
+{
+  "id": "celebrate",
+  "canvas": [
+    1254,
+    1254
+  ],
+  "units": "source pixels",
+  "source": "originals/celebrate.png",
+  "anchor": [
+    627,
+    1156
+  ],
+  "airborne": true,
+  "nodes": {
+    "root": {
+      "parent": null,
+      "pivot": [
+        627,
+        1156
+      ]
+    },
+    "body": {
+      "parent": "root",
+      "pivot": [
+        627,
+        1156
+      ]
+    },
+    "head": {
+      "parent": "body",
+      "pivot": [
+        662,
+        607
+      ]
+    },
+    "hair": {
+      "parent": "body",
+      "pivot": [
+        662,
+        607
+      ]
+    },
+    "arm_left": {
+      "parent": "body",
+      "pivot": [
+        568,
+        611
+      ]
+    },
+    "arm_right": {
+      "parent": "body",
+      "pivot": [
+        759,
+        611
+      ]
+    },
+    "skirt": {
+      "parent": "body",
+      "pivot": [
+        640,
+        745
+      ]
+    },
+    "prop": {
+      "parent": "body",
+      "pivot": [
+        664,
+        749
+      ]
+    },
+    "tail": {
+      "parent": "body",
+      "pivot": [
+        865,
+        853
+      ]
+    },
+    "leg_left": {
+      "parent": "body",
+      "pivot": [
+        546,
+        926
+      ]
+    },
+    "leg_right": {
+      "parent": "body",
+      "pivot": [
+        634,
+        959
+      ]
+    }
+  },
+  "parts": [
+    {
+      "id": "hair_back",
+      "file": "poses/celebrate/cropped/hair_back.png",
+      "crop_file": "poses/celebrate/cropped/hair_back.png",
+      "box": [
+        219,
+        483,
+        755,
+        358
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "hair",
+      "z": 1,
+      "visible_only": true
+    },
+    {
+      "id": "hair_front",
+      "file": "poses/celebrate/cropped/hair_front.png",
+      "crop_file": "poses/celebrate/cropped/hair_front.png",
+      "box": [
+        426,
+        218,
+        400,
+        352
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 9,
+      "visible_only": true
+    },
+    {
+      "id": "ahoge",
+      "file": "poses/celebrate/cropped/ahoge.png",
+      "crop_file": "poses/celebrate/cropped/ahoge.png",
+      "box": [
+        407,
+        65,
+        196,
+        165
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 12,
+      "visible_only": true
+    },
+    {
+      "id": "headdress",
+      "file": "poses/celebrate/cropped/headdress.png",
+      "crop_file": "poses/celebrate/cropped/headdress.png",
+      "box": [
+        408,
+        162,
+        402,
+        182
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 10,
+      "visible_only": true
+    },
+    {
+      "id": "fin_left",
+      "file": "poses/celebrate/cropped/fin_left.png",
+      "crop_file": "poses/celebrate/cropped/fin_left.png",
+      "box": [
+        300,
+        363,
+        151,
+        136
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 11,
+      "visible_only": true
+    },
+    {
+      "id": "fin_right",
+      "file": "poses/celebrate/cropped/fin_right.png",
+      "crop_file": "poses/celebrate/cropped/fin_right.png",
+      "box": [
+        741,
+        287,
+        153,
+        146
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 11.1,
+      "visible_only": true
+    },
+    {
+      "id": "head_skin",
+      "file": "poses/celebrate/cropped/head_skin.png",
+      "crop_file": "poses/celebrate/cropped/head_skin.png",
+      "box": [
+        529,
+        342,
+        250,
+        261
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 8,
+      "visible_only": true
+    },
+    {
+      "id": "torso",
+      "file": "poses/celebrate/cropped/torso.png",
+      "crop_file": "poses/celebrate/cropped/torso.png",
+      "box": [
+        558,
+        581,
+        211,
+        168
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "body",
+      "z": 4,
+      "visible_only": true
+    },
+    {
+      "id": "arm_left",
+      "file": "poses/celebrate/cropped/arm_left.png",
+      "crop_file": "poses/celebrate/cropped/arm_left.png",
+      "box": [
+        272,
+        127,
+        295,
+        568
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "arm_left",
+      "z": 7,
+      "visible_only": true
+    },
+    {
+      "id": "arm_right",
+      "file": "poses/celebrate/cropped/arm_right.png",
+      "crop_file": "poses/celebrate/cropped/arm_right.png",
+      "box": [
+        759,
+        111,
+        204,
+        542
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "arm_right",
+      "z": 7.1,
+      "visible_only": true
+    },
+    {
+      "id": "skirt_apron",
+      "file": "poses/celebrate/cropped/skirt_apron.png",
+      "crop_file": "poses/celebrate/cropped/skirt_apron.png",
+      "box": [
+        383,
+        737,
+        514,
+        235
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "skirt",
+      "z": 5,
+      "visible_only": true
+    },
+    {
+      "id": "leg_left",
+      "file": "poses/celebrate/cropped/leg_left.png",
+      "crop_file": "poses/celebrate/cropped/leg_left.png",
+      "box": [
+        440,
+        918,
+        212,
+        202
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "leg_left",
+      "z": 3,
+      "visible_only": true
+    },
+    {
+      "id": "leg_right",
+      "file": "poses/celebrate/cropped/leg_right.png",
+      "crop_file": "poses/celebrate/cropped/leg_right.png",
+      "box": [
+        482,
+        951,
+        305,
+        206
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "leg_right",
+      "z": 3.1,
+      "visible_only": true
+    },
+    {
+      "id": "tail",
+      "file": "poses/celebrate/cropped/tail.png",
+      "crop_file": "poses/celebrate/cropped/tail.png",
+      "box": [
+        855,
+        614,
+        190,
+        251
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "tail",
+      "z": 2,
+      "visible_only": true
+    },
+    {
+      "id": "eye_left",
+      "file": "poses/celebrate/cropped/eye_left.png",
+      "crop_file": "poses/celebrate/cropped/eye_left.png",
+      "box": [
+        511,
+        445,
+        109,
+        76
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 13,
+      "visible_only": true
+    },
+    {
+      "id": "eye_right",
+      "file": "poses/celebrate/cropped/eye_right.png",
+      "crop_file": "poses/celebrate/cropped/eye_right.png",
+      "box": [
+        674,
+        409,
+        101,
+        76
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 13.1,
+      "visible_only": true
+    },
+    {
+      "id": "mouth",
+      "file": "poses/celebrate/cropped/mouth.png",
+      "crop_file": "poses/celebrate/cropped/mouth.png",
+      "box": [
+        613,
+        478,
+        98,
+        101
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 14,
+      "visible_only": true
+    },
+    {
+      "id": "edge_residual",
+      "file": "poses/celebrate/cropped/edge_residual.png",
+      "crop_file": "poses/celebrate/cropped/edge_residual.png",
+      "box": [
+        6,
+        0,
+        1222,
+        1157
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "root",
+      "z": 0,
+      "visible_only": true
+    }
+  ],
+  "variants": {},
+  "motion_ready": []
+}

@@ -1,0 +1,138 @@
+{
+  "format": "AICompanionArtConcepts",
+  "version": 1,
+  "status": "historical-drafts-superseded-by-approved-whale-poses",
+  "created_date": "2026-11-07",
+  "tool": "built-in ImageGen",
+  "prompt_file": "prompts.json",
+  "actual_canvas": [
+    1254,
+    1254
+  ],
+  "actual_orientation": "left",
+  "known_qc_issues": [
+    "claude-reader: lower canvas corners have alpha=1; clean during final layer preparation"
+  ],
+  "target_spec": {
+    "pull_request": "https://github.com/lsWorl/AICompanion/pull/2",
+    "reviewed_revision": "7446a02b83e47790d48ce3fd5f46f817e4775632",
+    "file": "docs/tasks/T6-rig-studio.md",
+    "target_canvas": [
+      2048,
+      2048
+    ],
+    "target_orientation": "right",
+    "origin": {
+      "center_x": 1024,
+      "ground_y": 1984
+    },
+    "pending_contracts": [
+      "原十动作的状态切换与小幅变形方案",
+      "遮挡部位是否需要补全",
+      "iris and highlight clipping",
+      "原画布到运行时画布的坐标变换"
+    ],
+    "status": "historical-single-pose-spec-deferred"
+  },
+  "credits": {
+    "role": "原创原画参考",
+    "by": "用户委托的 AICompanion 项目生成素材",
+    "tool": "built-in ImageGen",
+    "license": "协作草稿；对外发布许可待用户确定",
+    "notes": "尚未裁切、缩放、拆层、合成或替换运行时素材"
+  },
+  "characters": [
+    {
+      "id": "deepseek-whale",
+      "name": "鲸娘",
+      "image": "deepseek-whale/reference-v1.png",
+      "prompt": "deepseek-whale",
+      "reference": "本项目已生成并获用户认可的 sprites/idle.png，仅作角色设计参考",
+      "palette": {
+        "accent": "#4D6BFE",
+        "skin": [
+          255,
+          232,
+          220
+        ],
+        "blush": [
+          255,
+          120,
+          140
+        ]
+      },
+      "status": "superseded-redesign-draft"
+    },
+    {
+      "id": "claude-reader",
+      "name": "读书少女",
+      "image": "claude-reader/reference-v1.png",
+      "prompt": "claude-reader",
+      "reference": "本项目角色文字设定",
+      "palette": {
+        "accent": "#C96E42",
+        "skin": [
+          255,
+          233,
+          218
+        ],
+        "blush": [
+          244,
+          139,
+          125
+        ]
+      },
+      "status": "deferred-draft"
+    },
+    {
+      "id": "chatgpt-dragon",
+      "name": "白龙",
+      "image": "chatgpt-dragon/reference-v1.png",
+      "prompt": "chatgpt-dragon",
+      "reference": "本项目角色文字设定",
+      "palette": {
+        "accent": "#5E9D8E",
+        "skin": [
+          255,
+          235,
+          228
+        ],
+        "blush": [
+          241,
+          147,
+          154
+        ]
+      },
+      "status": "deferred-draft"
+    }
+  ],
+  "active_scope": {
+    "updated_date": "2026-11-07",
+    "character": "deepseek-whale",
+    "reference_preview": "deepseek-whale/approved-poses-preview.png",
+    "reference_preview_sha256": "df811e7514ed79e2e5a7ab264ce066cbb82476bd972c4fb2d467b68ffe8728cc",
+    "reference_source": "本项目此前生成并获用户确认的十动作鲸娘；不使用 Coopanion 贴图或导出文件",
+    "preserve_marks": true,
+    "deferred_characters": [
+      "claude-reader",
+      "chatgpt-dragon"
+    ],
+    "deterministic_pillow_processing_authorized": true,
+    "delivery_status": "原图、裁切图层和源清单已整理并通过独立验证，待 Claude 审查；补画与独立支点未完成",
+    "contract_pull_request": "https://github.com/lsWorl/AICompanion/pull/2",
+    "contract_revision": "8f732d638a5b506ae2741c53a34fe2ea8bba1e2c",
+    "contract_status": "十姿态方案已由双方确认",
+    "target_format": "AICompanionPosePack",
+    "target_version": 1,
+    "source_canvas": [
+      1254,
+      1254
+    ],
+    "official_logos_allowed": true,
+    "source_manifest": "deepseek-whale/model.json",
+    "source_version": "pose-layered-v2",
+    "source_validation": "deepseek-whale/qa/validation.json",
+    "validated_states": 17,
+    "motion_ready": false
+  }
+}
