@@ -30,7 +30,7 @@ class BridgePageFlowTest(unittest.TestCase):
         self.db = Database(Path(self.tmp.name)/'pet.sqlite3'); self.db.initialize()
         self.db.set_setting('qq_root', str(Path(self.tmp.name)/'qq')); self.db.set_setting('bridge_port', free_port())
         self.runtime = runtime; runtime.close(); runtime.database = None
-        runtime.controller = type('Controller', (), {'character': type('C', (), {'name': '鲸娘'})()})()
+        runtime.controller = type('Controller', (), {'character': type('C', (), {'name': '鲸娘', 'id': 'deepseek-whale'})()})()
         import aicompanion.qq.runtime as qq_runtime
         qq_runtime._manager = None
 
@@ -73,10 +73,14 @@ class BridgePageFlowTest(unittest.TestCase):
         page.vision_enabled.setChecked(False); page.memes_enabled.setChecked(False)
         page.meme_root.setText(str(Path(self.tmp.name)/'memes'))
         page.vision_model.setText('deepseek-flash'); page.meme_cooldown.setValue(120)
+        page.avatar_enabled.setChecked(False); page.learning.setChecked(False)
+        page.community_source.setCurrentIndex(page.community_source.findData('bilibili'))
         page.save_people(); self.wait(page)
         self.assertFalse(self.db.get_setting('qq_vision_enabled')); self.assertFalse(self.db.get_setting('qq_memes_enabled'))
         self.assertEqual(self.db.get_setting('qq_meme_root'), page.meme_root.text())
         self.assertEqual(self.db.get_setting('qq_meme_cooldown'), 120)
+        self.assertFalse(self.db.get_setting('qq_avatars_enabled')); self.assertFalse(self.db.get_setting('qq_social_learning'))
+        self.assertEqual(self.db.get_setting('qq_community'), 'bilibili')
 
     def test_start_error_remains_visible_after_status_refresh(self):
         from aicompanion.ui.bridge_page import BridgePage

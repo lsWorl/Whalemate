@@ -64,8 +64,12 @@ def alias_in(connection, stable: str) -> str:
 
 
 class BridgeService:
-    def __init__(self, database, controller, quota=None, today=date.today, chance=random.random, clock=time.time):
+    def __init__(self, database, controller, quota=None, today=date.today, chance=random.random, clock=time.time, media=None):
         self.database, self.controller, self.today, self.chance, self.clock = database, controller, today, chance, clock
+        from aicompanion.bridge.media import QQMedia
+        from aicompanion.bridge.social import SocialMemory
+        self.media = media or QQMedia(database, controller)
+        self.social = SocialMemory(database, controller.character.id, clock=clock)
         if quota is None:
             from aicompanion.usage.meter import Quota
             quota = Quota(database)
@@ -122,6 +126,26 @@ class BridgeService:
                                                 (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))])
 
     # ---- 处理一条消息 -----------------------------------------------------------------
+    def media_permission(self, payload):
+        """供插件在下载头像前询问；处理消息时仍重新核验，预检不预留预算或授予后续权限。"""
+        platform, sender, group = (str(payload.get(k) or '') for k in ('platform', 'sender_id', 'group_id'))
+        if platform != 'qq' or not re.fullmatch(r'\d{5,12}', sender): return {'allowed': False}
+        mode = self.classify(platform, sender, group)
+        if self.closed or mode is None: return {'allowed': False}
+        private = mode['owner'] and not mode['group']; purpose = 'companion' if private else 'qq'
+        if self.quota.check_silent(purpose) == 'stop': return {'allowed': False}
+        if not private:
+            day = self.today().isoformat()
+            if int(self.database.get_setting('bridge_public_count:'+day, 0) or 0) >= int(setting(self.database, 'bridge_public_daily') or 0):
+                return {'allowed': False}
+        text = str(payload.get('text') or '')[:1500]
+        called = not mode['group'] or payload.get('called', True) is not False or self.called_by_name(text)
+        subject = str(payload.get('avatar_subject') or sender)
+        mentions = payload.get('mentioned_ids', [])
+        if subject != sender and (not group or not isinstance(mentions, list) or subject not in mentions): subject = sender
+        need = called and re.fullmatch(r'\d{5,12}', subject) and self.media.avatar_needed(mode['channel'], subject, text)
+        return {'allowed': True, 'avatar_needed': bool(need), 'avatar_subject': subject}
+
     def handle(self, payload: dict) -> dict:
         """payload：platform、sender_id、sender_name、group_id（私聊为空）、text、called（群里是否 @ / 唤醒了她，旧插件没有这个字段时当作是）。
         返回 {reply, silent, reason}。群里没叫她的消息也会记进群聊记录（她能"听到"大家在聊什么、整理成记忆），按活跃度偶尔插话。"""
@@ -155,6 +179,17 @@ class BridgeService:
                 return {'reply': '今天的额度用完啦，明天再聊～' if private else '', 'silent': not private, 'reason': 'quota'}
             if not private and not self._reserve_public():
                 return {'reply': '', 'silent': True, 'reason': 'daily_limit'}
+            original_text = text
+            avatar_info = ''
+            subject = str(payload.get('avatar_subject') or sender_id)
+            mentions = payload.get('mentioned_ids', [])
+            if subject != sender_id and (not group_id or not isinstance(mentions, list) or subject not in mentions): subject = sender_id
+            if re.fullmatch(r'\d{5,12}', subject):
+                from aicompanion.bridge.media import MediaError
+                try: avatar_info = self.media.avatar_context(mode['channel'], subject, payload.get('avatar'), text, purpose)
+                except MediaError: avatar_info = ''
+                if avatar_info and subject != sender_id: avatar_info = '\n此头像属于本条消息 @ 的群友'+alias(self.database, f'{platform}:{subject}')+'：'+avatar_info
+            if self.quota.check_silent(purpose) == 'stop': return {'reply': '', 'silent': True, 'reason': 'quota'}
             if images:
                 from aicompanion.bridge.media import MediaError
                 try: text = self.media.describe(images, text, purpose)
@@ -175,6 +210,11 @@ class BridgeService:
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在叫你'
                              + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号（#数字，同一个人编号不变），标着【爹】的是你爹' if mode['group'] else '') + '。'
                              '像群友一样回一两句，随意点，不用动作描写；不要提桌面上发生的事。')
+            self.social.cid = character.id
+            self.social.observe(mode['channel'], stable, original_text, bool(images) or bool(payload.get('has_image')))
+            situation += avatar_info
+            if '头像' in original_text and not avatar_info:
+                situation += '\n本次没有读取到可用头像，不能猜测头像内容；可以请对方稍后再试或直接发图。'
             return self._reply(controller, character, mode, situation, platform, purpose, message_id, text)
 
     def _overhear(self, mode, platform, sender_id, group_id, name, text) -> dict:
@@ -195,6 +235,8 @@ class BridgeService:
             if self.closed: return {'reply': '', 'silent': True, 'reason': 'closed'}
             mode, message_id = self.database.locked(record)
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
+        self.social.cid = character.id
+        self.social.observe(mode['channel'], stable, text)
         observed = {'reply': '', 'silent': True, 'reason': 'observed'}
         if not self.lock.acquire(blocking=False):
             return observed
@@ -216,14 +258,23 @@ class BridgeService:
 
     def _reply(self, controller, character, mode, situation, platform, purpose, message_id, text, chime=False) -> dict:
         """在锁里生成回复。插话时模型可以回 {SILENCE} 表示不说：这条不发出去，也不留在聊天记录里。"""
-        from aicompanion.pet.script import Vocab, strip_cues
+        from aicompanion.bridge.social import NATURAL_PROMPT
+        from aicompanion.bridge.community import prompt as community_prompt, maybe_refresh
         private = mode['owner'] and not mode['group']
         turn = str(uuid4()); parts = []
         offer = self.media.offer(mode['channel'])
-        situation += offer.prompt()
+        stable_sender = ''
+        rows = self.database.recent_messages(1, character.id, before_id=message_id+1, channel=mode['channel'])
+        if rows: stable_sender = rows[-1]['sender'] or ('qq:'+str(self.database.get_setting('bridge_owner:qq', '')) if private else '')
+        self.social.cid = character.id
+        learned = self.social.profile(mode['channel'], stable_sender)
+        if learned.get('preferences', {}).get('no_memes'): offer.categories = {}
+        situation += NATURAL_PROMPT + self.social.prompt(mode['channel'], stable_sender) + offer.prompt()
+        situation += community_prompt(self.database, text, mode['channel'].split(':')[-1] if mode['group'] else '')
+        maybe_refresh(self.database, mode['channel'].split(':')[-1] if mode['group'] else '')
         delivery = {}
         def filter_reply(raw, status):
-            if chime and (not raw.strip() or SILENCE in raw or raw.strip('【】') == '不说'):
+            if mode['group'] and (not raw.strip() or raw.strip() in (SILENCE, '不说')):
                 delivery.update(reply='', images=[], history='')
             else: delivery.update(self.media.render(raw, status, offer, mode['channel']))
             return delivery['history']

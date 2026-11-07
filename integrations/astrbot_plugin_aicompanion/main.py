@@ -11,6 +11,7 @@ import base64
 import io
 from pathlib import Path
 import re
+import time
 
 import aiohttp
 
@@ -39,6 +40,7 @@ class AICompanionBridge(Star):
         self.pet_groups: list | None = None   # 桌宠心跳回来的允许群；None = 还没拿到，用插件配置里的
         self.pet_vision = True
         self.pet_name = '鲸娘'
+        self.avatar_backoff = {}
         self.heartbeat_task = None
         try:
             self.heartbeat_task = asyncio.get_running_loop().create_task(self.heartbeat_loop())
@@ -93,6 +95,7 @@ class AICompanionBridge(Star):
     async def attach_images(self, event, payload):
         parts = self.image_parts(event)
         if not parts: return
+        payload['has_image'] = True
         called = payload['called'] or any(n and n in payload['text'] for n in (self.pet_name, '鲸娘', '大肥鱼'))
         if not self.pet_vision:
             payload['text'] += '\n[图片未识别：识图已关闭，不能猜测图片内容。]'
@@ -115,6 +118,64 @@ class AICompanionBridge(Star):
     def managed_temp_root():
         from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
         return get_astrbot_temp_path()
+
+    @staticmethod
+    def avatar_target(event, payload):
+        sender = payload['sender_id']
+        mentions = [str(getattr(part, 'qq', '') or '') for part in getattr(event, 'get_messages', lambda: [])()
+                    if getattr(part, 'type', None) == 'At']
+        own = str(getattr(event, 'get_self_id', lambda: '')())
+        mentions = [value for value in mentions if value != own and re.fullmatch(r'\d{5,12}', value)][:10]
+        payload['mentioned_ids'] = mentions
+        return mentions[0] if '头像' in payload['text'] and mentions else sender
+
+    @staticmethod
+    def encode_avatar(data):
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as picture:
+            if picture.width*picture.height > 1_000_000: raise ValueError('头像像素过大')
+            picture.seek(0); picture = picture.convert('RGB'); picture.thumbnail((256, 256))
+            output = io.BytesIO(); picture.save(output, format='JPEG', quality=85)
+            return 'data:image/jpeg;base64,'+base64.b64encode(output.getvalue()).decode('ascii')
+
+    async def avatar_permission(self, payload):
+        async with await self.post('/v1/media-permission', payload, 5) as response:
+            if response.status != 200: return {}
+            return await response.json()
+
+    async def fetch_avatar(self, subject):
+        """QQ 号只拼入固定官方 HTTPS 主机；不读取事件或模型给出的任意 URL，不跟随跳转。"""
+        if not re.fullmatch(r'\d{5,12}', subject): return None
+        if self.session is None or self.session.closed: self.session = aiohttp.ClientSession()
+        url = f'https://q1.qlogo.cn/g?b=qq&nk={subject}&s=100'
+        async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=False) as response:
+            if response.status != 200: return None
+            data = bytearray()
+            async for chunk in response.content.iter_chunked(16384):
+                data.extend(chunk)
+                if len(data) > 128*1024: return None
+        return await asyncio.to_thread(self.encode_avatar, bytes(data))
+
+    async def attach_avatar(self, event, payload):
+        # 普通头像首次 / 24 小时后更新；桌宠先核验身份、额度、缓存和 called，再允许下载。
+        if payload['group_id'] and not payload['called'] and not any(n in payload['text'] for n in (self.pet_name, '鲸娘', '大肥鱼') if n): return
+        payload['avatar_subject'] = self.avatar_target(event, payload)
+        subject = payload['avatar_subject']
+        if not re.fullmatch(r'\d{5,12}', subject): return
+        key = payload['group_id']+':'+subject
+        if key in self.avatar_backoff and time.monotonic()-self.avatar_backoff[key] < 600: return
+        try:
+            # 不把附件先送进预检；预检只需要身份、触发方式和问题。
+            check = {k: payload[k] for k in ('platform', 'sender_id', 'group_id', 'called', 'text', 'avatar_subject', 'mentioned_ids')}
+            permission = await self.avatar_permission(check)
+            if not permission.get('allowed') or not permission.get('avatar_needed'): return
+            if permission.get('avatar_subject') != subject: return
+            self.avatar_backoff[key] = time.monotonic()
+            self.avatar_backoff = dict(list(self.avatar_backoff.items())[-300:])
+            avatar = await self.fetch_avatar(subject)
+            if avatar: payload['avatar'] = avatar
+        except Exception:
+            pass   # 头像获取失败不影响正常聊天，不输出头像 URL、QQ 号或凭据
 
     async def post(self, path: str, payload: dict, timeout: float) -> 'aiohttp.ClientResponse':
         if self.session is None or self.session.closed:
@@ -160,7 +221,7 @@ class AICompanionBridge(Star):
 
     async def ask_pet(self, payload: dict) -> dict:
         # 识图先调用视觉接口再由原大脑回复，给额外一步留出时间。
-        timeout = float(self.option('timeout')) + (45 if payload.get('images') else 0)
+        timeout = float(self.option('timeout')) + 45*int(bool(payload.get('images'))) + 45*int(bool(payload.get('avatar')))
         async with await self.post('/v1/chat', payload, timeout) as response:
             if response.status == 401:
                 logger.error('AICompanion 拒绝了请求：令牌不对，请把桌宠"设置 → 聊天平台"里的令牌填进插件配置。')
@@ -175,6 +236,7 @@ class AICompanionBridge(Star):
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
         event.stop_event()
         try:
+            await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)
             result = await self.ask_pet(payload)
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:

@@ -66,7 +66,10 @@ class PluginTests(unittest.TestCase):
         cls.module = load_plugin()
 
     def plugin(self, **config):
-        return self.module.AICompanionBridge(context=None, config={'token': 't', 'groups': ['30003'], **config})
+        plugin = self.module.AICompanionBridge(context=None, config={'token': 't', 'groups': ['30003'], **config})
+        async def denied(payload): return {'allowed': False}
+        plugin.avatar_permission = denied
+        return plugin
 
     def run_handler(self, plugin, event, answer=None, error=None):
         async def fake(payload):
@@ -162,6 +165,53 @@ class PluginTests(unittest.TestCase):
             self.assertEqual(result, [('chain', [('image', 'YWJj')])])
             result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '好呀', 'silent': False, 'images': ['file:///private.png']})
             self.assertEqual(result, [('chain', [('text', '好呀')])])
+
+    def test_avatar_only_downloads_after_desktop_permission_and_uses_sender(self):
+        plugin = self.plugin(); calls = []
+        async def permission(payload):
+            calls.append(('permission', payload.copy()))
+            return {'allowed': True, 'avatar_needed': True, 'avatar_subject': payload['sender_id']}
+        async def fetch(subject): calls.append(('fetch', subject)); return 'data:image/jpeg;base64,YWJj'
+        plugin.avatar_permission = permission; plugin.fetch_avatar = fetch
+        self.run_handler(plugin, Event('你好'), {'reply': '嗨', 'silent': False})
+        self.assertEqual([row[0] for row in calls], ['permission', 'fetch'])
+        self.assertEqual(calls[1][1], '10001'); self.assertIn('avatar', plugin.sent)
+        self.run_handler(plugin, Event('又来了'), {'reply': '', 'silent': True})
+        self.assertEqual(len(calls), 2)  # 防止失败或旧缓存导致每条消息抓取头像
+
+    def test_avatar_passive_denied_or_non_numeric_never_downloads(self):
+        plugin = self.plugin(group_only_when_called=False)
+        async def fetch(subject): raise AssertionError('不该抓头像')
+        plugin.fetch_avatar = fetch
+        for event in (Event('你好'), Event('大家好', group='30003', called=False), Event('你好', sender='arbitrary-url')):
+            self.run_handler(plugin, event, {'reply': '', 'silent': True})
+
+    def test_avatar_target_accepts_only_numeric_mentions_and_excludes_bot(self):
+        plugin = self.plugin()
+        event = Event('看看他的头像', group='30003')
+        event.get_self_id = lambda: '88888'
+        event.get_messages = lambda: [types.SimpleNamespace(type='At', qq=value) for value in ('88888', '40004', 'http://localhost')]
+        payload = plugin.route(event)
+        self.assertEqual(plugin.avatar_target(event, payload), '40004')
+        self.assertEqual(payload['mentioned_ids'], ['40004'])
+
+    def test_avatar_fetch_is_fixed_https_without_redirects_and_is_bounded(self):
+        plugin = self.plugin(); requests = []
+        class Content:
+            async def iter_chunked(self, size): yield b'x'*(129*1024)
+        class Response:
+            status = 200; content = Content()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): return False
+        class Session:
+            closed = False
+            def get(self, url, **kwargs): requests.append((url, kwargs)); return Response()
+        plugin.session = Session()
+        self.assertIsNone(asyncio.run(plugin.fetch_avatar('10001')))
+        self.assertEqual(requests[0][0], 'https://q1.qlogo.cn/g?b=qq&nk=10001&s=100')
+        self.assertFalse(requests[0][1]['allow_redirects'])
+        self.assertIsNone(asyncio.run(plugin.fetch_avatar('http://127.0.0.1')))
+        self.assertEqual(len(requests), 1)
 
 
 class HeartbeatTests(unittest.TestCase):

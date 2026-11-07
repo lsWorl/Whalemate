@@ -11,7 +11,7 @@ import threading
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
+                               QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSpinBox, QVBoxLayout,
                                QWidget)
 
 from aicompanion.bridge.service import CHIME, setting
@@ -27,6 +27,7 @@ class _Signals(QObject):
     progress = Signal(str, str, float)
     finished = Signal(str)     # 空串 = 成功，否则是错误说明
     diagnostics = Signal(str)
+    community = Signal(str)
 
 
 class BridgePage(QWidget):
@@ -38,7 +39,10 @@ class BridgePage(QWidget):
         self.signals.status.connect(self._show_status); self.signals.progress.connect(self._show_progress)
         self.signals.finished.connect(self._finished)
         self.signals.diagnostics.connect(self._diagnostics_ready)
-        layout = QVBoxLayout(self)
+        self.signals.community.connect(self._community_done)
+        shell = QVBoxLayout(self); shell.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        body = QWidget(); layout = QVBoxLayout(body); scroll.setWidget(body); shell.addWidget(scroll)
 
         # ---- 状态卡片 ----
         card = QGroupBox('QQ'); cl = QVBoxLayout(card)
@@ -80,9 +84,31 @@ class BridgePage(QWidget):
         choose_memes = QPushButton('选择图库…'); choose_memes.clicked.connect(self._choose_memes)
         meme_row = QHBoxLayout(); meme_row.addWidget(self.meme_root, 1); meme_row.addWidget(choose_memes)
         pl.addRow('', self.vision_enabled); pl.addRow('', self.memes_enabled); pl.addRow('表情图库', meme_row)
+        self.social_group = QGroupBox('聊天习惯与社区'); self.social_group.setCheckable(True); self.social_group.setChecked(False)
+        social_inner = QWidget(); social_form = QFormLayout(social_inner)
+        social_layout = QVBoxLayout(self.social_group); social_layout.addWidget(social_inner)
+        social_inner.hide(); self.social_group.toggled.connect(social_inner.setVisible)
+        self.avatar_enabled = QCheckBox('认识对话者的头像（只记画面印象，每天最多更新一次）')
+        self.avatar_enabled.setChecked(bool(database.get_setting('qq_avatars_enabled', True)))
+        self.learning = QCheckBox('从聊天和反馈中记住表达习惯')
+        self.learning.setChecked(bool(database.get_setting('qq_social_learning', True)))
+        review_social = QPushButton('查看 / 清除表达习惯…'); review_social.clicked.connect(self._review_social)
+        social_form.addRow('', self.avatar_enabled); social_form.addRow('', self.learning); social_form.addRow('', review_social)
+        self.community_source = QComboBox()
+        self.community_source.addItem('日常闲聊（不读取热榜）', 'off')
+        self.community_source.addItem('哔哩哔哩 / 动漫游戏', 'bilibili'); self.community_source.addItem('V2EX / 技术社区', 'v2ex')
+        self.community_source.setCurrentIndex(max(0, self.community_source.findData(database.get_setting('qq_community', 'off'))))
+        self.community_auto = QCheckBox('每天在后台刷新所选社区话题')
+        self.community_auto.setChecked(bool(database.get_setting('qq_community_auto', False)))
+        self.community_groups = QCheckBox('本次社区选择只应用到上面勾选的群')
+        refresh_community = QPushButton('现在逛逛社区'); refresh_community.clicked.connect(self._refresh_community)
+        self.community_status = QLabel('只看公开标题，不上传聊天；新话题保留一天，相关时才用。'); self.community_status.setWordWrap(True)
+        social_form.addRow('社区语境', self.community_source); social_form.addRow('', self.community_groups)
+        social_form.addRow('', self.community_auto); social_form.addRow('', refresh_community); social_form.addRow('', self.community_status)
         save_people = QPushButton('保存'); save_people.clicked.connect(self.save_people); pl.addRow('', save_people)
         layout.addWidget(people)
         self._fill_groups([])
+        layout.addWidget(self.social_group)
 
         # ---- 高级设置 ----
         self.advanced = QGroupBox('高级设置'); self.advanced.setCheckable(True); self.advanced.setChecked(False)
@@ -255,6 +281,41 @@ class BridgePage(QWidget):
         folder = QFileDialog.getExistingDirectory(self, '选择表情包目录（含分类子文件夹或 manifest.json）')
         if folder: self.meme_root.setText(folder)
 
+    def _social_id(self):
+        from aicompanion.bridge.server import runtime
+        return getattr(getattr(runtime.controller, 'character', None), 'id', None) or self.database.get_setting('active_character', 'deepseek-whale')
+
+    def _review_social(self):
+        import json
+        from aicompanion.bridge.social import SocialMemory
+        memory = SocialMemory(self.database, self._social_id())
+        profiles = self.database.get_setting(memory.key, {}) or {}
+        box = QMessageBox(self); box.setWindowTitle('表达习惯记忆')
+        box.setText(f'当前角色保存了 {len(profiles)} 份按人、按会话隔离的表达习惯。\n只保存短句长度、固定语气词统计和明确偏好，不保存原话。')
+        box.setDetailedText(json.dumps({'表达习惯': profiles, '头像印象': self.database.get_setting('qq_avatars:'+self._social_id(), {}) or {}}, ensure_ascii=False, indent=2))
+        clear = box.addButton('清除这些习惯和头像印象', QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton('关闭', QMessageBox.ButtonRole.RejectRole); box.exec()
+        if box.clickedButton() is clear:
+            memory.clear(); self.database.set_setting('qq_avatars:'+self._social_id(), {})
+
+    def _refresh_community(self):
+        source = self.community_source.currentData()
+        if source == 'off':
+            self.community_status.setText('先选择一个社区，再刷新。'); return
+        self.community_status.setText('正在读取公开社区话题…')
+        def work():
+            from aicompanion.bridge.community import refresh
+            try:
+                value = refresh(self.database, source)
+                import time
+                message = value['source']+' · '+time.strftime('%m-%d %H:%M', time.localtime(value['at']))+'\n'+' / '.join(value['topics'][:5])
+            except Exception: message = '这次没有逛成，旧话题保留；可以稍后重试。'
+            self.signals.community.emit(message)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _community_done(self, message):
+        self.community_status.setText(message)
+
     def _show_versions(self):
         components = self.qq.layout.manifest().get('components') or {}
         self.versions.setText('；'.join(f'{k} {v.get("version")}' for k, v in components.items()) or '未安装')
@@ -281,6 +342,12 @@ class BridgePage(QWidget):
         db.set_setting('qq_meme_root', self.meme_root.text().strip())
         db.set_setting('qq_vision_model', self.vision_model.text().strip() or 'deepseek-flash')
         db.set_setting('qq_meme_cooldown', self.meme_cooldown.value())
+        db.set_setting('qq_avatars_enabled', self.avatar_enabled.isChecked())
+        db.set_setting('qq_social_learning', self.learning.isChecked())
+        db.set_setting('qq_community_auto', self.community_auto.isChecked())
+        if self.community_groups.isChecked():
+            for group in groups: db.set_setting('qq_community_for:'+str(group), self.community_source.currentData())
+        else: db.set_setting('qq_community', self.community_source.currentData())
         self.refresh()
 
     def save(self):

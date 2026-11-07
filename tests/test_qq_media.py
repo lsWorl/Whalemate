@@ -200,5 +200,60 @@ class QQMediaTests(unittest.TestCase):
             self.assertEqual(len(self.vision.calls), 1)
         finally: server.close()
 
+    def test_avatar_permission_and_description_cached_without_raw_image(self):
+        payload = {'platform': 'qq', 'sender_id': '10001', 'text': '你好'}
+        self.assertTrue(self.service.media_permission(payload)['avatar_needed'])
+        self.assertFalse(self.service.media_permission({**payload, 'sender_id': '20002'})['allowed'])
+        result = self.ask(images=[], avatar=self.image, text='我的头像是什么')
+        self.assertEqual(result['reason'], 'ok'); self.assertEqual(len(self.vision.calls), 1)
+        prompt = self.chat.calls[-1][1]; self.assertIn('头像', prompt); self.assertIn('蓝色方块', prompt)
+        visual_question = self.vision.calls[-1][0][0]['content'][0]['text']
+        self.assertIn('不推断真人身份', visual_question)
+        self.assertFalse(self.service.media_permission(payload)['avatar_needed'])
+        self.ask(images=[], avatar=self.image, text='今天好呀')
+        self.assertEqual(len(self.vision.calls), 1)
+        stored = json.dumps(self.db.get_setting(self.media.avatar_key), ensure_ascii=False)
+        self.assertNotIn('base64', stored); self.assertNotIn('10001', stored)
+
+    def test_avatar_disabled_quota_passive_and_unauthorized_do_not_run_vision(self):
+        self.db.set_setting('qq_avatars_enabled', False)
+        self.assertFalse(self.service.media_permission({'platform': 'qq', 'sender_id': '10001'})['avatar_needed'])
+        self.ask(images=[], avatar=self.image)
+        self.assertEqual(self.vision.calls, [])
+        self.db.set_setting('qq_avatars_enabled', True); self.quota.stop = True
+        self.assertFalse(self.service.media_permission({'platform': 'qq', 'sender_id': '10001'})['allowed'])
+        self.quota.stop = False
+        self.service.media_permission({'platform': 'qq', 'sender_id': '20002', 'group_id': '30003', 'called': False, 'text': '吃饭了'})
+        self.assertEqual(self.vision.calls, [])
+        self.ask(images=[], avatar=self.image, sender_id='20002')
+        self.assertEqual(self.vision.calls, [])
+
+    def test_mentioned_group_member_avatar_is_labelled_as_theirs(self):
+        self.ask(images=[], sender_id='20002', group_id='30003', text='看看他的头像',
+                 avatar_subject='40004', mentioned_ids=['40004'], avatar=self.image)
+        self.assertIn('此头像属于本条消息 @ 的群友', self.chat.calls[-1][1])
+        self.assertTrue(self.service.media_permission({'platform': 'qq', 'sender_id': '20002', 'group_id': '30003',
+                           'avatar_subject': '50005', 'mentioned_ids': [], 'text': '头像'})['avatar_subject'] == '20002')
+
+    def test_spontaneous_meme_does_not_need_a_request_and_learns_feedback(self):
+        self.make_pack(); self.chat.answer = '笑死<meme name="happy"/>'
+        result = self.ask(images=[], text='哈哈今天运气真好')
+        self.assertEqual(len(result['images']), 1)
+        self.assertIn('不需要等别人要求', self.chat.calls[-1][1])
+        self.now += 61
+        self.ask(images=[], text='你以后多带点表情包')
+        prompt = self.chat.calls[-1][1]; self.assertIn('不必等人要求', prompt)
+        self.now += 61
+        self.ask(images=[], text='不要发表情包')
+        self.assertNotIn('images', self.ask(images=[], text='嗯嗯'))
+
+    def test_group_can_remain_silent_instead_of_customer_service_reply(self):
+        self.chat.answer = '【不说】'
+        result = self.ask(images=[], text='嗯嗯', sender_id='20002', group_id='30003')
+        self.assertTrue(result['silent']); self.assertEqual(result['reply'], '')
+        rows = self.db.recent_messages(10, self.cid, channel='qq:group:30003')
+        self.assertFalse(any(row['role'] == 'assistant' for row in rows))
+        self.assertIn('不是每条消息的答题客服', self.chat.calls[-1][1])
+
 
 if __name__ == '__main__': unittest.main()
