@@ -156,8 +156,14 @@ class QQManager:
         try:
             progress('安装 AstrBot', '创建独立运行环境')
             self._uv('venv', target, '--python', spec.python)
-            progress('安装 AstrBot', f'{spec.name} {spec.version} 及依赖（较慢，请稍候）')
             python = target/'Scripts'/'python.exe'
+            # 第一步：只装 AstrBot 本身，强制按 specs 里固定的 wheel 哈希核对（不管用的是哪个索引 / 镜像）
+            progress('安装 AstrBot', f'{spec.name} {spec.version}（核对固定的文件哈希）')
+            pinned = target/'aicompanion-pinned.txt'
+            pinned.write_text(f'{spec.name}=={spec.version} --hash=sha256:{spec.wheel_sha256}\n', encoding='utf-8')
+            self._uv('pip', 'install', '--python', python, '--no-deps', '--require-hashes', '-r', pinned)
+            # 第二步：补齐依赖（AstrBot 已装、版本相同，不会被换掉）；依赖的完整性由 uv 按索引公布的哈希检查，装完记录 freeze
+            progress('安装 AstrBot', '依赖（较慢，请稍候）')
             self._uv('pip', 'install', '--python', python, f'{spec.name}=={spec.version}')
             freeze = self._uv('pip', 'freeze', '--python', python)
             if f'{spec.name.lower()}=={spec.version}' not in freeze.lower():
@@ -167,8 +173,8 @@ class QQManager:
             shutil.rmtree(target, ignore_errors=True)
             raise
         old = current.get('path')
-        components['astrbot'] = {'version': spec.version, 'wheel_sha256': spec.wheel_sha256, 'python': spec.python,
-                                 'path': str(target), 'freeze': freeze.splitlines()}
+        components['astrbot'] = {'version': spec.version, 'wheel_sha256': spec.wheel_sha256, 'wheel_verified': 'uv --require-hashes',
+                                 'python': spec.python, 'path': str(target), 'freeze': freeze.splitlines()}
         self.layout.update_manifest(components=components)
         if old and old != str(target) and self.layout.owns(Path(old)) and not self.supervisor.running('astrbot'):
             import shutil
@@ -185,7 +191,16 @@ class QQManager:
         configure.astrbot_config(layout.astrbot_home, ports['onebot'], keys['onebot'], ports['dashboard'])
         configure.install_plugin(layout.astrbot_home, configure.plugin_source())
         configure.plugin_config(layout.astrbot_home, url, token)
+        self.ensure_bridge()
+
+    def ensure_bridge(self) -> None:
+        """接入 / 启动 / 重试是用户明确要用 QQ：打开桌宠接口并让它真的跑起来（没开就 apply）。
+        用户之后在高级设置里关掉接口，那是他的选择；状态会显示"接口没有打开"，点重试再打开。"""
+        from aicompanion.bridge.server import runtime
         self.db.set_setting('bridge_enabled', True)
+        if runtime.server is None:
+            problem = runtime.apply(self.db)
+            if problem: raise SetupError(problem)
 
     # ---- 接入已有实例 ---------------------------------------------------------------------
     def attach_existing(self, astrbot_root) -> Path:
@@ -196,7 +211,7 @@ class QQManager:
         url, token = self.bridge()
         configure.plugin_config(root, url, token)
         self.db.set_setting('qq_mode', 'existing'); self.db.set_setting('qq_existing_root', str(root))
-        self.db.set_setting('bridge_enabled', True)
+        self.ensure_bridge()
         return target
 
     # ---- 启动 / 停止 ------------------------------------------------------------------------

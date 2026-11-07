@@ -94,7 +94,15 @@ class BridgePage(QWidget):
         note.setWordWrap(True); note.setStyleSheet('color:#666'); layout.addWidget(note); layout.addStretch(1)
 
         self.timer = QTimer(self); self.timer.timeout.connect(self.refresh); self.timer.start(2500)
-        self._show_versions(); self.refresh()
+        self._sync_from_db(); self._show_versions(); self.refresh()
+
+    def _sync_from_db(self):
+        """后台流程（接入、重试）会改接口开关和令牌：把数据库里的当前值放回页面，并记下来——保存时只写用户真正改过的项，
+        不会用页面打开时的旧值把后台刚开的接口又关掉。"""
+        db = self.database
+        self.enabled.setChecked(bool(setting(db, 'bridge_enabled'))); self.port.setValue(int(setting(db, 'bridge_port')))
+        self.token.setText(setting(db, 'bridge_token') or '')
+        self.loaded = {'enabled': self.enabled.isChecked(), 'port': self.port.value(), 'token': self.token.text()}
 
     # ---- 状态 -----------------------------------------------------------------------------
     def refresh(self):
@@ -159,10 +167,7 @@ class BridgePage(QWidget):
         self.qq.stop(); self.qq.configure(); self.qq.start()
 
     def _apply_bridge(self):
-        from aicompanion.bridge.server import runtime
-        self.database.set_setting('bridge_enabled', True)
-        problem = runtime.apply(self.database)
-        if problem: raise RuntimeError(problem)
+        self.qq.ensure_bridge()
 
     def _prepare(self):
         from aicompanion.qq import specs
@@ -196,7 +201,7 @@ class BridgePage(QWidget):
         if fraction: self.bar.setValue(int(fraction*1000))
 
     def _finished(self, error):
-        self.busy = False; self.action.setEnabled(True); self.bar.hide(); self._show_versions()
+        self.busy = False; self.action.setEnabled(True); self.bar.hide(); self._show_versions(); self._sync_from_db()
         if error:
             self.title.setText('没有成功'); self.detail.setText(error[-1200:]); self.detail.show()
             self.action.setText('重试'); self.action.show()
@@ -243,8 +248,10 @@ class BridgePage(QWidget):
         db = self.database
         self.save_people()
         old = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))
-        db.set_setting('bridge_enabled', self.enabled.isChecked()); db.set_setting('bridge_port', self.port.value())
-        if self.token.text(): db.set_setting('bridge_token', self.token.text())
+        # 只写用户在页面上改过的项（和上次同步的值比较）；没动的保持数据库里的当前值
+        if self.enabled.isChecked() != self.loaded['enabled']: db.set_setting('bridge_enabled', self.enabled.isChecked())
+        if self.port.value() != self.loaded['port']: db.set_setting('bridge_port', self.port.value())
+        if self.token.text() and self.token.text() != self.loaded['token']: db.set_setting('bridge_token', self.token.text())
         db.set_setting('bridge_public_daily', self.daily.value()); db.set_setting('qq_autostart', self.autostart.isChecked())
         db.set_setting('qq_index_url', self.index.text().strip())
         new = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))
@@ -253,7 +260,8 @@ class BridgePage(QWidget):
             problem = runtime.apply(db)
             if problem: self.detail.setText('⚠ '+problem); self.detail.show()
             try:
-                if self.qq.mode == 'auto' and not self.qq.ready():
+                if not setting(db, 'bridge_enabled'): pass   # 用户关掉了接口：尊重这个选择，不在这里重新打开
+                elif self.qq.mode == 'auto' and not self.qq.ready():
                     # 端口 / 令牌变了：重写插件配置并重启组件，让插件用上新的地址和令牌
                     self._run(self._retry if self.qq.supervisor.running('astrbot') else self.qq.configure, '正在同步配置…')
                 elif self.qq.mode == 'existing':
@@ -262,3 +270,4 @@ class BridgePage(QWidget):
                     configure.plugin_config(db.get_setting('qq_existing_root', ''), url, token)
             except Exception as error:
                 self.detail.setText('⚠ 插件配置没能同步：'+str(error)); self.detail.show()
+        self._sync_from_db()

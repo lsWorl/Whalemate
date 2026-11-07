@@ -502,7 +502,7 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
   - uv 在组件目录里装 Python 3.12 和 AstrBot 的独立虚拟环境（不用桌宠的 .venv、不改 PATH）；
   - 生成 NapCat 的 `webui.json` 和 `onebot11*.json`、AstrBot 的 `cmd_config.json`（只改 id=aicompanion_qq 那一项）、插件和插件配置；
   - 端口冲突自动换端口，所有监听都在 127.0.0.1；四个独立随机令牌（OneBot、NapCat WebUI、AstrBot 面板、插件↔桌宠）；
-  - 无窗口后台进程，pid 记在 manifest 里，结束前确认程序文件在我们目录里；
+  - 无窗口后台进程，pid、程序文件、创建时间记在 manifest 里；跨会话结束前三者都要对上，查不到身份就不动，确认退出才清记录；
   - 状态诊断依次判断：组件未准备 → 未启动 / 启动失败 → 未登录（显示二维码）→ 插件未连接 → OneBot 未连接 → 未设主人 → 已连接。
 - 插件：每 15 秒心跳，带上 OneBot 连接状态和群列表；允许的群以桌宠设置为准。
 - 桥接接口：新增 `/v1/heartbeat`。
@@ -511,11 +511,12 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - `app.py`：自动管理模式下打开桌宠时后台启动组件，退出时停掉。
 
 怎么验证：
-- 容器：`tests/test_qq_setup.py` 20 项（下载校验 / 失败 / 取消、重复安装、坏包保留旧版本、路径穿越、配置只改自己那项、坏 JSON 不覆盖、插件同名保护和失败回滚、端口冲突、启动失败且日志去掉令牌、不结束别人的进程、已有实例保护、完整诊断顺序、心跳）；`tests/test_astrbot_plugin.py` 新增心跳两项。
+- Codex 审计 8efa403 后修正：插件备份目录改为本次新建的唯一目录（不删同名的外来目录）、进程归属核对程序文件 + 创建时间、首次接入后真的打开接口且保存不会关掉、AstrBot wheel 强制哈希、测试显式 UTF-8。
+- 容器：`tests/test_qq_setup.py` 25 项、`tests/test_bridge_page.py`（Qt 页面流程，需 PySide6，在 Windows 跑）（下载校验 / 失败 / 取消、重复安装、坏包保留旧版本、路径穿越、配置只改自己那项、坏 JSON 不覆盖、插件同名保护和失败回滚、端口冲突、启动失败且日志去掉令牌、不结束别人的进程、已有实例保护、完整诊断顺序、心跳）；`tests/test_astrbot_plugin.py` 新增心跳两项。
 
 没验证的部分：
 - Windows 离线检查（待运行）；
 - 真机全流程：新环境里只从桌宠界面操作，下载、扫码、绑定主人、在 QQ 收到回复——需要用户的网络和 QQ 账号；
 - 上游文件的 SHA-256 来自 GitHub / PyPI 发布页，首次真实下载时由程序校验；
-- uv 安装 AstrBot 依赖时，依赖的完整性由 uv 按 PyPI 公布的哈希检查，我们只记录 freeze，没有逐个固定哈希；
+- AstrBot 本身用 `--no-deps --require-hashes` 按固定的 wheel 哈希安装（换镜像也核对）；它的依赖由 uv 按索引公布的哈希检查，我们只记录 freeze，没有逐个固定哈希；
 - NapCat 自己的日志可能写出它的面板令牌（上游行为），我们的诊断显示会替换掉。

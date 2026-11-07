@@ -19,7 +19,7 @@ class Archive:
 class PyPackage:
     name: str
     version: str
-    wheel_sha256: str          # 记录 PyPI 上该版本 wheel 的 SHA-256（安装后核对 uv 实际装的文件）
+    wheel_sha256: str          # 该版本 wheel 的 SHA-256：安装时用 --require-hashes 强制核对（换镜像也一样），对不上就失败
     python: str = '3.12'
     extra_index: tuple = field(default_factory=tuple)
 

@@ -109,4 +109,4 @@ B 站（看视频、评论）放到 QQ 做完后再评估；先查有没有现�
 
 - 公共文件：`ui/settings_window.py` 只改聊天平台这一页的挂载（已有）。`app.py` 加启动时自动拉起组件和退出时停止组件，几行，是 T9 自己加过的位置。**不改** `main_window.py`、`database.py`、`config.py`、`pyproject.toml`。
 - 新增 Python 依赖：无。下载用标准库 `urllib`，解压用 `zipfile`，二维码直接显示 NapCat 生成的 `qrcode.png`。
-- 新增外部组件（运行时按需下载，不进安装包，不进仓库）：NapCat.Shell.Windows.Node v4.18.41、uv 0.13.5、Python 3.12（由 uv 下载 python-build-standalone，uv 自带校验）、AstrBot 4.29.3 及其依赖（uv 按 PyPI 公布的哈希校验，装完记录 freeze）。
+- 新增外部组件（运行时按需下载，不进安装包，不进仓库）：NapCat.Shell.Windows.Node v4.18.41、uv 0.13.5、Python 3.12（由 uv 下载 python-build-standalone，uv 自带校验）、AstrBot 4.29.3（先 `--no-deps --require-hashes` 按固定 wheel 哈希装本体，再补依赖；依赖由 uv 按索引公布的哈希校验，装完记录 freeze）。

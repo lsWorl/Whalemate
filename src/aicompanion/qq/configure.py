@@ -80,25 +80,28 @@ def install_plugin(astrbot_root: Path, source: Path) -> Path:
     target = plugins/PLUGIN_NAME
     if target.exists() and not is_our_plugin(target):
         raise ConfigError(f'{target} 已存在且不是桌宠安装的，没有覆盖；请先自己移走它')
-    staging = Path(tempfile.mkdtemp(prefix=f'.{PLUGIN_NAME}-', dir=plugins))
-    backup = None
+    # 临时目录和备份目录都是本次用 mkdtemp 新建、名字唯一的；只清理这两个，plugins 里预先存在的任何目录都不碰
+    staging = Path(tempfile.mkdtemp(prefix=f'.{PLUGIN_NAME}-new-', dir=plugins))
+    backup_dir = Path(tempfile.mkdtemp(prefix=f'.{PLUGIN_NAME}-old-', dir=plugins)); backup = backup_dir/PLUGIN_NAME
+    built = staging/PLUGIN_NAME
+    moved = False
     try:
+        built.mkdir()
         for item in Path(source).iterdir():
             if item.name in ('__pycache__',) or item.name.startswith('.'): continue
-            (shutil.copytree if item.is_dir() else shutil.copy2)(item, staging/item.name)
-        (staging/MARKER).write_text('由 AICompanion 桌宠安装和更新；手动修改会在下次更新时被覆盖。\n', encoding='utf-8')
+            (shutil.copytree if item.is_dir() else shutil.copy2)(item, built/item.name)
+        (built/MARKER).write_text('由 AICompanion 桌宠安装和更新；手动修改会在下次更新时被覆盖。\n', encoding='utf-8')
         if target.exists():
-            backup = plugins/f'.{PLUGIN_NAME}-old'
-            if backup.exists(): shutil.rmtree(backup)
-            target.rename(backup)
-        staging.rename(target)
-        if backup: shutil.rmtree(backup, ignore_errors=True)
+            target.rename(backup); moved = True
+        built.rename(target)
         return target
     except Exception:
-        if backup and backup.exists() and not target.exists(): backup.rename(target)
+        if moved and backup.exists() and not target.exists(): backup.rename(target)   # 发布失败：旧插件放回原处
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+        if not (moved and backup.exists() and not target.exists()):   # 旧插件已放回或已被新版本替换，才清理本次的备份目录
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def is_our_plugin(path: Path) -> bool:

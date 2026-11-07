@@ -37,7 +37,9 @@ class FetchTests(Base):
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *a): pass
             def do_GET(self_):
-                self_.send_response(200); self_.send_header('Content-Length', str(len(payload))); self_.end_headers(); self_.wfile.write(payload)
+                self_.send_response(200); self_.send_header('Content-Length', str(len(payload))); self_.end_headers()
+                try: self_.wfile.write(payload)
+                except ConnectionError: pass   # 取消下载的用例里客户端会提前断开
         server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close()))
@@ -94,27 +96,27 @@ class InstallTests(Base):
 class ConfigureTests(Base):
     def test_napcat_config_only_touches_our_entry(self):
         home = self.root/'napcat-home'; config = home/'config'; config.mkdir(parents=True)
-        (config/'webui.json').write_text(json.dumps({'host': '::', 'port': 6099, 'token': 'old', 'theme': 'dark'}))
+        (config/'webui.json').write_text(json.dumps({'host': '::', 'port': 6099, 'token': 'old', 'theme': 'dark'}), encoding='utf-8')
         user = {'name': 'user-bot', 'enable': True, 'url': 'ws://10.0.0.2:8080', 'token': 't'}
-        (config/'onebot11_12345.json').write_text(json.dumps({'network': {'websocketClients': [user]}, 'musicSignUrl': 'keep'}))
+        (config/'onebot11_12345.json').write_text(json.dumps({'network': {'websocketClients': [user]}, 'musicSignUrl': 'keep'}), encoding='utf-8')
         configure.napcat_config(home, 6100, 'webui-secret', 'ws://127.0.0.1:6200/ws', 'onebot-secret')
         configure.napcat_config(home, 6100, 'webui-secret', 'ws://127.0.0.1:6200/ws', 'onebot-secret')   # 重复执行
-        webui = json.loads((config/'webui.json').read_text())
+        webui = json.loads((config/'webui.json').read_text(encoding='utf-8'))
         self.assertEqual((webui['host'], webui['port'], webui['token'], webui['theme']), ('127.0.0.1', 6100, 'webui-secret', 'dark'))
         for name in ('onebot11.json', 'onebot11_12345.json'):
-            clients = json.loads((config/name).read_text())['network']['websocketClients']
+            clients = json.loads((config/name).read_text(encoding='utf-8'))['network']['websocketClients']
             ours = [c for c in clients if c['name'] == specs.ONEBOT_CLIENT_NAME]
             self.assertEqual(len(ours), 1); self.assertEqual((ours[0]['url'], ours[0]['token']), ('ws://127.0.0.1:6200/ws', 'onebot-secret'))
-        self.assertIn(user, json.loads((config/'onebot11_12345.json').read_text())['network']['websocketClients'])
-        self.assertEqual(json.loads((config/'onebot11_12345.json').read_text())['musicSignUrl'], 'keep')
+        self.assertIn(user, json.loads((config/'onebot11_12345.json').read_text(encoding='utf-8'))['network']['websocketClients'])
+        self.assertEqual(json.loads((config/'onebot11_12345.json').read_text(encoding='utf-8'))['musicSignUrl'], 'keep')
 
     def test_astrbot_config_keeps_other_platforms(self):
         root = self.root/'astrbot'; configure.astrbot_init(root)
         self.assertTrue((root/'.astrbot').is_file() and (root/'data'/'plugins').is_dir())
         other = {'id': 'telegram', 'type': 'telegram', 'enable': True}
-        (root/'data'/'cmd_config.json').write_text(json.dumps({'platform': [other], 'provider': [{'id': 'x'}]}))
+        (root/'data'/'cmd_config.json').write_text(json.dumps({'platform': [other], 'provider': [{'id': 'x'}]}), encoding='utf-8')
         configure.astrbot_config(root, 6200, 'onebot-secret', 6186); configure.astrbot_config(root, 6201, 'onebot-secret', 6186)
-        conf = json.loads((root/'data'/'cmd_config.json').read_text())
+        conf = json.loads((root/'data'/'cmd_config.json').read_text(encoding='utf-8'))
         ours = [p for p in conf['platform'] if p['id'] == specs.PLATFORM_ID]
         self.assertEqual(len(ours), 1); self.assertEqual((ours[0]['ws_reverse_host'], ours[0]['ws_reverse_port']), ('127.0.0.1', 6201))
         self.assertIn(other, conf['platform']); self.assertEqual(conf['provider'], [{'id': 'x'}])
@@ -122,38 +124,56 @@ class ConfigureTests(Base):
 
     def test_broken_json_is_not_overwritten(self):
         root = self.root/'astrbot'; configure.astrbot_init(root)
-        (root/'data'/'cmd_config.json').write_text('{broken')
+        (root/'data'/'cmd_config.json').write_text('{broken', encoding='utf-8')
         with self.assertRaises(configure.ConfigError): configure.astrbot_config(root, 1, 't', 2)
-        self.assertEqual((root/'data'/'cmd_config.json').read_text(), '{broken')
+        self.assertEqual((root/'data'/'cmd_config.json').read_text(encoding='utf-8'), '{broken')
 
     def test_plugin_install_update_and_protection(self):
         root = self.root/'astrbot'; configure.astrbot_init(root)
         source = configure.plugin_source()
         target = configure.install_plugin(root, source)
         self.assertTrue(configure.is_our_plugin(target)); self.assertTrue((target/'main.py').is_file())
-        (target/'stale.txt').write_text('old'); configure.install_plugin(root, source)   # 更新：整体替换
+        (target/'stale.txt').write_text('old', encoding='utf-8'); configure.install_plugin(root, source)   # 更新：整体替换
         self.assertFalse((target/'stale.txt').exists())
         configure.plugin_config(root, 'http://127.0.0.1:18765', 'tok')
         path = root/'data'/'config'/f'{specs.PLUGIN_NAME}_config.json'
-        data = json.loads(path.read_text()); data['offline_reply'] = '我的离线提示'; path.write_text(json.dumps(data))
+        data = json.loads(path.read_text(encoding='utf-8')); data['offline_reply'] = '我的离线提示'; path.write_text(json.dumps(data), encoding='utf-8')
         configure.plugin_config(root, 'http://127.0.0.1:19000', 'tok2')
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding='utf-8'))
         self.assertEqual((data['pet_url'], data['token'], data['offline_reply']), ('http://127.0.0.1:19000', 'tok2', '我的离线提示'))
         # 同名但不是我们装的：拒绝，原样保留
         other = self.root/'other'; configure.astrbot_init(other)
-        foreign = other/'data'/'plugins'/specs.PLUGIN_NAME; foreign.mkdir(); (foreign/'main.py').write_text('user code')
+        foreign = other/'data'/'plugins'/specs.PLUGIN_NAME; foreign.mkdir(); (foreign/'main.py').write_text('user code', encoding='utf-8')
         with self.assertRaises(configure.ConfigError): configure.install_plugin(other, source)
-        self.assertEqual((foreign/'main.py').read_text(), 'user code')
+        self.assertEqual((foreign/'main.py').read_text(encoding='utf-8'), 'user code')
+
+    def test_foreign_backup_named_like_ours_is_never_touched(self):
+        """Codex：plugins 里预先存在的 .astrbot_plugin_aicompanion-old（不是我们建的）不能被删，更新成功或失败都一样。"""
+        root = self.root/'astrbot'; configure.astrbot_init(root)
+        configure.install_plugin(root, configure.plugin_source())
+        user = root/'data'/'plugins'/f'.{specs.PLUGIN_NAME}-old'; user.mkdir(); (user/'user-backup.txt').write_text('mine', encoding='utf-8')
+        configure.install_plugin(root, configure.plugin_source())
+        self.assertEqual((user/'user-backup.txt').read_text(encoding='utf-8'), 'mine')
+        from unittest import mock
+        real = Path.rename
+        def fail_publish(self_, target):
+            if Path(target).name == specs.PLUGIN_NAME and Path(target).parent.name == 'plugins' and '-new-' in str(self_): raise OSError('注入的发布失败')
+            return real(self_, target)
+        with mock.patch.object(Path, 'rename', fail_publish):
+            with self.assertRaises(OSError): configure.install_plugin(root, configure.plugin_source())
+        self.assertEqual((user/'user-backup.txt').read_text(encoding='utf-8'), 'mine')
+        self.assertTrue(configure.is_our_plugin(root/'data'/'plugins'/specs.PLUGIN_NAME))          # 旧插件放回原处
+        self.assertEqual(sorted(p.name for p in (root/'data'/'plugins').iterdir()), sorted([specs.PLUGIN_NAME, f'.{specs.PLUGIN_NAME}-old']))
 
     def test_failed_plugin_update_keeps_old(self):
         root = self.root/'astrbot'; configure.astrbot_init(root)
         target = configure.install_plugin(root, configure.plugin_source())
-        broken = self.root/'broken'; broken.mkdir(); (broken/'main.py').write_text('x')
+        broken = self.root/'broken'; broken.mkdir(); (broken/'main.py').write_text('x', encoding='utf-8')
         (broken/'sub').mkdir()
         from unittest import mock
         with mock.patch('aicompanion.qq.configure.shutil.copytree', side_effect=OSError('磁盘满')):
             with self.assertRaises(OSError): configure.install_plugin(root, broken)
-        self.assertTrue(configure.is_our_plugin(target)); self.assertIn('AICompanionBridge', (target/'main.py').read_text())
+        self.assertTrue(configure.is_our_plugin(target)); self.assertIn('AICompanionBridge', (target/'main.py').read_text(encoding='utf-8'))
         self.assertEqual([p.name for p in (root/'data'/'plugins').iterdir()], [specs.PLUGIN_NAME])
 
 
@@ -184,11 +204,17 @@ class ManagerBase(Base):
 
     fail_on = None
 
+    wheel_bytes_ok = True
+
     def fake_run(self, args, **kwargs):
         self.calls.append(args[1:])
         if self.fail_on and self.fail_on in args: return subprocess.CompletedProcess(args, 1, '', 'network unreachable')
+        if '--require-hashes' in args:
+            pinned = Path(args[args.index('-r')+1]).read_text(encoding='utf-8')
+            if f'--hash=sha256:{specs.ASTRBOT.wheel_sha256}' not in pinned or not self.wheel_bytes_ok:
+                return subprocess.CompletedProcess(args, 1, '', 'Hash mismatch for astrbot==4.29.3')
         if args[1] == 'venv':
-            scripts = Path(args[2])/'Scripts'; scripts.mkdir(parents=True); (scripts/'astrbot.exe').write_text('x'); (scripts/'python.exe').write_text('x')
+            scripts = Path(args[2])/'Scripts'; scripts.mkdir(parents=True); (scripts/'astrbot.exe').write_text('x', encoding='utf-8'); (scripts/'python.exe').write_text('x', encoding='utf-8')
         out = f'astrbot=={specs.ASTRBOT.version}\naiohttp==3.10.0\n' if args[1:3] == ['pip', 'freeze'] else ''
         return subprocess.CompletedProcess(args, 0, out, '')
 
@@ -202,12 +228,12 @@ class PrepareTests(ManagerBase):
         self.assertEqual(self.qq.ready(), [])
         keys = self.db.get_setting('qq_secrets'); ports = self.db.get_setting('qq_ports')
         self.assertEqual(len({keys['onebot'], keys['webui'], keys['dashboard'], self.qq.bridge()[1]}), 4)   # 四个独立的随机令牌
-        astrbot = json.loads((self.qq.layout.astrbot_home/'data'/'cmd_config.json').read_text())
+        astrbot = json.loads((self.qq.layout.astrbot_home/'data'/'cmd_config.json').read_text(encoding='utf-8'))
         ours = next(p for p in astrbot['platform'] if p['id'] == specs.PLATFORM_ID)
         self.assertEqual((ours['ws_reverse_port'], ours['ws_reverse_token']), (ports['onebot'], keys['onebot']))
-        onebot = json.loads((self.qq.layout.napcat_home/'config'/'onebot11.json').read_text())['network']['websocketClients'][0]
+        onebot = json.loads((self.qq.layout.napcat_home/'config'/'onebot11.json').read_text(encoding='utf-8'))['network']['websocketClients'][0]
         self.assertEqual((onebot['url'], onebot['token']), (f'ws://127.0.0.1:{ports["onebot"]}/ws', keys['onebot']))
-        plugin = json.loads((self.qq.layout.astrbot_home/'data'/'config'/f'{specs.PLUGIN_NAME}_config.json').read_text())
+        plugin = json.loads((self.qq.layout.astrbot_home/'data'/'config'/f'{specs.PLUGIN_NAME}_config.json').read_text(encoding='utf-8'))
         self.assertEqual(plugin['token'], self.qq.bridge()[1])
         installs = sum(1 for c in self.calls if c[:2] == ['pip', 'install'])
         self.qq.prepare()                                                             # 重复安装：复用，不重装 AstrBot
@@ -224,6 +250,20 @@ class PrepareTests(ManagerBase):
         after = self.qq.layout.manifest()['components']['astrbot']
         self.assertEqual(after['path'], before['path']); self.assertTrue(Path(before['path']).is_dir())   # 旧环境还在、仍在用
         self.assertEqual(len(list((self.qq.layout.root/'astrbot').iterdir())), 1)                         # 失败的新环境已清掉
+
+    def test_astrbot_wheel_hash_is_enforced(self):
+        """Codex：同版本号、不同字节的 wheel 必须失败，旧环境和 manifest 不变。"""
+        self.qq.prepare(); before = self.qq.layout.manifest()['components']['astrbot']
+        pinned = [c for c in self.calls if '--require-hashes' in c]
+        self.assertTrue(pinned and '--no-deps' in pinned[0])                    # 先只装 AstrBot 本身，强制哈希
+        components = self.qq.layout.manifest()['components']; components['astrbot']['version'] = 'old'
+        self.qq.layout.update_manifest(components=components)
+        self.wheel_bytes_ok = False                                               # 镜像给了同版本号但不同内容的文件
+        with self.assertRaises(SetupError) as caught: self.qq.prepare()
+        self.assertIn('Hash mismatch', str(caught.exception))
+        after = self.qq.layout.manifest()['components']['astrbot']
+        self.assertEqual((after['path'], after['version']), (before['path'], 'old'))
+        self.assertEqual(len(list((self.qq.layout.root/'astrbot').iterdir())), 1)
 
     def test_port_conflicts_are_avoided(self):
         self.free_ports = {6199, 6099}   # 这两个被别的程序占了
@@ -242,21 +282,48 @@ class ProcessTests(ManagerBase):
         def popen(args, **kwargs):
             kwargs['stdout'].write(f'WebUi User Panel Url: http://127.0.0.1:6099/webui?token={secret}\n'.encode())
             return FakeProcess(code=1)
-        self.qq.supervisor = Supervisor(self.qq.layout, path_of=lambda pid: None, popen=popen)
+        self.qq.supervisor = Supervisor(self.qq.layout, identity_of=lambda pid: None, popen=popen)
         self.qq.start()
         status = self.qq.diagnose()
         self.assertEqual(status.code, 'start_failed'); self.assertNotIn(secret, status.detail); self.assertIn('***', status.detail)
         self.assertNotIn(secret, self.qq.diagnostics_text())
 
+    def recorded(self):
+        layout = Layout(self.root/'qq'); exe = str(layout.root/'napcat'/'1.0'/'node.exe')
+        layout.update_manifest(processes={'napcat': {'pid': 424242, 'exe': exe, 'created': 111}})
+        return layout, exe
+
     def test_never_kills_processes_that_are_not_ours(self):
-        layout = Layout(self.root/'qq'); killed = []
-        layout.update_manifest(processes={'napcat': {'pid': 999}})
-        sup = Supervisor(layout, path_of=lambda pid: r'C:\Windows\explorer.exe')     # pid 已被别的程序复用
-        import aicompanion.qq.supervisor as module
-        original = module.subprocess.run; module.subprocess.run = lambda *a, **k: killed.append(a)
-        try: self.assertFalse(sup.stop('napcat'))
-        finally: module.subprocess.run = original
-        self.assertEqual(killed, []); self.assertFalse(sup.running('napcat'))
+        """Codex 的无副作用探针：查不到身份、同目录里的别的程序、同路径但创建时间不同（pid 复用）、目录外的程序，都不能结束。"""
+        layout, exe = self.recorded()
+        for identity in (('', 0), (str(layout.root/'uv'/'0.13.5'/'uv.exe'), 111), (exe, 999), (r'C:\Windows\explorer.exe', 111), (exe, 0)):
+            killed = []
+            sup = Supervisor(layout, identity_of=lambda pid, i=identity: i, kill=lambda pid, t: killed.append(pid))
+            self.assertFalse(sup.stop('napcat', timeout=0.1), identity); self.assertEqual(killed, [], identity)
+            self.assertFalse(sup.running('napcat'), identity)
+            self.assertIn('napcat', layout.manifest()['processes'], identity)   # 还在跑的未知进程：记录保留，不当成已结束
+
+    def test_stop_ours_confirms_exit_before_forgetting(self):
+        layout, exe = self.recorded()
+        alive = {'v': True}; killed = []
+        sup = Supervisor(layout, identity_of=lambda pid: (exe, 111) if alive['v'] else None,
+                         kill=lambda pid, t: killed.append(pid))
+        self.assertFalse(sup.stop('napcat', timeout=0.3))                        # 结束命令没生效：返回失败，记录保留
+        self.assertEqual(killed, [424242]); self.assertIn('napcat', layout.manifest()['processes'])
+        sup.kill = lambda pid, t: (killed.append(pid), alive.update(v=False))
+        self.assertTrue(sup.stop('napcat', timeout=1)); self.assertNotIn('napcat', layout.manifest().get('processes', {}))
+
+    def test_exited_process_record_is_cleaned(self):
+        layout, exe = self.recorded()
+        sup = Supervisor(layout, identity_of=lambda pid: None, kill=lambda pid, t: self.fail('不该结束'))
+        self.assertFalse(sup.stop('napcat')); self.assertNotIn('napcat', layout.manifest().get('processes', {}))
+
+    def test_session_child_is_stopped_directly(self):
+        layout = Layout(self.root/'qq'); proc = FakeProcess(code=None, pid=777); killed = []
+        sup = Supervisor(layout, identity_of=lambda pid: ('', 0), popen=lambda args, **k: proc,
+                         kill=lambda pid, t: (killed.append(pid), setattr(proc, 'code', 0)))
+        sup.start('napcat', [layout.root/'napcat'/'node.exe'], self.root, {})
+        self.assertTrue(sup.running('napcat')); self.assertTrue(sup.stop('napcat', timeout=1)); self.assertEqual(killed, [777])
 
     def test_start_requires_prepared_components(self):
         self.db.set_setting('qq_mode', 'auto')
@@ -268,12 +335,12 @@ class ExistingInstanceTests(ManagerBase):
     def test_attach_only_touches_our_plugin(self):
         root = self.root/'MyAstrBot'; configure.astrbot_init(root)
         cmd = {'platform': [{'id': 'mine', 'type': 'aiocqhttp'}], 'provider': [{'id': 'gpt'}]}
-        (root/'data'/'cmd_config.json').write_text(json.dumps(cmd))
-        other = root/'data'/'plugins'/'someone_else'; other.mkdir(); (other/'main.py').write_text('keep')
-        (root/'data'/'config'/'someone_else_config.json').write_text('{"a":1}')
+        (root/'data'/'cmd_config.json').write_text(json.dumps(cmd), encoding='utf-8')
+        other = root/'data'/'plugins'/'someone_else'; other.mkdir(); (other/'main.py').write_text('keep', encoding='utf-8')
+        (root/'data'/'config'/'someone_else_config.json').write_text('{"a":1}', encoding='utf-8')
         self.qq.attach_existing(root)
-        self.assertEqual(json.loads((root/'data'/'cmd_config.json').read_text()), cmd)
-        self.assertEqual((other/'main.py').read_text(), 'keep'); self.assertEqual((root/'data'/'config'/'someone_else_config.json').read_text(), '{"a":1}')
+        self.assertEqual(json.loads((root/'data'/'cmd_config.json').read_text(encoding='utf-8')), cmd)
+        self.assertEqual((other/'main.py').read_text(encoding='utf-8'), 'keep'); self.assertEqual((root/'data'/'config'/'someone_else_config.json').read_text(encoding='utf-8'), '{"a":1}')
         self.assertTrue(configure.is_our_plugin(root/'data'/'plugins'/specs.PLUGIN_NAME))
         self.assertEqual(self.db.get_setting('qq_mode'), 'existing')
         with self.assertRaises(SetupError): self.qq.attach_existing(self.root/'not-astrbot')
@@ -292,7 +359,7 @@ class DiagnoseTests(ManagerBase):
         self.db.set_setting('qq_mode', 'auto')
         self.assertEqual(self.qq.diagnose().code, 'not_ready')
         self.qq.prepare()
-        self.qq.supervisor = Supervisor(self.qq.layout, path_of=lambda pid: None, popen=lambda args, **k: FakeProcess())
+        self.qq.supervisor = Supervisor(self.qq.layout, identity_of=lambda pid: None, popen=lambda args, **k: FakeProcess())
         self.assertEqual(self.qq.diagnose().code, 'stopped')
         self.qq.start(); self.qq.webui_factory = self.WebUI; self.qq._webui = None
         qr = self.qq.layout.napcat_home/'cache'/'qrcode.png'; qr.parent.mkdir(parents=True, exist_ok=True); qr.write_bytes(b'png')
