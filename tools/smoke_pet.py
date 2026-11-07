@@ -24,6 +24,9 @@ def use_placeholder_rig(mode: str, temp: Path) -> None:
     if mode == 'coopanion': return
     if mode == 'auto':
         from aicompanion.body.rig_import import find_whale
+        own = ROOT/'src'/'aicompanion'/'characters'/'deepseek-whale'/'rig'/'rig.json'
+        if own.is_file():
+            print('骨骼形象：仓库自带的十姿态鲸娘', flush=True); return
         if find_whale(ROOT): return
     try:
         sys.path.insert(0, str(ROOT/'tools'))
@@ -41,8 +44,7 @@ def use_posepack(source: str, temp: Path) -> None:
     import os
     from aicompanion.body.pose_pack import compile_posepack
     report = compile_posepack(Path(source), temp/'posepack-rig', verify=True)
-    bad = {k: v for k, v in report.verified.items() if v}
-    print(f'骨骼形象：十姿态分层包 {len(report.poses)} 个姿态，回拼比对' + ('全部零差异' if not bad else f'有差异 {bad}'), flush=True)
+    print(f'骨骼形象：十姿态分层包 {len(report.poses)} 个姿态，回拼比对 {len(report.verified)} 个状态全部零差异', flush=True)
     os.environ['AICOMPANION_RIG'] = str(temp/'posepack-rig'/'rig.json')
 
 
@@ -51,7 +53,7 @@ def main():
     parser.add_argument('--preview', action='store_true', help='Show a temporary pet for up to 90 seconds.')
     parser.add_argument('--emilia', action='store_true', help='Verify the original illustration mesh effect, not Cubism.')
     parser.add_argument('--rig', choices=('auto', 'placeholder', 'coopanion'), default='auto',
-                        help='骨骼形象来源：auto = 本机有 Coopanion 就用大肥鱼，没有就用合成的占位形象包')
+                        help='骨骼形象来源：auto = 仓库自带的十姿态鲸娘 → 本机 Coopanion 大肥鱼 → 合成的占位形象包')
     parser.add_argument('--posepack', metavar='DIR', help='用十姿态分层包（pose-layered-v2 目录）自检，优先于 --rig')
     args = parser.parse_args()
     from aicompanion.body.webengine_flags import apply_webengine_flags

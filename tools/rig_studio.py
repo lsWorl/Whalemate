@@ -4,7 +4,7 @@
   python tools/rig_studio.py studio  art/deepseek-whale [--out <编译输出目录>]
   python tools/rig_studio.py compile-poses <pose-layered-v2 目录> [输出目录] [--verify] [--texture-scale 0.5]
      十姿态分层包（原鲸娘逐姿态切片）→ AICompanionPoseRig；默认输出到 characters/deepseek-whale/rig。
-     --verify 把切片按 z 回拼，和 originals/ 逐像素比对，任何一张不为 0 就失败。
+     --verify 把切片按 z 回拼，和 originals/ 逐像素比对；任何一张有差异或缺原图就失败，并且不改动输出目录。
 
 需要 Pillow（pip install -e .[studio]）。studio 里：拖动彩色圆点标注支点，拖动虚线框的两个角调整头部范围；
 "保存并编译"写回 pack.json 并编译；右侧预览用的是和桌宠完全相同的渲染器，可以切姿势、表情、动作。
@@ -55,12 +55,7 @@ def cmd_compile_poses(art: Path, out: Path | None, verify: bool, texture_scale: 
     except PackError as error:
         print(error); return 1
     print(f'已编译到 {out}：{len(report.poses)} 个姿态，{report.parts} 个图层，{report.variants} 个替换层')
-    if verify:
-        bad = {k: v for k, v in report.verified.items() if v}
-        missing = [k for k, v in report.verified.items() if v is None]
-        print('回拼比对：' + ('全部零差异' if not bad else '、'.join(f'{k} 差 {v} 像素' for k, v in bad.items()))
-              + (f'；没有原图可比：{"、".join(missing)}' if missing else ''))
-        if bad: return 2
+    if verify: print(f'回拼比对：{len(report.verified)} 个状态全部零差异（Alpha 整幅、颜色按覆盖像素）')
     if report.disabled:
         print(f'局部摆动未就绪（没有标注支点，幅度为 0）：{len(report.disabled)} 处，如 {"、".join(report.disabled[:6])}')
     for warning in report.warnings: print('提示：', warning)

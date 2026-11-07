@@ -9,7 +9,7 @@
  */
 (function () {
   'use strict';
-  const { Spring, readJSON, alphaOf, meshHit, gridMesh } = window.RigRenderer;
+  const { Spring, readJSON, alphaOf, meshHit, gridMesh, loadOwnTexture } = window.RigRenderer;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   const rad = d => d * Math.PI / 180;
@@ -41,11 +41,18 @@
     const figure = new PIXI.Container(); figure.sortableChildren = true;
     const inner = new PIXI.Container(); inner.sortableChildren = true; figure.addChild(inner);   // 跳跃、挤压在这一层
     const poses = {};
+    try { await buildPoses(); } catch (error) {
+      // 加载中途失败：释放已经加载的纹理再抛出，不留泄漏
+      figure.destroy({ children: true }); for (const tex of textures) tex.destroy(true); throw error;
+    }
+    return { rig, figure, inner, poses, textures };
+
+    async function buildPoses() {
     for (const [name, spec] of Object.entries(rig.poses)) {
       const layer = new PIXI.Container(); layer.sortableChildren = true; layer.visible = false; layer.zIndex = 0;
       const meshes = [], byId = {};
       const build = async (part) => {
-        const texture = await PIXI.Texture.fromURL(base + part.tex); texture.alpha = alphaOf(texture); textures.push(texture);
+        const texture = await loadOwnTexture(base + part.tex); texture.alpha = alphaOf(texture); textures.push(texture);   // 每个引擎自己的纹理，不进全局缓存
         const grid = part.hair ? [4, 8] : part.swing ? [3, 3] : [1, 1];
         const mesh = gridMesh(texture, part.rect, grid, null);
         mesh.zIndex = part.z; mesh.part = part; layer.addChild(mesh); meshes.push(mesh);
@@ -59,9 +66,9 @@
       }
       const blush = new PIXI.Graphics(); blush.zIndex = 8.5; layer.addChild(blush);
       layer.sortChildren(); inner.addChild(layer);
-      poses[name] = { name, spec, layer, meshes, byId, variants, blush, shown: null };
+      poses[name] = { name, spec, layer, meshes, byId, variants, blush, shown: null, swingNodes: new Set(spec.swing_nodes || []) };
     }
-    return { rig, figure, inner, poses, textures };
+    }
   }
 
   function createEngine(app, built) {
@@ -76,7 +83,7 @@
       facing: 1, gazeX: 0, gazeY: 0, blushBoost: 0 };
     let t = 0, frames = 0, nextBlink = 1.4, blinkUntil = -1, flap = true, nextFlap = 0, lookTarget = [0, 0], nextLook = 4;
     let hopStart = -1, hopDur = 0, hopH = 0, wasHop = false, exprOverride = null, motion = null, disposed = false;
-    let current = null, previous = null, fadeStart = -1, variantShown = null;
+    let current = null, previous = null, fadeStart = -1, variantShown = null, lastMats = {};
     let seed = 97; const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const [vx0, vy0, vx1, vy1] = rig.space.view, grab = rig.space.grab;
 
@@ -123,14 +130,15 @@
 
     // 节点矩阵：body 呼吸（以脚底为中心纵向缩放），head 和 hair 一起绕脖子转，有标注支点的部件自己摆
     function nodeMatrices(pose, angles) {
-      const nodes = pose.spec.nodes, out = {}, motionCfg = pose.spec.motion;
+      const nodes = pose.spec.nodes, out = {}, motionCfg = pose.spec.motion, swingNodes = pose.swingNodes;
       const headPivot = (nodes.head || nodes.body).pivot;
       const localOf = (name) => {
         const n = nodes[name];
         if (name === 'body') return local(n.pivot[0], n.pivot[1], 0, 1, 1 + angles.breathe);
         if (name === 'head' || name === 'hair') return local(headPivot[0], headPivot[1], angles.head);
         const kind = { fin_left: 'fin', fin_right: 'fin', ahoge: 'ahoge', tail: 'tail' }[name];
-        if (kind) return local(n.pivot[0], n.pivot[1], clamp(angles[kind] * (name === 'fin_right' ? -1 : 1), -motionCfg[kind], motionCfg[kind]));
+        // 只有编译时确认就绪（补画 + 自己的枢轴）的节点才摆；未就绪的节点矩阵就是父节点的（只随身体），相对旋转严格为 0
+        if (kind && swingNodes.has(name)) return local(n.pivot[0], n.pivot[1], clamp(angles[kind] * (name === 'fin_right' ? -1 : 1), -motionCfg[kind], motionCfg[kind]));
         return IDENT;
       };
       const resolve = (name, seen = new Set()) => {
@@ -250,7 +258,7 @@
       }
       const blinking = t < blinkUntil;
       variantShown = setVariant(current, blinking, shown === 'talking' && open < 0.12);
-      const mats = deform(current, angles);
+      const mats = deform(current, angles); lastMats = mats;
       if (previous) deform(previous, angles);
       drawBlush(current, clamp(blush + state.blushBoost, 0, 1), mats);
       // ---- 整体 ----
@@ -308,7 +316,12 @@
       set(values) { const { pose, ...rest } = values; Object.assign(state, rest); if (pose) setPose(pose); },
       diagnostics: () => ({ kind: 'posepack', frames, t, pose: state.pose, shown: current && current.name, variant: variantShown,
         fading: !!previous, head: S.head.x, hair: S.hair.x, swing: S.swing.x, facing: S.facing.x, hopping: hopping(),
-        textures: textures.length, poses: Object.keys(poses).length }),
+        textures: textures.length, poses: Object.keys(poses).length, swinging: current ? [...current.swingNodes] : [],
+        // 鳍 / 呆毛 / 尾巴相对父节点的旋转角（度）：未就绪的必须是 0
+        relative: Object.fromEntries(['fin_left', 'fin_right', 'ahoge', 'tail'].filter(n => lastMats[n] && current.spec.nodes[n]).map(n => {
+          const m = lastMats[n], p = lastMats[current.spec.nodes[n].parent] || IDENT;
+          return [n, (Math.atan2(m[1], m[0]) - Math.atan2(p[1], p[0])) * 180 / Math.PI];
+        })) }),
     };
   }
 

@@ -96,6 +96,8 @@ class PosePackTest(unittest.TestCase):
         self.assertIsNone(next(p for p in idle['parts'] if p['id'] == 'fin_left')['swing'])
         self.assertEqual(next(p for p in rig['poses']['talking']['parts'] if p['id'] == 'tail')['swing'], 'tail')
         self.assertIn('idle/tail', report.disabled); self.assertNotIn('talking/tail', report.disabled)
+        # 渲染器只让 swing_nodes 里的节点摆：未就绪的 tail 不在里面（节点矩阵只随身体）
+        self.assertEqual(idle['swing_nodes'], []); self.assertEqual(rig['poses']['talking']['swing_nodes'], ['tail'])
         # edge_residual 只随身体；手臂和腿没有摆动
         self.assertEqual(next(p for p in idle['parts'] if p['id'] == 'edge_residual')['node'], 'body')
         self.assertTrue(all(p['swing'] is None for p in idle['parts'] if p['id'].startswith(('arm_', 'leg_'))))
@@ -118,8 +120,45 @@ class PosePackTest(unittest.TestCase):
         from aicompanion.body.pose_pack import compile_posepack
         art = make_source(self.root/'art')
         Image.new('RGBA', (5, 5), (255, 0, 0, 255)).save(art/'poses'/'idle'/'cropped'/'mouth.png')   # 改掉一层
-        report = compile_posepack(art, self.root/'rig', verify=True)
-        self.assertGreater(report.verified['idle'], 0); self.assertEqual(report.verified['talking'], 0)
+        from aicompanion.body.pose_pack import read_source, check, verify_composites
+        poses = check(art, read_source(art))[0]
+        result = verify_composites(art, read_source(art), poses)
+        self.assertGreater(result['idle'], 0); self.assertEqual(result['talking'], 0)
+
+    def test_failed_verify_keeps_previous_generation(self):
+        """--verify 不通过时不发布：旧输出整代（rig.json + 全部贴图）哈希不变。"""
+        import hashlib
+        from PIL import Image
+        from aicompanion.body.pose_pack import compile_posepack
+        from aicompanion.body.rig_pack import PackError
+        art = make_source(self.root/'art'); out = self.root/'rig'
+        compile_posepack(art, out, verify=True)
+        digest = lambda: {str(p.relative_to(out)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.rglob('*')) if p.is_file()}
+        before = digest()
+        Image.new('RGBA', (5, 5), (255, 0, 0, 255)).save(art/'poses'/'idle'/'cropped'/'mouth.png')
+        with self.assertRaises(PackError) as caught: compile_posepack(art, out, verify=True)
+        self.assertIn('idle 有', str(caught.exception)); self.assertEqual(digest(), before)
+        self.assertEqual([p.name for p in self.root.iterdir() if p.name.startswith('.rig-')], [])
+
+    def test_verify_fails_when_reference_missing(self):
+        from aicompanion.body.pose_pack import compile_posepack
+        from aicompanion.body.rig_pack import PackError
+        art = make_source(self.root/'art')
+        model = json.loads((art/'poses'/'idle'/'model.json').read_text(encoding='utf-8')); model['source'] = 'originals/nope.png'
+        (art/'poses'/'idle'/'model.json').write_text(json.dumps(model), encoding='utf-8')
+        with self.assertRaises(PackError) as caught: compile_posepack(art, self.root/'rig', verify=True)
+        self.assertIn('idle 没有可比对的原图', str(caught.exception)); self.assertFalse((self.root/'rig').exists())
+
+    def test_verify_counts_alpha_one_differences(self):
+        """原图里 alpha=1 的像素在回拼里没有：Alpha 整幅比较，必须查出来。"""
+        from PIL import Image
+        from aicompanion.body.pose_pack import compile_posepack
+        from aicompanion.body.rig_pack import PackError
+        art = make_source(self.root/'art')
+        with Image.open(art/'originals'/'idle.png') as image:
+            image = image.convert('RGBA'); image.putpixel((2, 2), (0, 0, 0, 1)); image.putpixel((3, 2), (9, 9, 9, 1)); image.save(art/'originals'/'idle.png')
+        with self.assertRaises(PackError) as caught: compile_posepack(art, self.root/'rig', verify=True)
+        self.assertIn('idle 有 2 个像素', str(caught.exception))
 
     def test_missing_pose_and_output_guard(self):
         import shutil

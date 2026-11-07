@@ -41,6 +41,17 @@
     });
   }
 
+  /* 每个引擎自己持有的纹理：不用 Texture.fromURL（它按 URL 进全局缓存，同一个模型重载时新旧引擎会共用同一批纹理，
+     旧引擎 dispose 时就把新引擎正在用的纹理销毁了）。这里的纹理不进缓存，谁加载谁释放。 */
+  function loadOwnTexture(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(new PIXI.Texture(new PIXI.BaseTexture(new PIXI.ImageResource(img))));
+      img.onerror = () => reject(new Error('读取失败 ' + url));
+      img.src = url;
+    });
+  }
+
   /* ---------- 变形器 ---------- */
   function makeDeformers(defs) {
     const params = {};
@@ -151,7 +162,7 @@
     const base = url.slice(0, url.lastIndexOf('/') + 1);
     const tex = {};
     const load = async name => {
-      if (!tex[name]) { tex[name] = await PIXI.Texture.fromURL(base + name); tex[name].alpha = alphaOf(tex[name]); }
+      if (!tex[name]) { tex[name] = await loadOwnTexture(base + name); tex[name].alpha = alphaOf(tex[name]); }
       return tex[name];
     };
     const def = makeDeformers(rig.deformers);
@@ -200,7 +211,7 @@
     if (talkMouth) talkMouth.visible = false;
     figure.sortChildren();
     const arms = { near: meshes.filter(m => m.deformer === 'armNear'), far: meshes.filter(m => m.deformer === 'armFar') };
-    return { rig, figure, meshes, def, faceSets, talkMouth, blush, arms };
+    return { rig, figure, meshes, def, faceSets, talkMouth, blush, arms, textures: Object.values(tex) };
   }
 
   /* ---------- 动作引擎 ---------- */
@@ -458,10 +469,9 @@
       motion = { name, start: t, dur: MOTIONS[name] }; S.squash.kick(-0.8); return true;
     }
     function dispose() {
-      // 换模型时释放贴图（同一贴图可能被多个网格共用，按贴图去重）
-      const seen = new Set(meshes.map(m => m.texture));
+      // 换模型时释放这个引擎自己加载的贴图（loadOwnTexture，不和别的引擎共用）
       figure.destroy({ children: true });
-      for (const tex of seen) tex.destroy(true);
+      for (const tex of built.textures || []) tex.destroy(true);
     }
     return {
       tick, hop, bounce, setPose, hitmap, probe, state, express, playMotion, dispose,
@@ -472,5 +482,5 @@
     };
   }
 
-  window.RigRenderer = { createFigure, createEngine, Spring, readJSON, alphaOf, meshHit, gridMesh };
+  window.RigRenderer = { createFigure, createEngine, Spring, readJSON, alphaOf, meshHit, gridMesh, loadOwnTexture };
 })();

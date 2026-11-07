@@ -108,7 +108,12 @@ def compile_posepack(art: str | Path, out: str | Path, texture_scale: float = 0.
     character = str(root.get('id') or 'deepseek-whale')
     if not PACK_ID.match(character): problems.append('model.json 的 id 只能用小写字母、数字和连字符')
     if problems: raise PackError(problems)
-    if verify: report.verified = verify_composites(art, root, poses)
+    if verify:
+        # 发布之前完成严格校验：任一状态有差异或缺参考原图就失败，旧输出原样保留
+        report.verified = verify_composites(art, root, poses)
+        bad = [f'{k} 有 {v} 个像素和原图不同' for k, v in report.verified.items() if v]
+        bad += [f'{k} 没有可比对的原图（source 缺失）' for k, v in report.verified.items() if v is None]
+        if bad: raise PackError(['回拼校验没通过，没有改动输出：'] + bad)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     final, temp = out, Path(tempfile.mkdtemp(prefix=f'.{out.name}-', dir=out.parent))
@@ -169,7 +174,8 @@ def compile_posepack(art: str | Path, out: str | Path, texture_scale: float = 0.
                 variants[variant] = layers; report.variants += len(layers)
             eyes = [p for p in parts if p['id'] in ('eye_left', 'eye_right')]
             cheeks = [[(p['rect'][0]+p['rect'][2])/2, p['rect'][3]+1.5] for p in eyes]
-            runtime['poses'][name] = {'anchor': model['anchor'], 'airborne': bool(model.get('airborne')), 'nodes': nodes, 'parts': parts,
+            swing_nodes = sorted({p['node'] for p in parts if p.get('swing')})
+            runtime['poses'][name] = {'swing_nodes': swing_nodes, 'anchor': model['anchor'], 'airborne': bool(model.get('airborne')), 'nodes': nodes, 'parts': parts,
                                       'variants': variants, 'motion': motion, 'cheeks': cheeks}
             report.poses.append(name); report.parts += len(parts)
         (temp/'rig.json').write_text(json.dumps(runtime, ensure_ascii=False, indent=1), encoding='utf-8')
@@ -211,7 +217,7 @@ def composite(art: Path, model: dict, variant: str | None = None):
 
 
 def verify_composites(art: Path, root: dict, poses: dict) -> dict:
-    """回拼检查：每个姿态（及替换状态）的切片回拼和原图比对，返回 {状态: 不同像素数}；全部应为 0。"""
+    """回拼检查：每个姿态（及替换状态）的切片回拼和原图比对，返回 {状态: 不同像素数，缺原图为 None}；全部应为 0。"""
     from PIL import Image, ImageChops
     result = {}
     for name, model in poses.items():
@@ -222,9 +228,10 @@ def verify_composites(art: Path, root: dict, poses: dict) -> dict:
             with Image.open(art/source) as original:
                 original = original.convert('RGBA')
                 diff = ImageChops.difference(mine, original)
-            # 只看可见像素：两边都几乎全透明（alpha ≤ 1）的像素颜色不同不算
+            # Alpha 通道独立、整幅比较（alpha=1 的差异也算）；颜色只在任一边 alpha>0 的像素上比（全透明像素的 RGB 没有意义）
             r, g, b, a = diff.split()
-            changed = ImageChops.lighter(ImageChops.lighter(r, g), ImageChops.lighter(b, a)).point(lambda v: 255 if v else 0)
-            visible = ImageChops.lighter(mine.getchannel('A'), original.getchannel('A')).point(lambda v: 255 if v > 1 else 0)
-            result[label] = ImageChops.multiply(changed, visible).histogram()[255]
+            alpha_diff = a.point(lambda v: 255 if v else 0)
+            rgb = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+            covered = ImageChops.lighter(mine.getchannel('A'), original.getchannel('A')).point(lambda v: 255 if v else 0)
+            result[label] = ImageChops.lighter(alpha_diff, ImageChops.multiply(rgb, covered)).histogram()[255]
     return result

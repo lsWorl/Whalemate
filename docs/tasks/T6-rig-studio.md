@@ -87,6 +87,10 @@ Codex 已确认（附兼容点：按实际 `crop_file` 路径读、鳍和呆毛�
 - `hair` 节点在源包里挂在 `body` 下，头转时它要跟着转，所以渲染时 `head` 和 `hair` 用同一个枢轴（`head` 的）和角度。
 - 声音驱动口型：平常姿势（idle / talking / thinking / wait / working）有声音时切 `talking`，按音量在原图（张嘴）和 `mouth_closed` 之间切；眨眼同时闭嘴用 `eyes_closed_mouth_closed`。
 - 宿主的其他姿势：`falling`→`grabbed` + 整体晃动，`dizzy`→`error` + 整体摇摆，`patted`→`idle` + 腮红 + 轻摇头。
+- 纹理所有权：两个渲染器都用 `loadOwnTexture` 自己加载纹理（不进 PIXI 的 URL 缓存），谁加载谁 `dispose`；同一模型重载、并发加载、加载中途被取消都不会销毁别的引擎在用的纹理。
+- 摆动节点：编译输出每个姿态的 `swing_nodes`（就绪的节点）；渲染器只让这些节点转，其余（包括源包里已有 `tail` 节点但未就绪的）节点矩阵就是父节点的，相对旋转严格为 0。
+- `--verify` 在发布之前做完：任一状态有差异或缺参考原图就失败且不改动输出；Alpha 通道整幅比较（alpha=1 也算），颜色只在任一边 alpha>0 的像素上比较。
+- 运行时：`characters/deepseek-whale/rig/`（约 4.4 MB）由 PR #5 的 `art/deepseek-whale` 编译提交；`character.json` 的 `renderer.rig.source` 为 `posepack`，加载失败时退回 Coopanion、再退回整张立绘。重新编译：`python tools/rig_studio.py compile-poses art/deepseek-whale --verify`。
 
 
 ## 0. 目标
