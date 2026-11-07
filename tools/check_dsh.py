@@ -2,14 +2,14 @@
 from contextlib import ExitStack
 import json
 from pathlib import Path
-import tempfile
 import time
 from unittest.mock import patch
 
 from aicompanion.agent.dsh_backend import DshAgent, problem
 from aicompanion.agent.tools_server import Task, ToolBox
 from aicompanion.agent.mcp_server import McpToolServer, dependency_problem
-from test_dsh_live import credentials, redact, temporary_dsh_home
+from test_dsh_live import credentials, redact
+from dsh_test_support import temporary_dsh_home, temporary_fixture_root
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT/'output'/'dsh-check'
@@ -26,7 +26,7 @@ def main() -> int:
     else:
         try:
             with ExitStack() as stack:
-                root = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='fixture-', dir=OUT)))
+                root = stack.enter_context(temporary_fixture_root())
                 workspace = root/'workspace'; workspace.mkdir()
                 (workspace/'a.txt').write_text('hello', encoding='utf-8')
                 (workspace/'b.md').write_text('# hi', encoding='utf-8')

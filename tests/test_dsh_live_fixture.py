@@ -68,6 +68,7 @@ class LiveFixtureTests(unittest.TestCase):
                     patch.object(module, 'credentials', return_value=('synthetic-key', 'http://127.0.0.1:9')), \
                     patch.object(module, 'problem', return_value=''), \
                     patch.object(module, 'dependency_problem', return_value=''), \
+                    patch('dsh_test_support.fixture_parent', return_value=self.root/f'isolated-{number}'), \
                     patch('aicompanion.agent.sandbox.low_root', return_value=parent), \
                     patch.object(module, 'DshAgent') as agent, \
                     patch.object(module, 'McpToolServer'), redirect_stdout(StringIO()):
@@ -77,6 +78,40 @@ class LiveFixtureTests(unittest.TestCase):
                 agent.return_value.close.assert_called_once()
             self.assertEqual(len(homes), 8 if module is self.module else 1)
             self.assertTrue(all(not home.exists() for home in homes))
+
+    def test_fixture_ancestors_are_instruction_free_and_existing_data_survives(self):
+        import dsh_test_support as support
+        parent = self.root/'isolated'; parent.mkdir()
+        sibling = parent/'keep.txt'; sibling.write_text('keep')
+        with patch.object(support, 'fixture_parent', return_value=parent):
+            with support.temporary_fixture_root() as fixture:
+                support.require_instruction_free(fixture)
+                for ancestor in (fixture, *fixture.parents):
+                    for name in ('AGENTS.md', 'CLAUDE.md'):
+                        self.assertFalse((ancestor/name).is_file())
+                self.assertEqual(fixture.parent, parent)
+                (fixture/'test.txt').write_text('synthetic')
+        self.assertFalse(fixture.exists())
+        self.assertEqual(sibling.read_text(), 'keep')
+
+    def test_fixture_rejects_project_instructions_in_any_ancestor(self):
+        import dsh_test_support as support
+        for name in ('AGENTS.md', 'CLAUDE.md'):
+            parent = self.root/name.replace('.', '-')
+            parent.mkdir()
+            (parent/name).write_text('合成开发规则')
+            with patch.object(support, 'fixture_parent', return_value=parent/'child'):
+                with self.assertRaisesRegex(ValueError, name):
+                    with support.temporary_fixture_root():
+                        self.fail('不能进入带项目规则的验收工作区')
+            self.assertFalse((parent/'child').exists())
+
+    def test_copy_comparison_only_tolerates_trailing_line_endings(self):
+        from dsh_test_support import same_text_except_final_newlines as same
+        for ending in ('', '\n', '\r\n', '\n\n'):
+            self.assertTrue(same('原文', '原文'+ending))
+        for changed in (' 原文', '原文 ', '改文', '原\n文'):
+            self.assertFalse(same('原文', changed))
 
     def test_missing_key_reports_skip_without_starting_runtime(self):
         import check_dsh

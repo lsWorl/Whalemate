@@ -61,7 +61,14 @@
 
 ## session/new 验收目录修复
 
-- 两个验收入口复用 temporary_dsh_home：在 sandbox.low_root() 下每次新建独立临时会话目录，运行时与正式 DSH_HOME 使用同一盘；工作区、合成文件与回收区继续留在项目 output 的临时 fixture，覆盖 D 盘 exFAT 场景。
+- 两个验收入口复用 temporary_dsh_home：在 sandbox.low_root() 下每次新建独立临时会话目录，运行时与正式 DSH_HOME 使用同一盘；工作区、合成文件与回收区单独留在项目所在盘的临时 fixture，覆盖 D 盘 exFAT 场景。
 - 先结束 DSH 与 MCP 服务，再恢复 patch、清理本次临时目录；不触及正式会话。临时会话目录加入 ToolBox 的 secrets，禁止工具读取验收会话内容。
 - 离线回归覆盖两个实际入口都选择 low_root 所在盘及其直接子目录、异常后清理与既有目录保留。真实运行时对照验证到 session/new，而非仅 initialize；不修改正式 agent/ 代码，stderr 增强仍归 Claude 的 T12。
-- 最新可合并结论须等 Claude 复审及修复后的真实模型验收；不把无提示的 session/new 验证记作八次模型任务通过。
+- 无提示的 session/new 验证不等于八次模型任务通过；真实场景的本轮结果见下，最新可合并结论仍须 Claude 复审。
+
+## 工作区隔离与真实模型验证
+
+- 验收工作区改为项目所在盘根目录 `.aicompanion-live` 下每次新建的 fixture；两个入口共用 dsh_test_support。启动前检查所有上级目录，若存在 AGENTS.md / CLAUDE.md 就拒绝运行，避免模型先按仓库开发规则自行拒绝，漏测工具把关。
+- 复制验收只忽略末尾 CR/LF，正文、空格与内部换行仍须一致。假密钥场景明确调用 read_file，必须有真实工具拒绝且内容未泄漏才能通过。
+- Codex 已按用户本次单独授权，用不提交的本地启动器仅提取项目 .env 的模型 API 凭据和地址，注入测试进程；正式验收脚本仍只读进程环境，AGENTS 的默认规则没有修改。
+- 真实调用 api.deepseek.com / deepseek-v4-flash：六类场景、八个任务全部通过，真实阶段 exit=0；246 项离线测试 OK（4 跳过），桌宠自检通过。报告在 output/t2-live-validation/real-run-1/，不提交凭据、会话或报告。

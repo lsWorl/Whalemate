@@ -52,6 +52,8 @@ MCP 服务仅在干活或协议自检时启动，使用本机回环 HTTP 和进�
 `pip check`，不自动调用模型。真实验收另运行 `tools/run_agent_checks.bat`：只使用进程环境中的
 `LLM_API_KEY` / `DEEPSEEK_API_KEY` 及对应接口地址，不加载 `.env`；缺少凭据时退出 2 并记录未执行。
 验收的文件、假密钥、回收区及 DSH 会话均位于新建临时目录，不访问博客或真实用户文件。
+工作区在项目所在盘的 `.aicompanion-live` 下新建（Windows 例如 `D:\.aicompanion-live\fixture-*`），
+避开仓库及上层的 AGENTS.md / CLAUDE.md；DSH 会话单独放在 LocalLow 临时目录。结束后只清理本次新建的子目录。
 
 To use a real model API, copy `.env.example` to `.env` and set:
 

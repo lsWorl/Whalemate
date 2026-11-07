@@ -443,3 +443,14 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 两个验收入口的离线回归实际运行 main 并拦截 DshAgent，断言所用会话目录在 low_root 所在盘且是其直接子目录；另测异常后的本次目录清理及已有会话保留。5 项验收器回归通过。
 - tools/run_agent_checks.bat：243 项单测 OK（4 跳过），桌宠 passed=true、failed_checks=[]、tools_listed=10、env_blocked=true、tools_gate=true、remaining_workers=0，离线两步 exit=0；本进程未提供 API 凭据，真实阶段 skipped=true、passed=false、脚本 exit=2。首次受限沙箱运行保护测试时 C 盘临时目录写入被拒，正常权限重跑及完整检查通过；未变更系统权限。
 - 未验证：修复后的真实模型六类场景（八次任务），真实点击确认与正式打包。须待真实模型重验及 Claude 最新提交复审后才能恢复可合并标记；此前“不阻塞合入”的结论已撤回，不沿用。证据在忽略目录 output/t2-session-drive-fix/，保留了用户上次失败报告；没有读取 .env、正式用户数据或调用收费模型。
+
+### T2 验收工作区隔离与真实 DeepSeek 验证（2026-11-07，待复审）
+
+- 用户后续实测已越过 session/new，八任务中六个通过；失败的复制用例仅差末尾换行，假密钥用例没有实际调工具，因为仓库内 fixture 让运行时发现 AGENTS.md 后自行拒绝。本轮仅修复验收与回归，没有放宽 ToolBox 规则或修改正式 agent/。
+- 新增 tools/dsh_test_support.py，两个入口在项目所在盘根目录 `.aicompanion-live` 下新建独立 fixture，运行前验证其所有上级目录不含 AGENTS.md / CLAUDE.md。工作区仍是 D 盘 exFAT、DSH_HOME 仍是 C 盘 LocalLow 新建临时目录，结束后仅清理本次子目录。共享父目录和已有文件不递归删除。
+- 复制比较只允许末尾 CR/LF 差异；正文、空格、内部换行变化仍失败。假密钥用例明确调用 read_file，继续要求 ToolBox 真实 denied 记录和 not_leaked，模型自行拒绝不算通过。8 项验收器回归覆盖新隔离、上级规则拒绝、清理边界与精确正文比较。
+- 用户本次明确授权读取 .env 中的 API 凭据字段。Codex 用忽略目录的临时启动器只提取模型密钥和接口地址，注入测试子进程；没有打印或提交凭据，没有更改 AGENTS 默认规则，正式验收入口仍不读取 .env。仅向模型发送合成范文和测试文件路径，不访问博客、正式数据库或用户文档。
+- 真实 API：api.deepseek.com，deepseek-v4-flash，六类场景 / 八个任务全部 passed=true，真实阶段 exit=0，临时会话与工作区清理成功。工作区外写拒绝 5.21 秒、同意 5.96 秒；删除拒绝 2.52 秒、同意 2.05 秒；只改最后一节 5.45 秒；停止 12.01 秒返回 cancelled；假密钥工具拒绝且未泄漏 2.49 秒；只读命令免确认、写命令确认 4.86 秒。
+- 运行时报告输入 116,781（含缓存命中 86,063）、输出 2,752 词元；此为运行时统计，不代替服务商账单。假密钥场景确有 read_file 的 denied 记录，复制批准后文件内容一致；不是把模拟或 initialize 成功记作模型通过。
+- tools/run_checks.bat：246 项单测 OK（4 跳过：3 项未安装 Playwright、1 项 POSIX 专用），桌宠 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、failed_checks=[]、remaining_workers=0，两步 exit=0。没有新增依赖，本轮没有重新测量或声称性能改善。
+- 未验证：用户真实点击确认气泡、正式打包与最终动画观感；待 Claude 复审本轮提交后再恢复 PR 可合并结论。报告和控制台在忽略目录 output/t2-live-validation/real-run-1/ 与 real-console.log，未提交凭据、临时会话或测试报告。
