@@ -265,6 +265,40 @@ class PrepareTests(ManagerBase):
         self.assertEqual((after['path'], after['version']), (before['path'], 'old'))
         self.assertEqual(len(list((self.qq.layout.root/'astrbot').iterdir())), 1)
 
+    def hashed_installs(self): return sum(1 for c in self.calls if '--require-hashes' in c)
+
+    def test_unverified_same_version_env_is_reinstalled(self):
+        """Codex：上一版装的同版本环境没有校验标记，必须重新按固定哈希安装；成功后才出现标记、才替换。"""
+        self.qq.prepare(); components = self.qq.layout.manifest()['components']
+        old_path = components['astrbot']['path']
+        del components['astrbot']['wheel_verified']; self.qq.layout.update_manifest(components=components)   # 上一版的记录形状
+        before = self.hashed_installs()
+        self.qq.prepare()
+        after = self.qq.layout.manifest()['components']['astrbot']
+        self.assertEqual(self.hashed_installs(), before+1)
+        self.assertEqual(after['wheel_verified'], 'uv --require-hashes'); self.assertNotEqual(after['path'], old_path)
+        self.assertFalse(Path(old_path).exists())                                 # 我们自己的旧环境在新环境可用后才清掉
+
+    def test_unverified_env_with_tampered_wheel_keeps_old(self):
+        """同版本、未校验的旧环境 + 镜像给了篡改的文件（或 expected hash 变了）：失败，旧环境和 manifest 原样保留。"""
+        self.qq.prepare(); components = self.qq.layout.manifest()['components']
+        del components['astrbot']['wheel_verified']; self.qq.layout.update_manifest(components=components)
+        snapshot = json.loads(json.dumps(self.qq.layout.manifest()['components']))
+        self.wheel_bytes_ok = False
+        with self.assertRaises(SetupError): self.qq.prepare()
+        self.assertEqual(self.qq.layout.manifest()['components'], snapshot)
+        self.assertTrue(Path(snapshot['astrbot']['path']).is_dir())
+        components = self.qq.layout.manifest()['components']
+        components['astrbot']['wheel_verified'] = 'uv --require-hashes'; components['astrbot']['wheel_sha256'] = 'f'*64   # 记录的是别的哈希
+        self.qq.layout.update_manifest(components=components); snapshot = json.loads(json.dumps(components))
+        with self.assertRaises(SetupError): self.qq.prepare()
+        self.assertEqual(self.qq.layout.manifest()['components'], snapshot)
+
+    def test_verified_env_is_reused(self):
+        self.qq.prepare(); before = self.hashed_installs(); path = self.qq.layout.manifest()['components']['astrbot']['path']
+        self.qq.prepare()
+        self.assertEqual(self.hashed_installs(), before); self.assertEqual(self.qq.layout.manifest()['components']['astrbot']['path'], path)
+
     def test_port_conflicts_are_avoided(self):
         self.free_ports = {6199, 6099}   # 这两个被别的程序占了
         ports = self.qq.ports()

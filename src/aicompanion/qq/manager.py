@@ -146,7 +146,10 @@ class QQManager:
     def _install_astrbot(self, components, progress, cancelled):
         spec = specs.ASTRBOT
         current = components.get('astrbot') or {}
-        if current.get('version') == spec.version and self.layout.current('astrbot') and (Path(current['path'])/'Scripts'/'astrbot.exe').is_file():
+        # 只复用"按当前固定哈希实际校验过"的同版本环境；上一版装的（没有校验标记）或哈希变了的，在新目录里重新受控安装
+        verified = current.get('wheel_verified') == 'uv --require-hashes' and current.get('wheel_sha256') == spec.wheel_sha256
+        if (current.get('version') == spec.version and verified and self.layout.current('astrbot')
+                and (Path(current['path'])/'Scripts'/'astrbot.exe').is_file()):
             return
         progress('安装 Python', f'Python {spec.python}（uv 自动下载并校验）')
         self._uv('python', 'install', spec.python)
