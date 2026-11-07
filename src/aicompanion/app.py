@@ -120,6 +120,10 @@ def main() -> int:
         problem = bridge.apply(database, controller)
         if problem: window._status(problem)
         app.aboutToQuit.connect(bridge.close)
+        # 一键接入 QQ（T9 第二步）：自动管理模式下打开桌宠时在后台启动 NapCat / AstrBot，退出时停掉
+        from aicompanion.qq import runtime as qq
+        qq.autostart(database)
+        app.aboutToQuit.connect(lambda: qq.shutdown(database))
         QTimer.singleShot(1500, window.pet.drop_in)  # 从屏幕顶部掉下来，落地后打招呼
     if smoke_directory:
         if '--emilia-smoke-test' in sys.argv:

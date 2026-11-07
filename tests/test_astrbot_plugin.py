@@ -12,7 +12,7 @@ PLUGIN = Path(__file__).resolve().parents[1]/'integrations'/'astrbot_plugin_aico
 
 def load_plugin():
     fakes = {}
-    api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None)
+    api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None, debug=lambda *a: None)
     event = types.ModuleType('astrbot.api.event')
 
     class Filter:
@@ -102,6 +102,45 @@ class PluginTests(unittest.TestCase):
         event = Event('/help')
         self.assertEqual(self.run_handler(self.plugin(), event, {'reply': 'x'}), []); self.assertFalse(event.stopped)
 
+
+class HeartbeatTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module = load_plugin()
+
+    def test_heartbeat_reports_onebot_and_uses_pet_groups(self):
+        class Api:
+            async def call_action(self, action):
+                return {'get_login_info': {'user_id': 888}, 'get_group_list': [{'group_id': 30003, 'group_name': '测试群'}]}[action]
+        client = type('Client', (), {'api': Api()})()
+        platform = type('P', (), {'get_client': lambda self: client})()
+        context = type('Ctx', (), {'get_platform': lambda self, key: platform if key == 'aiocqhttp' else None})()
+        plugin = self.module.AICompanionBridge(context=context, config={'token': 't', 'groups': []})
+        sent = {}
+        class Response:
+            status = 200
+            async def json(self): return {'ok': True, 'groups': ['30003']}
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+        async def post(path, payload, timeout): sent.update(path=path, payload=payload); return Response()
+        plugin.post = post
+        asyncio.run(plugin.heartbeat_once())
+        self.assertEqual(sent['path'], '/v1/heartbeat')
+        self.assertEqual(sent['payload']['onebot'], {'connected': True, 'self_id': '888'})
+        self.assertEqual(sent['payload']['groups'], [{'id': '30003', 'name': '测试群'}])
+        self.assertEqual(plugin.pet_groups, ['30003'])
+        self.assertIsNotNone(plugin.route(Event('大家好', group='30003')))       # 群以桌宠为准，插件配置里没填也行
+
+    def test_onebot_not_connected(self):
+        class Api:
+            async def call_action(self, action): raise RuntimeError('ApiNotAvailable')
+        platform = type('P', (), {'get_client': lambda self: type('C', (), {'api': Api()})()})()
+        context = type('Ctx', (), {'get_platform': lambda self, key: platform})()
+        plugin = self.module.AICompanionBridge(context=context, config={})
+        state, groups = asyncio.run(plugin.onebot_state())
+        self.assertFalse(state['connected']); self.assertEqual(groups, [])
+        empty = self.module.AICompanionBridge(context=type('Ctx', (), {'get_platform': lambda self, key: None})(), config={})
+        self.assertIn('aiocqhttp', asyncio.run(empty.onebot_state())[0]['error'])
 
 if __name__ == '__main__':
     unittest.main()
