@@ -115,6 +115,11 @@ def main() -> int:
         window.show()
     else:
         window._instance_server = _listen_for_second_instance(window)
+        # 聊天平台接口（T9，默认关闭）：设置里打开后，AstrBot 插件把 QQ 消息交给同一个她
+        from aicompanion.bridge.server import runtime as bridge
+        problem = bridge.apply(database, controller)
+        if problem: window._status(problem)
+        app.aboutToQuit.connect(bridge.close)
         QTimer.singleShot(1500, window.pet.drop_in)  # 从屏幕顶部掉下来，落地后打招呼
     if smoke_directory:
         if '--emilia-smoke-test' in sys.argv:

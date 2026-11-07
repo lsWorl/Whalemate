@@ -148,6 +148,8 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.agent_pages import AgentPage, AuditPage, UsagePage
         self.agent_page=AgentPage(self.database); self.tabs.addTab(self.agent_page,'干活')
         self.audit_page=AuditPage(self.database); self.tabs.addTab(self.audit_page,'操作日志')
+        from aicompanion.ui.bridge_page import BridgePage
+        self.bridge_page=BridgePage(self.database); self.tabs.addTab(self.bridge_page,'聊天平台')
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)
@@ -288,7 +290,7 @@ class SettingsWindow(QDialog):
                           ('ptt_key',self.ptt_key.currentData()),('echo_backend',self.echo_backend.currentData()),
                           ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
                           ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value())]: self.database.set_setting(key,value)
-        self.agent_page.save(); self.usage_page.save()
+        self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
         self.accept()
 
     def _validate_model_input(self):

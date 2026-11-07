@@ -1,6 +1,6 @@
 # T9：QQ 等聊天平台——AstrBot 插件转发给桌宠的大脑（P7，最后做）
 
-负责：Claude 实现，Codex 方案与代码审查（2026-11-07 用户确认）　状态：最后再做（P8 之后）
+负责：Claude 实现，Codex 方案与代码审查（2026-11-07 用户确认）　状态：第一版实现中（分支 `task/t9-astrbot-bridge`，用户 2026-11-07 决定提前做）
 
 ## 决定
 
@@ -29,3 +29,21 @@
 5. 授权：AstrBot 是 AGPL-3.0，插件和桌宠之间只通过本机接口通信，不复制 AstrBot 代码。
 
 B 站（看视频、评论）放到 QQ 做完后再评估；先查有没有现成的 AstrBot 插件可用。
+
+## 第一版实现（2026-11-07）
+
+再次调研后的取舍（尽量不造轮子）：
+- 平台接入、群管理、指令、风控全部交给 AstrBot + NapCat；我们只写一个约 100 行的转发插件。
+- AstrBot 的 Agent 执行器仍然只有内置、Dify、Coze、百炼、DeerFlow 五种，没有"任意 HTTP 地址"的通用入口；OpenAI 兼容提供商拿不到发送者和群号，做不了身份隔离。所以入站仍用插件。
+- 主动消息（下一步）不再让插件轮询：AstrBot v4.18 起自带 OpenAPI，`POST /api/v1/im/message`（参数 `umo`、`message`，API Key 鉴权）可以直接向会话发消息，桌宠调用它即可。
+
+| 部分 | 文件 | 做什么 |
+| --- | --- | --- |
+| 数据库 v4 | `storage/schema.py`、`storage/database.py` | `chat_messages` 加 `channel`（默认 `desktop`）；`recent_messages` / `add_message` / `finish_turn` 按频道读写。旧库自动迁移并先备份。**表结构这次由 Claude 改**（Codex 目前没有改库的任务） |
+| 上下文 | `services/context_service.py`、`controllers/chat_controller.py` | `build(…, channel, scene, situation)`：私下场景（桌面、已绑定主人的私聊）照旧；公开场景不带摘要和信任度，只用公开范围记忆，加"不透露主人私事"的约束。`generate` 可关掉"动手"提议，用量记到 `qq` |
+| 规则 | `bridge/service.py` | 主人私聊 → `desktop` 频道（同一段相处，记心情和记忆）；允许的群 → `qq:group:<群号>`；陌生人私聊默认不回，打开后 → `qq:user:<号>`；公开场合每天条数上限、额度用完时主人收到提示、公开场合静默 |
+| 本机接口 | `bridge/server.py` | 127.0.0.1、Bearer 令牌（`hmac.compare_digest`）、`POST /v1/chat`、`GET /v1/ping`、请求体 ≤ 64 KB；一次只答一条 |
+| 设置 | `ui/bridge_page.py`（设置 → 聊天平台） | 开关、端口、令牌（复制 / 更换）、主人 QQ 号、允许的群、陌生人、每日上限；保存即重启接口 |
+| 插件 | `integrations/astrbot_plugin_aicompanion/` | 只转发 QQ（aiocqhttp / qq_official）里命中的会话；群里默认只在被 @ 或唤醒时；`/` 开头的指令留给 AstrBot；转发后 `stop_event()`；桌宠不在线时回离线提示或不回，**不回退到 AstrBot 的模型** |
+
+还没做：主动消息（AstrBot OpenAPI）、图片 / 语音消息（目前只转文字）、真机 QQ 走通（需要用户装 AstrBot 和 NapCat）。

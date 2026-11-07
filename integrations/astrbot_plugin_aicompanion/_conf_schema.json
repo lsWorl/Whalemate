@@ -1,0 +1,13 @@
+{
+  "pet_url": {"description": "桌宠接口地址", "type": "string", "default": "http://127.0.0.1:18765",
+              "hint": "桌宠“设置 → 聊天平台”里的端口；AstrBot 和桌宠在同一台电脑上时用 127.0.0.1"},
+  "token": {"description": "令牌", "type": "string", "default": "", "secret": true,
+            "hint": "从桌宠“设置 → 聊天平台”复制"},
+  "groups": {"description": "交给桌宠的群号", "type": "list", "default": [],
+             "hint": "只有这些群的消息会转给她；桌宠那边还要在“允许的群”里同样填上"},
+  "group_only_when_called": {"description": "群里只在被 @ 或叫唤醒词时回复", "type": "bool", "default": true},
+  "offline_reply": {"description": "桌宠不在线时的回复", "type": "string", "default": "她现在不在电脑旁，晚点再来找她吧～",
+                    "hint": "留空 = 不在线时不回复。不会改用 AstrBot 自己的模型回复"},
+  "timeout": {"description": "等待回复的最长秒数", "type": "int", "default": 60},
+  "skip_prefixes": {"description": "以这些开头的消息不转发（留给 AstrBot 指令）", "type": "list", "default": ["/"]}
+}
