@@ -65,6 +65,26 @@ class BridgePageFlowTest(unittest.TestCase):
         self.assertIsNone(self.runtime.server); self.assertFalse(setting(self.db, 'bridge_enabled'))
         page.timer.stop(); page.deleteLater()
 
+    def test_start_error_remains_visible_after_status_refresh(self):
+        from aicompanion.ui.bridge_page import BridgePage
+        self.db.set_setting('qq_mode', 'auto')
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page)
+        self.addCleanup(page.deleteLater)
+        page.qq.ensure_bridge()
+        page.show()
+        with mock.patch.object(page.qq, 'ready', return_value=[]), \
+             mock.patch.object(page.qq, 'configure', side_effect=PermissionError('配置文件被占用')):
+            page.refresh(); self.wait(page)
+            self.assertEqual(page.status.code, 'stopped')
+            self.assertTrue(page.start_btn.isHidden())  # 状态按钮已经是“启动”，不再重复一枚
+            page.action.click(); self.wait(page)
+            for _ in range(3):
+                page.refresh(); self.wait(page)
+                self.assertEqual(page.status.code, 'start_failed')
+                self.assertIn('配置文件被占用', page.detail.text())
+            self.assertIn('配置文件被占用', page.qq.diagnostics_text())
+        page.close()
+
 
 if __name__ == '__main__':
     unittest.main()

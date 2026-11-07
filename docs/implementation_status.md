@@ -520,3 +520,11 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 上游文件的 SHA-256 来自 GitHub / PyPI 发布页，首次真实下载时由程序校验；
 - AstrBot 本身用 `--no-deps --require-hashes` 按固定的 wheel 哈希安装（换镜像也核对）；它的依赖由 uv 按索引公布的哈希检查，我们只记录 freeze，没有逐个固定哈希；
 - NapCat 自己的日志可能写出它的面板令牌（上游行为），我们的诊断显示会替换掉。
+
+## 2026-11-07：QQ 重启失败修复（Codex，待 PR 审查）
+
+- 真机问题：点击启动后显示 stopped；保留启动异常后确认 `cmd_config.json` 报 `Unexpected UTF-8 BOM`。固定版本 AstrBot 4.29.3 的 wheel 源码中，主配置和插件配置均使用 `utf-8-sig` 保存，因此首次运行后会出现 BOM。
+- 修复：QQ 配置读取统一兼容带 / 不带 BOM 的 UTF-8；继续拒绝并保留真正损坏的 JSON；启动前配置失败也保留脱敏错误，定时刷新和复制诊断不会再丢失原因；去掉 stopped 状态重复的启动按钮。
+- 验证：`tests/test_qq_setup.py` 30 项通过，覆盖 AstrBot 带 BOM 配置连续两次重启、保留其他平台及插件配置、错误脱敏和重试清除错误；真实 Qt 页面测试覆盖点击启动后错误经多轮刷新仍可见。`tools/run_checks.bat`：309 项单元测试通过（跳过 4 项），桌宠烟雾检查 `passed: true`、`remaining_workers: 0`。
+- 真机结果：用户重启桌宠后明确反馈“已连接”。未读取桌宠真实数据库或 `.env`，未执行 QQ 发信。
+- 尚未验证：用户通过 QQ 发消息后收到桌宠回复、允许群名单与私聊权限、持续运行和掉线恢复。本修复不把连接成功视为聊天全流程验收完成。

@@ -128,6 +128,26 @@ class ConfigureTests(Base):
         with self.assertRaises(configure.ConfigError): configure.astrbot_config(root, 1, 't', 2)
         self.assertEqual((root/'data'/'cmd_config.json').read_text(encoding='utf-8'), '{broken')
 
+    def test_astrbot_bom_config_survives_restart(self):
+        root = self.root/'astrbot'; configure.astrbot_init(root)
+        path = root/'data'/'cmd_config.json'
+        other = {'id': 'telegram', 'type': 'telegram'}
+        conf = {'platform': [other], 'provider': [{'id': 'existing'}]}
+        plugin_path = root/'data'/'config'/f'{specs.PLUGIN_NAME}_config.json'
+        plugin_path.write_text(json.dumps({'offline_reply': '稍后再来', 'timeout': 80}), encoding='utf-8-sig')
+        for port in (6200, 6201):
+            # 模拟 AstrBot 每次运行时用 UTF-8 BOM 保存配置，然后桌宠再次启动。
+            path.write_text(json.dumps(conf), encoding='utf-8-sig')
+            configure.astrbot_config(root, port, 'onebot-secret', 6186)
+            conf = configure.read_json(path, {})
+            self.assertIn(other, conf['platform']); self.assertEqual(conf['provider'], [{'id': 'existing'}])
+            ours = [p for p in conf['platform'] if p['id'] == specs.PLATFORM_ID]
+            self.assertEqual(len(ours), 1); self.assertEqual(ours[0]['ws_reverse_port'], port)
+        configure.plugin_config(root, 'http://127.0.0.1:18765', 'new-token')
+        plugin = configure.read_json(plugin_path, {})
+        self.assertEqual(plugin['offline_reply'], '稍后再来'); self.assertEqual(plugin['timeout'], 80)
+        self.assertEqual(plugin['token'], 'new-token')
+
     def test_plugin_install_update_and_protection(self):
         root = self.root/'astrbot'; configure.astrbot_init(root)
         source = configure.plugin_source()
@@ -310,6 +330,25 @@ class PrepareTests(ManagerBase):
 
 
 class ProcessTests(ManagerBase):
+    def test_failure_before_spawn_survives_refresh_and_is_redacted(self):
+        from unittest import mock
+        self.qq.prepare()
+        secret = self.qq.secrets()['webui']
+        with mock.patch.object(self.qq, 'configure', side_effect=OSError(f'写入配置失败 {secret}')):
+            with self.assertRaises(SetupError) as caught: self.qq.start()
+        self.assertNotIn(secret, str(caught.exception))
+        for _ in range(3):
+            status = self.qq.diagnose()
+            self.assertEqual(status.code, 'start_failed')
+            self.assertIn('写入配置失败', status.detail)
+            self.assertNotIn(secret, status.detail)
+        diagnostic = self.qq.diagnostics_text()
+        self.assertIn('写入配置失败', diagnostic); self.assertNotIn(secret, diagnostic)
+        self.qq.supervisor = Supervisor(self.qq.layout, identity_of=lambda pid: None, popen=lambda *a, **k: FakeProcess())
+        self.qq.start()
+        self.assertEqual(self.qq.last_error, '')
+        self.assertNotEqual(self.qq.diagnose().code, 'start_failed')
+
     def test_start_failure_is_reported_with_redacted_log(self):
         self.qq.prepare()
         secret = self.qq.secrets()['webui']

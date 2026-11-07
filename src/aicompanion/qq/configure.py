@@ -17,7 +17,9 @@ class ConfigError(RuntimeError):
 
 
 def read_json(path: Path, default):
-    try: return json.loads(Path(path).read_text(encoding='utf-8'))
+    # AstrBot 4.29.3 保存主配置和插件配置时使用 utf-8-sig；首次运行后就会带 BOM。
+    # utf-8-sig 同时接受有 / 无 BOM 的 UTF-8，重启时仍能保留用户已有配置。
+    try: return json.loads(Path(path).read_text(encoding='utf-8-sig'))
     except FileNotFoundError: return default
     except ValueError as error: raise ConfigError(f'{path} 不是有效的 JSON，没有改动它：{error}') from error
 
