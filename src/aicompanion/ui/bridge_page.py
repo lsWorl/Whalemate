@@ -122,7 +122,8 @@ class BridgePage(QWidget):
         title = status.title + (f'（机器人 {status.bot}）' if status.bot else '')
         self.title.setText(('✅ ' if status.code == 'connected' else '') + title)
         detail = status.detail or ''
-        if self.qq.last_error and status.code in ('stopped', 'start_failed'): detail = self.qq.last_error + ('\n'+detail if detail else '')
+        if self.qq.last_error and status.code in ('stopped', 'start_failed') and self.qq.last_error != detail:
+            detail = self.qq.last_error + ('\n'+detail if detail else '')
         self.detail.setText(detail[-1200:]); self.detail.setVisible(bool(detail))
         self.action.setText(ACTION_TEXT.get(status.action, status.action) or '刷新'); self.action.setVisible(bool(status.action))
         if status.qrcode:
@@ -131,7 +132,7 @@ class BridgePage(QWidget):
             self.qrcode.show()
         else: self.qrcode.hide()
         managed = self.qq.mode == 'auto' and status.code not in ('not_setup', 'not_ready')
-        self.start_btn.setVisible(managed); self.stop_btn.setVisible(managed)
+        self.start_btn.setVisible(managed and status.action != '启动'); self.stop_btn.setVisible(managed)
         if status.groups: self._fill_groups(status.groups)
 
     def _fill_groups(self, groups):
@@ -164,7 +165,7 @@ class BridgePage(QWidget):
         self.refresh()
 
     def _retry(self):
-        self.qq.stop(); self.qq.configure(); self.qq.start()
+        self.qq.stop(); self.qq.start()   # start 内部同步配置，异常也由 start 保留
 
     def _apply_bridge(self):
         self.qq.ensure_bridge()
@@ -192,8 +193,13 @@ class BridgePage(QWidget):
         self.busy = True; self.title.setText(text); self.detail.hide(); self.action.setEnabled(False)
         self.bar.setVisible(progress); self.bar.setValue(0)
         def work():
-            try: fn(); self.signals.finished.emit('')
-            except Exception as error: self.signals.finished.emit(str(error))
+            try:
+                fn()
+                self.qq.last_error = ''
+                self.signals.finished.emit('')
+            except Exception as error:
+                # 准备组件、保存配置不一定经过 start；同样记录，否则定时刷新会丢掉原因。
+                self.signals.finished.emit(self.qq.remember_error(error))
         threading.Thread(target=work, daemon=True).start()
 
     def _show_progress(self, step, detail, fraction):

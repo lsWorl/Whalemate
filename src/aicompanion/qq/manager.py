@@ -228,6 +228,24 @@ class QQManager:
         return missing
 
     def start(self) -> None:
+        # 配置写入、创建进程都可能在 Popen 返回前失败；这时没有退出码或新日志。
+        # 保留异常供定时检查和“复制诊断信息”使用，不能下一轮只剩 stopped。
+        self.last_error = ''
+        try:
+            self._start()
+        except Exception as error:
+            message = f'QQ 服务启动失败（{type(error).__name__}）：{error}'
+            raise SetupError(self.remember_error(message)) from error
+
+    def remember_error(self, error) -> str:
+        """启动及页面上的准备 / 同步操作共用：保留脱敏原因，让后续状态刷新仍可诊断。"""
+        message = str(error)
+        for secret in self.known_secrets():
+            if secret: message = message.replace(secret, '***')
+        self.last_error = message
+        return message
+
+    def _start(self) -> None:
         if self.mode != 'auto': raise SetupError('只有"自动安装并管理"模式由桌宠启动组件')
         missing = self.ready()
         if missing: raise SetupError('组件还没准备好：'+'、'.join(missing))
@@ -245,6 +263,7 @@ class QQManager:
 
     def stop(self) -> None:
         for name in ('napcat', 'astrbot'): self.supervisor.stop(name)
+        self.last_error = ''
 
     # ---- 诊断 ---------------------------------------------------------------------------------
     def webui(self):
@@ -259,14 +278,20 @@ class QQManager:
         from aicompanion.bridge.server import runtime
         mode = self.mode
         if mode not in ('auto', 'existing'):
-            return Status('not_setup', '还没接入 QQ', '接入 QQ')
+            return Status('not_setup', '还没接入 QQ', '接入 QQ', self.last_error)
+        if mode == 'auto':
+            missing = self.ready()
+            if missing:
+                detail = '\n'.join(filter(None, ('缺少：'+'、'.join(missing), self.last_error)))
+                return Status('not_ready', '组件还没准备好', '准备组件', detail)
         if not runtime.server:
-            return Status('bridge_off', '桌宠的接口没有打开', '重试', runtime.problem)
+            detail = '\n'.join(filter(None, (runtime.problem, self.last_error)))
+            return Status('bridge_off', '桌宠的接口没有打开', '重试', detail)
         beat = self.heartbeat(); fresh = bool(beat) and self.clock()-beat.get('at', 0) < HEARTBEAT_STALE
         groups = list((beat or {}).get('groups') or [])
         if mode == 'auto':
-            missing = self.ready()
-            if missing: return Status('not_ready', '组件还没准备好', '准备组件', '缺少：'+'、'.join(missing))
+            if self.last_error:
+                return Status('start_failed', 'QQ 服务没能启动', '重试', self.last_error)
             for name, label in (('astrbot', 'AstrBot'), ('napcat', 'NapCat')):
                 code = self.supervisor.exited_with(name)
                 if code is not None:

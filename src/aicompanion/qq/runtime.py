@@ -22,7 +22,8 @@ def autostart(database) -> None:
 
     def work():
         try: qq.start()
-        except Exception as error: qq.last_error = f'QQ 服务没能自动启动：{error}'
+        except Exception:
+            pass   # start 已保留脱敏后的失败原因，设置页和复制诊断都能看到
     threading.Thread(target=work, daemon=True, name='aicompanion-qq-start').start()
 
 
