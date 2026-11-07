@@ -118,7 +118,7 @@
       "chatgpt-dragon"
     ],
     "deterministic_pillow_processing_authorized": true,
-    "delivery_status": "待与 T6 确认原姿态接入契约；完整图层尚未提交",
+    "delivery_status": "原图、裁切图层和源清单已整理并通过独立验证，待 Claude 审查；补画与独立支点未完成",
     "contract_pull_request": "https://github.com/lsWorl/AICompanion/pull/2",
     "contract_revision": "8f732d638a5b506ae2741c53a34fe2ea8bba1e2c",
     "contract_status": "十姿态方案已由双方确认",
@@ -128,6 +128,11 @@
       1254,
       1254
     ],
-    "official_logos_allowed": true
+    "official_logos_allowed": true,
+    "source_manifest": "deepseek-whale/model.json",
+    "source_version": "pose-layered-v2",
+    "source_validation": "deepseek-whale/qa/validation.json",
+    "validated_states": 17,
+    "motion_ready": false
   }
 }

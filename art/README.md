@@ -2,7 +2,7 @@
 
 当前只推进先前已确认的 DeepSeek 二创鲸娘，沿用原有十动作与对应标志。设计和验收参考见 [十动作预览](deepseek-whale/approved-poses-preview.png)，具体范围见 [T5 任务说明](../docs/tasks/T5-character-art.md)。
 
-该预览来自本项目此前生成的原创动作素材，不是 Coopanion 的贴图或导出文件。运行时接入与完整图层交付仍在进行中；预览不是可编译的形象包。
+该预览来自本项目此前生成的原创动作素材，不是 Coopanion 的贴图或导出文件。原图、裁切图层和正式源清单现已整理进 [鲸娘源包](deepseek-whale/README.md)，独立校验的 17 个状态可见 RGBA / Alpha 差异均为 0。遮挡补画、独立支点及最终动画验收仍未完成。
 
 ## 保留的历史草稿
 

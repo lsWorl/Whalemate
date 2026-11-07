@@ -1,0 +1,421 @@
+{
+  "id": "poked",
+  "canvas": [
+    1254,
+    1254
+  ],
+  "units": "source pixels",
+  "source": "originals/poked.png",
+  "anchor": [
+    627,
+    1156
+  ],
+  "airborne": false,
+  "nodes": {
+    "root": {
+      "parent": null,
+      "pivot": [
+        627,
+        1156
+      ]
+    },
+    "body": {
+      "parent": "root",
+      "pivot": [
+        627,
+        1156
+      ]
+    },
+    "head": {
+      "parent": "body",
+      "pivot": [
+        652,
+        613
+      ]
+    },
+    "hair": {
+      "parent": "body",
+      "pivot": [
+        652,
+        613
+      ]
+    },
+    "arm_left": {
+      "parent": "body",
+      "pivot": [
+        560,
+        612
+      ]
+    },
+    "arm_right": {
+      "parent": "body",
+      "pivot": [
+        725,
+        612
+      ]
+    },
+    "skirt": {
+      "parent": "body",
+      "pivot": [
+        618,
+        734
+      ]
+    },
+    "prop": {
+      "parent": "body",
+      "pivot": [
+        642,
+        747
+      ]
+    },
+    "tail": {
+      "parent": "body",
+      "pivot": [
+        858,
+        786
+      ]
+    },
+    "leg_left": {
+      "parent": "body",
+      "pivot": [
+        541,
+        939
+      ]
+    },
+    "leg_right": {
+      "parent": "body",
+      "pivot": [
+        632,
+        965
+      ]
+    }
+  },
+  "parts": [
+    {
+      "id": "hair_back",
+      "file": "poses/poked/cropped/hair_back.png",
+      "crop_file": "poses/poked/cropped/hair_back.png",
+      "box": [
+        258,
+        324,
+        688,
+        612
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "hair",
+      "z": 1,
+      "visible_only": true
+    },
+    {
+      "id": "hair_front",
+      "file": "poses/poked/cropped/hair_front.png",
+      "crop_file": "poses/poked/cropped/hair_front.png",
+      "box": [
+        376,
+        243,
+        466,
+        362
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 9,
+      "visible_only": true
+    },
+    {
+      "id": "ahoge",
+      "file": "poses/poked/cropped/ahoge.png",
+      "crop_file": "poses/poked/cropped/ahoge.png",
+      "box": [
+        358,
+        110,
+        216,
+        169
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 12,
+      "visible_only": true
+    },
+    {
+      "id": "headdress",
+      "file": "poses/poked/cropped/headdress.png",
+      "crop_file": "poses/poked/cropped/headdress.png",
+      "box": [
+        341,
+        183,
+        466,
+        290
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 10,
+      "visible_only": true
+    },
+    {
+      "id": "fin_left",
+      "file": "poses/poked/cropped/fin_left.png",
+      "crop_file": "poses/poked/cropped/fin_left.png",
+      "box": [
+        299,
+        456,
+        141,
+        131
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 11,
+      "visible_only": true
+    },
+    {
+      "id": "fin_right",
+      "file": "poses/poked/cropped/fin_right.png",
+      "crop_file": "poses/poked/cropped/fin_right.png",
+      "box": [
+        747,
+        335,
+        168,
+        130
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 11.1,
+      "visible_only": true
+    },
+    {
+      "id": "head_skin",
+      "file": "poses/poked/cropped/head_skin.png",
+      "crop_file": "poses/poked/cropped/head_skin.png",
+      "box": [
+        518,
+        383,
+        245,
+        228
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 8,
+      "visible_only": true
+    },
+    {
+      "id": "torso",
+      "file": "poses/poked/cropped/torso.png",
+      "crop_file": "poses/poked/cropped/torso.png",
+      "box": [
+        550,
+        582,
+        185,
+        165
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "body",
+      "z": 4,
+      "visible_only": true
+    },
+    {
+      "id": "arm_left",
+      "file": "poses/poked/cropped/arm_left.png",
+      "crop_file": "poses/poked/cropped/arm_left.png",
+      "box": [
+        464,
+        555,
+        132,
+        189
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "arm_left",
+      "z": 7,
+      "visible_only": true
+    },
+    {
+      "id": "arm_right",
+      "file": "poses/poked/cropped/arm_right.png",
+      "crop_file": "poses/poked/cropped/arm_right.png",
+      "box": [
+        717,
+        532,
+        92,
+        196
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "arm_right",
+      "z": 7.1,
+      "visible_only": true
+    },
+    {
+      "id": "skirt_apron",
+      "file": "poses/poked/cropped/skirt_apron.png",
+      "crop_file": "poses/poked/cropped/skirt_apron.png",
+      "box": [
+        404,
+        726,
+        428,
+        247
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "skirt",
+      "z": 5,
+      "visible_only": true
+    },
+    {
+      "id": "leg_left",
+      "file": "poses/poked/cropped/leg_left.png",
+      "crop_file": "poses/poked/cropped/leg_left.png",
+      "box": [
+        484,
+        931,
+        114,
+        226
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "leg_left",
+      "z": 3,
+      "visible_only": true
+    },
+    {
+      "id": "leg_right",
+      "file": "poses/poked/cropped/leg_right.png",
+      "crop_file": "poses/poked/cropped/leg_right.png",
+      "box": [
+        578,
+        957,
+        107,
+        200
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "leg_right",
+      "z": 3.1,
+      "visible_only": true
+    },
+    {
+      "id": "tail",
+      "file": "poses/poked/cropped/tail.png",
+      "crop_file": "poses/poked/cropped/tail.png",
+      "box": [
+        848,
+        580,
+        147,
+        218
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "tail",
+      "z": 2,
+      "visible_only": true
+    },
+    {
+      "id": "eye_left",
+      "file": "poses/poked/cropped/eye_left.png",
+      "crop_file": "poses/poked/cropped/eye_left.png",
+      "box": [
+        497,
+        482,
+        115,
+        84
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 13,
+      "visible_only": true
+    },
+    {
+      "id": "eye_right",
+      "file": "poses/poked/cropped/eye_right.png",
+      "crop_file": "poses/poked/cropped/eye_right.png",
+      "box": [
+        657,
+        435,
+        98,
+        81
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 13.1,
+      "visible_only": true
+    },
+    {
+      "id": "mouth",
+      "file": "poses/poked/cropped/mouth.png",
+      "crop_file": "poses/poked/cropped/mouth.png",
+      "box": [
+        620,
+        523,
+        63,
+        62
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 14,
+      "visible_only": true
+    },
+    {
+      "id": "edge_residual",
+      "file": "poses/poked/cropped/edge_residual.png",
+      "crop_file": "poses/poked/cropped/edge_residual.png",
+      "box": [
+        99,
+        108,
+        1070,
+        1049
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "root",
+      "z": 0,
+      "visible_only": true
+    }
+  ],
+  "variants": {},
+  "motion_ready": []
+}
