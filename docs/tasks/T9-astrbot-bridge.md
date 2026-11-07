@@ -61,3 +61,52 @@ B 站（看视频、评论）放到 QQ 做完后再评估；先查有没有现�
   QQ 这一轮只回答到自己那条为止；桌面这一侧的流程不变（主人本人同时在桌面和 QQ 上说话的情况很少，先不为它加锁等待）。
 
 还没做：主动消息（AstrBot OpenAPI）、图片 / 语音消息（目前只转文字）、真机 QQ 走通（需要用户装 AstrBot 和 NapCat）。
+
+
+## 第二步：一键接入 QQ（分支 `task/t9-qq-oneclick`，2026-11-07 起）
+
+目标：用户只装桌宠，在"设置 → 聊天平台"点"一键接入 QQ"，桌宠按需下载并配置 NapCat 和 AstrBot、启动它们，用户只需扫码登录、确认主人账号、勾选允许的群。
+
+### 上游核实（2026-11-07）
+
+| 组件 | 选用 | 依据 |
+| --- | --- | --- |
+| NapCat | `NapCat.Shell.Windows.Node.zip` v4.18.41（118 MB，SHA-256 `51fbb10e…27d3f0`），GitHub 官方发布页按需下载 | 官方 release 流水线把 NapCat.Shell、QQ 9.9.31 运行所需的 wrapper.node 等文件和 node.exe 打成一个自包含包（`release-publish.yml` 的 assemble-windows-node），入口 `napcat.bat` → `node.exe index.js`；**不需要预装 QQ、不注入系统 QQ、不要管理员权限**。`NapCat.Shell.Windows.OneKey.zip` 只是一个再去下载的安装器，不可控，不选 |
+| NapCat 程序接口 | WebUI 后端（express）：`POST /api/auth/login`（body `{hash: sha256(token + ".napcat")}` → `data.Credential`，之后 `Authorization: Bearer <Credential>`）、`POST /api/QQLogin/CheckLoginStatus`（`isLogin`、`isOffline`、`qrcodeurl`、`loginError`）、`POST /api/QQLogin/GetQQLoginQrcode`、`POST /api/QQLogin/RefreshQRcode`、`POST /api/QQLogin/GetQQLoginInfo` | 源码 `packages/napcat-webui-backend/src/router/QQLogin.ts`、`api/Auth.ts`、`helper/SignToken.ts` |
+| NapCat 配置 | 环境变量 `NAPCAT_WORKDIR`（config / logs / cache 的位置）、`NAPCAT_QQ_DATA_DIR`（QQ 数据目录，和用户自己的 QQ 分开）；`config/webui.json`（host 默认 `::` 即所有网卡，**我们写 127.0.0.1**；port 6099；token）；`config/onebot11.json` 是首次登录时复制成 `onebot11_<QQ号>.json` 的模板（`network.websocketClients[]`：url、token、reconnectInterval、heartInterval…）；扫码图片保存到 `cache/qrcode.png`；`-q <QQ号>` 快速登录 | `napcat-common/src/path.ts`、`napcat-core/helper/config-base.ts`、`napcat-onebot/config/config.ts`、`napcat-shell/base.ts`。不用 `NAPCAT_WEBUI_SECRET_KEY`：NapCat 会把它明文写进日志 |
+| AstrBot | PyPI `AstrBot==4.29.3`（wheel SHA-256 `b78d8ab2…be6be8e`，管理面板已打包在 wheel 里），用 uv 0.13.5（`uv-x86_64-pc-windows-msvc.zip`，SHA-256 `a38b8d19…fd1019a`）在桌宠自己的目录里装 Python 3.12 和独立虚拟环境 | 官方"脚本部署"（`install.ps1`）也是 uv + Python 3.12 + `astrbot`，但它会改用户的 PATH（`uv tool update-shell`），所以我们照它的做法、只放进自己的目录。`ASTRBOT_ROOT` 指定数据目录；`astrbot run`；`.astrbot` 标记文件；`data/cmd_config.json` 缺的键启动时自动补默认值；`ASTRBOT_DASHBOARD_INITIAL_PASSWORD` 首次启动时设置面板密码 |
+| AstrBot ↔ NapCat | AstrBot 的 `aiocqhttp`（OneBot v11 反向 WebSocket）平台：`ws_reverse_host` 写 127.0.0.1，`ws_reverse_port` 自动挑空闲端口，`ws_reverse_token` 随机；NapCat 的 websocketClients 指向 `ws://127.0.0.1:<端口>/ws`，token 相同 | `astrbot/core/config/default.py`、`aiocqhttp_platform_adapter.py` |
+| 是否连上 | 插件每 15 秒向桌宠发心跳：经 `context.get_platform('aiocqhttp').get_client()` 调 OneBot `get_login_info` / `get_group_list`，成功 = NapCat 已连上 AstrBot；心跳顺便带回群列表，用户直接在桌宠里勾选允许的群 | AstrBot 平台状态只表示"服务起来了"，不表示 NapCat 连上 |
+| NapCatQQ Desktop | 不集成 | 它是 GPL-3.0 的 Tauri 桌面控制台，自己能装 NapCat、对接 AstrBot，但没有给其他程序调用的安装 / 启动接口（MCP 默认关闭且只读）。已经用它管理 NapCat + AstrBot 的用户走"接入已有实例" |
+
+许可：
+- NapCat 是 "Limited Redistribution License"：禁止商用，再分发须带全文许可；README 另写明禁止未经授权基于 NapCat 代码开发。
+- 所以**不打包、不修改、不再分发** NapCat。由用户的电脑从 NapCat 官方 GitHub 发布页下载原版文件，界面上显示来源和许可提示，并要求用户确认。
+- AstrBot 是 AGPL-3.0，同样按需从 PyPI 安装，不复制代码；我们的插件只通过 AstrBot 的插件接口工作。
+
+### 方案
+
+两种方式（设置页二选一）：
+
+1. **自动安装并管理**（默认）。
+   - 组件放在 `%LOCALAPPDATA%\AICompanion\qq\`，不放项目目录，不碰桌宠的 `.venv`、用户的 QQ 和 PATH。
+   - 步骤：下载 → 校验 SHA-256 → 解压到临时目录 → 校验关键文件 → 原子切换到"当前版本"；失败时旧版本保持可用。每一步可以重试，已校验的下载会复用。
+   - 安装记录 `manifest.json` 写版本、来源 URL、SHA-256、`uv pip freeze` 的结果，以及我们创建的文件和进程；只清理和结束我们自己记录的东西。
+   - 自动生成以下配置：
+     - NapCat：`webui.json`、`onebot11.json`，以及已登录账号的 `onebot11_<号>.json`（只改我们那一条 websocketClient）；
+     - AstrBot：`cmd_config.json` 里我们的那个 aiocqhttp 平台（按 id `aicompanion_qq` 识别）和面板地址；
+     - 插件目录和插件配置。
+   - 端口自动避开已占用的；所有监听地址都是 127.0.0.1。
+   - 两段连接各用独立的随机令牌，不写日志：NapCat ↔ AstrBot 一个，插件 ↔ 桌宠一个；另外 NapCat WebUI 令牌和 AstrBot 面板密码也各自随机。
+   - 进程以独立后台进程运行（无窗口），输出写到我们目录下的日志；桌宠退出时按设置停止或保留。
+2. **接入已有实例**。用户选 AstrBot 的根目录（含 `data/`）。只安装 / 更新我们的插件目录（目录名和 `metadata.yaml` 的 name 都是我们的才覆盖），只写我们插件的配置文件；不改 `cmd_config.json`、其他插件和 NapCat、账号数据。NapCat ↔ AstrBot 的连接由用户原来的方式负责，界面按心跳显示状态。
+
+状态与诊断（从前往后，第一个不满足的就是当前状态，配一句下一步该做什么）：
+组件未准备 → 未启动 → NapCat 未登录（显示二维码，等扫码）→ OneBot 未连接（NapCat 没连上 AstrBot）→ 插件未连接（AstrBot 没跑 / 插件没加载 / 令牌不对）→ 已连接。
+桌宠离线时插件回离线提示，不回退到 AstrBot 的模型；人格、聊天记录、记忆共享 / private 规则沿用第一版。
+
+### 需要改动的公共文件 / 新增依赖
+
+- 公共文件：`ui/settings_window.py` 只改聊天平台这一页的挂载（已有）。`app.py` 加启动时自动拉起组件和退出时停止组件，几行，是 T9 自己加过的位置。**不改** `main_window.py`、`database.py`、`config.py`、`pyproject.toml`。
+- 新增 Python 依赖：无。下载用标准库 `urllib`，解压用 `zipfile`，二维码直接显示 NapCat 生成的 `qrcode.png`。
+- 新增外部组件（运行时按需下载，不进安装包，不进仓库）：NapCat.Shell.Windows.Node v4.18.41、uv 0.13.5、Python 3.12（由 uv 下载 python-build-standalone，uv 自带校验）、AstrBot 4.29.3 及其依赖（uv 按 PyPI 公布的哈希校验，装完记录 freeze）。
