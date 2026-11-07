@@ -258,7 +258,7 @@ class BridgePage(QWidget):
         self.refresh()
 
     def save(self):
-        """设置窗口的"保存"：主人、群和高级设置一起保存；接口端口 / 令牌变了就重启接口并同步插件配置。"""
+        """设置窗口的"保存"：QQ 号、群和高级设置一起保存；接口端口 / 令牌变了就重启接口并同步插件配置。"""
         db = self.database
         self.save_people()
         old = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))

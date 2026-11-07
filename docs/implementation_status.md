@@ -557,3 +557,11 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - Windows 离线检查（待运行）；
 - 真机：她在真实群里插话的频率和内容是否自然、【不说】的遵守率——需要用户在群里试，会产生模型费用；
 - 用户若在角色页改过人设，不会自动升级到 v3（按设计），需要手动换。
+
+### PR #9 审计修正（Codex 审计 1d69f7a 的两处 P2）
+
+- 插话也受设置页"群和陌生人每天最多回复"总上限：`_chime_ok` 通过后用 `Database.reserve_daily_all` 在同一个写事务里同时预留公开总数和插话次数，任何一份用完都不插话、不占另一份；总数和被叫时的回复、各个群共用。
+- 旁听记录的最终授权和写入建立同步边界：`RECORD_LOCK` + 一个 `BEGIN IMMEDIATE` 写事务里重新 classify（群、身份按此刻的数据库设置）、分配编号、写入。等编号 / 等数据库期间群被移出、爹解绑，提交后旁听线程都看得到：不落库、不打【爹】。`BridgeService.close()` 也拿 `RECORD_LOCK`，Runtime 关闭返回后不再有旁听记录落库。仍不等模型生成锁。
+- 编号表 `alias` 改为写事务内读改写（去掉 ALIAS_LOCK），和其他路径并发分配也不会撞号。
+- 已 rebase 到包含 PR #8 的基线。
+- 验证：新增 `ChimeBudgetAndRevocationTests` 8 项（公开上限为 0、被叫用完后不插、跨群共用、插话次数用完不占公开总数；另一连接占住写锁期间移除群 / 解绑爹 / 关闭服务，以及 close 等在途写完后阻止新记录）。容器 `PYTHONPATH=src python3 -m unittest discover -s tests`：除 9 个缺 PySide6 的错误外全部通过；`git diff --check` 通过。Windows 检查待运行。

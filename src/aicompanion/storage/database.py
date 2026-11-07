@@ -127,15 +127,34 @@ class Database:
         with self.transaction() as connection:
             connection.execute("DELETE FROM chat_messages WHERE turn_id=? AND character_id=? AND role='assistant'", (turn_id, character_id))
 
-    def reserve_daily(self, key: str, limit: int) -> bool:
-        """原子地"判断没到上限就加一"：同一事务里读和写，多个线程 / 多个服务实例同时来也不会超过 limit。"""
+    def locked(self, fn):
+        """在一个 BEGIN IMMEDIATE 写事务里执行 fn(connection)：fn 读到的设置和它的写入之间不会插进别的写（例如设置页撤销权限）。
+        fn 抛异常时整个事务回滚。"""
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
-            used = int(json.loads(row[0])) if row else 0
-            if used >= limit: return False
-            connection.execute("INSERT INTO app_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(used+1)))
+            return fn(connection)
+
+    @staticmethod
+    def setting_in(connection, key, default=None):
+        row = connection.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
+    @staticmethod
+    def set_setting_in(connection, key, value) -> None:
+        connection.execute("INSERT INTO app_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(value, ensure_ascii=False)))
+
+    def reserve_daily(self, key: str, limit: int) -> bool:
+        """原子地"判断没到上限就加一"：同一事务里读和写，多个线程 / 多个服务实例同时来也不会超过 limit。"""
+        return self.reserve_daily_all([(key, limit)])
+
+    def reserve_daily_all(self, budgets) -> bool:
+        """几个每日计数一起预留：全部没到上限才同时各加一，有一个到了就都不动（不会白白占掉另一份额度）。"""
+        def reserve(connection):
+            used = [int(self.setting_in(connection, key, 0) or 0) for key, _ in budgets]
+            if any(u >= int(limit) for u, (_, limit) in zip(used, budgets)): return False
+            for u, (key, _) in zip(used, budgets): self.set_setting_in(connection, key, u+1)
             return True
+        return self.locked(reserve)
 
     def recent_messages(self, limit=30, character_id="emilia", before_id=None, channel="desktop") -> list[sqlite3.Row]:
         """只返回同一频道的记录：桌面（含已绑定主人的私聊）看不到群聊和陌生人，公开场合也看不到桌面。"""

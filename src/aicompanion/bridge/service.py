@@ -36,20 +36,31 @@ def setting(database, key):
     return database.get_setting(key, DEFAULTS[key])
 
 
+def setting_in(connection, key):
+    from aicompanion.storage.database import Database
+    return Database.setting_in(connection, key, DEFAULTS[key])
+
+
 # 进程级：Runtime 重启服务实例时新旧实例共用，不会出现两把锁各放一条
 PROCESS_LOCK = threading.Lock()
-ALIAS_LOCK = threading.Lock()   # 只护着编号表的读改写：旁听的消息不拿 PROCESS_LOCK 也能安全分配编号
+# 旁听记录的同步边界：最终授权判定（closed + 数据库里的群 / 身份）和写入在这把锁 + 同一个写事务里完成；
+# close() 也拿这把锁，所以 close 返回之后不会再有旁听记录落库。只包住几次本地数据库读写，不等模型。
+RECORD_LOCK = threading.Lock()
 REMEMBERING_LOCK = threading.Lock(); REMEMBERING: set = set()   # 正在整理记忆的频道（同一频道不并发整理）
 
 
 def alias(database, stable: str) -> str:
     """群里给模型看的说话人标记 #序号：每个平台账号第一次出现时分配一个全局不重复的序号（存在设置里，之后不变）。
-    昵称会重名、号码后几位也会撞，序号不会；完整号码不交给模型。"""
-    with ALIAS_LOCK:
-        table = database.get_setting('bridge_aliases', {}) or {}
-        if stable not in table:
-            table[stable] = len(table)+1; database.set_setting('bridge_aliases', table)
-        return f'#{table[stable]}'
+    昵称会重名、号码后几位也会撞，序号不会；完整号码不交给模型。读改写在一个写事务里，并发分配不会撞号。"""
+    return database.locked(lambda connection: alias_in(connection, stable))
+
+
+def alias_in(connection, stable: str) -> str:
+    from aicompanion.storage.database import Database
+    table = Database.setting_in(connection, 'bridge_aliases', {}) or {}
+    if stable not in table:
+        table[stable] = len(table)+1; Database.set_setting_in(connection, 'bridge_aliases', table)
+    return f'#{table[stable]}'
 
 
 class BridgeService:
@@ -62,18 +73,24 @@ class BridgeService:
         self.lock = PROCESS_LOCK
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
 
+    def close(self) -> None:
+        """Runtime 关闭 / 重启时调用：之后排队的回复拿到锁直接放弃，旁听的消息也不再落库（等正在写的那条写完）。"""
+        with RECORD_LOCK: self.closed = True
+
     # ---- 规则 --------------------------------------------------------------------
-    def classify(self, platform: str, sender_id: str, group_id: str) -> dict | None:
-        """返回这条消息的处理方式；None 表示不处理（不在允许范围内）。"""
-        owner = str(self.database.get_setting(f'bridge_owner:{platform}', '') or '').strip()
+    def classify(self, platform: str, sender_id: str, group_id: str, connection=None) -> dict | None:
+        """返回这条消息的处理方式；None 表示不处理（不在允许范围内）。传 connection 时在那个事务里读设置。"""
+        get = (lambda key: setting_in(connection, key)) if connection is not None else (lambda key: setting(self.database, key))
+        owner = str((setting_in(connection, f'bridge_owner:{platform}') if connection is not None else
+                     self.database.get_setting(f'bridge_owner:{platform}', '')) or '').strip()
         is_owner = bool(owner) and sender_id == owner
         where = PLATFORM_NAMES.get(platform, platform)
         if group_id:
-            if group_id not in [str(g).strip() for g in setting(self.database, 'bridge_groups') or []]: return None
+            if group_id not in [str(g).strip() for g in get('bridge_groups') or []]: return None
             return {'channel': f'{platform}:group:{group_id}', 'scene': platform, 'owner': is_owner, 'group': True, 'where': where}
         if is_owner:
             return {'channel': 'desktop', 'scene': 'pet', 'owner': True, 'group': False, 'where': where}
-        if not setting(self.database, 'bridge_strangers'): return None
+        if not get('bridge_strangers'): return None
         return {'channel': f'{platform}:user:{sender_id}', 'scene': platform, 'owner': False, 'group': False, 'where': where}
 
     def _reserve_public(self) -> bool:
@@ -87,7 +104,9 @@ class BridgeService:
         return any(n and n in text for n in names)
 
     def _chime_ok(self, channel: str) -> bool:
-        """没人叫她时要不要试着插一句：按活跃度的概率、这个群离她上次说话的间隔和条数、每日插话上限。"""
+        """没人叫她时要不要试着插一句：按活跃度的概率、这个群离她上次说话的间隔和条数。
+        通过后同时预留两份每日额度：设置页的"群和陌生人每天最多回复"总数（和被叫时的回复共用）和插话次数；
+        任何一份用完都不插话，也不占另一份。"""
         rule = CHIME.get(setting(self.database, 'bridge_chime') or 'off')
         if not rule: return False
         last = float(self.database.get_setting(f'bridge_last_spoke:{channel}', 0) or 0)
@@ -98,7 +117,9 @@ class BridgeService:
             if row['role'] == 'assistant': break
             since += 1
         if since < rule['after'] or self.chance() >= rule['chance']: return False
-        return self.database.reserve_daily(f'bridge_chime_count:{self.today().isoformat()}', int(setting(self.database, 'bridge_chime_daily') or 0))
+        day = self.today().isoformat()
+        return self.database.reserve_daily_all([(f'bridge_public_count:{day}', int(setting(self.database, 'bridge_public_daily') or 0)),
+                                                (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))])
 
     # ---- 处理一条消息 -----------------------------------------------------------------
     def handle(self, payload: dict) -> dict:
@@ -152,10 +173,20 @@ class BridgeService:
         """群里没叫她的消息：先记进群聊记录（她"听到"了，之后被叫或整理记忆时都看得到），再看要不要插话。
         记录不排队等 PROCESS_LOCK：她正在别处说话时，群里刷屏的消息不会堆在锁上等到插件超时；这时也不插话。"""
         controller = self.controller; character = controller.character
-        if self.closed: return {'reply': '', 'silent': True, 'reason': 'closed'}
         stable = f'{platform}:{sender_id}'
-        line = f'{"【爹】" if mode["owner"] else ""}{name}{alias(self.database, stable)}：{text}'
-        message_id = self.database.add_message('user', line, character.id, source=platform, channel=mode['channel'], sender=stable)
+
+        def record(connection):
+            # 在写事务里按此刻的设置做最终判定：等编号 / 等数据库期间群被移出、爹解绑，这里都看得到；【爹】标记也按此刻身份打
+            now = self.classify(platform, sender_id, group_id, connection)
+            if now is None or not now['group']: return None, None
+            line = f'{"【爹】" if now["owner"] else ""}{name}{alias_in(connection, stable)}：{text}'
+            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,source,channel,sender) VALUES ('user',?,?,?,?,?)",
+                                        (line, character.id, platform, now['channel'], stable))
+            return now, cursor.lastrowid
+        with RECORD_LOCK:
+            if self.closed: return {'reply': '', 'silent': True, 'reason': 'closed'}
+            mode, message_id = self.database.locked(record)
+        if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         observed = {'reply': '', 'silent': True, 'reason': 'observed'}
         if not self.lock.acquire(blocking=False):
             return observed

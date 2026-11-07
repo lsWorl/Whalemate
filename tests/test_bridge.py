@@ -434,6 +434,97 @@ class GroupChimeTests(BridgeTests.__base__):
         self.assertEqual(self.hear(STRANGER, '一')['reason'], 'not_allowed'); self.assertEqual(self.group_rows(), [])
 
 
+class ChimeBudgetAndRevocationTests(BridgeTests.__base__):
+    """Codex 审计 PR #9 的两处 P2：插话也受每日公开回复总上限；旁听记录的最终授权和写入在同一个同步边界里。"""
+    setUp = BridgeTests.setUp; tearDown = BridgeTests.tearDown; ask = BridgeTests.ask
+    hear = GroupChimeTests.hear; setUp_rolls = GroupChimeTests.setUp_rolls; group_rows = GroupChimeTests.group_rows
+    OTHER = '40004'
+
+    def hear_in(self, group, text, sender=STRANGER, name='大壮'):
+        return self.service.handle({'platform': 'qq', 'sender_id': sender, 'sender_name': name, 'group_id': group, 'text': text, 'called': False})
+
+    def counts(self):
+        day = self.service.today().isoformat()
+        return (self.db.get_setting(f'bridge_public_count:{day}', 0), self.db.get_setting(f'bridge_chime_count:{day}', 0))
+
+    def test_public_daily_zero_blocks_chime(self):
+        self.setUp_rolls([0.0]*10); self.db.set_setting('bridge_public_daily', 0)
+        self.hear(STRANGER, '一'); self.assertEqual(self.hear(STRANGER, '二')['reason'], 'observed')
+        self.assertEqual(self.client.calls, []); self.assertEqual(self.counts(), (0, 0))   # 也没白占插话次数
+
+    def test_called_replies_and_chimes_share_the_public_limit(self):
+        self.setUp_rolls([0.0]*10); self.db.set_setting('bridge_public_daily', 1)
+        self.assertEqual(self.ask(STRANGER, '在吗', group=GROUP)['reason'], 'ok')          # 被叫用掉唯一一条
+        self.now[0] += 1000; self.hear(STRANGER, '一'); self.hear(STRANGER, '二')
+        self.assertEqual(self.hear(STRANGER, '三')['reason'], 'observed')
+        self.assertEqual(len(self.client.calls), 1); self.assertEqual(self.counts(), (1, 0))
+
+    def test_public_limit_is_shared_across_groups_and_counts_chimes(self):
+        self.setUp_rolls([0.0]*10); self.db.set_setting('bridge_public_daily', 1)
+        self.db.set_setting('bridge_groups', [GROUP, self.OTHER])
+        self.hear_in(GROUP, '一'); self.assertEqual(self.hear_in(GROUP, '二')['reason'], 'chime')
+        self.hear_in(self.OTHER, '一'); self.assertEqual(self.hear_in(self.OTHER, '二')['reason'], 'observed')   # 另一个群也没额度了
+        self.assertEqual(self.ask(STRANGER, '在吗', group=self.OTHER)['reason'], 'daily_limit')            # 被叫同样
+        self.assertEqual(self.counts(), (1, 1))
+
+    def test_chime_cap_reached_does_not_use_public_budget(self):
+        self.setUp_rolls([0.0]*10); self.db.set_setting('bridge_chime_daily', 0)
+        self.hear(STRANGER, '一'); self.hear(STRANGER, '二')
+        self.assertEqual(self.counts(), (0, 0))
+        self.assertEqual(self.ask(STRANGER, '在吗', group=GROUP)['reason'], 'ok')
+
+    # ---- 撤销权限与写入的同步边界 ----
+    def blocked_hear(self, change, sender=STRANGER, name='大壮'):
+        """另一个连接先占住数据库写锁（模拟旁听线程在等编号 / 等数据库），期间改设置后提交，再放行旁听线程。"""
+        import sqlite3 as sq
+        self.db.set_setting('bridge_chime', 'off')
+        blocker = sq.connect(self.db.database_path, timeout=5, isolation_level=None)
+        blocker.execute('BEGIN IMMEDIATE')
+        out = {}
+        worker = threading.Thread(target=lambda: out.update(r=self.hear(sender, '刚才那条', name=name)))
+        worker.start(); time.sleep(0.3)
+        self.assertTrue(worker.is_alive())                       # 确实卡在写事务前
+        change(blocker); blocker.execute('COMMIT'); blocker.close()
+        worker.join(5); self.assertFalse(worker.is_alive())
+        return out['r']
+
+    @staticmethod
+    def put(connection, key, value):
+        connection.execute("INSERT INTO app_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(value)))
+
+    def test_group_removed_while_waiting_is_not_recorded(self):
+        result = self.blocked_hear(lambda c: self.put(c, 'bridge_groups', []))
+        self.assertEqual(result['reason'], 'not_allowed'); self.assertEqual(self.group_rows(), [])
+
+    def test_owner_unbound_while_waiting_gets_no_dad_label(self):
+        result = self.blocked_hear(lambda c: self.put(c, 'bridge_owner:qq', ''), sender=OWNER, name='阿青')
+        self.assertEqual(result['reason'], 'observed')
+        self.assertEqual([r['content'] for r in self.group_rows()], ['阿青#1：刚才那条'])
+
+    def test_closed_while_waiting_is_not_recorded(self):
+        from aicompanion.bridge.service import RECORD_LOCK
+        self.db.set_setting('bridge_chime', 'off')
+        out = {}
+        with RECORD_LOCK:                                         # close() 先拿到边界
+            worker = threading.Thread(target=lambda: out.update(r=self.hear(STRANGER, '刚才那条')))
+            worker.start(); time.sleep(0.2); self.assertTrue(worker.is_alive())
+            self.service.closed = True
+        worker.join(5)
+        self.assertEqual(out['r']['reason'], 'closed'); self.assertEqual(self.group_rows(), [])
+
+    def test_close_waits_for_an_in_flight_record_then_blocks_new_ones(self):
+        import sqlite3 as sq
+        self.db.set_setting('bridge_chime', 'off')
+        blocker = sq.connect(self.db.database_path, timeout=5, isolation_level=None); blocker.execute('BEGIN IMMEDIATE')
+        writer = threading.Thread(target=lambda: self.hear(STRANGER, '在写的那条')); writer.start(); time.sleep(0.3)
+        closer = threading.Thread(target=self.service.close); closer.start(); time.sleep(0.2)
+        self.assertTrue(closer.is_alive())                       # close 等在途的那条写完
+        blocker.execute('COMMIT'); blocker.close()
+        writer.join(5); closer.join(5); self.assertFalse(closer.is_alive())
+        self.assertEqual(len(self.group_rows()), 1)
+        self.assertEqual(self.hear(STRANGER, '之后的')['reason'], 'closed'); self.assertEqual(len(self.group_rows()), 1)
+
+
 class MigrationTests(unittest.TestCase):
     def test_v3_database_gets_desktop_channel(self):
         with tempfile.TemporaryDirectory() as tmp:
