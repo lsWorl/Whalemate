@@ -434,3 +434,12 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 真实 DSH 运行时使用本次新建的临时会话，实际发出 server/discover、subscriptions/listen、tools/list，取得全部 10 个工具；没有发送 session/prompt 或调用模型。pip check 无冲突。真实模型阶段因缺少进程环境 API 凭据记录 skipped=true、passed=false，批处理 exit=2；不读取 .env，也不把跳过计为通过。
 - tools/measure_pet.ps1：自己的十姿态鲸娘预览，稳定后采样 10 秒，20 逻辑核，总工作集 428.0 MB、私有内存 328.1 MB、整机 CPU 1.47%。首次 MCP 适配时的 452.2 MB 来自另一形象与版本，不能用作受控前后收益；350 MB 工作集目标仍未达到，继续由 T7 处理。
 - 未验证：真实模型六类场景、用户实际点击确认气泡、正式打包与最终动画观感。Claude 已同意将收费场景明确延后、不阻塞本 PR 合入；阶段验收仍未完成。证据位于忽略的 output/v2-check、output/dsh-live、output/t2-final-validation，未提交日志、私人配置、数据库或第三方资源。
+
+### T2 验收会话目录修复（2026-11-07，待复审 / 真实模型重验）
+
+- 用户实际运行八次任务时都在 session/new 失败；Claude 在 PR #4 撤回 f6445e5 的可合并结论。本轮按其建议仅修复验收脚本，不修改正式 agent/ 或 T12 计划中的 stderr 输出。
+- test_dsh_live.py 和 check_dsh.py 共用 temporary_dsh_home，在 sandbox.low_root() 下新建独立临时目录（本机 C 盘）；工作区、合成文件和回收区仍在项目 output 的临时 fixture（D 盘）。先关闭服务和进程，再清理本次临时会话；会话目录列入工具禁止读取的 secrets，不使用正式 DSH 会话。
+- 补齐真实运行时的盘符对照：同一 D 盘合成工作区，旧 D 盘 DSH_HOME 的 initialize 成功、session/new 报 Internal error；修复后的 C 盘临时 DSH_HOME 的 initialize / session/new 均成功，结束后目录已清理。全程假凭据、没有发送 session/prompt，没有模型请求或费用。此前 session/new 成功的记录使用 C 盘，C/D 对照只做过 initialize，未覆盖验收脚本的实际路径；本次明确纠正这个验证缺口。尚未从 stderr 得到 koffi 的直接错误，不能将原生模块推断写成已捕获的异常栈。
+- 两个验收入口的离线回归实际运行 main 并拦截 DshAgent，断言所用会话目录在 low_root 所在盘且是其直接子目录；另测异常后的本次目录清理及已有会话保留。5 项验收器回归通过。
+- tools/run_agent_checks.bat：243 项单测 OK（4 跳过），桌宠 passed=true、failed_checks=[]、tools_listed=10、env_blocked=true、tools_gate=true、remaining_workers=0，离线两步 exit=0；本进程未提供 API 凭据，真实阶段 skipped=true、passed=false、脚本 exit=2。首次受限沙箱运行保护测试时 C 盘临时目录写入被拒，正常权限重跑及完整检查通过；未变更系统权限。
+- 未验证：修复后的真实模型六类场景（八次任务），真实点击确认与正式打包。须待真实模型重验及 Claude 最新提交复审后才能恢复可合并标记；此前“不阻塞合入”的结论已撤回，不沿用。证据在忽略目录 output/t2-session-drive-fix/，保留了用户上次失败报告；没有读取 .env、正式用户数据或调用收费模型。

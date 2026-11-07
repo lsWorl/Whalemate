@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import json
 import os
 from pathlib import Path
@@ -39,7 +39,18 @@ def redact(text, key):
     return str(text).replace(key, '[API 凭据已隐藏]') if key else str(text)
 
 
-def make_fixture(root: Path):
+@contextmanager
+def temporary_dsh_home():
+    """打包运行时在 session/new 加载原生模块，必须与正式运行时使用同一盘。"""
+    from aicompanion.agent.sandbox import low_root
+    parent = low_root().resolve()
+    parent.mkdir(parents=True, exist_ok=True)
+    # 只清理本次新建的目录；不能复用或清理正式 dsh 会话。
+    with tempfile.TemporaryDirectory(prefix='dsh-live-', dir=parent) as folder:
+        yield Path(folder)
+
+
+def make_fixture(root: Path, *, dsh_home: Path):
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()): raise ValueError('测试根目录必须是新建空目录，不能覆盖已有文件')
@@ -57,7 +68,7 @@ def make_fixture(root: Path):
         (drafts/f'sample-{i}.md').write_text(f'# 合成文本 {i}\n'+('这是一段用于验收的合成文字，请逐句检查用词是否通顺，不能修改原文。\n'*40), encoding='utf-8')
     return SimpleNamespace(root=root, workspace=workspace, outside=outside, original=original, delete=delete,
                            secret=secret, document=document, before=before, drafts=drafts,
-                           trash=root/'trash', dsh_home=root/'dsh-home')
+                           trash=root/'trash', dsh_home=dsh_home)
 
 
 def main() -> int:
@@ -82,12 +93,13 @@ def main() -> int:
         return 2
 
     with ExitStack() as stack:
-        # exFAT 临时目录可供低完整性工具进程使用；每次新建，不能递归清理已有输出/博客目录。
+        # 工作区留在 exFAT 覆盖实际工具场景；DSH_HOME 单独留在正式运行时所在盘。
         folder = stack.enter_context(tempfile.TemporaryDirectory(prefix='fixture-', dir=OUT))
-        fixture = make_fixture(Path(folder))
+        home = stack.enter_context(temporary_dsh_home())
+        fixture = make_fixture(Path(folder), dsh_home=home)
         # 只替换会话目录位置；ACP、模型调用、MCP 与审批实现仍走正式代码。
         stack.enter_context(patch('aicompanion.agent.dsh_backend.dsh_home', return_value=fixture.dsh_home))
-        box = ToolBox(secrets=[fixture.secret], trash=fixture.trash)
+        box = ToolBox(secrets=[fixture.secret, fixture.dsh_home], trash=fixture.trash)
         answers, asked, calls = [], [], []
         box.approve = lambda kind, title, detail: (asked.append({'kind': kind, 'title': title}), answers.pop(0) if answers else 'no')[1]
         box.on_call = lambda record: calls.append(record)

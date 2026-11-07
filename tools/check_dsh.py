@@ -9,7 +9,7 @@ from unittest.mock import patch
 from aicompanion.agent.dsh_backend import DshAgent, problem
 from aicompanion.agent.tools_server import Task, ToolBox
 from aicompanion.agent.mcp_server import McpToolServer, dependency_problem
-from test_dsh_live import credentials, redact
+from test_dsh_live import credentials, redact, temporary_dsh_home
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT/'output'/'dsh-check'
@@ -30,8 +30,9 @@ def main() -> int:
                 workspace = root/'workspace'; workspace.mkdir()
                 (workspace/'a.txt').write_text('hello', encoding='utf-8')
                 (workspace/'b.md').write_text('# hi', encoding='utf-8')
-                stack.enter_context(patch('aicompanion.agent.dsh_backend.dsh_home', return_value=root/'dsh-home'))
-                box = ToolBox(trash=root/'trash'); box.task = Task(allowed=[workspace])
+                home = stack.enter_context(temporary_dsh_home())
+                stack.enter_context(patch('aicompanion.agent.dsh_backend.dsh_home', return_value=home))
+                box = ToolBox(secrets=[home], trash=root/'trash'); box.task = Task(allowed=[workspace])
                 asked = []
                 box.approve = lambda kind, title, detail: (asked.append(kind), 'no')[1]
                 server = McpToolServer(box); stack.callback(server.close)

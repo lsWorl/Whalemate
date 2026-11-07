@@ -57,4 +57,11 @@
 - 同步包含 PR #2、#3、#5 的 `collaboration-baseline`，保留 T6 的 studio 可选依赖及鲸娘源素材、运行时，不将其重复归为 T2 的修改。
 - tools_server.py 保留 T11 完整的 `_kill_tree`（Windows taskkill /T、POSIX killpg、kill / wait 兜底），删除旧 ToolServer；保留 T11 的精确 Git 选项允许列表、原任务绑定及写入审批。
 - 增加真实 MCP 客户端 → SDK 工作线程 → ToolBox → AgentSession 审批的组合回归：旧审批挂起时启动新任务并取消旧任务，旧写入必须失败，新任务保持可用。
-- 已实测真实 DSH 新会话发现官方 MCP 并取得全部 10 个工具（没有发送模型提示）。Claude 同意真实模型收费场景明确延后、不阻塞合入；真实点击确认、打包和性能仍保留为阶段验收项。
+- 已实测真实 DSH 新会话发现官方 MCP 并取得全部 10 个工具（没有发送模型提示）。但用户后续收费验收在 D 盘测试 DSH_HOME 的 session/new 阶段失败，Claude 已撤回可合并标记；修复后须重新验证六类场景，不能沿用此前的延后结论。
+
+## session/new 验收目录修复
+
+- 两个验收入口复用 temporary_dsh_home：在 sandbox.low_root() 下每次新建独立临时会话目录，运行时与正式 DSH_HOME 使用同一盘；工作区、合成文件与回收区继续留在项目 output 的临时 fixture，覆盖 D 盘 exFAT 场景。
+- 先结束 DSH 与 MCP 服务，再恢复 patch、清理本次临时目录；不触及正式会话。临时会话目录加入 ToolBox 的 secrets，禁止工具读取验收会话内容。
+- 离线回归覆盖两个实际入口都选择 low_root 所在盘及其直接子目录、异常后清理与既有目录保留。真实运行时对照验证到 session/new，而非仅 initialize；不修改正式 agent/ 代码，stderr 增强仍归 Claude 的 T12。
+- 最新可合并结论须等 Claude 复审及修复后的真实模型验收；不把无提示的 session/new 验证记作八次模型任务通过。
