@@ -79,7 +79,7 @@ class BridgeTests(unittest.TestCase):
         for private in ('桌面上说的悄悄话', '之前聊过搬家的事', '集邮', '信任程度'):
             self.assertNotIn(private, text)
         self.assertIn('看海', prompt); self.assertIn('公开场合', prompt); self.assertIn('群聊', prompt)   # 共享记忆在群里也能用
-        self.assertIn('大壮#0002：你好', history[-1].content)       # 群里带上说话人（昵称 + 号码后四位）
+        self.assertIn('大壮#1：你好', history[-1].content)          # 群里带上说话人（昵称 + 不重复的编号）
         self.assertEqual(len(self.db.recent_messages(10, self.cid)), 1)   # 桌面频道没有多出群聊内容
         self.assertEqual(len(self.db.recent_messages(10, self.cid, channel=f'qq:group:{GROUP}')), 2)
         self.assertFalse(any('大壮' in m['content'] for m in self.db.recent_memories(character_id=self.cid)))   # 不提取记忆
@@ -135,7 +135,7 @@ class MemorySharingTests(BridgeTests.__base__):
         memory_service = self.controller.memory_service
         self.assertEqual(memory_service.pending(self.cid, channel), 2)
         source = [r['id'] for r in self.db.recent_messages(10, self.cid, channel=channel) if r['role'] == 'user']
-        analysis = {'summary': '不应保存', 'memories': [{'content': '群友大壮#0001 是程序员，在学 Rust', 'fact_key': 'qq#0001:job',
+        analysis = {'summary': '不应保存', 'memories': [{'content': '群友大壮#1 是程序员，在学 Rust', 'fact_key': 'qq#1:job',
                      'category': 'identity', 'importance': 2, 'confidence': 0.9, 'source_ids': source[:1]}]}
         seen = []
         class Analyzer:
@@ -145,17 +145,43 @@ class MemorySharingTests(BridgeTests.__base__):
         self.assertFalse(self.service.maybe_remember(self.cid, channel, background=False))   # 关着时不整理
         self.db.set_setting('bridge_memory_every', 2)
         self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
-        memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#0001:job'), None)
+        memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#1:job'), None)
         self.assertIsNotNone(memory); self.assertEqual(memory['scope'], 'qq')
         self.assertIn('不要把群友的事记成主人的', seen[-1])
         self.assertEqual(self.db.load_summary(self.cid), '')                # 群聊不写对话摘要
         self.assertEqual(memory_service.pending(self.cid, channel), 0)
         history, prompt = self.controller.context.build(self.controller.character, '大壮')   # 桌面上她也知道
-        self.assertIn('大壮#0001 是程序员', prompt)
+        self.assertIn('大壮#1 是程序员', prompt)
+
+    def test_private_memory_cannot_leak_through_group_memory_analysis(self):
+        """Codex 复现：private 记忆进入公开整理输入，被换个键复制成共享。整理输入不含 private；复制和覆盖都被拒。"""
+        channel = f'qq:group:{GROUP}'
+        self.db.upsert_memory('主人的编号是 SYNTHETIC-PRIVATE-4827', self.cid, 'secret-code', scope='private')
+        self.db.upsert_memory('主人喜欢蓝色', self.cid, 'color')                 # 桌面记住的共享事实（scope=pet）
+        self.db.set_setting('bridge_memory_every', 0)
+        self.ask(STRANGER, '今天聊些什么', group=GROUP)
+        source = [r['id'] for r in self.db.recent_messages(10, self.cid, channel=channel) if r['role'] == 'user']
+        crafted = {'summary': '', 'memories': [
+            {'content': '群里提到 SYNTHETIC-PRIVATE-4827', 'fact_key': 'qq#2:copied-test', 'category': 'event', 'importance': 2, 'confidence': 0.9, 'source_ids': source},
+            {'content': '主人喜欢红色', 'fact_key': 'color', 'category': 'preference', 'importance': 2, 'confidence': 0.9, 'source_ids': source},
+            {'content': '群友今天想聊天', 'fact_key': 'qq#2:mood', 'category': 'event', 'importance': 1, 'confidence': 0.9, 'source_ids': source}]}
+        inputs = []
+        class Analyzer:
+            def generate_reply_stream(self_, history, prompt, cancellation=None):
+                inputs.append(history[0].content); yield json.dumps(crafted, ensure_ascii=False)
+        from aicompanion.domain.cancellation import CancellationToken
+        self.controller.memory_service.analyze(self.cid, Analyzer(), CancellationToken(), channel=channel)
+        self.assertNotIn('SYNTHETIC-PRIVATE-4827', inputs[0]); self.assertNotIn('secret-code', inputs[0])   # 整理输入不含 private
+        keys = {m['fact_key']: m for m in self.db.recent_memories(character_id=self.cid)}
+        self.assertNotIn('qq#2:copied-test', keys)                               # 复制被拒
+        self.assertEqual(keys['color']['content'], '主人喜欢蓝色')                # 群里不能改桌面记住的事实
+        self.assertEqual(keys['qq#2:mood']['scope'], 'qq')                       # 正常的群记忆照常记
+        self.ask(STRANGER, '她有什么编号', group=GROUP)
+        self.assertNotIn('SYNTHETIC-PRIVATE-4827', self.client.calls[-1][1])    # 之后的群回复也看不到
 
     def test_owner_label_in_group_and_no_regex_memory_for_group(self):
         self.ask(OWNER, '我叫阿青', group=GROUP, name='阿青')
-        self.assertIn('主人阿青#0001：我叫阿青', self.client.calls[-1][0][-1].content)
+        self.assertIn('主人阿青#1：我叫阿青', self.client.calls[-1][0][-1].content)
         self.assertFalse(any('名字是阿青' in m['content'] for m in self.db.recent_memories(character_id=self.cid)))   # 群里不按"用户"套规则
 
     def test_private_summary_and_marked_memories_stay_out_of_groups(self):
@@ -228,15 +254,47 @@ class ConcurrencyTests(BridgeTests.__base__):
         self.assertEqual((h1[-1].role, h1[-1].content), ('user', '第一条'))
         self.assertEqual([(t.role, t.content) for t in h2[-3:]], [('user', '第一条'), ('assistant', '好呀'), ('user', '第二条')])
 
-    def test_same_nickname_in_group_is_told_apart(self):
+    def test_same_nickname_and_same_last_digits_are_told_apart(self):
+        """Codex：后四位并不唯一。编号按账号全局分配、永不重复，完整号码不交给模型。"""
         self.ask('11110001', '我是一号', group=GROUP, name='小明')
-        self.ask('22220002', '我是二号', group=GROUP, name='小明')
-        history = self.client.calls[-1][0]
-        text = ' '.join(t.content for t in history)
-        self.assertIn('小明#0001：我是一号', text); self.assertIn('小明#0002：我是二号', text)
+        self.ask('22220001', '我是二号', group=GROUP, name='小明')     # 同昵称、同后四位
+        self.ask('11110001', '还是一号', group=GROUP, name='小明')
+        text = ' '.join(t.content for t in self.client.calls[-1][0])
+        self.assertIn('小明#1：我是一号', text); self.assertIn('小明#2：我是二号', text); self.assertIn('小明#1：还是一号', text)
         rows = self.db.recent_messages(10, self.cid, channel=f'qq:group:{GROUP}')
-        self.assertEqual([r['sender'] for r in rows if r['role'] == 'user'], ['qq:11110001', 'qq:22220002'])
-        self.assertNotIn('11110001', ' '.join(t.content for t in history))   # 完整号码不交给模型
+        self.assertEqual([r['sender'] for r in rows if r['role'] == 'user'], ['qq:11110001', 'qq:22220001', 'qq:11110001'])
+        self.assertNotIn('11110001', text); self.assertNotIn('0001', text)
+
+    def queued(self, payload_fn, change):
+        """先占住处理锁让请求排队，排队期间改设置，再放行。返回结果。"""
+        from aicompanion.bridge.service import PROCESS_LOCK
+        result = {}
+        PROCESS_LOCK.acquire()
+        try:
+            t = threading.Thread(target=lambda: result.update(payload_fn())); t.start()
+            time.sleep(0.2); change()
+        finally:
+            PROCESS_LOCK.release()
+        t.join(5); return result
+
+    def test_unbound_owner_queued_request_is_dropped(self):
+        def unbind():
+            self.db.set_setting('bridge_owner:qq', '99999')
+            self.db.add_message('user', 'NEW-OWNER-PRIVATE-SYNTHETIC', self.cid)
+        before = len(self.db.recent_messages(50, self.cid))
+        result = self.queued(lambda: self.ask(OWNER, '在吗'), unbind)
+        self.assertEqual(result['reason'], 'not_allowed'); self.assertEqual(self.client.calls, [])   # 模型零调用
+        self.assertEqual(len(self.db.recent_messages(50, self.cid)), before+1)                     # 只有 unbind 写的那条
+
+    def test_group_removed_while_queued_is_dropped(self):
+        result = self.queued(lambda: self.ask(STRANGER, '大家好', group=GROUP), lambda: self.db.set_setting('bridge_groups', []))
+        self.assertEqual(result['reason'], 'not_allowed'); self.assertEqual(self.client.calls, [])
+        self.assertEqual(self.db.recent_messages(10, self.cid, channel=f'qq:group:{GROUP}'), [])
+
+    def test_closed_service_drops_queued_requests(self):
+        def close(): self.service.closed = True   # Runtime 重启 / 关闭时 BridgeServer.close 会这样做
+        result = self.queued(lambda: self.ask(OWNER, '在吗'), close)
+        self.assertEqual(result['reason'], 'closed'); self.assertEqual(self.client.calls, [])
 
 
 class MigrationTests(unittest.TestCase):
@@ -260,6 +318,26 @@ class MigrationTests(unittest.TestCase):
             rows = db.recent_messages(5, 'emilia')
             self.assertEqual([(r['content'], r['channel'], r['sender']) for r in rows], [('旧消息', 'desktop', '')])
             self.assertTrue(list(Path(tmp).glob('old.backup-*.sqlite3')))   # 升级前自动备份
+
+
+class EarlyV4Tests(unittest.TestCase):
+    def test_first_t9_database_shape_upgrades(self):
+        """试用过 T9 初版的库：user_version=4、有 channel、没有 sender。升级要备份、保留数据、能写新消息，重复打开也没问题。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'early.sqlite3'
+            db = Database(path); db.initialize()
+            db.add_message('user', '旧的群消息', 'emilia', channel='qq:group:30003')
+            with closing(sqlite3.connect(path)) as conn:
+                conn.execute('ALTER TABLE chat_messages DROP COLUMN sender'); conn.execute('PRAGMA user_version=4'); conn.commit()
+            for backup in Path(tmp).glob('*.backup-*'): backup.unlink()
+            db = Database(path); db.initialize()
+            self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
+            rows = db.recent_messages(5, 'emilia', channel='qq:group:30003')
+            self.assertEqual([(r['content'], r['sender']) for r in rows], [('旧的群消息', '')])
+            db.add_message('user', '新消息', 'emilia', channel='qq:group:30003', sender='qq:1')
+            Database(path).initialize()                                      # 重复打开
+            self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
+            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 5)
 
 
 class ServerTests(unittest.TestCase):

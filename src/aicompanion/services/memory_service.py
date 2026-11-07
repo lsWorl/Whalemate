@@ -7,6 +7,18 @@ from aicompanion.llm.base import ChatTurn
 from aicompanion.storage.database import Database
 
 
+def similar(a: str, b: str, threshold: float = 0.5) -> bool:
+    """两段中文是否说的是同一件事：字符二元组的重合比例（相对较短的一段），或者一段完整包含另一段里不短的片段。"""
+    def grams(text):
+        text = re.sub(r'\W+', '', text.lower())
+        return {text[i:i+2] for i in range(len(text)-1)} or {text}
+    x, y = grams(a), grams(b)
+    if not x or not y: return False
+    overlap = len(x & y)/min(len(x), len(y))
+    tokens = re.findall(r'[A-Za-z0-9-]{6,}', b)
+    return overlap >= threshold or any(t in a for t in tokens)
+
+
 class MemoryService:
     """自动记忆后台提取；删除过记忆的角色暂停历史重分析，避免同义改写复活。"""
 
@@ -20,6 +32,13 @@ class MemoryService:
         recalled = [row['id'] for row, _, matched in selected if matched]
         if recalled: self.database.touch_memories(recalled)
         return render(selected)
+
+    def _public_may_write(self, key, content, protected, character_id) -> bool:
+        """公开来源能写的记忆：不能落在已有的非公开事实键上（桌面 / 私下记住的只由桌面那边更新），
+        也不能和"只在私下用"的记忆内容高度重合（防止换个键把私下的事复制成共享）。"""
+        current = next((r for r in self.database.recent_memories(1000, character_id) if r['fact_key'] == key), None)
+        if current is not None and current['scope'] not in ('qq', 'bili', 'public'): return False
+        return not any(similar(content, r['content']) for r in protected)
 
     def maybe_extract_memory(self, user_message: str, character_id="emilia", source_id=None) -> None:
         # 离线规则仅识别明确稳定信息，否定、假设和过去偏好交给模型分析。
@@ -62,6 +81,11 @@ class MemoryService:
             return
         users = [r for r in rows if r['role'] == 'user']
         existing = [dict(r) for r in self.database.recent_memories(character_id=character_id)]
+        protected = []
+        if public:
+            # 公开来源的整理看不到"只在私下用"的记忆，也不能覆盖或复制它们（用户明确设为私下的例外）
+            protected = [r for r in existing if r['scope'] == 'private']
+            existing = [r for r in existing if r['scope'] != 'private']
         instruction = (
             '仅提取用户明确表达的稳定事实、偏好、重要经历和关系事件。不要将假设、否定或角色猜测当事实。'
             '输出 JSON {"summary":"延续此前摘要的简短中文对话摘要，不编造事实", "memories":[{"content":"摘要","fact_key":"稳定语义键",'
@@ -69,9 +93,9 @@ class MemoryService:
             '使用已有相同事实键更新更正后的事实；无新事实返回空数组。不要输出 Markdown。'
         )
         if public:
-            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#号码后四位"（标着"主人"的是主人）。'
-                            '记忆必须写清楚是谁的事，例如"群友大壮#0002 是程序员"、"主人在群里说周末去爬山"；不要把群友的事记成主人的；'
-                            'fact_key 里带上说话人标记（如 "qq#0002:job"）。群里的玩笑、刷屏、对她的调侃不用记。summary 留空。')
+            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#编号"（标着"主人"的是主人）。'
+                            '记忆必须写清楚是谁的事，例如"群友大壮#2 是程序员"、"主人在群里说周末去爬山"；不要把群友的事记成主人的；'
+                            'fact_key 里带上说话人标记（如 "qq#2:job"）。群里的玩笑、刷屏、对她的调侃不用记。summary 留空。')
         context = json.dumps({"previous_summary":'' if public else self.database.load_summary(character_id),"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
                               "existing": [{"content":r['content'],"fact_key":r['fact_key']} for r in existing]}, ensure_ascii=False)
         # 使用可取消流式调用，即使这里仅需要完整结构化结果。
@@ -101,6 +125,8 @@ class MemoryService:
             # 删除与分析并发时再次检查，防止生成了新事实键绕过 tombstone。
             if self.database.has_deleted_memories(character_id):
                 return
+            if public and not self._public_may_write(key, content, protected, character_id):
+                continue
             importance, confidence = item.get('importance',2), item.get('confidence',0.8)
             if not isinstance(importance,int) or not isinstance(confidence,(float,int)):
                 continue

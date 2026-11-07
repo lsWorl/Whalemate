@@ -8,7 +8,7 @@
   桌面上记住的事在群里也能用，只有主人在记忆页标成"只在私下用"的不会在群里用。
 聊天平台上不提议、也不执行"动手干活"。
 
-并发：一条消息的"检查额度 → 预留当日条数 → 记下用户消息 → 生成 → 记下回复"整段在一把进程级锁里串行完成
+并发：一条消息的"按最新设置判断身份 → 检查额度 → 预留当日条数 → 记下用户消息 → 生成 → 记下回复"整段在一把进程级锁里串行完成
 （设置保存时重建服务实例也共用这把锁），生成时只看到这条消息为止的历史，后来的消息不会混进这一轮。
 桌面聊天和主人的 QQ 私聊共用 desktop 频道：两边同时说话时按消息先后排进同一段记录，QQ 这一轮只回答到自己那条为止。
 """
@@ -36,9 +36,13 @@ PROCESS_LOCK = threading.Lock()
 REMEMBERING_LOCK = threading.Lock(); REMEMBERING: set = set()   # 正在整理记忆的频道（同一频道不并发整理）
 
 
-def short_id(sender_id: str) -> str:
-    """群里给模型看的说话人标记：昵称会重名，带上号码后四位区分，不把完整号码交给模型。"""
-    return '#'+sender_id[-4:]
+def alias(database, stable: str) -> str:
+    """群里给模型看的说话人标记 #序号：每个平台账号第一次出现时分配一个全局不重复的序号（存在设置里，之后不变）。
+    昵称会重名、号码后几位也会撞，序号不会；完整号码不交给模型。需在 PROCESS_LOCK 里调用。"""
+    table = database.get_setting('bridge_aliases', {}) or {}
+    if stable not in table:
+        table[stable] = len(table)+1; database.set_setting('bridge_aliases', table)
+    return f'#{table[stable]}'
 
 
 class BridgeService:
@@ -49,6 +53,7 @@ class BridgeService:
             quota = Quota(database)
         self.quota = quota
         self.lock = PROCESS_LOCK
+        self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
 
     # ---- 规则 --------------------------------------------------------------------
     def classify(self, platform: str, sender_id: str, group_id: str) -> dict | None:
@@ -82,11 +87,14 @@ class BridgeService:
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         if not text: return {'reply': '', 'silent': True, 'reason': 'empty'}
-        mode = self.classify(platform, sender_id, group_id)
-        if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
-        private = mode['owner'] and not mode['group']
-        purpose = 'companion' if private else 'qq'
+        if self.classify(platform, sender_id, group_id) is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         with self.lock:
+            # 拿到锁以后、读任何上下文之前，按此刻的设置重新判断身份：排队期间主人解绑 / 群被移出 / 服务被关，旧请求都作废
+            if self.closed: return {'reply': '', 'silent': True, 'reason': 'closed'}
+            mode = self.classify(platform, sender_id, group_id)
+            if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
+            private = mode['owner'] and not mode['group']
+            purpose = 'companion' if private else 'qq'
             # 额度和条数在锁里、真正生成之前核验：排队期间额度用完的请求不会再发给模型
             if self.quota.check_silent(purpose) == 'stop':
                 return {'reply': '今天的额度用完啦，明天再聊～' if private else '', 'silent': not private, 'reason': 'quota'}
@@ -100,12 +108,13 @@ class BridgeService:
                 situation = (f'【场合】主人现在不在电脑前，正在{mode["where"]}私聊里和你说话。'
                              '回复像聊天软件里的消息，一两句，不用动作描写。')
             else:
-                # 公开场合：只记在这个群 / 这个人自己的频道，不改心情、不提取记忆；记下稳定 ID，群里按"昵称#号码后四位"区分人
-                line = f'{"主人" if mode["owner"] else ""}{name}{short_id(sender_id)}：{text}' if mode['group'] else text
+                # 公开场合：只记在这个群 / 这个人自己的频道，不改心情、不套"我叫…"之类的规则提取记忆（另由后台整理）；记下稳定 ID，群里按"昵称#编号"区分人
+                tag = alias(self.database, stable)
+                line = f'{"主人" if mode["owner"] else ""}{name}{tag}：{text}' if mode['group'] else text
                 message_id = self.database.add_message('user', line, character.id, source=platform, channel=mode['channel'], sender=stable)
-                who = '你的主人' if mode['owner'] else f'{name}{short_id(sender_id)}'
+                who = '你的主人' if mode['owner'] else f'{name}{tag}'
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在跟你说话'
-                             + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和号码后四位' if mode['group'] else '') + '。'
+                             + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号（#数字，同一个人编号不变）' if mode['group'] else '') + '。'
                              '回复像聊天软件里的消息，一两句，不用动作描写；不要提桌面上发生的事。')
             from aicompanion.pet.script import Vocab, strip_cues
             parts = []

@@ -60,9 +60,10 @@ class Database:
                                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                     if "emotion_state" in tables:
                         connection.execute("ALTER TABLE emotion_state RENAME TO legacy_emotion")
-                if version < 4 and "chat_messages" in tables:
-                    # v4：聊天记录按"频道"隔离。desktop = 桌面和已绑定主人的私聊（同一个她、同一段相处）；
-                    # qq:group:<群号> / qq:user:<号> = 公开场合，历史互不可见，也不进摘要和记忆整理。
+                if version < 5 and "chat_messages" in tables:
+                    # v5（T9 修订版；试用过 T9 初版的库是"v4、有 channel、没有 sender"，同样按缺哪列补哪列）。
+                    # 聊天记录按"频道"隔离。desktop = 桌面和已绑定主人的私聊（同一个她、同一段相处）；
+                    # qq:group:<群号> / qq:user:<号> = 公开场合，聊天记录互不可见（记忆另行共享，见 bridge/service.py）。
                     # sender：聊天平台上说话人的稳定 ID（平台:号），昵称会重名，不能只靠昵称区分群友。
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(chat_messages)")}
                     for name, definition in (("channel", "TEXT NOT NULL DEFAULT 'desktop'"), ("sender", "TEXT NOT NULL DEFAULT ''")):

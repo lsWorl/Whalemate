@@ -57,6 +57,7 @@ class BridgeServer:
         return self.httpd.server_address[1]
 
     def close(self):
+        self.service.closed = True   # 还在排队的旧请求拿到锁后直接作废
         self.httpd.shutdown(); self.httpd.server_close(); self.thread.join(timeout=5)
 
 
