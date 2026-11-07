@@ -222,10 +222,12 @@ class AgentSession(QObject):
         """自己的工具每调用一次记一步审计（参数、审批结果、结果或错误）。"""
         import json
         state = self.run_state
-        if not state.get('run_id'): return
-        state['seq'] += 1
+        run_id = record.get('run_id') or state.get('run_id')   # 记在调用开始时的任务名下：迟到的回调不会算进下一个任务
+        if not run_id: return
+        if run_id == state.get('run_id'): state['seq'] += 1; seq = state['seq']
+        else: seq = 0
         database = self.window.database
-        step_id = database.add_agent_step(state['run_id'], state['seq'], record['tool'], json.dumps(record['args'], ensure_ascii=False)[:4000],
+        step_id = database.add_agent_step(run_id, seq, record['tool'], json.dumps(record['args'], ensure_ascii=False)[:4000],
                                           'tool', record['decision'])
         database.finish_agent_step(step_id, record.get('result', '')[:500], record.get('error', '')[:500])
 

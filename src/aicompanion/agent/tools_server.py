@@ -155,7 +155,8 @@ class ToolBox:
         self.trash = trash        # 测试时指定；平时按盘选（见 trash_root）
         self.approve: Callable[[str, str, str], str] = lambda kind, title, detail: 'no'
         self.on_call: Callable[[dict], None] = lambda record: None
-        self.task = Task()
+        self.task = Task()                 # 当前任务；每次工具调用开始时绑定到这个线程（见 current）
+        self._local = threading.local()
         self.run_command = run_command or self._run_powershell
 
     # ---- MCP 工具清单 ----------------------------------------------------------------
@@ -185,11 +186,18 @@ class ToolBox:
     ]
 
     # ---- 调度 ------------------------------------------------------------------------
+    @property
+    def current(self) -> Task:
+        """这次调用所属的任务。调用开始时绑定，之后即使 self.task 换成了新任务，这次调用也只认原来那个
+        （旧命令照样会被旧任务的停止信号结束，迟到的审批和审计也记在原任务名下）。"""
+        return getattr(self._local, 'task', None) or self.task
+
     def call(self, name: str, args: dict) -> tuple[str, bool]:
         """执行一个工具，返回（文字结果, 是否出错）。"""
-        record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': ''}
+        task = self.task; self._local.task = task
+        record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': '', 'run_id': task.run_id}
         try:
-            if self.task.cancelled.is_set(): raise PermissionError('任务已经停止')
+            if task.cancelled.is_set(): raise PermissionError('任务已经停止')
             handler = getattr(self, f'_t_{name}', None)
             if handler is None: raise ValueError(f'没有这个工具：{name}')
             text = handler(record, **{k: v for k, v in (args or {}).items() if v is not None})
@@ -202,6 +210,7 @@ class ToolBox:
             record['error'] = f'{type(error).__name__}: {error}'
             return f'出错：{type(error).__name__}: {error}', True
         finally:
+            self._local.task = None
             try: self.on_call(record)
             except Exception: pass
 
@@ -211,14 +220,14 @@ class ToolBox:
         if reason: raise PermissionError(f'{path} 不能读（{reason}）')
 
     def _allowed(self, path: Path) -> bool:
-        return any(_inside(path, folder) or path == folder for folder in self.task.allowed+[Path(p) for p in self.task.always if p != 'command'])
+        return any(_inside(path, folder) or path == folder for folder in self.current.allowed+[Path(p) for p in self.current.always if p != 'command'])
 
     def _ask(self, record, kind: str, title: str, detail: str, remember: str | None = None):
-        if remember and remember in self.task.always:
+        if remember and remember in self.current.always:
             record['decision'] = 'approved_session'; return
         answer = self.approve(kind, title, detail)
-        if self.task.cancelled.is_set(): raise PermissionError('任务已经停止')
-        if answer == 'always' and remember: self.task.always.add(remember)
+        if self.current.cancelled.is_set(): raise PermissionError('任务已经停止')
+        if answer == 'always' and remember: self.current.always.add(remember)
         if answer in ('once', 'always'):
             record['decision'] = 'approved_session' if answer == 'always' else 'approved'; return
         record['decision'] = 'denied' if answer == 'no' else 'timeout'
@@ -230,14 +239,14 @@ class ToolBox:
         if self._allowed(path): return
         folder = path if path.is_dir() else path.parent
         self._ask(record, 'write', f'要在放开的文件夹外{action}：\n{path}',
-                  f'这次任务放开的文件夹：\n' + '\n'.join(str(p) for p in self.task.allowed) + f'\n\n同意后她会{action}这个位置；选"这个文件夹本次都可以"会放开 {folder}。',
+                  f'这次任务放开的文件夹：\n' + '\n'.join(str(p) for p in self.current.allowed) + f'\n\n同意后她会{action}这个位置；选"这个文件夹本次都可以"会放开 {folder}。',
                   remember=str(folder))
 
     def _backup(self, path: Path) -> str:
         """覆盖或删除前把旧版本移 / 复制进回收区：<盘>\\.aicompanion-trash\\<时间>-<任务号>\\<原路径>。"""
         if not path.exists(): return ''
         stamp = time.strftime('%Y%m%d-%H%M%S')
-        target = (self.trash or trash_root(path))/f'{stamp}-run{self.task.run_id}'/str(path)[len(path.drive):].lstrip('\\/')
+        target = (self.trash or trash_root(path))/f'{stamp}-run{self.current.run_id}'/str(path)[len(path.drive):].lstrip('\\/')
         target.parent.mkdir(parents=True, exist_ok=True)
         if path.is_dir(): shutil.copytree(path, target, dirs_exist_ok=True)
         else: shutil.copy2(path, target)
@@ -304,7 +313,7 @@ class ToolBox:
     def _t_write_file(self, record, path, content):
         p = _norm(path); self._check_write(record, p, '写入文件')
         backup = self._backup(p) if p.exists() else ''
-        if not p.exists(): self.task.created.add(str(p).lower())
+        if not p.exists(): self.current.created.add(str(p).lower())
         p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding='utf-8')
         return f'已写入 {p}（{len(content)} 字）'+(f'；旧版本留底在 {backup}' if backup else '')
 
@@ -320,7 +329,7 @@ class ToolBox:
 
     def _t_make_dir(self, record, path):
         p = _norm(path); self._check_write(record, p, '新建文件夹')
-        p.mkdir(parents=True, exist_ok=True); self.task.created.add(str(p).lower())
+        p.mkdir(parents=True, exist_ok=True); self.current.created.add(str(p).lower())
         return f'已建好 {p}'
 
     def _t_move_path(self, record, source, destination):
@@ -329,7 +338,7 @@ class ToolBox:
             reason = _secret_reason(p, self.secrets)
             if reason: raise PermissionError(f'{p} 不能动（{reason}）')
         # 源和目标分别检查：她这次自己建的文件可以在放开的文件夹里随便挪，但挪到外面一样要问
-        source_ok = self._allowed(src) or str(src).lower() in self.task.created
+        source_ok = self._allowed(src) or str(src).lower() in self.current.created
         target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
         if not (source_ok and target_ok):
             where = [] if source_ok else ['原位置在放开的文件夹外']
@@ -344,7 +353,7 @@ class ToolBox:
         secret = _secret_reason(p, self.secrets)
         if secret: raise PermissionError(f'{p} 不能删（{secret}）')
         if not p.exists(): return f'{p} 本来就不存在'
-        if str(p).lower() not in self.task.created:
+        if str(p).lower() not in self.current.created:
             what = '整个文件夹' if p.is_dir() else '文件'
             self._ask(record, 'delete', f'要删除{what}：\n{p}'+(f'\n原因：{reason}' if reason else ''),
                       '同意后会移到同一个盘的 .aicompanion-trash 回收区，需要时可以从那里找回。')
@@ -355,7 +364,7 @@ class ToolBox:
 
     # ---- 命令 ------------------------------------------------------------------------
     def _t_run_powershell(self, record, command, cwd=None, reason=''):
-        folder = _norm(cwd) if cwd else (self.task.allowed[0] if self.task.allowed else Path.home())
+        folder = _norm(cwd) if cwd else (self.current.allowed[0] if self.current.allowed else Path.home())
         for p in [folder, *self._paths_in(command)]:
             secret = _secret_reason(p, self.secrets)
             if secret: raise PermissionError(f'命令涉及 {p}（{secret}）')
@@ -388,14 +397,16 @@ class ToolBox:
 
     def _run_process(self, args, folder: Path, env: dict, flags: int = 0, timeout: float = COMMAND_TIMEOUT) -> str:
         """运行命令；任务被停止或超时时连同它启动的子进程一起结束。"""
-        proc = subprocess.Popen(args, cwd=str(folder), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=flags)
+        task = self.current   # 启动时绑定：轮询期间不再读 self.task
+        extra = {} if os.name == 'nt' else {'start_new_session': True}   # 非 Windows：独立进程组，停止时整组结束
+        proc = subprocess.Popen(args, cwd=str(folder), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=flags, **extra)
         out_parts, err_parts = [], []
         readers = [threading.Thread(target=lambda s=stream, b=box: b.append(s.read()), daemon=True)
                    for stream, box in ((proc.stdout, out_parts), (proc.stderr, err_parts))]
         for r in readers: r.start()
         deadline = time.monotonic()+timeout; stopped = ''
         while proc.poll() is None:
-            if self.task.cancelled.is_set(): stopped = '任务已停止，命令也一起停下了。'
+            if task.cancelled.is_set(): stopped = '任务已停止，命令也一起停下了。'
             elif time.monotonic() > deadline: stopped = f'命令超过 {int(timeout)} 秒被停止了。长时间运行的程序请用 Start-Process 放到后台。'
             if stopped:
                 self._kill_tree(proc); break
@@ -413,6 +424,9 @@ class ToolBox:
             if os.name == 'nt':
                 subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True, timeout=10,
                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            else:
+                import signal
+                os.killpg(proc.pid, signal.SIGKILL)
             proc.kill()
         except Exception:
             pass

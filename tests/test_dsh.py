@@ -236,6 +236,59 @@ class ToolBoxTest(unittest.TestCase):
         self.assertIn('超过', text)
         self.assertIn('hello', box._run_process([sys.executable, '-c', 'print("hello")'], self.inside, dict(__import__('os').environ)))
 
+    def test_old_command_stops_even_after_new_task_starts(self):
+        """旧命令启动后：取消旧任务，并在它下一次轮询前换成新任务——旧命令仍要结束，新任务不受影响。"""
+        from aicompanion.agent import tools_server
+        box = ToolBox(trash=Path(self.tmp.name)/'trash'); old = Task(run_id=1, allowed=[self.inside]); box.task = old
+        new = Task(run_id=2, allowed=[self.inside]); killed = []
+
+        class FakeProc:
+            pid = 4242; returncode = None
+            def __init__(self, *a, **k):
+                import io; self.stdout, self.stderr = io.BytesIO(b''), io.BytesIO(b''); self.polls = 0
+            def poll(self):
+                self.polls += 1
+                if self.polls == 1: old.cancelled.set(); box.task = new      # 用户停了旧任务并马上开了新任务
+                return None if not killed else -9
+            def kill(self): pass
+            def wait(self, timeout=None): return -9
+
+        original_popen, original_kill = tools_server.subprocess.Popen, ToolBox.__dict__['_kill_tree']
+        tools_server.subprocess.Popen = FakeProc; ToolBox._kill_tree = staticmethod(lambda proc: killed.append(proc.pid))
+        try:
+            box._local.task = old
+            text = box._run_process(['x'], self.inside, {})
+        finally:
+            tools_server.subprocess.Popen, ToolBox._kill_tree = original_popen, original_kill
+            box._local.task = None
+        self.assertEqual(killed, [4242]); self.assertIn('停', text); self.assertFalse(new.cancelled.is_set())
+
+    def test_late_record_keeps_original_run_id(self):
+        records = []; self.box.on_call = records.append
+        old = self.box.task
+        def approve(kind, title, detail):
+            self.box.task = Task(run_id=99, allowed=[self.inside])   # 等确认期间换了新任务
+            return 'no'
+        self.box.approve = approve
+        self.call('delete_path', path=str(self.inside))
+        self.assertEqual(records[-1]['run_id'], old.run_id)
+
+    @unittest.skipIf(__import__('os').name == 'nt', '进程组用例在 POSIX 上跑；Windows 用 taskkill /T（见 Windows 实测）')
+    def test_stop_kills_child_processes_too(self):
+        import os, sys, time
+        box = ToolBox(trash=Path(self.tmp.name)/'trash'); box.task = Task(run_id=1, allowed=[self.inside])
+        pid_file = self.inside/'child.pid'
+        script = (f"import subprocess,sys,time; c=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+                  f"open(r'{pid_file}','w').write(str(c.pid)); time.sleep(60)")
+        threading.Timer(1.0, box.task.cancelled.set).start()
+        box._run_process([sys.executable, '-c', script], self.inside, dict(os.environ))
+        child = int(pid_file.read_text()); time.sleep(0.3)
+        try: os.kill(child, 0); alive = True
+        except OSError: alive = False
+        if alive:   # 可能是僵尸进程：看状态
+            alive = 'Z' not in open(f'/proc/{child}/stat').read().split()[2] if os.path.exists(f'/proc/{child}/stat') else False
+        self.assertFalse(alive)
+
     def test_cancelled_task_refuses(self):
         self.box.task.cancelled.set()
         self.assertTrue(self.call('list_dir', path=str(self.inside))[1])
