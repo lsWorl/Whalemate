@@ -161,11 +161,20 @@ def schedule_pet_smoke_check(window, database, output):
         state['dsh_problem'] = problem()
         state['agent_session_ready'] = window.agent is not None and not window.agent.busy
         # 她的工具：MCP 服务能应答；.env 读不到；工作区外写会先问（自检里自动拒绝）
-        import json as _json, urllib.request
         from pathlib import Path as _Path
-        session = window.agent; request = urllib.request.Request(session.server.url, data=_json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}).encode(),
-                                                                 headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {session.server.token}'})
-        state['tools_listed'] = len(_json.loads(urllib.request.urlopen(request, timeout=5).read())['result']['tools'])
+        from aicompanion.ui.chat_worker import TaskWorker
+        from aicompanion.agent.mcp_server import tool_client
+        import asyncio
+        session = window.agent
+        async def list_tools():
+            async with tool_client(session.server, mode='legacy') as client:
+                return len((await client.list_tools()).tools)
+        worker = TaskWorker(lambda token: asyncio.run(list_tools()), window)
+        window.tasks.add(worker)
+        worker.succeeded.connect(lambda count: state.update(tools_listed=count))
+        worker.failed.connect(lambda error: state['errors'].append('MCP 自检：'+error))
+        worker.finished.connect(lambda: (window.tasks.discard(worker), worker.deleteLater()))
+        worker.start()
         _, blocked = session.box.call('read_file', {'path': str(_Path(__file__).resolve().parents[3]/'.env')})
         state['env_blocked'] = blocked
         asked = []; session.auto_approve = lambda kind, title, detail: (asked.append(kind), 'no')[1]
@@ -177,7 +186,9 @@ def schedule_pet_smoke_check(window, database, output):
         _, outside_error = session.box.call('write_file', {'path': str(outside), 'content': 'hi'})
         state['tools_gate'] = (not inside_error) and outside_error and asked == ['write'] and not outside.exists()
         session.auto_approve = None
-        state['housekeep_ok'] = hasattr(session.housekeep(), 'text')
+        # 自检只验证清理结果的接口，不清理用户真实的回收区或 DSH 会话。
+        from aicompanion.agent.housekeeping import Report
+        state['housekeep_ok'] = isinstance(Report().text(), str)
     later(21800, agent)
 
     def offer_and_quota():
@@ -195,10 +206,8 @@ def schedule_pet_smoke_check(window, database, output):
     later(25000, offer_and_quota)
 
     def panel_shot():
-        # 聊天面板新外观截图（背景图用本机 data/private-art 里的立绘，没有就用纯色）
-        from pathlib import Path
-        art = Path(__file__).resolve().parents[3]/'data'/'private-art'/'panel-background.png'
-        database.set_setting('panel_background', str(art)); window._apply_backdrop()
+        # 自检只用纯色背景，不读取用户的私人立绘。
+        database.set_setting('panel_background', ''); window._apply_backdrop()
         window.show(); window.resize(600, 760)
         QTimer.singleShot(400, lambda: (window.grab().save(str(output/'panel.png')), state.update(panel_shot=True, panel_bubbles=window.chat_list.column.count()-1), window.hide()))
     later(23500, panel_shot)
@@ -223,7 +232,9 @@ def schedule_pet_smoke_check(window, database, output):
         required = ['pet_visible', 'chat_hidden', 'native_sprites', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
+        required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
+        if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
         if state.get('center_alpha', 0) < 200: state['failed_checks'].append('center_alpha')
         if state.get('pose_after_poke') != 'poked': state['failed_checks'].append('pose_after_poke')

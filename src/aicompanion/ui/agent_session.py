@@ -11,7 +11,8 @@ from PySide6.QtCore import QObject, Signal
 
 from aicompanion.agent.dsh_backend import DEFAULT_MODEL, DshAgent, pick_workspace, problem
 from aicompanion.agent.paths import protected_reason, task_folders
-from aicompanion.agent.tools_server import Task, ToolBox, ToolServer
+from aicompanion.agent.tools_server import Task, ToolBox
+from aicompanion.agent.mcp_server import McpToolServer, dependency_problem
 from aicompanion.ui.chat_worker import TaskWorker
 from aicompanion.usage import meter
 
@@ -44,8 +45,7 @@ class AgentSession(QObject):
         self.dsh = DshAgent()
         self.box = ToolBox(secrets=self._secrets())
         self.box.approve = self._approve_tool; self.box.on_call = self._tool_record
-        self.server = ToolServer(self.box)
-        self.dsh.mcp_servers = [self.server.acp_entry()]
+        self.server = McpToolServer(self.box)
         self.run_state = {'run_id': 0, 'seq': 0}
         self.bridge = _Bridge(self)
         from PySide6.QtCore import QTimer
@@ -61,7 +61,7 @@ class AgentSession(QObject):
     def start(self, goal: str, announce: bool = True) -> bool:
         w = self.window
         if self.busy: w.pet.show_bubble('我手上还有活没做完，等我一下～', 5); return False
-        missing = problem()
+        missing = problem() or dependency_problem()
         if missing: w.pet.show_bubble(missing, 8); w._status(missing); return False
         if w.settings.llm_provider == 'mock' or not getattr(w.settings, 'llm_api_key', ''):
             w.pet.show_bubble('离线模式下没法干活，需要先配置 DeepSeek 接口。', 8); return False
@@ -91,6 +91,11 @@ class AgentSession(QObject):
             self.bridge.event.emit(kind, data)
 
         def run(token):
+            try:
+                self.dsh.mcp_servers = [self.server.acp_entry()]
+            except Exception as error:
+                database.finish_agent_run(run_id, 'failed', '', str(error)[:12000], 0, 0, 0.0)
+                raise
             result = self.dsh.run(prompt, cwd, model, w.settings.llm_api_key, w.settings.llm_base_url, on_event)
             tokens, cost = self._usage(run_id)
             result.run_id, result.tokens, result.cost, result.cwd = run_id, tokens, cost, str(cwd)
@@ -204,10 +209,19 @@ class AgentSession(QObject):
 
     # ---- 审批与提问（DSH 的后台线程调用，阻塞等待界面回答） ---------------------------------------
     def _wait_ui(self, spec) -> str:
+        from time import monotonic
+        # T11 在工具线程绑定 current；兼容尚未合入 T11 的 ToolBox，不能把旧调用绑到新的全局任务。
+        task = getattr(self.box, 'current', self.box.task)
+        if task.cancelled.is_set(): return 'no'
         box = {'event': threading.Event(), 'answer': 'timeout'}
         self.bridge.ask.emit(spec, box)
-        if not box['event'].wait(APPROVAL_TIMEOUT): self.bridge.event.emit('approval_timeout', {})
-        return box['answer']
+        deadline = monotonic()+APPROVAL_TIMEOUT
+        while not box['event'].wait(.1):
+            if task.cancelled.is_set(): return 'no'
+            if monotonic() >= deadline:
+                self.bridge.event.emit('approval_timeout', {})
+                return 'timeout'
+        return 'no' if task.cancelled.is_set() else box['answer']
 
     def _approve_tool(self, kind: str, title: str, detail: str) -> str:
         """工具要你点头时（后台线程）：弹确认气泡，返回 once / always / no / timeout。"""

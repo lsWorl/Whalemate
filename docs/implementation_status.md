@@ -375,6 +375,28 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 检查脚本：`tools/run_checks.bat`（单元测试 + 桌宠自检，不联网）；`tools/run_agent_checks.bat`（再加真实模型的干活实测）。
 - 验证：Windows 本机单元测试 187 项通过（新增 `tests/test_housekeeping.py`）；桌宠自检通过（新增 `housekeep_ok`）。
 
+### T2 官方 MCP 协议适配（2026-11-07，待互审）
+
+- 新增 `agent/mcp_server.py`，使用官方 `mcp==2.3.0` 的 `MCPServer` 注册现有 10 个工具；`ToolBox` 的授权规则、回收区和执行实现保持不变，旧手写 `ToolServer` 已删除。T11 的命令安全修复仍由独立 PR 维护。
+- 本机回环 Streamable HTTP、随机 Bearer 令牌、Host/Origin 检查、SDK 输入校验和 `is_error` 工具失败结果；支持 `2025-03-26` / `2025-06-18` / `2025-11-25` 旧协议与 `2026-07-28` 新协议。审批阻塞时另一个只读请求可以返回。
+- 协议服务在后台按需启动；未安装 Agent 可选依赖时，基础聊天和桌宠仍可加载。第一次实际干活时在工作线程启动服务。关闭服务会等待 HTTP 线程退出；等待 UI 确认的工具会响应原任务的取消事件。
+- `requirements-agent-lock.txt` 锁定 Agent 的 31 个分发包，基础三项依赖仍沿用 `requirements-lock.txt`。`setup_dsh.bat` 使用该锁文件；其真实模型验收行为保留，README 已注明只安装依赖的独立命令。
+- 验证：194 项离线单元测试全部通过；Qt 桌宠自检 `passed=true`、`tools_listed=10`、`env_blocked=true`、`tools_gate=true`、退出剩余工作线程 0；`pip check` 通过。自检不再清理用户真正的回收区，也不加载私人面板背景。
+- 性能：`tools/measure_pet.ps1` 本轮空闲预览总工作集 452.2 MB、私有内存 360.0 MB、整机 CPU 1.4%（20 逻辑核，采样 10 秒）；历史记录约 440 MB 不是本轮受控前后对照，不能据此归因差值。独立 MCP 进程测量：加载 SDK 前 27.2 MB → 服务启动后 75.1 MB → 官方客户端调用后 78.0 MB，关闭后 77.8 MB（模块仍驻留）。桌宠尚未达到 350 MB 目标，继续由 T7 优化；延迟加载可避免未使用干活时的 SDK 常驻开销。
+- 未验证：真实 DSH/模型的六个收费场景、真实点击确认气泡、Windows 打包后 MCP 运行。真实验收脚本会读取本机 `.env`，本轮按协作规则未执行，也没有把模拟结果标成真实接口验收。报告和截图位于忽略的 `output/t2-check/` 与 `docs/pet-v2/smoke/`。
+
+### T2 审查修正与安全验收工具（2026-11-07，待 Claude 复审）
+
+- 按 PR #4 意见修正 MCP 生命周期：close 超时记录日志和 shutdown_problem、返回 False，保留线程引用以便继续清理，不再抛异常打断应用退出；循环在关闭检查之后退出的竞态不再报错。正常关闭仍等待线程结束并释放端口。
+- dependency_problem 同时检查 mcp / uvicorn / httpx2 / anyio，保持可选依赖的延迟导入；明确 abandon_on_cancel 仅放弃 HTTP 等待，真实停止仍依靠所属 Task.cancelled。
+- UI 审批优先绑定 T11 的 box.current，未合入 T11 时兼容 box.task；已取消的旧任务不再弹确认，也不会看新任务的取消状态。本轮没有修改 ToolBox 的规则，T11 的安全修复仍在 PR #3 独立进行。
+- 两个真实模型验收脚本改为只读进程环境凭据，不加载本机 .env；合成文档、假密钥、回收区及 DSH 会话全部在每次新建的临时目录，不再访问 MyBlog，也不递归删除旧测试目录。case 记录独立布尔检查和 passed；最终清理完成后才写通过。API 凭据不写入报告。
+- setup_dsh.bat 只安装锁定依赖并 pip check，收费测试改为显式运行；run_agent_checks.bat 将失败或未执行状态作为真实退出码传出。两个批处理均使用 CRLF。首次 LF 实测解析失败，修正后重跑通过，失败时产生的自建临时日志已精确核对并移回项目 output，没有保留盘根散落输出。
+- 验证：tools/run_checks.bat 的单元测试与桌宠自检均 exit=0；总计 201 项单测通过，自检 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、remaining_workers=0。新增 4 项 MCP 回归和 3 项验收器保护回归；原 7 项 MCP 回归继续通过。
+- 使用 T11 的 3c727b8 ToolBox 在隔离组合中运行 11 项 MCP 回归，全部通过；只用于兼容测试，没有合入尚在修复的 T11 代码。禁止联网的安装脚本实测 exit=0、pip check 无冲突，未下载或更改现有版本。
+- 实测 tools/run_agent_checks.bat：离线两步仍通过；真实模型阶段因未提供进程环境 API 凭据，明确 skipped=true、passed=false，脚本 exit=2，没有调用模型或把跳过记成通过。此前内存记录保留，本轮关闭/提示改动不改变首次加载 SDK 的策略，未将历史约 440 MB 与初测 452.2 MB 当作受控前后差值。
+- 未验证：真实 DSH / 模型六类场景（8 次任务）、用户真实点击确认气泡、冻结打包与整合 T6 后性能；这些不是已完成项。所有测试日志在被忽略的 output，未提交私人配置、数据库或第三方形象资源。
+
 ### P8 美术范围调整与 P7 职责说明（2026-11-07，待 PR 审查）
 
 - 按用户最新要求，T5 / T6 只推进此前已确认的鲸娘十动作，保留原设计和对应标志；Claude 少女与 Codex / ChatGPT 白龙暂缓。新侧向鲸娘原画降为历史草稿，未覆盖或删除原始生成文件。
@@ -402,3 +424,33 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - T6 额外复现并评论：同 URL 重载导致像素数从 22,404 降为 0，等待 1.5 秒仍空白；被标 disabled 的尾巴网格仍相对旋转约 1.42°；--verify 返回 2 前已改写旧输出，参考图缺失时返回 0，Alpha≤1 也会被忽略。因此未批准 PR #2 合并。
 - PR #3 的 `3c727b8` Windows 单元测试 196 项通过（4 跳过），原环境赋值结构已被拦截；另用真实 ToolBox / 低完整性执行路径复现 --ext-di 缩写在两个安全开关后重启外部 diff，审批为拒绝却调用 0 次，测试标记被写入，已评论新 P1，未批准该 PR 合并。仅操作测试临时仓库，未改项目 .git 或全局 Git 配置。
 - 未完成：根部遮挡补画、fin / ahoge 的独立支点、motion_ready 启用及用户对动画观感的真机确认。当前 motion_ready 均为空，不把已有可见切片当作完整遮挡面素材。运行时编译产物由 Claude 提交；本次未生成新原画，未执行收费 DSH 场景、实际 QQ 或正式打包。
+
+### T2 整合已合入的 T6 / T11 / T5（2026-11-07，待复核整合提交）
+
+- Claude 已审查通过 T2 的 efcaeba。用户合入 PR #2、#3、#5 后，本分支同步 collaboration-baseline 的 d74b5de，解决 tools_server.py、pyproject.toml 和两份状态文档的冲突；未改公共基线或强推他人分支。
+- 保留 T11 完整 ToolBox，包括 Windows taskkill /T、POSIX killpg 和 kill / wait 兜底；只删除被官方 SDK 替代的 ToolServer 及其无用导入。用 Python AST 与最新基线比对，ToolBox、is_read_only_command、git_safe_env 完全一致。T6 的 studio 依赖组、鲸娘源图层与编译运行时均保留。
+- 新增真实 MCP 客户端到 AgentSession 审批的整合回归：旧请求挂起期间换新任务、取消旧任务，旧写入失败且不落盘，新任务仍能读取；不只用模拟 current 属性验证。12 项 MCP 回归通过。
+- tools/run_agent_checks.bat 的离线部分：241 项单元测试 OK（4 跳过：3 项 Playwright 未安装、1 项 POSIX 用例不适用 Windows），桌宠自检 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、failed_checks=[]、remaining_workers=0，离线两步 exit=0。首次鉴权用例曾出现 WinError 10053，原日志保留；单独复测、连续 20 次该鉴权用例和重跑完整检查均通过，未改测试重试或放宽断言，根因未确定。
+- 真实 DSH 运行时使用本次新建的临时会话，实际发出 server/discover、subscriptions/listen、tools/list，取得全部 10 个工具；没有发送 session/prompt 或调用模型。pip check 无冲突。真实模型阶段因缺少进程环境 API 凭据记录 skipped=true、passed=false，批处理 exit=2；不读取 .env，也不把跳过计为通过。
+- tools/measure_pet.ps1：自己的十姿态鲸娘预览，稳定后采样 10 秒，20 逻辑核，总工作集 428.0 MB、私有内存 328.1 MB、整机 CPU 1.47%。首次 MCP 适配时的 452.2 MB 来自另一形象与版本，不能用作受控前后收益；350 MB 工作集目标仍未达到，继续由 T7 处理。
+- 未验证：真实模型六类场景、用户实际点击确认气泡、正式打包与最终动画观感。Claude 已同意将收费场景明确延后、不阻塞本 PR 合入；阶段验收仍未完成。证据位于忽略的 output/v2-check、output/dsh-live、output/t2-final-validation，未提交日志、私人配置、数据库或第三方资源。
+
+### T2 验收会话目录修复（2026-11-07，待复审 / 真实模型重验）
+
+- 用户实际运行八次任务时都在 session/new 失败；Claude 在 PR #4 撤回 f6445e5 的可合并结论。本轮按其建议仅修复验收脚本，不修改正式 agent/ 或 T12 计划中的 stderr 输出。
+- test_dsh_live.py 和 check_dsh.py 共用 temporary_dsh_home，在 sandbox.low_root() 下新建独立临时目录（本机 C 盘）；工作区、合成文件和回收区仍在项目 output 的临时 fixture（D 盘）。先关闭服务和进程，再清理本次临时会话；会话目录列入工具禁止读取的 secrets，不使用正式 DSH 会话。
+- 补齐真实运行时的盘符对照：同一 D 盘合成工作区，旧 D 盘 DSH_HOME 的 initialize 成功、session/new 报 Internal error；修复后的 C 盘临时 DSH_HOME 的 initialize / session/new 均成功，结束后目录已清理。全程假凭据、没有发送 session/prompt，没有模型请求或费用。此前 session/new 成功的记录使用 C 盘，C/D 对照只做过 initialize，未覆盖验收脚本的实际路径；本次明确纠正这个验证缺口。尚未从 stderr 得到 koffi 的直接错误，不能将原生模块推断写成已捕获的异常栈。
+- 两个验收入口的离线回归实际运行 main 并拦截 DshAgent，断言所用会话目录在 low_root 所在盘且是其直接子目录；另测异常后的本次目录清理及已有会话保留。5 项验收器回归通过。
+- tools/run_agent_checks.bat：243 项单测 OK（4 跳过），桌宠 passed=true、failed_checks=[]、tools_listed=10、env_blocked=true、tools_gate=true、remaining_workers=0，离线两步 exit=0；本进程未提供 API 凭据，真实阶段 skipped=true、passed=false、脚本 exit=2。首次受限沙箱运行保护测试时 C 盘临时目录写入被拒，正常权限重跑及完整检查通过；未变更系统权限。
+- 未验证：修复后的真实模型六类场景（八次任务），真实点击确认与正式打包。须待真实模型重验及 Claude 最新提交复审后才能恢复可合并标记；此前“不阻塞合入”的结论已撤回，不沿用。证据在忽略目录 output/t2-session-drive-fix/，保留了用户上次失败报告；没有读取 .env、正式用户数据或调用收费模型。
+
+### T2 验收工作区隔离与真实 DeepSeek 验证（2026-11-07，待复审）
+
+- 用户后续实测已越过 session/new，八任务中六个通过；失败的复制用例仅差末尾换行，假密钥用例没有实际调工具，因为仓库内 fixture 让运行时发现 AGENTS.md 后自行拒绝。本轮仅修复验收与回归，没有放宽 ToolBox 规则或修改正式 agent/。
+- 新增 tools/dsh_test_support.py，两个入口在项目所在盘根目录 `.aicompanion-live` 下新建独立 fixture，运行前验证其所有上级目录不含 AGENTS.md / CLAUDE.md。工作区仍是 D 盘 exFAT、DSH_HOME 仍是 C 盘 LocalLow 新建临时目录，结束后仅清理本次子目录。共享父目录和已有文件不递归删除。
+- 复制比较只允许末尾 CR/LF 差异；正文、空格、内部换行变化仍失败。假密钥用例明确调用 read_file，继续要求 ToolBox 真实 denied 记录和 not_leaked，模型自行拒绝不算通过。8 项验收器回归覆盖新隔离、上级规则拒绝、清理边界与精确正文比较。
+- 用户本次明确授权读取 .env 中的 API 凭据字段。Codex 用忽略目录的临时启动器只提取模型密钥和接口地址，注入测试子进程；没有打印或提交凭据，没有更改 AGENTS 默认规则，正式验收入口仍不读取 .env。仅向模型发送合成范文和测试文件路径，不访问博客、正式数据库或用户文档。
+- 真实 API：api.deepseek.com，deepseek-v4-flash，六类场景 / 八个任务全部 passed=true，真实阶段 exit=0，临时会话与工作区清理成功。工作区外写拒绝 5.21 秒、同意 5.96 秒；删除拒绝 2.52 秒、同意 2.05 秒；只改最后一节 5.45 秒；停止 12.01 秒返回 cancelled；假密钥工具拒绝且未泄漏 2.49 秒；只读命令免确认、写命令确认 4.86 秒。
+- 运行时报告输入 116,781（含缓存命中 86,063）、输出 2,752 词元；此为运行时统计，不代替服务商账单。假密钥场景确有 read_file 的 denied 记录，复制批准后文件内容一致；不是把模拟或 initialize 成功记作模型通过。
+- tools/run_checks.bat：246 项单测 OK（4 跳过：3 项未安装 Playwright、1 项 POSIX 专用），桌宠 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、failed_checks=[]、remaining_workers=0，两步 exit=0。没有新增依赖，本轮没有重新测量或声称性能改善。
+- 未验证：用户真实点击确认气泡、正式打包与最终动画观感；待 Claude 复审本轮提交后再恢复 PR 可合并结论。报告和控制台在忽略目录 output/t2-live-validation/real-run-1/ 与 real-console.log，未提交凭据、临时会话或测试报告。

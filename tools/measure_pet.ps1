@@ -5,7 +5,7 @@ $outDir = Join-Path $root 'output\v2-check'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $out = Join-Path $outDir 'perf.json'
 $start = (Get-Date).AddSeconds(-1)
-$proc = Start-Process -FilePath (Join-Path $root '.venv\Scripts\python.exe') -ArgumentList 'tools\smoke_pet.py', '--preview' -WorkingDirectory $root -PassThru
+$proc = Start-Process -FilePath (Join-Path $root '.venv\Scripts\python.exe') -ArgumentList 'tools\smoke_pet.py', '--preview' -WorkingDirectory $root -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 15
 function Snapshot { Get-Process -Name python, pythonw, QtWebEngineProcess | Where-Object { $_.StartTime -ge $start } }
 $before = @{}; foreach ($p in Snapshot) { $before[$p.Id] = $p.TotalProcessorTime.TotalSeconds }

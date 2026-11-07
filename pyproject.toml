@@ -11,7 +11,7 @@ dependencies = [
 
 [project.optional-dependencies]
 local-asr = ["sherpa-onnx>=1.12,<3", "numpy"]
-agent = ["deepseek-harness-sdk==0.2.1rc2"]
+agent = ["deepseek-harness-sdk==0.2.1rc2", "mcp==2.3.0", "anyio==4.16.0", "uvicorn==0.54.0", "httpx2==2.16.0"]
 # 形象包编译与标注（tools/rig_studio.py、tests/test_rig_pack.py）；运行桌宠本身不需要
 studio = ["Pillow>=11,<13"]
 

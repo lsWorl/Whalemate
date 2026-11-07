@@ -173,7 +173,7 @@ class DshAgent:
     def __init__(self, launcher: Callable[[dict], object] | None = None):
         self.launcher = launcher        # 测试时换成假的进程
         self.conn: AcpConnection | None = None; self.key = None; self.lock = threading.Lock()
-        self.mcp_servers: list[dict] = []   # tools_server.ToolServer.acp_entry()
+        self.mcp_servers: list[dict] = []   # mcp_server.McpToolServer.acp_entry()
         self.session_id = None; self.stopping = False; self.done = threading.Event()
 
     # ---- 运行时 -----------------------------------------------------------------
