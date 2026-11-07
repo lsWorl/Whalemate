@@ -14,5 +14,5 @@
 | T7 | 内存优化（目标 ≤ 350 MB） | 待定 | 待开始 | `tools/measure_pet.ps1` |
 | T8 | P4 外放场景验收、连续 10 分钟对话 | 用户 + 待定 | 待开始 | |
 | T9 | P7 QQ / B站 | Claude 实现，Codex 方案与代码审查 | 桥接、一键接入已合入（PR #6、#7）；QQ 回复待真机验收 | `docs/tasks/T9-astrbot-bridge.md`；QQ 采用 AstrBot + NapCat + 桌宠大脑桥接；主人绑定、全链路场景隔离、离线不切第二人格 |
-| T9-诊断 | QQ 点击启动后仍显示 stopped 的真机排查 | Codex | 待审查（`task/t9-qq-startup-diagnostics`）；用户确认恢复已连接 | 兼容 AstrBot 保存的 UTF-8 BOM 配置，保留启动前异常和脱敏诊断；不改账号数据 |
+| T9-诊断 | QQ 点击启动后仍显示 stopped 的真机排查 | Codex | 待复审（PR #8，Claude P2 / P3 已处理）；用户确认 BOM 修复后恢复已连接 | 重试、保存配置和准备组件错误持续保留并脱敏；Windows 311 项通过、桌宠自检通过 |
 | T10 | 开发日志与项目页 | — | 项目完结后 | 草稿已在 MyBlog `_drafts` |

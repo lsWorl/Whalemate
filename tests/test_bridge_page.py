@@ -73,7 +73,8 @@ class BridgePageFlowTest(unittest.TestCase):
         page.qq.ensure_bridge()
         page.show()
         with mock.patch.object(page.qq, 'ready', return_value=[]), \
-             mock.patch.object(page.qq, 'configure', side_effect=PermissionError('配置文件被占用')):
+             mock.patch.object(page.qq, 'configure', side_effect=PermissionError('配置文件被占用')) as configure, \
+             mock.patch.object(page.qq, 'start', wraps=page.qq.start) as start:
             page.refresh(); self.wait(page)
             self.assertEqual(page.status.code, 'stopped')
             self.assertTrue(page.start_btn.isHidden())  # 状态按钮已经是“启动”，不再重复一枚
@@ -83,6 +84,64 @@ class BridgePageFlowTest(unittest.TestCase):
                 self.assertEqual(page.status.code, 'start_failed')
                 self.assertIn('配置文件被占用', page.detail.text())
             self.assertIn('配置文件被占用', page.qq.diagnostics_text())
+            page.action.click(); self.wait(page)  # start_failed 下实际点“重试”，配置仍失败
+            self.assertEqual(start.call_count, 2)  # 重试也必须进入 start 的异常保留逻辑
+            self.assertEqual(configure.call_count, 2)  # 每次启动只同步一次配置
+            for _ in range(3):
+                page.refresh(); self.wait(page)
+                self.assertEqual(page.status.code, 'start_failed')
+                self.assertIn('配置文件被占用', page.detail.text())
+            self.assertIn('配置文件被占用', page.qq.diagnostics_text())
+        page.close()
+
+    def test_save_config_error_remains_visible_and_redacted(self):
+        from aicompanion.ui.bridge_page import BridgePage
+        self.db.set_setting('qq_mode', 'auto')
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page)
+        self.addCleanup(page.deleteLater)
+        page.qq.ensure_bridge(); page.show()
+        secret = page.qq.secrets()['webui']
+        with mock.patch.object(page.qq, 'ready', return_value=[]), \
+             mock.patch.object(page.qq.supervisor, 'running', return_value=False), \
+             mock.patch.object(page.qq, 'configure', side_effect=PermissionError(f'同步配置失败 {secret}')):
+            page.port.setValue(page.port.value()+1)
+            page.save(); self.wait(page)  # 未运行时保存端口会直接同步 configure，不启动组件
+            for _ in range(3):
+                page.refresh(); self.wait(page)
+                self.assertEqual(page.status.code, 'start_failed')
+                self.assertIn('同步配置失败', page.detail.text())
+                self.assertNotIn(secret, page.detail.text())
+            diagnostic = page.qq.diagnostics_text()
+            self.assertIn('同步配置失败', diagnostic); self.assertNotIn(secret, diagnostic)
+        page.close()
+
+    def test_prepare_error_remains_visible_when_components_are_missing(self):
+        from aicompanion.ui.bridge_page import BridgePage
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page)
+        self.addCleanup(page.deleteLater)
+        page.show()
+        secret = page.qq.secrets()['onebot']
+        def prepare(**kwargs):
+            self.db.set_setting('qq_mode', 'auto')
+            raise ValueError(f'下载哈希不匹配 {secret}')
+        with mock.patch.object(page.qq, 'prepare', side_effect=prepare), \
+             mock.patch.object(page.qq, 'start') as start, \
+             mock.patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes):
+            page.action.click(); self.wait(page)
+            start.assert_not_called()
+            for _ in range(3):
+                page.refresh(); self.wait(page)
+                self.assertEqual(page.status.code, 'not_ready')
+                self.assertEqual(page.action.text(), '准备组件')
+                self.assertIn('下载哈希不匹配', page.detail.text())
+                self.assertNotIn(secret, page.detail.text())
+            diagnostic = page.qq.diagnostics_text()
+            self.assertIn('下载哈希不匹配', diagnostic); self.assertNotIn(secret, diagnostic)
+        # 下一次准备成功后，旧失败原因必须清除；启动仍用桩，不创建外部进程。
+        with mock.patch.object(page.qq, 'prepare'), mock.patch.object(page.qq, 'start'), \
+             mock.patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes):
+            page.action.click(); self.wait(page)
+            self.assertEqual(page.qq.last_error, '')
         page.close()
 
 
