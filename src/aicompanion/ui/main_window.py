@@ -295,10 +295,20 @@ class MainWindow(QMainWindow):
         self.avatar.set_state(self.mood)
 
     def _rig_path(self,pack):
-        """从本机 Coopanion 生成（或读缓存）大肥鱼骨骼模型；找不到时返回 None，退回整张立绘。"""
-        import sys
+        """骨骼形象来源，依次：AICOMPANION_RIG 指定的模型（自检、rig_studio 预览）→ 角色包自带的形象包 rig/rig.json
+        → 本机 Coopanion 导入的大肥鱼（只限本机）；都没有时返回 None，退回整张立绘。"""
+        import os,sys
         from pathlib import Path
-        from aicompanion.body.rig_import import ensure_whale_rig, RigImportError
+        from aicompanion.body.rig_import import ensure_whale_rig, load_rig, RigImportError
+        override=os.getenv('AICOMPANION_RIG','')
+        candidates=[Path(override)] if override else []
+        rig=pack.renderer.get('rig') or {}
+        candidates.append(pack.root/(rig.get('path') or 'rig/rig.json'))
+        for path in candidates:
+            if path.is_file():
+                try: load_rig(path); return path
+                except (RigImportError,OSError,ValueError,KeyError) as error: self._status(f'形象包 {path.parent.name} 有问题：{error}')
+        if rig.get('source')=='pack': return None   # 只用自己的形象包的角色，不去找 Coopanion
         root=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parents[3]
         try:
             return ensure_whale_rig(root,self.database.get_setting('coopanion_path','') or '',self.database.get_setting('rig_scheme','deepseek'))

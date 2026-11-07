@@ -55,6 +55,7 @@ def schedule_pet_smoke_check(window, database, output):
             # 骨骼形象不裁剪窗口；穿透靠光标探测。直接问网页：角落不命中、身体命中。
             state['mask_active'] = pet.mask().isEmpty()
             pet.view.page().runJavaScript('JSON.stringify(rigApi.gpu())', lambda raw: state.update(webgl=raw))
+            pet.view.page().runJavaScript('JSON.stringify(rigApi.diagnostics())', lambda raw: state.update(rig_diagnostics=raw))
             w, h = pet.view.width(), pet.view.height()
             pet.view.page().runJavaScript(f'JSON.stringify([rigApi.probe(2,2).hit, rigApi.probe({w/2},{h*0.75}).hit])',
                 lambda raw: state.update(mask_excludes_corner=raw == '[false,true]', probe_raw=raw))

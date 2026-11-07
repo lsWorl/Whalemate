@@ -1,0 +1,709 @@
+{
+  "id": "talking",
+  "canvas": [
+    1254,
+    1254
+  ],
+  "units": "source pixels",
+  "source": "originals/talking.png",
+  "anchor": [
+    627,
+    1156
+  ],
+  "airborne": false,
+  "nodes": {
+    "root": {
+      "parent": null,
+      "pivot": [
+        627,
+        1156
+      ]
+    },
+    "body": {
+      "parent": "root",
+      "pivot": [
+        627,
+        1156
+      ]
+    },
+    "head": {
+      "parent": "body",
+      "pivot": [
+        660,
+        606
+      ]
+    },
+    "hair": {
+      "parent": "body",
+      "pivot": [
+        660,
+        606
+      ]
+    },
+    "arm_left": {
+      "parent": "body",
+      "pivot": [
+        557,
+        618
+      ]
+    },
+    "arm_right": {
+      "parent": "body",
+      "pivot": [
+        727,
+        618
+      ]
+    },
+    "skirt": {
+      "parent": "body",
+      "pivot": [
+        624,
+        728
+      ]
+    },
+    "prop": {
+      "parent": "body",
+      "pivot": [
+        642,
+        746
+      ]
+    },
+    "tail": {
+      "parent": "body",
+      "pivot": [
+        844,
+        868
+      ]
+    },
+    "leg_left": {
+      "parent": "body",
+      "pivot": [
+        546,
+        964
+      ]
+    },
+    "leg_right": {
+      "parent": "body",
+      "pivot": [
+        660,
+        970
+      ]
+    }
+  },
+  "parts": [
+    {
+      "id": "hair_back",
+      "file": "poses/talking/cropped/hair_back.png",
+      "crop_file": "poses/talking/cropped/hair_back.png",
+      "box": [
+        257,
+        218,
+        695,
+        694
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "hair",
+      "z": 1,
+      "visible_only": true
+    },
+    {
+      "id": "hair_front",
+      "file": "poses/talking/cropped/hair_front.png",
+      "crop_file": "poses/talking/cropped/hair_front.png",
+      "box": [
+        388,
+        222,
+        436,
+        450
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 9,
+      "visible_only": true
+    },
+    {
+      "id": "ahoge",
+      "file": "poses/talking/cropped/ahoge.png",
+      "crop_file": "poses/talking/cropped/ahoge.png",
+      "box": [
+        401,
+        99,
+        198,
+        143
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 12,
+      "visible_only": true
+    },
+    {
+      "id": "headdress",
+      "file": "poses/talking/cropped/headdress.png",
+      "crop_file": "poses/talking/cropped/headdress.png",
+      "box": [
+        351,
+        165,
+        470,
+        264
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 10,
+      "visible_only": true
+    },
+    {
+      "id": "fin_left",
+      "file": "poses/talking/cropped/fin_left.png",
+      "crop_file": "poses/talking/cropped/fin_left.png",
+      "box": [
+        282,
+        412,
+        151,
+        126
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 11,
+      "visible_only": true
+    },
+    {
+      "id": "fin_right",
+      "file": "poses/talking/cropped/fin_right.png",
+      "crop_file": "poses/talking/cropped/fin_right.png",
+      "box": [
+        770,
+        325,
+        156,
+        131
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 11.1,
+      "visible_only": true
+    },
+    {
+      "id": "head_skin",
+      "file": "poses/talking/cropped/head_skin.png",
+      "crop_file": "poses/talking/cropped/head_skin.png",
+      "box": [
+        519,
+        367,
+        246,
+        235
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 8,
+      "visible_only": true
+    },
+    {
+      "id": "torso",
+      "file": "poses/talking/cropped/torso.png",
+      "crop_file": "poses/talking/cropped/torso.png",
+      "box": [
+        547,
+        588,
+        190,
+        158
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "body",
+      "z": 4,
+      "visible_only": true
+    },
+    {
+      "id": "arm_left",
+      "file": "poses/talking/cropped/arm_left.png",
+      "crop_file": "poses/talking/cropped/arm_left.png",
+      "box": [
+        418,
+        530,
+        133,
+        227
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "arm_left",
+      "z": 7,
+      "visible_only": true
+    },
+    {
+      "id": "arm_right",
+      "file": "poses/talking/cropped/arm_right.png",
+      "crop_file": "poses/talking/cropped/arm_right.png",
+      "box": [
+        690,
+        613,
+        141,
+        184
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "arm_right",
+      "z": 7.1,
+      "visible_only": true
+    },
+    {
+      "id": "skirt_apron",
+      "file": "poses/talking/cropped/skirt_apron.png",
+      "crop_file": "poses/talking/cropped/skirt_apron.png",
+      "box": [
+        387,
+        720,
+        474,
+        263
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "skirt",
+      "z": 5,
+      "visible_only": true
+    },
+    {
+      "id": "leg_left",
+      "file": "poses/talking/cropped/leg_left.png",
+      "crop_file": "poses/talking/cropped/leg_left.png",
+      "box": [
+        470,
+        956,
+        151,
+        200
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "leg_left",
+      "z": 3,
+      "visible_only": true
+    },
+    {
+      "id": "leg_right",
+      "file": "poses/talking/cropped/leg_right.png",
+      "crop_file": "poses/talking/cropped/leg_right.png",
+      "box": [
+        599,
+        962,
+        123,
+        195
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "leg_right",
+      "z": 3.1,
+      "visible_only": true
+    },
+    {
+      "id": "tail",
+      "file": "poses/talking/cropped/tail.png",
+      "crop_file": "poses/talking/cropped/tail.png",
+      "box": [
+        834,
+        666,
+        185,
+        214
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "tail",
+      "z": 2,
+      "visible_only": true
+    },
+    {
+      "id": "eye_left",
+      "file": "poses/talking/cropped/eye_left.png",
+      "crop_file": "poses/talking/cropped/eye_left.png",
+      "box": [
+        493,
+        440,
+        122,
+        100
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 13,
+      "visible_only": true
+    },
+    {
+      "id": "eye_right",
+      "file": "poses/talking/cropped/eye_right.png",
+      "crop_file": "poses/talking/cropped/eye_right.png",
+      "box": [
+        653,
+        384,
+        109,
+        114
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 13.1,
+      "visible_only": true
+    },
+    {
+      "id": "mouth",
+      "file": "poses/talking/cropped/mouth.png",
+      "crop_file": "poses/talking/cropped/mouth.png",
+      "box": [
+        616,
+        514,
+        87,
+        64
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "head",
+      "z": 14,
+      "visible_only": true
+    },
+    {
+      "id": "edge_residual",
+      "file": "poses/talking/cropped/edge_residual.png",
+      "crop_file": "poses/talking/cropped/edge_residual.png",
+      "box": [
+        81,
+        66,
+        1087,
+        1091
+      ],
+      "canvas": [
+        1254,
+        1254
+      ],
+      "parent": "root",
+      "z": 0,
+      "visible_only": true
+    }
+  ],
+  "variants": {
+    "eyes_closed": {
+      "source": "originals/talking_eyes_closed.png",
+      "overrides": {
+        "eye_left": "poses/talking/cropped/eye_left_eyes_closed.png",
+        "eye_right": "poses/talking/cropped/eye_right_eyes_closed.png",
+        "hair_front": "poses/talking/cropped/hair_front_eyes_closed.png",
+        "head_skin": "poses/talking/cropped/head_skin_eyes_closed.png",
+        "arm_left": "poses/talking/cropped/arm_left_eyes_closed.png",
+        "mouth": "poses/talking/cropped/mouth_eyes_closed.png"
+      },
+      "parts": [
+        {
+          "id": "eye_left_eyes_closed",
+          "file": "poses/talking/cropped/eye_left_eyes_closed.png",
+          "crop_file": "poses/talking/cropped/eye_left_eyes_closed.png",
+          "box": [
+            493,
+            440,
+            122,
+            100
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 13,
+          "visible_only": true
+        },
+        {
+          "id": "eye_right_eyes_closed",
+          "file": "poses/talking/cropped/eye_right_eyes_closed.png",
+          "crop_file": "poses/talking/cropped/eye_right_eyes_closed.png",
+          "box": [
+            653,
+            384,
+            109,
+            114
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 13.1,
+          "visible_only": true
+        },
+        {
+          "id": "hair_front_eyes_closed",
+          "file": "poses/talking/cropped/hair_front_eyes_closed.png",
+          "crop_file": "poses/talking/cropped/hair_front_eyes_closed.png",
+          "box": [
+            388,
+            222,
+            436,
+            450
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 9,
+          "visible_only": true
+        },
+        {
+          "id": "head_skin_eyes_closed",
+          "file": "poses/talking/cropped/head_skin_eyes_closed.png",
+          "crop_file": "poses/talking/cropped/head_skin_eyes_closed.png",
+          "box": [
+            519,
+            367,
+            246,
+            235
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 8,
+          "visible_only": true
+        },
+        {
+          "id": "arm_left_eyes_closed",
+          "file": "poses/talking/cropped/arm_left_eyes_closed.png",
+          "crop_file": "poses/talking/cropped/arm_left_eyes_closed.png",
+          "box": [
+            418,
+            530,
+            133,
+            227
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "arm_left",
+          "z": 7,
+          "visible_only": true
+        },
+        {
+          "id": "mouth_eyes_closed",
+          "file": "poses/talking/cropped/mouth_eyes_closed.png",
+          "crop_file": "poses/talking/cropped/mouth_eyes_closed.png",
+          "box": [
+            616,
+            514,
+            87,
+            64
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 14,
+          "visible_only": true
+        }
+      ]
+    },
+    "mouth_closed": {
+      "source": "originals/talking_mouth_closed.png",
+      "overrides": {
+        "mouth": "poses/talking/cropped/mouth_mouth_closed.png",
+        "head_skin": "poses/talking/cropped/head_skin_mouth_closed.png"
+      },
+      "parts": [
+        {
+          "id": "mouth_mouth_closed",
+          "file": "poses/talking/cropped/mouth_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/mouth_mouth_closed.png",
+          "box": [
+            616,
+            514,
+            87,
+            64
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 14,
+          "visible_only": true
+        },
+        {
+          "id": "head_skin_mouth_closed",
+          "file": "poses/talking/cropped/head_skin_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/head_skin_mouth_closed.png",
+          "box": [
+            519,
+            367,
+            246,
+            235
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 8,
+          "visible_only": true
+        }
+      ]
+    },
+    "eyes_closed_mouth_closed": {
+      "source": "poses/talking/combined-expression-reference.png",
+      "overrides": {
+        "eye_left": "poses/talking/cropped/eye_left_eyes_closed_mouth_closed.png",
+        "eye_right": "poses/talking/cropped/eye_right_eyes_closed_mouth_closed.png",
+        "mouth": "poses/talking/cropped/mouth_eyes_closed_mouth_closed.png",
+        "hair_front": "poses/talking/cropped/hair_front_eyes_closed_mouth_closed.png",
+        "head_skin": "poses/talking/cropped/head_skin_eyes_closed_mouth_closed.png",
+        "arm_left": "poses/talking/cropped/arm_left_eyes_closed_mouth_closed.png"
+      },
+      "parts": [
+        {
+          "id": "eye_left_eyes_closed_mouth_closed",
+          "file": "poses/talking/cropped/eye_left_eyes_closed_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/eye_left_eyes_closed_mouth_closed.png",
+          "box": [
+            493,
+            440,
+            122,
+            100
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 13,
+          "visible_only": true
+        },
+        {
+          "id": "eye_right_eyes_closed_mouth_closed",
+          "file": "poses/talking/cropped/eye_right_eyes_closed_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/eye_right_eyes_closed_mouth_closed.png",
+          "box": [
+            653,
+            384,
+            109,
+            114
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 13.1,
+          "visible_only": true
+        },
+        {
+          "id": "mouth_eyes_closed_mouth_closed",
+          "file": "poses/talking/cropped/mouth_eyes_closed_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/mouth_eyes_closed_mouth_closed.png",
+          "box": [
+            616,
+            514,
+            87,
+            64
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 14,
+          "visible_only": true
+        },
+        {
+          "id": "hair_front_eyes_closed_mouth_closed",
+          "file": "poses/talking/cropped/hair_front_eyes_closed_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/hair_front_eyes_closed_mouth_closed.png",
+          "box": [
+            388,
+            222,
+            436,
+            450
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 9,
+          "visible_only": true
+        },
+        {
+          "id": "head_skin_eyes_closed_mouth_closed",
+          "file": "poses/talking/cropped/head_skin_eyes_closed_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/head_skin_eyes_closed_mouth_closed.png",
+          "box": [
+            519,
+            367,
+            246,
+            235
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "head",
+          "z": 8,
+          "visible_only": true
+        },
+        {
+          "id": "arm_left_eyes_closed_mouth_closed",
+          "file": "poses/talking/cropped/arm_left_eyes_closed_mouth_closed.png",
+          "crop_file": "poses/talking/cropped/arm_left_eyes_closed_mouth_closed.png",
+          "box": [
+            418,
+            530,
+            133,
+            227
+          ],
+          "canvas": [
+            1254,
+            1254
+          ],
+          "parent": "arm_left",
+          "z": 7,
+          "visible_only": true
+        }
+      ]
+    }
+  },
+  "motion_ready": []
+}

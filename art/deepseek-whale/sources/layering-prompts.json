@@ -1,0 +1,80 @@
+{
+  "mode": "built-in image_gen",
+  "purpose": "Semantic label mattes only; final texture colors and pixels are extracted from approved v4 originals",
+  "common_prompt": "Use case: precise-object-edit.\nAsset type: registered semantic segmentation LABEL MASK for splitting the EXISTING sprite into layered PNG textures. Input image is the exact artwork to classify, NOT a style reference.\nProduce ONLY a flat-color semantic part-ID map in precisely the same canvas coordinate system, silhouette, pose, scale and locations as the input. No character redesign, no artistic redraw, no labels, no text. Do not beautify or simplify the silhouette. Map every visible pixel of the character, including fine hair curls and edges. Preserve the exact framing and transparent margins of the input.\nEach region must be a perfectly solid flat color, without outline/shading/highlights/gradients:\n- long BACK HAIR outside/behind the face and body, including blue curled tips: pure royal blue #2040F0.\n- FRONT HAIR/bangs framing/overlapping the forehead and cheeks: purple #8000FF.\n- loop-shaped AHOGE hair above the headband: light green #80FF00.\n- white LACE HEADBAND: yellow #FFFF00.\n- viewer-LEFT WHALE FIN EAR plus its BLUE BOW and gold bead: orange #FF8000.\n- viewer-RIGHT WHALE FIN EAR plus its BLUE BOW and gold bead: dark orange #804000.\n- FACE/HEAD SKIN including eyes, eyebrows, mouth and blush: pink #FF8080.\n- TORSO dress bodice, neck and chest collar bow, including neckline ruffles and central gemstone: red #FF0000.\n- viewer-LEFT ARM with long sleeve and hand, where visible: magenta #FF00FF.\n- viewer-RIGHT ARM with long sleeve and hand, where visible: olive #808000.\n- SKIRT with waist sash, white apron and ALL skirt/hem ruffles: green #008000.\n- viewer-LEFT LEG with white tights and shoe: white #FFFFFF.\n- viewer-RIGHT LEG with white tights and shoe: gray #808080.\n- WHALE TAIL on viewer-right, including root: cyan #00FFFF.\n- HELD PROP, when present (laptop, hourglass, blank wooden sign or blue whale plush): beige #C0A080.\nBackground must be solid pure black #000000, no checkerboard. NO line art or facial detail; the face is a solid pink region. The original image itself will supply all original colors and pixels; this output only identifies regions. All source geometry must stay exactly registered. Square canvas.",
+  "poses": [
+    "idle",
+    "talking",
+    "thinking",
+    "working",
+    "celebrate",
+    "error",
+    "wait",
+    "sleepy",
+    "grabbed",
+    "poked"
+  ],
+  "reference_directory": "../asset-pack-v4/assets",
+  "jobs": [
+    {
+      "pose": "idle",
+      "reference": "../asset-pack-v4/assets/idle.png",
+      "matte": "sources/idle-part-map.png",
+      "appended_prompt": ""
+    },
+    {
+      "pose": "talking",
+      "reference": "../asset-pack-v4/assets/talking.png",
+      "matte": "sources/talking-part-map.png",
+      "appended_prompt": "\nThis input is the approved talking pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "thinking",
+      "reference": "../asset-pack-v4/assets/thinking.png",
+      "matte": "sources/thinking-part-map.png",
+      "appended_prompt": "\nThis input is the approved thinking pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "working",
+      "reference": "../asset-pack-v4/assets/working.png",
+      "matte": "sources/working-part-map.png",
+      "appended_prompt": "\nThis input is the approved working pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "celebrate",
+      "reference": "../asset-pack-v4/assets/celebrate.png",
+      "matte": "sources/celebrate-part-map.png",
+      "appended_prompt": "\nThis input is the approved celebrate pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "error",
+      "reference": "../asset-pack-v4/assets/error.png",
+      "matte": "sources/error-part-map.png",
+      "appended_prompt": "\nThis input is the approved error pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "wait",
+      "reference": "../asset-pack-v4/assets/wait.png",
+      "matte": "sources/wait-part-map.png",
+      "appended_prompt": "\nThis input is the approved wait pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "sleepy",
+      "reference": "../asset-pack-v4/assets/sleepy.png",
+      "matte": "sources/sleepy-part-map.png",
+      "appended_prompt": "\nThis input is the approved sleepy pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "grabbed",
+      "reference": "../asset-pack-v4/assets/grabbed.png",
+      "matte": "sources/grabbed-part-map.png",
+      "appended_prompt": "\nThis input is the approved grabbed pose. Keep this pose and all held objects exactly where they are."
+    },
+    {
+      "pose": "poked",
+      "reference": "../asset-pack-v4/assets/poked.png",
+      "matte": "sources/poked-part-map.png",
+      "appended_prompt": "\nThis input is the approved poked pose. Keep this pose and all held objects exactly where they are."
+    }
+  ]
+}

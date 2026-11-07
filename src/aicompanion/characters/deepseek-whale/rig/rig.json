@@ -1,0 +1,4259 @@
+{
+ "format": "AICompanionPoseRig",
+ "version": 1,
+ "name": "鲸娘",
+ "id": "deepseek-whale",
+ "source": {
+  "kind": "posepack",
+  "source_version": "pose-layered-v2",
+  "scale": 0.2,
+  "texture_scale": 0.5,
+  "canvas": [
+   1254,
+   1254
+  ]
+ },
+ "space": {
+  "view": [
+   -12,
+   16,
+   268,
+   268
+  ],
+  "ground": 256,
+  "center": 128,
+  "grab": [
+   128,
+   120
+  ]
+ },
+ "limits": {
+  "breathe": 0.015,
+  "head": 2.5,
+  "hair_tip_px": 6,
+  "fin": 5,
+  "ahoge": 8,
+  "tail": 4,
+  "look": 1.5
+ },
+ "blush": [
+  255,
+  120,
+  140
+ ],
+ "poses": {
+  "idle": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      127.2,
+      140.0
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      127.2,
+      140.0
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      115.2,
+      144.2
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      148.2,
+      144.2
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      128.2,
+      169.2
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      131.8,
+      170.4
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      176.2,
+      196.2
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      112.6,
+      214.4
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      133.4,
+      216.6
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/idle/hair_back.png",
+     "rect": [
+      56.8,
+      67.8,
+      191.2,
+      208.0
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/idle/hair_front.png",
+     "rect": [
+      73.0,
+      70.0,
+      163.0,
+      144.2
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/idle/ahoge.png",
+     "rect": [
+      70.6,
+      44.6,
+      111.6,
+      76.6
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/idle/headdress.png",
+     "rect": [
+      67.4,
+      56.8,
+      161.4,
+      116.2
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/idle/fin_left.png",
+     "rect": [
+      58.2,
+      112.4,
+      85.2,
+      137.6
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/idle/fin_right.png",
+     "rect": [
+      147.8,
+      87.8,
+      182.6,
+      113.6
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/idle/head_skin.png",
+     "rect": [
+      99.4,
+      95.8,
+      149.0,
+      145.4
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/idle/torso.png",
+     "rect": [
+      113.2,
+      138.2,
+      150.2,
+      170.4
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/idle/arm_left.png",
+     "rect": [
+      102.4,
+      143.8,
+      117.8,
+      176.2
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/idle/arm_right.png",
+     "rect": [
+      145.2,
+      144.2,
+      156.6,
+      177.0
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/idle/skirt_apron.png",
+     "rect": [
+      85.4,
+      167.6,
+      171.0,
+      217.2
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/idle/leg_left.png",
+     "rect": [
+      101.2,
+      212.8,
+      123.8,
+      256.2
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/idle/leg_right.png",
+     "rect": [
+      122.4,
+      215.0,
+      144.4,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/idle/tail.png",
+     "rect": [
+      174.2,
+      159.0,
+      204.2,
+      198.6
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/idle/eye_left.png",
+     "rect": [
+      95.2,
+      112.6,
+      120.4,
+      133.0
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/idle/eye_right.png",
+     "rect": [
+      126.4,
+      101.6,
+      148.2,
+      124.4
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/idle/mouth.png",
+     "rect": [
+      120.6,
+      127.2,
+      133.8,
+      134.4
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/idle/edge_residual.png",
+     "rect": [
+      14.0,
+      44.2,
+      238.8,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {
+    "eyes_closed": [
+     {
+      "id": "eye_left_eyes_closed",
+      "tex": "textures/idle/eye_left_eyes_closed.png",
+      "rect": [
+       95.2,
+       112.6,
+       120.4,
+       133.0
+      ],
+      "z": 13,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_left"
+     },
+     {
+      "id": "eye_right_eyes_closed",
+      "tex": "textures/idle/eye_right_eyes_closed.png",
+      "rect": [
+       126.4,
+       101.6,
+       148.2,
+       124.4
+      ],
+      "z": 13.1,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_right"
+     },
+     {
+      "id": "hair_front_eyes_closed",
+      "tex": "textures/idle/hair_front_eyes_closed.png",
+      "rect": [
+       73.0,
+       70.0,
+       163.0,
+       144.2
+      ],
+      "z": 9,
+      "node": "head",
+      "hair": true,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "hair_front"
+     },
+     {
+      "id": "head_skin_eyes_closed",
+      "tex": "textures/idle/head_skin_eyes_closed.png",
+      "rect": [
+       99.4,
+       95.8,
+       149.0,
+       145.4
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "head_skin"
+     },
+     {
+      "id": "mouth_eyes_closed",
+      "tex": "textures/idle/mouth_eyes_closed.png",
+      "rect": [
+       120.6,
+       127.2,
+       133.8,
+       134.4
+      ],
+      "z": 14,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "mouth"
+     }
+    ]
+   },
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     107.80000000000001,
+     134.5
+    ],
+    [
+     137.3,
+     125.9
+    ]
+   ]
+  },
+  "talking": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      134.6,
+      146.0
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      134.6,
+      146.0
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      114.0,
+      148.4
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      148.0,
+      148.4
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      127.4,
+      170.4
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      131.0,
+      174.0
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      171.4,
+      198.4
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      111.8,
+      217.6
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      134.6,
+      218.8
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/talking/hair_back.png",
+     "rect": [
+      54.0,
+      68.4,
+      193.0,
+      207.2
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/talking/hair_front.png",
+     "rect": [
+      80.2,
+      69.2,
+      167.4,
+      159.2
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/talking/ahoge.png",
+     "rect": [
+      82.8,
+      44.6,
+      122.4,
+      73.2
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/talking/headdress.png",
+     "rect": [
+      72.8,
+      57.8,
+      166.8,
+      110.6
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/talking/fin_left.png",
+     "rect": [
+      59.0,
+      107.2,
+      89.2,
+      132.4
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/talking/fin_right.png",
+     "rect": [
+      156.6,
+      89.8,
+      187.8,
+      116.0
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/talking/head_skin.png",
+     "rect": [
+      106.4,
+      98.2,
+      155.6,
+      145.2
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/talking/torso.png",
+     "rect": [
+      112.0,
+      142.4,
+      150.0,
+      174.0
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/talking/arm_left.png",
+     "rect": [
+      86.2,
+      130.8,
+      112.8,
+      176.2
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/talking/arm_right.png",
+     "rect": [
+      140.6,
+      147.4,
+      168.8,
+      184.2
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/talking/skirt_apron.png",
+     "rect": [
+      80.0,
+      168.8,
+      174.8,
+      221.4
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/talking/leg_left.png",
+     "rect": [
+      96.6,
+      216.0,
+      126.8,
+      256.0
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/talking/leg_right.png",
+     "rect": [
+      122.4,
+      217.2,
+      147.0,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/talking/tail.png",
+     "rect": [
+      169.4,
+      158.0,
+      206.4,
+      200.8
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/talking/eye_left.png",
+     "rect": [
+      101.2,
+      112.8,
+      125.6,
+      132.8
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/talking/eye_right.png",
+     "rect": [
+      133.2,
+      101.6,
+      155.0,
+      124.4
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/talking/mouth.png",
+     "rect": [
+      125.8,
+      127.6,
+      143.2,
+      140.4
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/talking/edge_residual.png",
+     "rect": [
+      18.8,
+      38.0,
+      236.2,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {
+    "eyes_closed": [
+     {
+      "id": "eye_left_eyes_closed",
+      "tex": "textures/talking/eye_left_eyes_closed.png",
+      "rect": [
+       101.2,
+       112.8,
+       125.6,
+       132.8
+      ],
+      "z": 13,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_left"
+     },
+     {
+      "id": "eye_right_eyes_closed",
+      "tex": "textures/talking/eye_right_eyes_closed.png",
+      "rect": [
+       133.2,
+       101.6,
+       155.0,
+       124.4
+      ],
+      "z": 13.1,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_right"
+     },
+     {
+      "id": "hair_front_eyes_closed",
+      "tex": "textures/talking/hair_front_eyes_closed.png",
+      "rect": [
+       80.2,
+       69.2,
+       167.4,
+       159.2
+      ],
+      "z": 9,
+      "node": "head",
+      "hair": true,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "hair_front"
+     },
+     {
+      "id": "head_skin_eyes_closed",
+      "tex": "textures/talking/head_skin_eyes_closed.png",
+      "rect": [
+       106.4,
+       98.2,
+       155.6,
+       145.2
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "head_skin"
+     },
+     {
+      "id": "arm_left_eyes_closed",
+      "tex": "textures/talking/arm_left_eyes_closed.png",
+      "rect": [
+       86.2,
+       130.8,
+       112.8,
+       176.2
+      ],
+      "z": 7,
+      "node": "arm_left",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "arm_left"
+     },
+     {
+      "id": "mouth_eyes_closed",
+      "tex": "textures/talking/mouth_eyes_closed.png",
+      "rect": [
+       125.8,
+       127.6,
+       143.2,
+       140.4
+      ],
+      "z": 14,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "mouth"
+     }
+    ],
+    "mouth_closed": [
+     {
+      "id": "mouth_mouth_closed",
+      "tex": "textures/talking/mouth_mouth_closed.png",
+      "rect": [
+       125.8,
+       127.6,
+       143.2,
+       140.4
+      ],
+      "z": 14,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "mouth_closed",
+      "replaces": "mouth"
+     },
+     {
+      "id": "head_skin_mouth_closed",
+      "tex": "textures/talking/head_skin_mouth_closed.png",
+      "rect": [
+       106.4,
+       98.2,
+       155.6,
+       145.2
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "mouth_closed",
+      "replaces": "head_skin"
+     }
+    ],
+    "eyes_closed_mouth_closed": [
+     {
+      "id": "eye_left_eyes_closed_mouth_closed",
+      "tex": "textures/talking/eye_left_eyes_closed_mouth_closed.png",
+      "rect": [
+       101.2,
+       112.8,
+       125.6,
+       132.8
+      ],
+      "z": 13,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed_mouth_closed",
+      "replaces": "eye_left"
+     },
+     {
+      "id": "eye_right_eyes_closed_mouth_closed",
+      "tex": "textures/talking/eye_right_eyes_closed_mouth_closed.png",
+      "rect": [
+       133.2,
+       101.6,
+       155.0,
+       124.4
+      ],
+      "z": 13.1,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed_mouth_closed",
+      "replaces": "eye_right"
+     },
+     {
+      "id": "mouth_eyes_closed_mouth_closed",
+      "tex": "textures/talking/mouth_eyes_closed_mouth_closed.png",
+      "rect": [
+       125.8,
+       127.6,
+       143.2,
+       140.4
+      ],
+      "z": 14,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed_mouth_closed",
+      "replaces": "mouth"
+     },
+     {
+      "id": "hair_front_eyes_closed_mouth_closed",
+      "tex": "textures/talking/hair_front_eyes_closed_mouth_closed.png",
+      "rect": [
+       80.2,
+       69.2,
+       167.4,
+       159.2
+      ],
+      "z": 9,
+      "node": "head",
+      "hair": true,
+      "swing": null,
+      "variant": "eyes_closed_mouth_closed",
+      "replaces": "hair_front"
+     },
+     {
+      "id": "head_skin_eyes_closed_mouth_closed",
+      "tex": "textures/talking/head_skin_eyes_closed_mouth_closed.png",
+      "rect": [
+       106.4,
+       98.2,
+       155.6,
+       145.2
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed_mouth_closed",
+      "replaces": "head_skin"
+     },
+     {
+      "id": "arm_left_eyes_closed_mouth_closed",
+      "tex": "textures/talking/arm_left_eyes_closed_mouth_closed.png",
+      "rect": [
+       86.2,
+       130.8,
+       112.8,
+       176.2
+      ],
+      "z": 7,
+      "node": "arm_left",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed_mouth_closed",
+      "replaces": "arm_left"
+     }
+    ]
+   },
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     113.4,
+     134.3
+    ],
+    [
+     144.1,
+     125.9
+    ]
+   ]
+  },
+  "thinking": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      135.0,
+      144.8
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      135.0,
+      144.8
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      104.6,
+      152.0
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      159.4,
+      152.0
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      129.4,
+      174.0
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      132.0,
+      177.2
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      178.4,
+      199.0
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      116.2,
+      216.4
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      135.8,
+      218.0
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/thinking/hair_back.png",
+     "rect": [
+      54.8,
+      69.2,
+      193.6,
+      206.4
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/thinking/hair_front.png",
+     "rect": [
+      81.0,
+      71.0,
+      168.4,
+      147.8
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/thinking/ahoge.png",
+     "rect": [
+      84.8,
+      45.4,
+      124.2,
+      72.8
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/thinking/headdress.png",
+     "rect": [
+      73.6,
+      58.6,
+      166.4,
+      115.8
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/thinking/fin_left.png",
+     "rect": [
+      60.4,
+      112.4,
+      90.2,
+      138.0
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/thinking/fin_right.png",
+     "rect": [
+      155.4,
+      92.2,
+      188.2,
+      119.0
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/thinking/head_skin.png",
+     "rect": [
+      105.2,
+      100.0,
+      157.2,
+      149.6
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/thinking/torso.png",
+     "rect": [
+      102.6,
+      146.0,
+      161.4,
+      177.2
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/thinking/arm_left.png",
+     "rect": [
+      107.8,
+      139.8,
+      128.2,
+      180.4
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/thinking/arm_right.png",
+     "rect": [
+      138.0,
+      134.8,
+      156.6,
+      180.2
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/thinking/skirt_apron.png",
+     "rect": [
+      84.2,
+      172.4,
+      174.8,
+      219.0
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/thinking/leg_left.png",
+     "rect": [
+      105.6,
+      214.8,
+      126.8,
+      256.2
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/thinking/leg_right.png",
+     "rect": [
+      126.0,
+      216.4,
+      145.8,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/thinking/tail.png",
+     "rect": [
+      176.4,
+      158.0,
+      209.2,
+      201.4
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/thinking/eye_left.png",
+     "rect": [
+      101.2,
+      117.6,
+      125.4,
+      136.2
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/thinking/eye_right.png",
+     "rect": [
+      133.2,
+      107.6,
+      156.0,
+      128.4
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/thinking/mouth.png",
+     "rect": [
+      130.2,
+      130.6,
+      139.6,
+      139.2
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/thinking/edge_residual.png",
+     "rect": [
+      13.8,
+      34.8,
+      239.6,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {
+    "eyes_closed": [
+     {
+      "id": "eye_left_eyes_closed",
+      "tex": "textures/thinking/eye_left_eyes_closed.png",
+      "rect": [
+       101.2,
+       117.6,
+       125.4,
+       136.2
+      ],
+      "z": 13,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_left"
+     },
+     {
+      "id": "eye_right_eyes_closed",
+      "tex": "textures/thinking/eye_right_eyes_closed.png",
+      "rect": [
+       133.2,
+       107.6,
+       156.0,
+       128.4
+      ],
+      "z": 13.1,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_right"
+     },
+     {
+      "id": "hair_front_eyes_closed",
+      "tex": "textures/thinking/hair_front_eyes_closed.png",
+      "rect": [
+       81.0,
+       71.0,
+       168.4,
+       147.8
+      ],
+      "z": 9,
+      "node": "head",
+      "hair": true,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "hair_front"
+     },
+     {
+      "id": "head_skin_eyes_closed",
+      "tex": "textures/thinking/head_skin_eyes_closed.png",
+      "rect": [
+       105.2,
+       100.0,
+       157.2,
+       149.6
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "head_skin"
+     },
+     {
+      "id": "mouth_eyes_closed",
+      "tex": "textures/thinking/mouth_eyes_closed.png",
+      "rect": [
+       130.2,
+       130.6,
+       139.6,
+       139.2
+      ],
+      "z": 14,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "mouth"
+     }
+    ]
+   },
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     113.30000000000001,
+     137.7
+    ],
+    [
+     144.6,
+     129.9
+    ]
+   ]
+  },
+  "working": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      122.2,
+      175.4
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      122.2,
+      175.4
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      113.6,
+      175.8
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      141.0,
+      175.8
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      124.4,
+      209.0
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      127.4,
+      205.6
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      177.8,
+      217.6
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      93.8,
+      237.6
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      123.6,
+      237.6
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/working/hair_back.png",
+     "rect": [
+      57.4,
+      90.4,
+      189.2,
+      231.6
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/working/hair_front.png",
+     "rect": [
+      77.2,
+      97.6,
+      162.0,
+      171.2
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/working/ahoge.png",
+     "rect": [
+      77.2,
+      68.6,
+      121.2,
+      101.0
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/working/headdress.png",
+     "rect": [
+      72.0,
+      82.4,
+      165.8,
+      138.4
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/working/fin_left.png",
+     "rect": [
+      58.6,
+      134.0,
+      86.6,
+      162.2
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/working/fin_right.png",
+     "rect": [
+      149.2,
+      117.8,
+      187.2,
+      148.4
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/working/head_skin.png",
+     "rect": [
+      97.2,
+      132.8,
+      144.0,
+      174.0
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/working/torso.png",
+     "rect": [
+      111.6,
+      169.8,
+      143.0,
+      205.6
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/working/arm_left.png",
+     "rect": [
+      106.4,
+      179.2,
+      120.8,
+      210.2
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/working/arm_right.png",
+     "rect": [
+      117.2,
+      177.4,
+      155.4,
+      215.4
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/working/skirt_apron.png",
+     "rect": [
+      76.0,
+      207.4,
+      172.8,
+      243.6
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/working/leg_left.png",
+     "rect": [
+      76.6,
+      236.0,
+      111.2,
+      255.6
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/working/leg_right.png",
+     "rect": [
+      82.4,
+      236.0,
+      164.8,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/working/tail.png",
+     "rect": [
+      175.8,
+      176.6,
+      208.2,
+      220.0
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "prop",
+     "tex": "textures/working/prop.png",
+     "rect": [
+      72.4,
+      187.4,
+      134.4,
+      222.4
+     ],
+     "z": 6,
+     "node": "prop",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/working/eye_left.png",
+     "rect": [
+      94.6,
+      147.4,
+      116.4,
+      167.0
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/working/eye_right.png",
+     "rect": [
+      121.8,
+      143.4,
+      146.2,
+      165.0
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/working/mouth.png",
+     "rect": [
+      117.8,
+      164.0,
+      126.8,
+      169.8
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/working/edge_residual.png",
+     "rect": [
+      25.6,
+      68.0,
+      226.8,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {
+    "eyes_closed": [
+     {
+      "id": "eye_left_eyes_closed",
+      "tex": "textures/working/eye_left_eyes_closed.png",
+      "rect": [
+       94.6,
+       147.4,
+       116.4,
+       167.0
+      ],
+      "z": 13,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_left"
+     },
+     {
+      "id": "eye_right_eyes_closed",
+      "tex": "textures/working/eye_right_eyes_closed.png",
+      "rect": [
+       121.8,
+       143.4,
+       146.2,
+       165.0
+      ],
+      "z": 13.1,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_right"
+     },
+     {
+      "id": "hair_front_eyes_closed",
+      "tex": "textures/working/hair_front_eyes_closed.png",
+      "rect": [
+       77.2,
+       97.6,
+       162.0,
+       171.2
+      ],
+      "z": 9,
+      "node": "head",
+      "hair": true,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "hair_front"
+     },
+     {
+      "id": "head_skin_eyes_closed",
+      "tex": "textures/working/head_skin_eyes_closed.png",
+      "rect": [
+       97.2,
+       132.8,
+       144.0,
+       174.0
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "head_skin"
+     },
+     {
+      "id": "mouth_eyes_closed",
+      "tex": "textures/working/mouth_eyes_closed.png",
+      "rect": [
+       117.8,
+       164.0,
+       126.8,
+       169.8
+      ],
+      "z": 14,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "mouth"
+     }
+    ]
+   },
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     105.5,
+     168.5
+    ],
+    [
+     134.0,
+     166.5
+    ]
+   ]
+  },
+  "celebrate": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": true,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      135.0,
+      146.2
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      135.0,
+      146.2
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      116.2,
+      147.0
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      154.4,
+      147.0
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      130.6,
+      173.8
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      135.4,
+      174.6
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      175.6,
+      195.4
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      111.8,
+      210.0
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      129.4,
+      216.6
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/celebrate/hair_back.png",
+     "rect": [
+      46.4,
+      121.4,
+      197.4,
+      193.0
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/celebrate/hair_front.png",
+     "rect": [
+      87.8,
+      68.4,
+      167.8,
+      138.8
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/celebrate/ahoge.png",
+     "rect": [
+      84.0,
+      37.8,
+      123.2,
+      70.8
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/celebrate/headdress.png",
+     "rect": [
+      84.2,
+      57.2,
+      164.6,
+      93.6
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/celebrate/fin_left.png",
+     "rect": [
+      62.6,
+      97.4,
+      92.8,
+      124.6
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/celebrate/fin_right.png",
+     "rect": [
+      150.8,
+      82.2,
+      181.4,
+      111.4
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/celebrate/head_skin.png",
+     "rect": [
+      108.4,
+      93.2,
+      158.4,
+      145.4
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/celebrate/torso.png",
+     "rect": [
+      114.2,
+      141.0,
+      156.4,
+      174.6
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/celebrate/arm_left.png",
+     "rect": [
+      57.0,
+      50.2,
+      116.0,
+      163.8
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/celebrate/arm_right.png",
+     "rect": [
+      154.4,
+      47.0,
+      195.2,
+      155.4
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/celebrate/skirt_apron.png",
+     "rect": [
+      79.2,
+      172.2,
+      182.0,
+      219.2
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/celebrate/leg_left.png",
+     "rect": [
+      90.6,
+      208.4,
+      133.0,
+      248.8
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/celebrate/leg_right.png",
+     "rect": [
+      99.0,
+      215.0,
+      160.0,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/celebrate/tail.png",
+     "rect": [
+      173.6,
+      147.6,
+      211.6,
+      197.8
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/celebrate/eye_left.png",
+     "rect": [
+      104.8,
+      113.8,
+      126.6,
+      129.0
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/celebrate/eye_right.png",
+     "rect": [
+      137.4,
+      106.6,
+      157.6,
+      121.8
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/celebrate/mouth.png",
+     "rect": [
+      125.2,
+      120.4,
+      144.8,
+      140.6
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/celebrate/edge_residual.png",
+     "rect": [
+      3.8,
+      24.8,
+      248.2,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {},
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     115.69999999999999,
+     130.5
+    ],
+    [
+     147.5,
+     123.3
+    ]
+   ]
+  },
+  "error": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      126.6,
+      143.4
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      126.6,
+      143.4
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      114.8,
+      144.0
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      147.6,
+      144.0
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      126.4,
+      185.2
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      131.2,
+      154.8
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      158.4,
+      187.6
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      112.2,
+      217.2
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      133.8,
+      219.6
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/error/hair_back.png",
+     "rect": [
+      54.0,
+      106.4,
+      189.8,
+      209.8
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/error/hair_front.png",
+     "rect": [
+      72.0,
+      69.8,
+      160.2,
+      145.4
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/error/ahoge.png",
+     "rect": [
+      58.4,
+      67.2,
+      91.0,
+      96.8
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/error/headdress.png",
+     "rect": [
+      63.4,
+      57.6,
+      155.4,
+      120.8
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/error/fin_left.png",
+     "rect": [
+      56.8,
+      116.2,
+      82.6,
+      141.6
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/error/fin_right.png",
+     "rect": [
+      142.0,
+      80.6,
+      176.6,
+      107.4
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/error/head_skin.png",
+     "rect": [
+      97.0,
+      95.6,
+      146.6,
+      144.2
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/error/torso.png",
+     "rect": [
+      112.8,
+      138.0,
+      149.6,
+      154.8
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/error/arm_left.png",
+     "rect": [
+      81.4,
+      144.2,
+      114.6,
+      182.4
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/error/arm_right.png",
+     "rect": [
+      148.8,
+      143.4,
+      174.2,
+      181.2
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/error/skirt_apron.png",
+     "rect": [
+      84.4,
+      183.6,
+      168.4,
+      219.6
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/error/leg_left.png",
+     "rect": [
+      100.2,
+      215.6,
+      124.0,
+      256.2
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/error/leg_right.png",
+     "rect": [
+      123.6,
+      218.0,
+      144.0,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/error/tail.png",
+     "rect": [
+      156.4,
+      185.2,
+      191.8,
+      227.0
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "prop",
+     "tex": "textures/error/prop.png",
+     "rect": [
+      93.0,
+      153.0,
+      163.2,
+      185.0
+     ],
+     "z": 6,
+     "node": "prop",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/error/eye_left.png",
+     "rect": [
+      94.6,
+      114.8,
+      118.2,
+      138.4
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/error/eye_right.png",
+     "rect": [
+      125.2,
+      102.8,
+      147.6,
+      127.8
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/error/mouth.png",
+     "rect": [
+      118.2,
+      128.4,
+      135.0,
+      137.8
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/error/edge_residual.png",
+     "rect": [
+      19.8,
+      49.4,
+      230.8,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {},
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     106.4,
+     139.9
+    ],
+    [
+     136.4,
+     129.3
+    ]
+   ]
+  },
+  "wait": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      129.4,
+      138.8
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      129.4,
+      138.8
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      114.6,
+      142.0
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      148.2,
+      142.0
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      129.0,
+      175.0
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      131.4,
+      166.0
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      177.0,
+      194.8
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      112.2,
+      211.4
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      134.2,
+      216.0
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/wait/hair_back.png",
+     "rect": [
+      57.0,
+      82.2,
+      192.0,
+      208.2
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/wait/hair_front.png",
+     "rect": [
+      73.2,
+      68.2,
+      163.0,
+      142.4
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/wait/ahoge.png",
+     "rect": [
+      69.2,
+      44.4,
+      111.2,
+      77.0
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/wait/headdress.png",
+     "rect": [
+      67.6,
+      56.4,
+      161.4,
+      116.0
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/wait/fin_left.png",
+     "rect": [
+      59.0,
+      111.8,
+      86.6,
+      137.4
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/wait/fin_right.png",
+     "rect": [
+      148.0,
+      85.8,
+      183.6,
+      111.8
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/wait/head_skin.png",
+     "rect": [
+      100.8,
+      92.8,
+      150.0,
+      176.4
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/wait/torso.png",
+     "rect": [
+      112.6,
+      136.0,
+      150.2,
+      166.0
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/wait/arm_left.png",
+     "rect": [
+      102.4,
+      146.8,
+      122.4,
+      179.0
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/wait/arm_right.png",
+     "rect": [
+      133.2,
+      146.8,
+      158.8,
+      179.0
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/wait/skirt_apron.png",
+     "rect": [
+      85.6,
+      173.4,
+      172.6,
+      217.2
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/wait/leg_left.png",
+     "rect": [
+      101.2,
+      209.8,
+      123.2,
+      256.2
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/wait/leg_right.png",
+     "rect": [
+      123.6,
+      214.4,
+      144.8,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/wait/tail.png",
+     "rect": [
+      175.0,
+      159.2,
+      204.8,
+      197.2
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "prop",
+     "tex": "textures/wait/prop.png",
+     "rect": [
+      123.8,
+      150.6,
+      140.8,
+      173.6
+     ],
+     "z": 6,
+     "node": "prop",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/wait/eye_left.png",
+     "rect": [
+      96.8,
+      111.2,
+      120.8,
+      131.0
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/wait/eye_right.png",
+     "rect": [
+      126.6,
+      100.0,
+      149.0,
+      122.8
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/wait/mouth.png",
+     "rect": [
+      125.4,
+      124.4,
+      133.6,
+      133.2
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/wait/edge_residual.png",
+     "rect": [
+      15.0,
+      41.2,
+      237.6,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {
+    "eyes_closed": [
+     {
+      "id": "eye_left_eyes_closed",
+      "tex": "textures/wait/eye_left_eyes_closed.png",
+      "rect": [
+       96.8,
+       111.2,
+       120.8,
+       131.0
+      ],
+      "z": 13,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_left"
+     },
+     {
+      "id": "eye_right_eyes_closed",
+      "tex": "textures/wait/eye_right_eyes_closed.png",
+      "rect": [
+       126.6,
+       100.0,
+       149.0,
+       122.8
+      ],
+      "z": 13.1,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "eye_right"
+     },
+     {
+      "id": "hair_front_eyes_closed",
+      "tex": "textures/wait/hair_front_eyes_closed.png",
+      "rect": [
+       73.2,
+       68.2,
+       163.0,
+       142.4
+      ],
+      "z": 9,
+      "node": "head",
+      "hair": true,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "hair_front"
+     },
+     {
+      "id": "head_skin_eyes_closed",
+      "tex": "textures/wait/head_skin_eyes_closed.png",
+      "rect": [
+       100.8,
+       92.8,
+       150.0,
+       176.4
+      ],
+      "z": 8,
+      "node": "head",
+      "hair": false,
+      "swing": null,
+      "variant": "eyes_closed",
+      "replaces": "head_skin"
+     }
+    ]
+   },
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     108.8,
+     132.5
+    ],
+    [
+     137.8,
+     124.3
+    ]
+   ]
+  },
+  "sleepy": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      129.2,
+      175.8
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      129.2,
+      175.8
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      123.2,
+      176.2
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      154.0,
+      176.2
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      123.0,
+      202.8
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      138.6,
+      207.4
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      167.6,
+      231.6
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      96.2,
+      215.4
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      111.6,
+      215.6
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/sleepy/hair_back.png",
+     "rect": [
+      54.6,
+      100.0,
+      194.2,
+      242.6
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/sleepy/hair_front.png",
+     "rect": [
+      74.8,
+      102.4,
+      165.0,
+      172.4
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/sleepy/ahoge.png",
+     "rect": [
+      63.0,
+      98.4,
+      102.4,
+      138.0
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/sleepy/headdress.png",
+     "rect": [
+      68.0,
+      89.2,
+      162.0,
+      150.6
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/sleepy/fin_left.png",
+     "rect": [
+      62.6,
+      147.4,
+      88.4,
+      173.4
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/sleepy/fin_right.png",
+     "rect": [
+      148.0,
+      116.8,
+      186.0,
+      143.6
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/sleepy/head_skin.png",
+     "rect": [
+      102.6,
+      130.6,
+      151.0,
+      202.2
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/sleepy/torso.png",
+     "rect": [
+      121.2,
+      170.2,
+      156.0,
+      207.4
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/sleepy/arm_left.png",
+     "rect": [
+      83.6,
+      197.2,
+      109.4,
+      211.8
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/sleepy/arm_right.png",
+     "rect": [
+      111.8,
+      179.0,
+      155.2,
+      208.4
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/sleepy/skirt_apron.png",
+     "rect": [
+      75.0,
+      201.2,
+      171.2,
+      248.2
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/sleepy/leg_left.png",
+     "rect": [
+      84.6,
+      213.8,
+      107.6,
+      255.6
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/sleepy/leg_right.png",
+     "rect": [
+      100.2,
+      214.0,
+      123.0,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/sleepy/tail.png",
+     "rect": [
+      165.6,
+      188.8,
+      201.2,
+      234.0
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "prop",
+     "tex": "textures/sleepy/prop.png",
+     "rect": [
+      77.0,
+      169.0,
+      126.6,
+      209.8
+     ],
+     "z": 6,
+     "node": "prop",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/sleepy/eye_left.png",
+     "rect": [
+      101.6,
+      156.8,
+      122.6,
+      168.6
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/sleepy/eye_right.png",
+     "rect": [
+      130.8,
+      144.0,
+      150.4,
+      156.6
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/sleepy/mouth.png",
+     "rect": [
+      125.2,
+      162.0,
+      133.2,
+      170.2
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/sleepy/edge_residual.png",
+     "rect": [
+      31.8,
+      75.2,
+      221.8,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {},
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     112.1,
+     170.1
+    ],
+    [
+     140.60000000000002,
+     158.1
+    ]
+   ]
+  },
+  "grabbed": {
+   "swing_nodes": [],
+   "anchor": [
+    724,
+    497
+   ],
+   "airborne": true,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      120.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      108.6,
+      251.8
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      108.8,
+      134.0
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      108.8,
+      134.0
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      94.4,
+      125.0
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      126.4,
+      125.0
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      105.2,
+      157.8
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      110.4,
+      160.0
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      145.0,
+      195.6
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      81.2,
+      182.8
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      100.8,
+      207.2
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/grabbed/hair_back.png",
+     "rect": [
+      39.8,
+      54.8,
+      168.4,
+      201.8
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/grabbed/hair_front.png",
+     "rect": [
+      55.2,
+      55.6,
+      141.4,
+      130.4
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/grabbed/ahoge.png",
+     "rect": [
+      54.4,
+      33.4,
+      85.0,
+      66.0
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/grabbed/headdress.png",
+     "rect": [
+      49.6,
+      45.2,
+      137.8,
+      103.0
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/grabbed/fin_left.png",
+     "rect": [
+      39.4,
+      98.2,
+      68.6,
+      123.8
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/grabbed/fin_right.png",
+     "rect": [
+      124.2,
+      69.8,
+      162.6,
+      95.4
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/grabbed/head_skin.png",
+     "rect": [
+      79.0,
+      82.2,
+      129.2,
+      132.6
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/grabbed/torso.png",
+     "rect": [
+      92.4,
+      119.0,
+      128.4,
+      160.0
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/grabbed/arm_left.png",
+     "rect": [
+      59.8,
+      125.2,
+      95.6,
+      154.4
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/grabbed/arm_right.png",
+     "rect": [
+      125.2,
+      116.2,
+      152.6,
+      151.2
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/grabbed/skirt_apron.png",
+     "rect": [
+      64.2,
+      156.2,
+      146.0,
+      211.6
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/grabbed/leg_left.png",
+     "rect": [
+      67.0,
+      181.2,
+      95.6,
+      222.6
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/grabbed/leg_right.png",
+     "rect": [
+      83.6,
+      205.6,
+      118.0,
+      258.4
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/grabbed/tail.png",
+     "rect": [
+      143.0,
+      163.8,
+      171.2,
+      198.0
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/grabbed/eye_left.png",
+     "rect": [
+      76.0,
+      103.2,
+      99.6,
+      123.2
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/grabbed/eye_right.png",
+     "rect": [
+      105.8,
+      88.2,
+      129.2,
+      111.8
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/grabbed/mouth.png",
+     "rect": [
+      99.2,
+      111.2,
+      118.2,
+      128.4
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/grabbed/edge_residual.png",
+     "rect": [
+      -4.0,
+      33.0,
+      216.4,
+      258.4
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {},
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     87.8,
+     124.7
+    ],
+    [
+     117.5,
+     113.3
+    ]
+   ]
+  },
+  "poked": {
+   "swing_nodes": [],
+   "anchor": [
+    627,
+    1156
+   ],
+   "airborne": false,
+   "nodes": {
+    "root": {
+     "parent": null,
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "body": {
+     "parent": "root",
+     "pivot": [
+      128.0,
+      256.0
+     ]
+    },
+    "head": {
+     "parent": "body",
+     "pivot": [
+      133.0,
+      147.4
+     ]
+    },
+    "hair": {
+     "parent": "body",
+     "pivot": [
+      133.0,
+      147.4
+     ]
+    },
+    "arm_left": {
+     "parent": "body",
+     "pivot": [
+      114.6,
+      147.2
+     ]
+    },
+    "arm_right": {
+     "parent": "body",
+     "pivot": [
+      147.6,
+      147.2
+     ]
+    },
+    "skirt": {
+     "parent": "body",
+     "pivot": [
+      126.2,
+      171.6
+     ]
+    },
+    "prop": {
+     "parent": "body",
+     "pivot": [
+      131.0,
+      174.2
+     ]
+    },
+    "tail": {
+     "parent": "body",
+     "pivot": [
+      174.2,
+      182.0
+     ]
+    },
+    "leg_left": {
+     "parent": "body",
+     "pivot": [
+      110.8,
+      212.6
+     ]
+    },
+    "leg_right": {
+     "parent": "body",
+     "pivot": [
+      129.0,
+      217.8
+     ]
+    }
+   },
+   "parts": [
+    {
+     "id": "hair_back",
+     "tex": "textures/poked/hair_back.png",
+     "rect": [
+      54.2,
+      89.6,
+      191.8,
+      212.0
+     ],
+     "z": 1,
+     "node": "hair",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "hair_front",
+     "tex": "textures/poked/hair_front.png",
+     "rect": [
+      77.8,
+      73.4,
+      171.0,
+      145.8
+     ],
+     "z": 9,
+     "node": "head",
+     "hair": true,
+     "swing": null
+    },
+    {
+     "id": "ahoge",
+     "tex": "textures/poked/ahoge.png",
+     "rect": [
+      74.2,
+      46.8,
+      117.4,
+      80.6
+     ],
+     "z": 12,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "headdress",
+     "tex": "textures/poked/headdress.png",
+     "rect": [
+      70.8,
+      61.4,
+      164.0,
+      119.4
+     ],
+     "z": 10,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_left",
+     "tex": "textures/poked/fin_left.png",
+     "rect": [
+      62.4,
+      116.0,
+      90.6,
+      142.2
+     ],
+     "z": 11,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "fin_right",
+     "tex": "textures/poked/fin_right.png",
+     "rect": [
+      152.0,
+      91.8,
+      185.6,
+      117.8
+     ],
+     "z": 11.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "head_skin",
+     "tex": "textures/poked/head_skin.png",
+     "rect": [
+      106.2,
+      101.4,
+      155.2,
+      147.0
+     ],
+     "z": 8,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "torso",
+     "tex": "textures/poked/torso.png",
+     "rect": [
+      112.6,
+      141.2,
+      149.6,
+      174.2
+     ],
+     "z": 4,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_left",
+     "tex": "textures/poked/arm_left.png",
+     "rect": [
+      95.4,
+      135.8,
+      121.8,
+      173.6
+     ],
+     "z": 7,
+     "node": "arm_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "arm_right",
+     "tex": "textures/poked/arm_right.png",
+     "rect": [
+      146.0,
+      131.2,
+      164.4,
+      170.4
+     ],
+     "z": 7.1,
+     "node": "arm_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "skirt_apron",
+     "tex": "textures/poked/skirt_apron.png",
+     "rect": [
+      83.4,
+      170.0,
+      169.0,
+      219.4
+     ],
+     "z": 5,
+     "node": "skirt",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_left",
+     "tex": "textures/poked/leg_left.png",
+     "rect": [
+      99.4,
+      211.0,
+      122.2,
+      256.2
+     ],
+     "z": 3,
+     "node": "leg_left",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "leg_right",
+     "tex": "textures/poked/leg_right.png",
+     "rect": [
+      118.2,
+      216.2,
+      139.6,
+      256.2
+     ],
+     "z": 3.1,
+     "node": "leg_right",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "tail",
+     "tex": "textures/poked/tail.png",
+     "rect": [
+      172.2,
+      140.8,
+      201.6,
+      184.4
+     ],
+     "z": 2,
+     "node": "tail",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_left",
+     "tex": "textures/poked/eye_left.png",
+     "rect": [
+      102.0,
+      121.2,
+      125.0,
+      138.0
+     ],
+     "z": 13,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "eye_right",
+     "tex": "textures/poked/eye_right.png",
+     "rect": [
+      134.0,
+      111.8,
+      153.6,
+      128.0
+     ],
+     "z": 13.1,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "mouth",
+     "tex": "textures/poked/mouth.png",
+     "rect": [
+      126.6,
+      129.4,
+      139.2,
+      141.8
+     ],
+     "z": 14,
+     "node": "head",
+     "hair": false,
+     "swing": null
+    },
+    {
+     "id": "edge_residual",
+     "tex": "textures/poked/edge_residual.png",
+     "rect": [
+      22.4,
+      46.4,
+      236.4,
+      256.2
+     ],
+     "z": 0,
+     "node": "body",
+     "hair": false,
+     "swing": null
+    }
+   ],
+   "variants": {},
+   "motion": {
+    "breathe": 0.015,
+    "head": 2.5,
+    "hair_tip_px": 6.0,
+    "fin": 5.0,
+    "ahoge": 8.0,
+    "tail": 4.0,
+    "look": 1.5
+   },
+   "cheeks": [
+    [
+     113.5,
+     139.5
+    ],
+    [
+     143.8,
+     129.5
+    ]
+   ]
+  }
+ }
+}

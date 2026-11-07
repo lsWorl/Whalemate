@@ -396,3 +396,41 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 使用 T11 的 3c727b8 ToolBox 在隔离组合中运行 11 项 MCP 回归，全部通过；只用于兼容测试，没有合入尚在修复的 T11 代码。禁止联网的安装脚本实测 exit=0、pip check 无冲突，未下载或更改现有版本。
 - 实测 tools/run_agent_checks.bat：离线两步仍通过；真实模型阶段因未提供进程环境 API 凭据，明确 skipped=true、passed=false，脚本 exit=2，没有调用模型或把跳过记成通过。此前内存记录保留，本轮关闭/提示改动不改变首次加载 SDK 的策略，未将历史约 440 MB 与初测 452.2 MB 当作受控前后差值。
 - 未验证：真实 DSH / 模型六类场景（8 次任务）、用户真实点击确认气泡、冻结打包与整合 T6 后性能；这些不是已完成项。所有测试日志在被忽略的 output，未提交私人配置、数据库或第三方形象资源。
+
+### P8 美术范围调整与 P7 职责说明（2026-11-07，待 PR 审查）
+
+- 按用户最新要求，T5 / T6 只推进此前已确认的鲸娘十动作，保留原设计和对应标志；Claude 少女与 Codex / ChatGPT 白龙暂缓。新侧向鲸娘原画降为历史草稿，未覆盖或删除原始生成文件。
+- `art/deepseek-whale/approved-poses-preview.png` 已加入当前设计基准。Pillow 检查：1500×714 RGB，与用户本次附图转换为 RGBA 后的全部像素一致，也与本机旧分层包预览字节一致；`art/concepts.json` 已记录 SHA-256 和各草稿状态。
+- 已查阅本机旧分层包的清单和 QA：10 姿态、16 原图、184 基础图层、33 表情图层，旧报告记录回拼差异为 0。本次未重新校验整套图层，也未把被忽略的 `output/` 图层目录作为新交付上传。可见像素切片不等同于已补全遮挡面的骨骼素材，原十动作的接入契约已在 PR #2 请求 Claude 确认。
+- P7 / T9 仍未分配实现负责人，Codex 本次只参与调研与审查。AstrBot / NapCat、外部 Agent 桥接插件与现有 DSH 插件的调研及记忆隔离意见已同步到 PR #1；未安装服务、登录 QQ 或开始实现。
+- 离线验证：在不含私人数据的当前代码隔离快照运行 `tools/run_checks.bat`，仅将解释器指向项目虚拟环境、禁用用户回收区清理，并让本机骨骼查找指向现有项目路径（未复制第三方资源）。187 项单元测试通过，3 项因隔离目录无 Coopanion 按设计跳过；桌宠自检 `passed=true`、`remaining_workers=0`，两步退出码均为 0。首次未指定本机模型位置时退回整图立绘，骨骼下落项 `fell` 失败，补足模型查找环境后通过。
+- 未验证：新骨骼素材编译、全套图层重新回拼、十动作的 T6 动画接入及用户真机验收。本次是范围与参考资料调整，未声明阶段完成。
+
+### 徽标规则与复审记录（2026-11-07，待 PR 审查）
+
+- 用户进一步明确允许使用官方徽标。已直接更新 PR #1 的 `AGENTS.md`，提交 `52d2c6384334b2e05665ade841497bb501960660`；T5 分支同步相同规则、已确认的 T2 / T5 / T6 / T9 分工，以及 Codex 评论签名和审计链接要求。未修改或生成新的图片。
+- T5 / T6 第 A 节十姿态源格式已确认，素材索引标为 `AICompanionPosePack / 1`、原 1254 画布；这里更新的是交付约定，源图层本身仍未上传，补画及真机验收仍未完成。
+- 本次复审在 `output/fix-review-20261107` 的隔离快照进行：PR #2（`8f732d6`）198 项单元测试通过、3 项跳过，桌宠自检 passed=true；PR #3（`8eaec3c`）193 项通过、4 项跳过，桌宠自检 passed=true；两次 remaining_workers 均为 0。测试禁用真实回收区清理，不读取 .env / 私人数据库，不调用真实模型。PR #3 另做 Windows 父子进程取消实测，0.435 秒结束、两个测试进程均已退出。
+- 上述正常路径通过不表示审查通过。PR #2 在自建临时素材中复现：仅有 textures/ 的外来输出被当作自有输出删除；发布阶段注入移动失败后旧 textures/ 丢失；圆形眼白配矩形虹膜时编译通过但有 560 个虹膜像素越出眼白。PR #3 在自建临时目录复现：git diff --ext-diff 被判只读，外部 Python 程序写入测试标记，审批次数为 0。复现仅操作本次创建的测试文件。
+- 这些代码问题分别回复对应 PR；源/目标重叠和旧 Task 取消的原始修复已改善，不把新问题混作原修复完全无效。未验证：新十姿态编译器 / 渲染器（尚未提交到本轮审查 head）、真实 DSH 的收费场景、真实确认气泡与正式打包。
+
+### T5 十姿态源图层交付与 T6 / T11 复审（2026-11-07，待审查）
+
+- 已把合并后的 PR #1 基线同步到 T5 分支，保留已确认分工、允许官方徽标与评论审计要求。源图层本身新增到 `art/deepseek-whale/`：217 张裁切图（184 基础、33 替换）、16 张原图与 1 张组合表情参考，复制的 234 张 PNG 共 29,096,439 字节；连同历史草稿与预览，目录约 31.1 MB / 29.7 MiB，体积已提前在 PR #5 说明。
+- 根清单迁移为 `AICompanionPosePack / 1`，保留 `source_version`；根内嵌与逐姿态 model.json 一致，file / crop_file / overrides 均为可移植裁切路径。来源提示词去除本机绝对路径，原 PNG 字节和来源哈希保留，没有提交全画布副本或 Coopanion 资源。
+- 新增只读源检查工具 `tools/verify_pose_sources.py`：校验清单一致性、引用、节点循环、裁切尺寸、源 SHA-256，回拼比较可见 RGBA 和整个 Alpha 通道。独立实测 17 状态两种差异均为 0；新增 3 项回归覆盖精确回拼、alpha=1 变化与错误替换引用。
+- T5 隔离快照运行 `tools/run_checks.bat`：190 项单元测试通过（3 跳过），桌宠自检 passed=true、remaining_workers=0，两步退出码为 0。与之前相同，只将解释器/本机模型查找指向已有项目环境，禁用用户回收区清理，不读取私人数据或调用真实模型。
+- 用 PR #2 的 `2578bb7` 在 Windows 对本次 art 源包执行 compile-poses --verify：10 姿态、184 层、33 替换层，17 状态为 0，40 项局部摆动报告禁用；真实鲸娘 smoke_pet --posepack passed=true、remaining_workers=0。该 PR 完整单元测试 206 项通过（3 跳过），单站姿占位自检也通过。原输出归属、发布 move 失败回滚、眼白真实轮廓的特定修复已通过对应回归。
+- T6 额外复现并评论：同 URL 重载导致像素数从 22,404 降为 0，等待 1.5 秒仍空白；被标 disabled 的尾巴网格仍相对旋转约 1.42°；--verify 返回 2 前已改写旧输出，参考图缺失时返回 0，Alpha≤1 也会被忽略。因此未批准 PR #2 合并。
+- PR #3 的 `3c727b8` Windows 单元测试 196 项通过（4 跳过），原环境赋值结构已被拦截；另用真实 ToolBox / 低完整性执行路径复现 --ext-di 缩写在两个安全开关后重启外部 diff，审批为拒绝却调用 0 次，测试标记被写入，已评论新 P1，未批准该 PR 合并。仅操作测试临时仓库，未改项目 .git 或全局 Git 配置。
+- 未完成：根部遮挡补画、fin / ahoge 的独立支点、motion_ready 启用及用户对动画观感的真机确认。当前 motion_ready 均为空，不把已有可见切片当作完整遮挡面素材。运行时编译产物由 Claude 提交；本次未生成新原画，未执行收费 DSH 场景、实际 QQ 或正式打包。
+
+### T2 整合已合入的 T6 / T11 / T5（2026-11-07，待复核整合提交）
+
+- Claude 已审查通过 T2 的 efcaeba。用户合入 PR #2、#3、#5 后，本分支同步 collaboration-baseline 的 d74b5de，解决 tools_server.py、pyproject.toml 和两份状态文档的冲突；未改公共基线或强推他人分支。
+- 保留 T11 完整 ToolBox，包括 Windows taskkill /T、POSIX killpg 和 kill / wait 兜底；只删除被官方 SDK 替代的 ToolServer 及其无用导入。用 Python AST 与最新基线比对，ToolBox、is_read_only_command、git_safe_env 完全一致。T6 的 studio 依赖组、鲸娘源图层与编译运行时均保留。
+- 新增真实 MCP 客户端到 AgentSession 审批的整合回归：旧请求挂起期间换新任务、取消旧任务，旧写入失败且不落盘，新任务仍能读取；不只用模拟 current 属性验证。12 项 MCP 回归通过。
+- tools/run_agent_checks.bat 的离线部分：241 项单元测试 OK（4 跳过：3 项 Playwright 未安装、1 项 POSIX 用例不适用 Windows），桌宠自检 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、failed_checks=[]、remaining_workers=0，离线两步 exit=0。首次鉴权用例曾出现 WinError 10053，原日志保留；单独复测、连续 20 次该鉴权用例和重跑完整检查均通过，未改测试重试或放宽断言，根因未确定。
+- 真实 DSH 运行时使用本次新建的临时会话，实际发出 server/discover、subscriptions/listen、tools/list，取得全部 10 个工具；没有发送 session/prompt 或调用模型。pip check 无冲突。真实模型阶段因缺少进程环境 API 凭据记录 skipped=true、passed=false，批处理 exit=2；不读取 .env，也不把跳过计为通过。
+- tools/measure_pet.ps1：自己的十姿态鲸娘预览，稳定后采样 10 秒，20 逻辑核，总工作集 428.0 MB、私有内存 328.1 MB、整机 CPU 1.47%。首次 MCP 适配时的 452.2 MB 来自另一形象与版本，不能用作受控前后收益；350 MB 工作集目标仍未达到，继续由 T7 处理。
+- 未验证：真实模型六类场景、用户实际点击确认气泡、正式打包与最终动画观感。Claude 已同意将收费场景明确延后、不阻塞本 PR 合入；阶段验收仍未完成。证据位于忽略的 output/v2-check、output/dsh-live、output/t2-final-validation，未提交日志、私人配置、数据库或第三方资源。

@@ -1,0 +1,262 @@
+# T6：自己的形象包——格式、`rig_studio` 与渲染接入
+
+负责：Claude（代码）　出图：Codex（T5）　审查：互相　分支：`task/t6-rig-studio`
+
+本文第 1–6 节是 **T5 出图（鲸娘）和 T6 代码共同遵守的规格**，改规格要在这个文件里改并在 PR 里说明。
+
+## 规格状态（2026-11-07 范围调整；第 A 节已经 Codex 确认）
+
+用户决定：**本阶段只用已经确认的原鲸娘（`art/deepseek-whale/approved-poses-preview.png` 的十个动作），保留原设计和标志，不重画成统一站姿，不套用大肥鱼的朝向和比例。**
+所以下面第 1–6 节的"单站姿全身骨骼"规格（v1）**暂缓**，保留作以后参考；当前按第 A 节的"十姿态分层包"契约实现（Codex 已确认，见 PR #2）。
+
+## A. 十姿态分层包（AICompanionPosePack v1）
+
+### A.1 输入：沿用已有的 `pose-layered-v2`
+
+Codex 已整理的 `pose-layered-v2`（10 姿态、16 张原图、184 基础切片 + 33 表情切片，回拼 RGBA / Alpha 差异 0）直接作为源格式，只加一个版本字段：
+
+```text
+art/deepseek-whale/
+  model.json                     顶层索引，加 "format": "AICompanionPosePack", "version": 1
+  poses/<姿态>/model.json        canvas 1254×1254、anchor、airborne、nodes（父子 + 枢轴）、parts（z、box、parent）、variants
+  poses/<姿态>/cropped/*.png     裁切图层（贴回位置 = box 左上角）
+```
+
+- 姿态名固定：`idle talking thinking working celebrate error wait sleepy grabbed poked`。
+- 表情替换（variants）固定：`eyes_closed`、`mouth_closed`、`eyes_closed_mouth_closed`；没有的姿态就不眨眼 / 不动嘴。
+- 坐标：源像素；每个姿态有自己的 `anchor`（站立是脚底 `(627,1156)`，`grabbed` 是后领 `(724,497)`）。
+- `edge_residual` 照样保留，跟 `body` 走，不做变形。
+
+### A.2 运行时怎么动（只做局部小幅变形，不补大块遮挡）
+
+| 动作 | 做法 | 幅度上限 |
+| --- | --- | --- |
+| 换姿态 | 两套图层交叉淡入 0.18 秒 + 弹簧挤压回弹（和现在整张立绘一样） | — |
+| 呼吸 | `body` 节点以脚底为原点纵向缩放 | ±1.5% |
+| 头 | `head` 节点绕枢轴转（待机轻摆、说话点头、歪头动作） | ±2.5° |
+| 头发 | `hair_back` / `hair_front` 网格摆动，顶部 30% 固定 | 发梢 ±6 px |
+| 鲸鳍耳 / 呆毛 / 尾巴 | 绕各自枢轴摆动 | ±5° / ±8° / ±4° |
+| 手臂、腿 | **不转**（转了肩膀、胯部会露缝）；跟随身体 | 0 |
+| 眨眼 | 用 `eyes_closed` 替换层，随机间隔，偶尔连眨 | — |
+| 口型 | 说话时：有 `mouth_closed` 的姿态按音量在开 / 合之间切换；没有的姿态说话时切到 `talking` | — |
+| 视线跟随 | 眼睛没有拆成眼白 / 虹膜，不做；改成头部朝光标方向轻转 | ±1.5° |
+| 甩、掉落、摔晕、被拎起 | 整体容器的位移和旋转（物理和现在一样），被拎起时切 `grabbed` 并以后领为挂点 | — |
+
+台词里的表情和动作（P2）映射到姿态 + 叠加：开心→`celebrate`（短暂），惊讶→`poked`，慌张→`grabbed`，晕→`error`，困→`sleepy`，喜欢 / 害羞→当前姿态 + 腮红，得意→当前姿态 + 歪头；点头、摇头、歪头、摇摆用 `head` / 整体旋转，跳、转圈、鞠躬用整体容器，挥手→切 `celebrate` 片刻。
+
+### A.3 需要的补画（只为上面会动的部件，小块）
+
+为了让会动的部件动起来时边缘不露缝，每个姿态里这些图层需要**往被遮挡的一侧补画一小段**（被上层盖住的部分，补出来不会改变回拼结果）：
+
+| 图层 | 补多少 |
+| --- | --- |
+| `tail` | 尾巴根往身体后面多画约 30 px |
+| `fin_left` / `fin_right` | 鳍根往头发 / 头里面多画约 20 px |
+| `ahoge` | 根部往前发下面多画约 15 px |
+| `hair_back` | 不用补（摆动时顶部固定） |
+| 手臂、腿 | 不用补（不转） |
+
+没补的部件，编译器自动把它的摆动幅度设为 0（不会露缝，只是不动），并在报告里列出来。补画后要重新做一次"回拼差异为 0"的检查。
+
+### A.4 编译与接入
+
+- `tools/rig_studio.py compile-poses art/deepseek-whale [--verify]` → `src/aicompanion/characters/deepseek-whale/rig/rig.json`（`format: AICompanionPoseRig`）+ `textures/`：把十个姿态换算到统一的骨骼空间（`x = 128 + (x−anchor_x)×0.2`，`y = 256 + (y−anchor_y)×0.2`），检查每个姿态的必需图层、variants 引用、补画边缘。
+- 渲染：在现有骨骼渲染页里新增"十姿态"模式（`posepack.js`），对外接口和现在的骨骼形象完全一样（姿态、表情、动作、拎起、命中检测、遮罩），桌宠其他代码不用改。
+- 形象来源顺序：自己的十姿态包 → 本机 Coopanion 大肥鱼 → 整张立绘。
+- 已完成的单站姿编译器（第 1–6 节、`body/rig_pack.py`）保留，供以后做新形象时用。
+
+### A.5 请 Codex 确认
+
+1. 源格式就用 `pose-layered-v2` 现有字段，加 `format` / `version`，可以吗？
+2. A.2 的幅度和"手臂腿不动"是否接受？
+3. A.3 的补画清单和尺寸是否可行；`pose-layered-v2` 要提交进仓库的 `art/deepseek-whale/`（原图和切片都是本项目自己的素材）。
+
+Codex 已确认（附兼容点：按实际 `crop_file` 路径读、鳍和呆毛没有独立节点时不能绕头部枢轴转、`edge_residual` 只随身体、grabbed 的 anchor 是挂点、幅度都按源像素×0.2）。
+
+### A.6 实现（第一版）
+
+| 文件 | 做什么 |
+| --- | --- |
+| `body/pose_pack.py` | 读 `pose-layered-v2`（没有 `format` 字段时按 `version: pose-layered-v2` 识别并记为 `source_version`）；检查十个姿态、必需图层、替换层引用和 box；换算坐标；贴图缩到 0.5 倍；`--verify` 回拼比对 |
+| `assets/rig/posepack.js` | 渲染与动作，接口同 `rig.js` 的引擎，另有 `dispose()` |
+| `assets/rig/rig.html` | 按 `rig.json` 的 `format` 选渲染器；换模型时释放旧贴图；帧回调只挂一次；加载中途又换模型时丢弃旧结果 |
+| `body/rig_import.load_rig` | 也接受 `AICompanionPoseRig`（只检查贴图在不在，不需要 Pillow） |
+
+- **局部摆动的开关**：源 `poses/<姿态>/model.json` 里 `motion_ready: ["tail", ...]` 且 `nodes` 里有同名节点（自己的枢轴）时才摆；否则幅度为 0，编译报告列出。补画（A.3）完成后由出图方加这两项。
+- 每个姿态可以写 `motion: {"head": 1.5, ...}` 降低幅度，编译时按 A.2 上限截断。
+- `hair` 节点在源包里挂在 `body` 下，头转时它要跟着转，所以渲染时 `head` 和 `hair` 用同一个枢轴（`head` 的）和角度。
+- 声音驱动口型：平常姿势（idle / talking / thinking / wait / working）有声音时切 `talking`，按音量在原图（张嘴）和 `mouth_closed` 之间切；眨眼同时闭嘴用 `eyes_closed_mouth_closed`。
+- 宿主的其他姿势：`falling`→`grabbed` + 整体晃动，`dizzy`→`error` + 整体摇摆，`patted`→`idle` + 腮红 + 轻摇头。
+- 纹理所有权：两个渲染器都用 `loadOwnTexture` 自己加载纹理（不进 PIXI 的 URL 缓存），谁加载谁 `dispose`；同一模型重载、并发加载、加载中途被取消都不会销毁别的引擎在用的纹理。
+- 摆动节点：编译输出每个姿态的 `swing_nodes`（就绪的节点）；渲染器只让这些节点转，其余（包括源包里已有 `tail` 节点但未就绪的）节点矩阵就是父节点的，相对旋转严格为 0。
+- `--verify` 在发布之前做完：任一状态有差异或缺参考原图就失败且不改动输出；Alpha 通道整幅比较（alpha=1 也算），颜色只在任一边 alpha>0 的像素上比较。
+- 运行时：`characters/deepseek-whale/rig/`（约 4.4 MB）由 PR #5 的 `art/deepseek-whale` 编译提交；`character.json` 的 `renderer.rig.source` 为 `posepack`，加载失败时退回 Coopanion、再退回整张立绘。重新编译：`python tools/rig_studio.py compile-poses art/deepseek-whale --verify`。
+
+
+## 0. 目标
+
+现在的骨骼形象借用本机 Coopanion 的大肥鱼（只能本机用，不能分发）。T6 让我们自己的分层素材也能变成同一种骨骼模型：
+
+```text
+art/<角色>/                  分层源图（全画布对齐的 PNG）+ pack.json（支点等标注）     ← T5 出图，T6 标注
+   └─ tools/rig_studio.py 编译 →
+src/aicompanion/characters/<角色>/rig/rig.json + textures/   AICompanionRig v1（运行时）← 渲染器直接读
+```
+
+渲染器 `assets/rig/rig.js` 和动作引擎不分素材来源：只要编译结果符合 v1，大肥鱼能做的动作（甩头发、裙摆、腿、尾巴、头部视差、眨眼、口型、拎起、摔晕……）自己的形象全部都能做。
+
+## 1. 两种格式与版本
+
+| 格式 | `format` / `version` | 谁写 | 放哪 |
+| --- | --- | --- | --- |
+| 源素材清单 | `AICompanionPackSource` / `1` | T5 出图 + `rig_studio` 标注 | `art/<角色>/pack.json` |
+| 运行时骨骼模型 | `AICompanionRig` / `1`（沿用现有版本号） | `rig_studio` 编译生成，不手改 | `src/aicompanion/characters/<角色>/rig/rig.json` |
+
+运行时 v1 只做**向后兼容的增补**（新增可选字段：`shy_*` / `smug_*` 五官、`talk_mouth`、`source.kind: "pack"`），旧的大肥鱼缓存照常能读。以后要做不兼容改动时 `version` 升到 2，并同时更新 `rig.js`、`rig_import.py`、`rig_studio`。
+
+## 2. 画布与坐标（出图必须遵守）
+
+- **每个图层都是一张 2048 × 2048 的透明 PNG，所有图层严格对齐在同一张画布上**（就像 PSD 的图层原样导出，不要裁切、不要挪位置）。`rig_studio` 会自己裁出有内容的区域。
+- 角色：**三分之四侧身站姿，脸朝画面右侧**，双脚着地。后发和尾巴在画面左后方；画面左边的手臂（`arm_near`）、耳鳍（`fin_near`）离观众近，画面右边的（`arm_far`、`fin_far`）远。这和大肥鱼的朝向一致，动作参数（甩头发、尾巴、走路）是按这个朝向调的；走路往左时程序会整体镜像。
+- 原点：角色中线 `x = 1024 px`，**脚底所在的地面 `y = 1984 px`**；呆毛顶端大约在 `y = 100 px`，头部（含头发）大约占上面 60%（Q 版大头），身体和腿约占下面 40%。
+- 换算到骨骼空间（运行时用）：`x_rig = 128 + (x_px − 1024) × 0.125`，`y_rig = 256 + (y_px − 1984) × 0.125`。即中线 x=128、地面 y=256，和大肥鱼相同，动作参数可以直接复用。
+- sRGB，8 位 RGBA，**不要预乘 alpha**；边缘干净，不要有半透明的白边或杂点。
+- **被遮挡的部分要补画完整**：手臂后面的衣服、刘海后面的额头和脸、裙子里面的腿根、身体后面的尾巴根。动起来时这些地方会露出来。
+- 风格：Q 版（约 2.5–3 头身），线条和配色适合 300 px 左右的显示高度；二创原创设计，不用任何公司的官方 logo（围裙等处也不要放商标）。
+
+## 3. 图层清单（文件名固定）
+
+身体图层放 `art/<角色>/layers/`，**文件名就是部件 id**。z 越大越靠前；表里的 z 是默认值，`rig_studio` 里可以微调。
+
+| 文件 | 内容 | 跟随的变形器 | 默认 z | 必需 |
+| --- | --- | --- | --- | --- |
+| `hair_back.png` | 后发（披在身后的长发，主要在画面左侧） | `hairSway` | 1.0 | ✓ |
+| `tail.png` | 鲸尾，从腰后伸向画面左边，**根部在图层右端** | `tailBend` | 1.5 | |
+| `hair_back_curl.png` | 后发卷 / 发尾 | `hairSway` | 1.75 | |
+| `leg_front.png` | 画面右边的腿（从裙子里的腿根画起） | `legFront` | 3.0 | ✓ |
+| `leg_back.png` | 画面左边的腿 | `legBack` | 4.0 | ✓ |
+| `skirt_shadow.png` | 裙子投在腿上的阴影（会用正片叠底） | `skirt` | 4.2 | |
+| `arm_far.png` | 远侧手臂（画面右边） | `armFar` | 4.5 | ✓ |
+| `body.png` | 上身（躯干、领口、袖口以内） | `body` | 5.0 | ✓ |
+| `hair_front_right.png` | 垂在右肩前的头发 | `hairSway` | 5.05 | |
+| `arm_far_hand.png` | 远侧手里挡在身前的那部分（手掌） | `armFar` | 5.1 | |
+| `skirt.png` | 站姿裙子 | `skirt` | 5.2 | ✓ |
+| `skirt_sit.png` | 坐姿裙子（坐下时替换站姿裙子） | `skirtSit` | 5.3 | |
+| `hair_front_left.png` | 垂在左肩前的头发 | `hairSway` | 5.4 | |
+| `waist_bow.png` | 腰部蝴蝶结 / 腰饰 | `skirt` | 5.5 | |
+| `arm_near.png` | 近侧手臂（画面左边，在身体前面） | `armNear` | 6.0 | ✓ |
+| `fin_far.png` | 远侧耳鳍（画面右边） | `finFar` | 7.0 | ✓ |
+| `sidelocks.png` | 鬓发（左右可合在一张，在脸后面） | `bangsSway` | 7.5 | ✓ |
+| `face.png` | 脸（**不含五官**），含耳朵 | `headMid` | 8.0 | ✓ |
+| （五官） | 见第 4 节 | `headFeat` | 8.3 | ✓ |
+| `fin_near.png` | 近侧耳鳍（画面左边） | `finNear` | 11.0 | ✓ |
+| `headdress.png` | 头饰（女仆头饰、发箍） | `headMid` | 12.5 | |
+| `bangs.png` | 刘海 | `bangsSway` | 13.0 | ✓ |
+| `bow.png` | 头上的蝴蝶结 | `headMid` | 13.8 | |
+| `ahoge.png` | 呆毛 | `ahoge` | 14.0 | |
+
+层次和挂接关系照搬大肥鱼那套（已经实测过动作自然）。
+变形器名字是动作引擎写死的（`body`、`waist`、`neck`、`armNear`、`armFar`、`legBack`、`legFront`、`tail`、`tailBend`、`skirt`、`skirtSit`、`hairSway`、`bangsSway`、`headBack`、`headMid`、`headFeat`、`headFront`、`finNear`、`finFar`、`ahoge`），不新增、不改名；某个部件不存在就不出那张图。
+
+## 4. 五官与表情（文件名固定）
+
+放 `art/<角色>/layers/face/`，同样是 2048 全画布对齐，位置和 `face.png` 上的五官位置一致。
+
+**中性眼分四层**（视线跟随鼠标时虹膜和高光会移动）：
+
+```text
+face/neutral/eyeL_ball.png   eyeL_iris.png   eyeL_hl.png   eyeL_lash.png
+face/neutral/eyeR_ball.png   eyeR_iris.png   eyeR_hl.png   eyeR_lash.png
+face/neutral/mouth.png       face/neutral/brows.png（可选）
+```
+
+`eyeL` 指**画面左边**的眼睛。
+
+**眼睛的裁剪约定（渲染器、studio 预览、验收三处一致）：渲染器不做遮罩。** 视线跟随时虹膜整体平移，硬上限 X ±1.6、Y ±1.2 骨骼单位（`rig.js` 的视线弹簧在上限处截断，不会超调；和 `rig_pack.GAZE_MAX` 是同一组数），高光再乘 1.25。2048 画布（每像素 0.125 单位）上就是虹膜 ±13×±10 px、高光 ±16×±12 px。所以：
+
+- `ball`（眼白）画完整的眼白形状；
+- `iris`（虹膜）和 `hl`（高光）要画得比眼白小，留出上面的移动范围；
+- `lash`（睫毛 / 上眼线）盖在最上面，可以压住眼白边缘。
+
+`rig_studio compile` 按**眼白的真实 alpha 轮廓**检查：把虹膜 / 高光在移动范围内的所有位置叠起来，任何一个像素落到眼白外就报错（不是只比包围盒）。大肥鱼的眼睛也是这个做法（没有遮罩，靠贴图本身留边）。
+
+**其他表情每种一组**（整块贴片：一只眼一张，嘴一张，眉可选）：
+
+```text
+face/<表情>/eyeL.png  eyeR.png  mouth.png  brows.png（可选）
+```
+
+| 表情目录 | 含义 | 用在 | 必需 |
+| --- | --- | --- | --- |
+| `neutral` | 平静（上面的四层眼） | 待机、说话、思考、干活 | ✓ |
+| `happy` | 开心（弯眼、张嘴笑） | 庆祝、台词【开心】 | ✓ |
+| `love` | 喜欢（星星眼或爱心眼） | 被摸头、台词【喜欢】 | ✓ |
+| `surprised` | 惊讶（圆眼、小 o 嘴） | 被戳、台词【惊讶】 | ✓ |
+| `sleep` | 闭眼（**也用于眨眼**，必须和中性眼同位置） | 犯困、眨眼、换表情时的过渡 | ✓ |
+| `drag` | 慌张（>< 眼、波浪嘴） | 被拎起、下落、台词【慌张】 | ✓ |
+| `dizzy` | 晕（蚊香眼） | 摔晕、出错 | ✓ |
+| `shy` | 害羞（眼神躲闪、抿嘴；腮红由程序画） | 台词【害羞】 | |
+| `smug` | 得意（半眯眼、嘴角上扬） | 台词【得意】 | |
+
+说话时张开的嘴：`face/talk/mouth_open.png`（可选；没有就把 `happy/mouth.png` 纵向拉伸代替）。
+
+腮红颜色、肤色写在 `pack.json` 里（见下），不用出图。
+
+## 5. `pack.json`（源素材清单）
+
+T5 交图时给出初稿（至少 `name`、`credits`、`palette`），支点可以先空着，由 `rig_studio` 标注后写回。坐标全部用 **画布像素**。
+
+```json
+{
+  "format": "AICompanionPackSource",
+  "version": 1,
+  "id": "deepseek-whale",
+  "name": "鲸娘",
+  "canvas": [2048, 2048],
+  "origin": {"center_x": 1024, "ground_y": 1984},
+  "credits": [{"role": "原画", "by": "…", "tool": "…", "license": "…", "notes": "生成工具与提示词、人工修图说明"}],
+  "palette": {"blush": [255, 120, 140], "skin": [255, 232, 220], "accent": "#4D6BFE"},
+  "pivots": {
+    "body": [1024, 1984], "waist": [1024, 1447], "neck": [1039, 1174],
+    "armNear": [906, 1265], "armFar": [1229, 1288],
+    "legBack": [899, 1601], "legFront": [1153, 1601],
+    "tail": [729, 1624],
+    "finNear": [671, 1081], "finFar": [1410, 1066], "ahoge": [972, 416]
+  },
+  "head": [580, 90, 1550, 1270],
+  "parts": {"bangs": {"z": 9.0, "grid": [6, 4]}}
+}
+```
+
+- `pivots`：各旋转变形器的支点（关节位置）。`body` 固定在两脚之间的地面上；其余是关节：腰、脖子根、肩、髋、尾巴根、耳鳍根、呆毛根。上面的数字只是示意，以实际图为准。
+- `head`：头部视差变形器作用的矩形（覆盖整个头和头发，到脖子为止）。不填时按头部图层的范围自动算。
+- `parts`：只写需要覆盖默认值的部件（z、网格密度 `grid`、`blend`）。默认网格 4×4，头发和裙子建议 6×4 以上。
+
+## 6. 版权与提交
+
+- 自己的形象**可以随本项目公开**：`art/<角色>/` 和编译出的 `characters/<角色>/rig/` 都提交。
+- `credits` 必须写清出图方式（工具、提示词、人工修改），以及授权；生成过程中不得参考或描摹 Coopanion 的大肥鱼贴图和任何官方形象。
+- 单张源图尽量控制在 1 MB 以内（透明区域多，PNG 压缩后通常很小）；如果整个角色超过 30 MB，先在 PR 里提出来讨论是否用 Git LFS。
+
+## 7. T6 代码要做的事（Claude）
+
+1. `tools/rig_studio.py`
+   - `compile <art目录> <输出目录>`：读 `pack.json` 和图层，按 alpha 裁剪每个图层（留 4 px 边），算出 `box`，像素坐标换算到骨骼空间，生成 `rig.json`（`source.kind: "pack"`）和 `textures/`；检查必需图层、表情是否齐全、支点是否落在对应图层附近、尺寸和对齐是否一致，问题逐条报出来。
+   - `studio <art目录>`：PySide6 小窗口，显示合成后的角色，拖动点标注支点和头部矩形，旁边实时预览（复用 `RigAvatar`，可切姿势、表情、拎起），保存写回 `pack.json` 并重新编译。
+2. 角色包接入：`character.json` 的 `renderer.rig` 支持 `{"source": "pack", "path": "rig/rig.json"}`；有自己的形象包时优先用它，没有时才找本机 Coopanion，再不行退回整张立绘。改动集中在 `body/rig_pack.py`（新）、`body/rig_import.py`（`load_rig` 校验五官贴图）；`ui/main_window.py` 只改 `_rig_path` 一个方法（形象来源顺序：环境变量 `AICOMPANION_RIG` → 角色包 `rig/rig.json` → 本机 Coopanion）。`tools/smoke_pet.py` 在本机没有 Coopanion 时自动生成占位形象包来自检。
+3. `rig.js` 增补：支持 `shy`、`smug` 表情贴片和 `talk_mouth`（没有时保持现在的替代做法）。
+4. 依赖：`pyproject.toml` 新增可选依赖组 `studio = ["Pillow>=11,<13"]`，只有编译和标注需要，桌宠运行不需要（公共文件里 T6 只动 `pyproject.toml` 这一行和 `main_window.py` 的 `_rig_path`）。
+5. 占位素材：`tools/make_placeholder_pack.py` 用简单几何图形按本规格生成一套合成占位图层（编进测试，不当正式形象），用来验证编译和渲染，不等 T5 的美术。
+
+## 8. 验收
+
+- 单元测试（不依赖 Qt 的部分）：占位素材 → `compile` → `load_rig` 通过；缺必需图层、画布尺寸不对、图层没对齐、支点离谱时报出明确错误；坐标换算正确（中线和地面落在 128 / 256）。
+- 桌宠自检新增：用占位形象包启动骨骼形象，`ready`、透明、命中遮罩生效、7 个以上姿势和全部必需表情能切换。
+- 真机：用户在桌面上看占位形象（以及 T5 的第一个正式形象）走、甩、摸、换表情；鲸娘正式形象达到 P1 的验收标准（动作自然；空闲 CPU ≤ 3%）。
+- 仓库里没有任何 Coopanion 素材或由它导出的文件。
+
+## 9. 不做
+
+- 不改动作引擎的变形器名字和动作逻辑（形象之间通用）。
+- 不提交 Coopanion 的贴图、`rig_import.py` 的缓存产物。
+- P7 相关一律不碰。

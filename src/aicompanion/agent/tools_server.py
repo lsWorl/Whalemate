@@ -41,11 +41,37 @@ READ_ONLY = {
     'write-output', 'echo', 'write-host', 'compare-object', 'get-unique', 'tree', 'findstr', 'where.exe', 'systeminfo',
     'python --version', 'python -v', 'node --version', 'node -v', 'npm --version', 'git --version',
 }
-READ_ONLY_GIT = {'status', 'log', 'diff', 'show', 'branch', 'remote', 'rev-parse', 'ls-files', 'blame'}
-DANGER_HINT = re.compile(r'(?i)\b(remove-item|rm|del|erase|rd|rmdir|format|clear-content|set-content|out-file|add-content|new-item|'
-                         r'move-item|mv|copy-item|cp|rename-item|ren|stop-process|kill|invoke-webrequest|iwr|curl|wget|start-process|'
-                         r'set-executionpolicy|reg|shutdown|restart-computer|git\s+(push|reset|clean|checkout|commit)|npm\s+(publish|install|i)|'
-                         r'hexo\s+(deploy|d|clean)|pip\s+install)\b|>{1,2}')
+READ_ONLY_GIT = {'status', 'rev-parse', 'ls-files'}
+# 会显示差异的子命令：仓库配置里的 diff.external / textconv 会让它们启动外部程序，所以只有明确带上关闭开关时才算只读
+GIT_DIFFING = {'diff': ('--no-ext-diff', '--no-textconv'), 'show': ('--no-ext-diff', '--no-textconv'), 'blame': ('--no-textconv',)}
+# 免确认时每个子命令允许的选项：**完整拼写、逐个精确匹配**。git 接受长选项的唯一前缀缩写（--ext-di = --ext-diff），
+# 所以不能用"包含 / 前缀"判断危险选项；名单外的（包括任何缩写）一律转确认。'--' 之后都是路径，不再当选项看。
+_DIFF_VIEW = (r'--stat|--numstat|--shortstat|--name-only|--name-status|--summary|--color|--no-color|--word-diff|--color-words|-w|-b|'
+              r'--ignore-all-space|--ignore-space-change|--ignore-blank-lines|--minimal|--patience|--histogram|-R|-U\d+|--unified=\d+|'
+              r'--no-renames|-M|--find-renames|--check|--exit-code|--quiet|--relative|--no-prefix|--abbrev(=\d+)?')
+GIT_OPTIONS = {
+    'status': re.compile(r'^(-s|--short|-b|--branch|--porcelain(=v[12])?|--long|-u(no|normal|all)?|--untracked-files=(no|normal|all)|--ignored|--no-renames)$'),
+    'rev-parse': re.compile(r'^(--show-toplevel|--abbrev-ref|--short(=\d+)?|--verify|--git-dir|--is-inside-work-tree|--show-prefix|-q|--quiet|--symbolic-full-name)$'),
+    'ls-files': re.compile(r'^(-c|--cached|-m|--modified|-o|--others|-d|--deleted|-i|--ignored|--exclude-standard|-s|--stage|-z|--full-name)$'),
+    'diff': re.compile(r'^(--no-ext-diff|--no-textconv|--cached|--staged|--no-index|' + _DIFF_VIEW + r')$'),
+    'show': re.compile(r'^(--no-ext-diff|--no-textconv|--oneline|-s|--no-patch|--abbrev-commit|--(format|pretty)=[^%]*(%[^G][^%]*)*|' + _DIFF_VIEW + r')$'),
+    'blame': re.compile(r'^(--no-textconv|-L|-L\S+|-w|-e|-s|-l|-t|-M|-C|--porcelain|--line-porcelain|--date=[\w-]+|--show-email|--root)$'),
+    'log': re.compile(r'^(--oneline|--graph|--decorate(=\w+)?|--no-decorate|--all|--reverse|--first-parent|--no-merges|--merges|'
+                      r'--name-only|--name-status|--abbrev-commit|--date=[\w-]+|-n|-\d+|--max-count=\d+|--skip=\d+|'
+                      r'--(format|pretty)=[^%]*(%[^G][^%]*)*|--(since|until|after|before|author|committer|grep)=.*)$'),
+}
+# 每条命令运行时都带上的 git 覆盖：关掉文件系统监视钩子、签名校验、分页程序（这些都会执行仓库配置里写的程序，且 status / log 本身就会触发）。
+# diff.external 不在这里覆盖（置空会让用户同意过的 git diff 报错）；只读判断要求 diff / show 带 --no-ext-diff --no-textconv。
+GIT_SAFE_CONFIG = (('core.fsmonitor', 'false'), ('log.showSignature', 'false'), ('core.pager', 'cat'))
+READ_ONLY_GIT_LIST = {'branch': {'-a', '-r', '-v', '-vv', '--list', '--all', '--remotes', '--show-current'}, 'remote': {'-v', '--verbose'}}
+# 会改东西的命令名：出现在命令里的任何位置（包括被藏在字符串、脚本块里）都不算只读。
+# 前后不能紧挨字母、连字符、点、路径分隔符，避免 Format-Table、D:\\del\\ 这类误判。
+DANGER_HINT = re.compile(r'(?i)(?<![\w\-.\\/:$])(remove-item|rm|del|erase|rd|rmdir|format|clear-content|set-content|out-file|add-content|'
+                         r'new-item|ni|md|mkdir|move-item|mv|move|copy-item|cp|copy|rename-item|ren|stop-process|kill|invoke-webrequest|iwr|'
+                         r'invoke-restmethod|irm|curl|wget|start-process|saps|start|set-executionpolicy|reg|shutdown|restart-computer|'
+                         r'set-item|si|set-itemproperty|new-itemproperty|remove-itemproperty)(?![\w\-.\\/:])'
+                         r'|\bgit\s+(push|reset|clean|checkout|commit|branch\s+-[dDmM]|remote\s+(add|remove|rm|set-url))'
+                         r'|\b(npm|pnpm|yarn|pip|npx)\s+\w')
 
 
 SAFE_METHODS = {'tostring', 'trim', 'trimend', 'trimstart', 'split', 'replace', 'substring', 'tolower', 'toupper', 'contains', 'startswith',
@@ -71,21 +97,68 @@ def is_read_only_command(command: str) -> bool:
     """每一段的开头都是只读命令（或变量、字面量、表达式），没有重定向写文件，也没有调用会改东西的 .NET 方法。"""
     text = command.strip()
     if not text or re.search(r'(?<![<>=!-])>{1,2}', text) or '`' in text: return False
+    if DANGER_HINT.search(text) or re.search(r'(?i)--output|-outfile|tee-object|invoke-expression|\biex\b|-encodedcommand', text): return False
     for method in re.findall(r'(?:\.|::)(\w+)\s*\(', text):
         if method.lower() not in SAFE_METHODS: return False
     for part in _segments(text):
-        if re.match(r'^\$[\w:.]+\s*=[^=]', part): part = part.split('=', 1)[1].strip()   # $x = ...：看等号右边
+        assign = re.match(r'^\$\{?([\w:.]+)\}?\s*[-+*/]?=[^=]', part)
+        if assign:
+            if ':' in assign.group(1) and not assign.group(1).lower().startswith(('script:', 'local:', 'global:', 'private:')):
+                return False   # $env:X = …、$function:… 这类是写环境变量 / 提供程序，不是普通变量（会改变后面命令的行为）
+            part = part.split('=', 1)[1].strip()   # $x = ...：看等号右边
         words = part.split()
+        invoked = bool(words) and (words[0] in ('&', '.') or (words[0][:1] in '&.' and len(words[0]) > 1 and words[0][1] in '$"\'('))
         while words and words[0] in ('&', '.', '('): words = words[1:]   # & 命令 / . 脚本 都按后面的命令算
-        raw = words[0].lstrip('&(') if words else ''
+        raw = words[0].lstrip('&.(') if words else ''
+        if invoked and (not raw or raw[0] in '$"\'@[('):
+            return False   # & $变量 / & "字符串" / .(…)：调用的是什么命令看不出来，一律当作会改东西
         if not raw or raw[0] in '$"\'@[0123456789-+' or raw.lower() in ('if', 'else', 'elseif', 'foreach', 'for', 'while'):
             continue   # 变量、字面量、表达式、比较、流程控制（括号里的内容已经单独检查过）
         head = re.split(r'[()]', raw)[0].lower()
         words = [head] + words[1:]
-        if head == 'git' and len(words) > 1 and words[1].lower() in READ_ONLY_GIT: continue
+        if head in ('git', 'git.exe') and len(words) > 1:
+            if _git_read_only(part): continue
+            return False
         if ' '.join(w.lower() for w in words[:2]) in READ_ONLY or head in READ_ONLY: continue
         return False
     return True
+
+
+def _git_read_only(part: str) -> bool:
+    """一段 git 命令是否免确认。参数按 PowerShell 传给外部程序的样子拆开：变量、数组、子表达式、splat 展开后是什么看不出来，
+    一律转确认；选项必须在子命令的完整名单里（精确匹配，缩写不认），diff/show/blame 还必须带上关闭外部程序的开关。"""
+    tokens = re.findall(r"'[^']*'|\"[^\"]*\"|\S+", part)
+    if len(tokens) < 2: return False
+    args = []
+    for token in tokens[1:]:
+        if token[0] == "'": args.append(token[1:-1]); continue                 # 单引号：原样，不展开
+        if '$' in token or token[0] in '@(' or (token[0] != '"' and (',' in token or '(' in token)) or token == '--%':
+            return False                                                         # $变量、@splat、(子表达式)、a,b 数组、--% 停止解析
+        args.append(token.strip('"'))
+    sub, rest = args[0].lower(), args[1:]
+    if sub.startswith('-'): return False                                         # git -c / --exec-path 等全局选项
+    if sub in READ_ONLY_GIT_LIST:
+        return all(w.lower() in READ_ONLY_GIT_LIST[sub] for w in rest)          # git branch -D、git remote add 不算
+    if sub not in GIT_OPTIONS: return False
+    options = []
+    for i, w in enumerate(rest):
+        if w == '--': break                                                      # 之后都是路径
+        if w.startswith('-'): options.append(w)
+    if not all(GIT_OPTIONS[sub].match(w) for w in options): return False
+    if sub in GIT_DIFFING:
+        # 关闭开关必须在，而且名单里没有能重新打开它们的选项（--ext-diff / --textconv 及其缩写都不在名单里）
+        return all(flag in options for flag in GIT_DIFFING[sub])
+    return True
+
+
+def git_safe_env(env: dict) -> dict:
+    """git 的命令行级配置覆盖（GIT_CONFIG_COUNT/KEY/VALUE，优先级高于仓库配置），并清掉会指定外部程序的环境变量。"""
+    for key in [k for k in env if k.upper() in ('GIT_EXTERNAL_DIFF', 'GIT_PAGER', 'GIT_SSH_COMMAND', 'GIT_CONFIG_PARAMETERS')]: env.pop(key)
+    base = int(env.get('GIT_CONFIG_COUNT') or 0) if str(env.get('GIT_CONFIG_COUNT') or '0').isdigit() else 0
+    out = {'GIT_CONFIG_COUNT': str(base+len(GIT_SAFE_CONFIG))}
+    for i, (key, value) in enumerate(GIT_SAFE_CONFIG, base):
+        out[f'GIT_CONFIG_KEY_{i}'] = key; out[f'GIT_CONFIG_VALUE_{i}'] = value
+    return out
 
 
 def _norm(path: str | Path) -> Path:
@@ -140,7 +213,8 @@ class ToolBox:
         self.trash = trash        # 测试时指定；平时按盘选（见 trash_root）
         self.approve: Callable[[str, str, str], str] = lambda kind, title, detail: 'no'
         self.on_call: Callable[[dict], None] = lambda record: None
-        self.task = Task()
+        self.task = Task()                 # 当前任务；每次工具调用开始时绑定到这个线程（见 current）
+        self._local = threading.local()
         self.run_command = run_command or self._run_powershell
 
     # ---- MCP 工具清单 ----------------------------------------------------------------
@@ -170,11 +244,18 @@ class ToolBox:
     ]
 
     # ---- 调度 ------------------------------------------------------------------------
+    @property
+    def current(self) -> Task:
+        """这次调用所属的任务。调用开始时绑定，之后即使 self.task 换成了新任务，这次调用也只认原来那个
+        （旧命令照样会被旧任务的停止信号结束，迟到的审批和审计也记在原任务名下）。"""
+        return getattr(self._local, 'task', None) or self.task
+
     def call(self, name: str, args: dict) -> tuple[str, bool]:
         """执行一个工具，返回（文字结果, 是否出错）。"""
-        record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': ''}
+        task = self.task; self._local.task = task
+        record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': '', 'run_id': task.run_id}
         try:
-            if self.task.cancelled.is_set(): raise PermissionError('任务已经停止')
+            if task.cancelled.is_set(): raise PermissionError('任务已经停止')
             handler = getattr(self, f'_t_{name}', None)
             if handler is None: raise ValueError(f'没有这个工具：{name}')
             text = handler(record, **{k: v for k, v in (args or {}).items() if v is not None})
@@ -187,6 +268,7 @@ class ToolBox:
             record['error'] = f'{type(error).__name__}: {error}'
             return f'出错：{type(error).__name__}: {error}', True
         finally:
+            self._local.task = None
             try: self.on_call(record)
             except Exception: pass
 
@@ -196,14 +278,14 @@ class ToolBox:
         if reason: raise PermissionError(f'{path} 不能读（{reason}）')
 
     def _allowed(self, path: Path) -> bool:
-        return any(_inside(path, folder) or path == folder for folder in self.task.allowed+[Path(p) for p in self.task.always if p != 'command'])
+        return any(_inside(path, folder) or path == folder for folder in self.current.allowed+[Path(p) for p in self.current.always if p != 'command'])
 
     def _ask(self, record, kind: str, title: str, detail: str, remember: str | None = None):
-        if remember and remember in self.task.always:
+        if remember and remember in self.current.always:
             record['decision'] = 'approved_session'; return
         answer = self.approve(kind, title, detail)
-        if self.task.cancelled.is_set(): raise PermissionError('任务已经停止')
-        if answer == 'always' and remember: self.task.always.add(remember)
+        if self.current.cancelled.is_set(): raise PermissionError('任务已经停止')
+        if answer == 'always' and remember: self.current.always.add(remember)
         if answer in ('once', 'always'):
             record['decision'] = 'approved_session' if answer == 'always' else 'approved'; return
         record['decision'] = 'denied' if answer == 'no' else 'timeout'
@@ -212,17 +294,22 @@ class ToolBox:
     def _check_write(self, record, path: Path, action: str):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能改（{reason}）')
+        if any(part.lower() == '.git' for part in path.parts):
+            # .git 里的配置和钩子能让之后的 git 命令（包括只读的 status / diff）执行任意程序：放开的文件夹里也要问，且不记住
+            self._ask(record, 'write', f'要{action}，位置在 Git 仓库的内部目录里：\n{path}',
+                      '.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
+            return
         if self._allowed(path): return
         folder = path if path.is_dir() else path.parent
         self._ask(record, 'write', f'要在放开的文件夹外{action}：\n{path}',
-                  f'这次任务放开的文件夹：\n' + '\n'.join(str(p) for p in self.task.allowed) + f'\n\n同意后她会{action}这个位置；选"这个文件夹本次都可以"会放开 {folder}。',
+                  f'这次任务放开的文件夹：\n' + '\n'.join(str(p) for p in self.current.allowed) + f'\n\n同意后她会{action}这个位置；选"这个文件夹本次都可以"会放开 {folder}。',
                   remember=str(folder))
 
     def _backup(self, path: Path) -> str:
         """覆盖或删除前把旧版本移 / 复制进回收区：<盘>\\.aicompanion-trash\\<时间>-<任务号>\\<原路径>。"""
         if not path.exists(): return ''
         stamp = time.strftime('%Y%m%d-%H%M%S')
-        target = (self.trash or trash_root(path))/f'{stamp}-run{self.task.run_id}'/str(path)[len(path.drive):].lstrip('\\/')
+        target = (self.trash or trash_root(path))/f'{stamp}-run{self.current.run_id}'/str(path)[len(path.drive):].lstrip('\\/')
         target.parent.mkdir(parents=True, exist_ok=True)
         if path.is_dir(): shutil.copytree(path, target, dirs_exist_ok=True)
         else: shutil.copy2(path, target)
@@ -289,7 +376,7 @@ class ToolBox:
     def _t_write_file(self, record, path, content):
         p = _norm(path); self._check_write(record, p, '写入文件')
         backup = self._backup(p) if p.exists() else ''
-        if not p.exists(): self.task.created.add(str(p).lower())
+        if not p.exists(): self.current.created.add(str(p).lower())
         p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding='utf-8')
         return f'已写入 {p}（{len(content)} 字）'+(f'；旧版本留底在 {backup}' if backup else '')
 
@@ -305,7 +392,7 @@ class ToolBox:
 
     def _t_make_dir(self, record, path):
         p = _norm(path); self._check_write(record, p, '新建文件夹')
-        p.mkdir(parents=True, exist_ok=True); self.task.created.add(str(p).lower())
+        p.mkdir(parents=True, exist_ok=True); self.current.created.add(str(p).lower())
         return f'已建好 {p}'
 
     def _t_move_path(self, record, source, destination):
@@ -313,8 +400,14 @@ class ToolBox:
         for p in (src, dst):
             reason = _secret_reason(p, self.secrets)
             if reason: raise PermissionError(f'{p} 不能动（{reason}）')
-        if not (self._allowed(src) and self._allowed(dst)) and str(src).lower() not in self.task.created:
-            self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
+        # 源和目标分别检查：她这次自己建的文件可以在放开的文件夹里随便挪，但挪到外面一样要问
+        source_ok = self._allowed(src) or str(src).lower() in self.current.created
+        target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
+        if any(part.lower() == '.git' for p in (src, dst) for part in p.parts): source_ok = target_ok = False   # 挪进 / 挪出 .git 都要问
+        if not (source_ok and target_ok):
+            where = [] if source_ok else ['原位置在放开的文件夹外或 .git 里']
+            if not target_ok: where.append('目标在放开的文件夹外')
+            self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '，'.join(where)+'。移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
         backup = self._backup(src)
         dst.parent.mkdir(parents=True, exist_ok=True); shutil.move(str(src), str(dst))
         return f'已移动到 {dst}'+(f'；原样留底在 {backup}' if backup else '')
@@ -324,7 +417,7 @@ class ToolBox:
         secret = _secret_reason(p, self.secrets)
         if secret: raise PermissionError(f'{p} 不能删（{secret}）')
         if not p.exists(): return f'{p} 本来就不存在'
-        if str(p).lower() not in self.task.created:
+        if str(p).lower() not in self.current.created:
             what = '整个文件夹' if p.is_dir() else '文件'
             self._ask(record, 'delete', f'要删除{what}：\n{p}'+(f'\n原因：{reason}' if reason else ''),
                       '同意后会移到同一个盘的 .aicompanion-trash 回收区，需要时可以从那里找回。')
@@ -335,7 +428,7 @@ class ToolBox:
 
     # ---- 命令 ------------------------------------------------------------------------
     def _t_run_powershell(self, record, command, cwd=None, reason=''):
-        folder = _norm(cwd) if cwd else (self.task.allowed[0] if self.task.allowed else Path.home())
+        folder = _norm(cwd) if cwd else (self.current.allowed[0] if self.current.allowed else Path.home())
         for p in [folder, *self._paths_in(command)]:
             secret = _secret_reason(p, self.secrets)
             if secret: raise PermissionError(f'命令涉及 {p}（{secret}）')
@@ -358,20 +451,52 @@ class ToolBox:
         env = sandbox.child_env(os.environ.copy()) if sandbox.IS_WINDOWS else os.environ.copy()
         for key in [k for k in env if k.upper().endswith('_API_KEY') or k.upper() in ('QWEN_API_KEY', 'SPEECH_API_KEY')]:
             env.pop(key, None)   # 命令里拿不到你的密钥
+        env.update(git_safe_env(env))
         exe = os.path.join(os.getenv('SystemRoot', r'C:\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
         script = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference="SilentlyContinue"; '+command
         args = [exe, '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script]
         flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        if sandbox.IS_WINDOWS:
+            with sandbox.low_integrity(): return self._run_process(args, folder, env, flags)
+        return self._run_process(args, folder, env, flags)
 
-        def launch():
-            return subprocess.run(args, cwd=str(folder), env=env, capture_output=True, timeout=COMMAND_TIMEOUT, creationflags=flags)
-        try:
-            if sandbox.IS_WINDOWS:
-                with sandbox.low_integrity(): done = launch()
-            else:
-                done = launch()
-        except subprocess.TimeoutExpired:
-            return f'命令超过 {COMMAND_TIMEOUT} 秒被停止了。长时间运行的程序请用 Start-Process 放到后台。'
-        out = (done.stdout or b'').decode('utf-8', 'replace'); err = (done.stderr or b'').decode('utf-8', 'replace')
-        text = out+(('\n[stderr]\n'+err) if err.strip() else '')+f'\n[退出码 {done.returncode}]'
+    def _run_process(self, args, folder: Path, env: dict, flags: int = 0, timeout: float = COMMAND_TIMEOUT) -> str:
+        """运行命令；任务被停止或超时时连同它启动的子进程一起结束。"""
+        task = self.current   # 启动时绑定：轮询期间不再读 self.task
+        extra = {} if os.name == 'nt' else {'start_new_session': True}   # 非 Windows：独立进程组，停止时整组结束
+        proc = subprocess.Popen(args, cwd=str(folder), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=flags, **extra)
+        out_parts, err_parts = [], []
+        readers = [threading.Thread(target=lambda s=stream, b=box: b.append(s.read()), daemon=True)
+                   for stream, box in ((proc.stdout, out_parts), (proc.stderr, err_parts))]
+        for r in readers: r.start()
+        deadline = time.monotonic()+timeout; stopped = ''
+        while proc.poll() is None:
+            if task.cancelled.is_set(): stopped = '任务已停止，命令也一起停下了。'
+            elif time.monotonic() > deadline: stopped = f'命令超过 {int(timeout)} 秒被停止了。长时间运行的程序请用 Start-Process 放到后台。'
+            if stopped:
+                self._kill_tree(proc); break
+            time.sleep(0.1)
+        for r in readers: r.join(timeout=2)
+        for stream in (proc.stdout, proc.stderr):
+            try: stream.close()
+            except OSError: pass
+        if stopped: return stopped
+        out = b''.join(out_parts).decode('utf-8', 'replace'); err = b''.join(err_parts).decode('utf-8', 'replace')
+        text = out+(('\n[stderr]\n'+err) if err.strip() else '')+f'\n[退出码 {proc.returncode}]'
         return text[-OUTPUT_LIMIT:] if len(text) > OUTPUT_LIMIT else text
+
+    @staticmethod
+    def _kill_tree(proc):
+        """Windows 上用 taskkill /T 连子进程一起结束（PowerShell 里起的程序不会因为父进程被杀而退出）。"""
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True, timeout=10,
+                               creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            else:
+                import signal
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.kill()
+        except Exception:
+            pass
+        try: proc.wait(timeout=5)
+        except Exception: pass

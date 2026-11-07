@@ -192,6 +192,7 @@ class ToolBoxTest(unittest.TestCase):
     def test_commands(self):
         self.assertTrue(is_read_only_command('Get-ChildItem D:\\x | Measure-Object'))
         self.assertTrue(is_read_only_command('git status; git log -3'))
+        self.assertFalse(is_read_only_command('git status; git log -3 -p'))
         self.assertFalse(is_read_only_command('Remove-Item D:\\x -Recurse'))
         self.assertFalse(is_read_only_command('Get-ChildItem > out.txt'))
         self.assertFalse(is_read_only_command('npm install'))
@@ -205,6 +206,173 @@ class ToolBoxTest(unittest.TestCase):
         self.assertFalse(is_read_only_command('Get-ChildItem | ForEach-Object { Remove-Item $_ }'))
         self.assertEqual(self.call('run_powershell', command='Get-Date')[0], 'ran Get-Date'); self.assertEqual(self.asked, [])
         self.assertTrue(self.call('run_powershell', command='Remove-Item x')[1]); self.assertEqual(self.asked, ['command'])
+
+    def test_move_checks_source_and_target(self):
+        own = self.inside/'mine.txt'
+        self.call('write_file', path=str(own), content='x')                       # 她这次新建的文件
+        self.assertTrue(self.call('move_path', source=str(own), destination=str(self.outside/'mine.txt'))[1])
+        self.assertEqual(self.asked, ['move']); self.assertTrue(own.exists())    # 挪到外面也要问，拒绝后原地不动
+        self.assertFalse(self.call('move_path', source=str(own), destination=str(self.inside/'sub'/'m.txt'))[1])
+        self.assertEqual(self.asked, ['move'])                                    # 放开的文件夹里随便挪
+        foreign = self.outside/'theirs.txt'; foreign.write_text('t')
+        self.assertTrue(self.call('move_path', source=str(foreign), destination=str(self.inside/'t.txt'))[1])
+        self.assertEqual(self.asked, ['move', 'move']); self.assertTrue(foreign.exists())
+
+    def test_read_only_bypasses(self):
+        for command in ('& $c x', "$c='Remove-Item'; & $c a", '.("Remove-Item") x', "& 'Remove-Item' x", "iex 'rm x'",
+                        'git branch -D old', 'git remote add o u', 'git diff --no-ext-diff --no-textconv --output=x.txt', 'Get-Content a | Tee-Object b',
+                        'npx hexo server', 'Start-Process notepad', 'mkdir x'):
+            self.assertFalse(is_read_only_command(command), command)
+        for command in ('Get-ChildItem | Format-Table Name', 'Get-ChildItem D:\\del\\x', 'git branch -a', 'git remote -v', '& Get-Date'):
+            self.assertTrue(is_read_only_command(command), command)
+
+    def test_git_external_programs_need_approval(self):
+        """Codex 复现的绕过：设环境变量 GIT_EXTERNAL_DIFF 后 git diff --ext-diff 被当作只读执行。"""
+        for command in ("$env:GIT_EXTERNAL_DIFF = 'python probe.py'; git diff --no-index --ext-diff a.txt b.txt",
+                        "${env:GIT_EXTERNAL_DIFF}='x'; git status", 'git diff a.txt', 'git show HEAD', 'git log -p', 'git log --stat',
+                        'git log -S secret', 'git blame a.txt', 'git -c core.pager=evil status', 'git --exec-path=x status',
+                        'git diff --no-ext-diff --no-textconv --ext-diff a b', 'git log --format=%G?', '$function:x = {1}'):
+            self.assertFalse(is_read_only_command(command), command)
+        for command in ('git diff --no-ext-diff --no-textconv a.txt', 'git show --no-ext-diff --no-textconv HEAD --stat',
+                        'git log --oneline -5', 'git log --format=%h%x09%s --since=2026-01-01', 'git blame --no-textconv a.txt',
+                        "$x = 'a'; git status", "$script:n = 1; git ls-files"):
+            self.assertTrue(is_read_only_command(command), command)
+        ran = []
+        box = ToolBox(trash=Path(self.tmp.name)/'trash', run_command=lambda command, folder: ran.append(command) or 'ran')
+        box.approve = lambda kind, title, detail: (self.asked.append(kind), 'no')[1]
+        box.task = Task(run_id=8, allowed=[self.inside.resolve()])
+        repro = "$env:GIT_EXTERNAL_DIFF = 'python probe.py'; git diff --no-index --ext-diff a.txt b.txt"
+        text, error = box.call('run_powershell', {'command': repro, 'cwd': str(self.inside)})
+        self.assertTrue(error); self.assertEqual(self.asked, ['command']); self.assertEqual(ran, [])   # 拒绝后根本没运行
+
+    def test_git_safe_env_blocks_repo_configured_programs(self):
+        """仓库配置里的 fsmonitor 会让 git status 执行程序：运行环境里的覆盖要关掉它；外部 diff 环境变量被清掉。"""
+        import os, shutil, subprocess, sys
+        from aicompanion.agent.tools_server import git_safe_env
+        if not shutil.which('git'): self.skipTest('没有 git')
+        repo = self.inside/'repo'; repo.mkdir(); marker = self.inside/'marker.txt'
+        probe = self.inside/'probe.py'; probe.write_text(f'open({str(marker)!r}, "w").write("x")\n')
+        run = lambda *a, env=None: subprocess.run(['git', *a], cwd=repo, env=env, capture_output=True, text=True)
+        run('init', '-q'); (repo/'f.txt').write_text('a')
+        run('config', 'core.fsmonitor', f'"{sys.executable}" "{probe}"')
+        env = dict(os.environ, GIT_EXTERNAL_DIFF=f'"{sys.executable}" "{probe}"'); env.update(git_safe_env(env))
+        self.assertNotIn('GIT_EXTERNAL_DIFF', env)
+        self.assertEqual(run('status', '--short', env=env).returncode, 0)
+        self.assertFalse(marker.exists())
+
+    def test_git_option_abbreviations_and_expansions_need_approval(self):
+        """Codex 复现：git 接受长选项缩写，--ext-di 在关闭开关之后重新打开外部 diff。名单外的一律转确认。"""
+        for command in ('git diff --no-ext-diff --no-textconv --ext-di --no-index -- a.txt b.txt',
+                        'git diff --no-ext-diff --no-textconv --ext a b', 'git diff --no-ext-diff --no-textconv --textc a',
+                        'git show --no-ext-diff --no-textconv --ext-diff HEAD', 'git blame --no-textconv --textco a.txt',
+                        'git log --pat', 'git log --oneline --ext-d', 'git status --porc --ext',
+                        "$o = '--ext-diff'; git diff --no-ext-diff --no-textconv $o a b", 'git diff --no-ext-diff --no-textconv @o a b',
+                        'git diff --no-ext-diff --no-textconv a,--ext-diff b', 'git diff --% --no-ext-diff --no-textconv --ext-diff',
+                        'git diff --no-ext-diff --no-textconv "--ext-di" a', "git diff --no-ext-diff --no-textconv '--ext-di' a",
+                        'git diff --no-ext-diff --no-textconv "$(\'--ext-diff\')" a', 'git log --format=%G?'):
+            self.assertFalse(is_read_only_command(command), command)
+        for command in ('git diff --no-ext-diff --no-textconv -- --ext-diff', 'git diff --no-textconv --no-ext-diff --stat HEAD~1',
+                        "git diff --no-ext-diff --no-textconv -- 'a b.txt'", 'git status --short', 'git status -s -b',
+                        'git show --no-ext-diff --no-textconv --stat HEAD', 'git log --oneline -5 -- src'):
+            self.assertTrue(is_read_only_command(command), command)
+
+    def test_allowed_git_diff_never_starts_repo_configured_program(self):
+        """名单内的 diff / show / log 用真实 git 跑：仓库里配好的 diff.external 和 textconv 都不会被启动。"""
+        import os, shlex, shutil, subprocess, sys
+        from aicompanion.agent.tools_server import git_safe_env
+        if not shutil.which('git'): self.skipTest('没有 git')
+        repo = self.inside/'repo2'; repo.mkdir(); marker = self.inside/'marker2.txt'
+        probe = self.inside/'probe2.py'; probe.write_text(f'open({str(marker)!r}, "w").write("x")\n')
+        env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t', GIT_COMMITTER_EMAIL='t@t')
+        env.update(git_safe_env(env))
+        git = lambda *a: subprocess.run(['git', *a], cwd=repo, env=env, capture_output=True, text=True)
+        git('init', '-q'); (repo/'f.txt').write_text('a\n'); (repo/'.gitattributes').write_text('*.txt diff=probe\n')
+        git('add', '.'); git('commit', '-qm', 'a'); (repo/'f.txt').write_text('b\n')
+        program = f'"{sys.executable}" "{probe}"'.replace('\\', '/')
+        git('config', 'diff.external', program); git('config', 'diff.probe.textconv', program)
+        commands = ['git diff --no-ext-diff --no-textconv', 'git diff --no-textconv --no-ext-diff --stat',
+                    'git show --no-ext-diff --no-textconv --stat HEAD', 'git log --oneline -1', 'git status --short']
+        for command in commands:
+            self.assertTrue(is_read_only_command(command), command)
+            result = subprocess.run(shlex.split(command), cwd=repo, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, (command, result.stderr)); self.assertFalse(marker.exists(), command)
+        # 对照：新版 git（Windows 实测）接受 --ext-di 缩写并重新打开外部 diff——上面的分类必须拦住它；旧版 git 直接报"无效选项"
+        control = subprocess.run(['git', 'diff', '--no-ext-diff', '--no-textconv', '--ext-di'], cwd=repo, env=env, capture_output=True)
+        if control.returncode == 0: self.assertTrue(marker.exists())
+
+    def test_git_internals_are_not_free_to_write(self):
+        config = self.inside/'.git'/'config'
+        self.assertTrue(self.call('write_file', path=str(config), content='[core]\nfsmonitor = evil')[1])
+        self.assertEqual(self.asked, ['write']); self.assertFalse(config.exists())
+        hook = self.inside/'mine.txt'; self.call('write_file', path=str(hook), content='x')
+        self.assertTrue(self.call('move_path', source=str(hook), destination=str(self.inside/'.git'/'hooks'/'pre-commit'))[1])
+        self.assertEqual(self.asked, ['write', 'move'])
+        self.assertFalse(self.call('write_file', path=str(self.inside/'.gitignore'), content='x')[1])   # .gitignore 不受影响
+
+    def test_stop_kills_running_command(self):
+        import sys, time
+        box = ToolBox(trash=Path(self.tmp.name)/'trash'); box.task = Task(run_id=1, allowed=[self.inside])
+        threading.Timer(0.5, box.task.cancelled.set).start()
+        start = time.monotonic()
+        text = box._run_process([sys.executable, '-c', 'import time; time.sleep(30)'], self.inside, dict(__import__('os').environ))
+        self.assertLess(time.monotonic()-start, 5); self.assertIn('停', text)
+        box.task = Task(run_id=2, allowed=[self.inside])
+        text = box._run_process([sys.executable, '-c', 'import time; time.sleep(30)'], self.inside, dict(__import__('os').environ), timeout=0.5)
+        self.assertIn('超过', text)
+        self.assertIn('hello', box._run_process([sys.executable, '-c', 'print("hello")'], self.inside, dict(__import__('os').environ)))
+
+    def test_old_command_stops_even_after_new_task_starts(self):
+        """旧命令启动后：取消旧任务，并在它下一次轮询前换成新任务——旧命令仍要结束，新任务不受影响。"""
+        from aicompanion.agent import tools_server
+        box = ToolBox(trash=Path(self.tmp.name)/'trash'); old = Task(run_id=1, allowed=[self.inside]); box.task = old
+        new = Task(run_id=2, allowed=[self.inside]); killed = []
+
+        class FakeProc:
+            pid = 4242; returncode = None
+            def __init__(self, *a, **k):
+                import io; self.stdout, self.stderr = io.BytesIO(b''), io.BytesIO(b''); self.polls = 0
+            def poll(self):
+                self.polls += 1
+                if self.polls == 1: old.cancelled.set(); box.task = new      # 用户停了旧任务并马上开了新任务
+                return None if not killed else -9
+            def kill(self): pass
+            def wait(self, timeout=None): return -9
+
+        original_popen, original_kill = tools_server.subprocess.Popen, ToolBox.__dict__['_kill_tree']
+        tools_server.subprocess.Popen = FakeProc; ToolBox._kill_tree = staticmethod(lambda proc: killed.append(proc.pid))
+        try:
+            box._local.task = old
+            text = box._run_process(['x'], self.inside, {})
+        finally:
+            tools_server.subprocess.Popen, ToolBox._kill_tree = original_popen, original_kill
+            box._local.task = None
+        self.assertEqual(killed, [4242]); self.assertIn('停', text); self.assertFalse(new.cancelled.is_set())
+
+    def test_late_record_keeps_original_run_id(self):
+        records = []; self.box.on_call = records.append
+        old = self.box.task
+        def approve(kind, title, detail):
+            self.box.task = Task(run_id=99, allowed=[self.inside])   # 等确认期间换了新任务
+            return 'no'
+        self.box.approve = approve
+        self.call('delete_path', path=str(self.inside))
+        self.assertEqual(records[-1]['run_id'], old.run_id)
+
+    @unittest.skipIf(__import__('os').name == 'nt', '进程组用例在 POSIX 上跑；Windows 用 taskkill /T（见 Windows 实测）')
+    def test_stop_kills_child_processes_too(self):
+        import os, sys, time
+        box = ToolBox(trash=Path(self.tmp.name)/'trash'); box.task = Task(run_id=1, allowed=[self.inside])
+        pid_file = self.inside/'child.pid'
+        script = (f"import subprocess,sys,time; c=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+                  f"open(r'{pid_file}','w').write(str(c.pid)); time.sleep(60)")
+        threading.Timer(1.0, box.task.cancelled.set).start()
+        box._run_process([sys.executable, '-c', script], self.inside, dict(os.environ))
+        child = int(pid_file.read_text()); time.sleep(0.3)
+        try: os.kill(child, 0); alive = True
+        except OSError: alive = False
+        if alive:   # 可能是僵尸进程：看状态
+            alive = 'Z' not in Path(f'/proc/{child}/stat').read_text().split()[2] if os.path.exists(f'/proc/{child}/stat') else False
+        self.assertFalse(alive)
 
     def test_cancelled_task_refuses(self):
         self.box.task.cancelled.set()

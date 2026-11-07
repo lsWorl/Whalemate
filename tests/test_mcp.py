@@ -211,6 +211,43 @@ class McpServerTests(unittest.TestCase):
         self.assertLess(time.monotonic()-started, .5)
         self.assertFalse(current.cancelled.is_set())
 
+    def test_mcp_approval_keeps_cancelled_task_when_next_task_starts(self):
+        """SDK 工作线程中的旧审批不能在下一任务启动后获得新的授权。"""
+        from types import SimpleNamespace
+        from aicompanion.ui.agent_session import AgentSession
+        entered = threading.Event()
+        original = self.box.task
+        seen = []
+        def ask(spec, answer):
+            seen.append(self.box.current)
+            entered.set()
+        session = SimpleNamespace(box=self.box, bridge=SimpleNamespace(
+            ask=SimpleNamespace(emit=ask), event=SimpleNamespace(emit=lambda *args: None)))
+        self.box.approve = lambda *args: AgentSession._wait_ui(session, {})
+        target = self.outside/'old-task.txt'
+        async def check():
+            async with tool_client(self.server, mode='legacy') as client:
+                pending = asyncio.create_task(client.call_tool('write_file',
+                    {'path': str(target), 'content': 'must not be written'}))
+                try:
+                    self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+                    # 新任务不取消；只有原任务被取消，确保检查没有误用 box.task。
+                    self.box.task = Task(run_id=2, allowed=[self.inside])
+                    original.cancelled.set()
+                    result = await asyncio.wait_for(pending, timeout=2)
+                    self.assertTrue(result.is_error)
+                    self.assertFalse(self.box.task.cancelled.is_set())
+                    current = await client.call_tool('list_dir', {'path': str(self.inside)})
+                    self.assertFalse(current.is_error)
+                finally:
+                    original.cancelled.set()
+                    if not pending.done():
+                        pending.cancel()
+                        await asyncio.gather(pending, return_exceptions=True)
+        asyncio.run(check())
+        self.assertEqual(seen, [original])
+        self.assertFalse(target.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

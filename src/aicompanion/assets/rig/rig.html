@@ -6,20 +6,33 @@
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script src="../live2d/vendor/pixi.min.js"></script>
 <script src="rig.js"></script>
+<script src="posepack.js"></script>
 <script>
 /* 宿主（Qt WebChannel 对象 rig）与渲染器之间的胶水；没有 Qt 时（测试）通过 window.rigApi 直接驱动。 */
-let app, engine, bridge;
+let app, engine, bridge, loading = 0;
+// 按 rig.json 的 format 选渲染器：十姿态分层包（AICompanionPoseRig）或单立绘骨骼（AICompanionRig）
+async function rendererFor(url) {
+  const head = await new Promise((resolve, reject) => {
+    const r = new XMLHttpRequest(); r.open('GET', url);
+    r.onload = () => { try { resolve(JSON.parse(r.responseText)); } catch (e) { reject(e); } };
+    r.onerror = () => reject(new Error('读取失败 ' + url)); r.send();
+  });
+  return head.format === 'AICompanionPoseRig' ? PosePackRenderer : RigRenderer;
+}
+function frame() {
+  if (!engine) return;
+  engine.tick(app.ticker.deltaMS);
+  const fps = engine.busy() ? 60 : 24;
+  if (app.ticker.maxFPS !== fps) app.ticker.maxFPS = fps;
+}
 const api = window.rigApi = {
   async load(url) {
-    if (engine) { app.ticker.remove(engine.tick); app.stage.removeChildren(); engine = null; }
-    const built = await RigRenderer.createFigure(app, url);
-    app.stage.addChild(built.figure); engine = RigRenderer.createEngine(app, built);
-    app.ticker.add(() => {
-      if (!engine) return;
-      engine.tick(app.ticker.deltaMS);
-      const fps = engine.busy() ? 60 : 24;
-      if (app.ticker.maxFPS !== fps) app.ticker.maxFPS = fps;
-    });
+    const ticket = ++loading;
+    const renderer = await rendererFor(url);
+    const built = await renderer.createFigure(app, url);
+    if (ticket !== loading) { built.figure.destroy({ children: true }); (built.textures || []).forEach(t => t.destroy(true)); return false; }   // 加载期间又换了模型
+    if (engine) { const old = engine; engine = null; app.stage.removeChildren(); if (old.dispose) old.dispose(); }
+    app.stage.addChild(built.figure); engine = renderer.createEngine(app, built);
     return true;
   },
   set: values => engine && engine.set(values),
@@ -42,6 +55,7 @@ const api = window.rigApi = {
 };
 app = new PIXI.Application({ view: document.getElementById('scene'), resizeTo: window, backgroundAlpha: 0,
   antialias: true, resolution: window.devicePixelRatio || 1, autoDensity: true });
+app.ticker.add(frame);   // 只挂一次；以前每次 load 都挂一个新的
 if (window.qt && window.QWebChannel) {
   new QWebChannel(qt.webChannelTransport, channel => {
     bridge = channel.objects.rig;
