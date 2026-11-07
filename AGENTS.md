@@ -15,7 +15,9 @@ Windows 桌面常驻的 AI 桌宠（Python 3.14 + PySide6 + SQLite）。默认�
 | Codex | P8 的美术出图（按计划书 §4.5 的拆层规格）、分配到的独立任务、PR 审查 |
 | 双方先在任务里说好再动 | `ui/main_window.py`、`storage/database.py`（表结构只由一方改）、`config.py`、`pyproject.toml` |
 
-P7（QQ / B站）最后再做。任务清单见 `docs/tasks.md`，每个任务一份说明放在 `docs/tasks/`。
+P8 当前仅做已确认的 DeepSeek 二创鲸娘，沿用此前十个动作与角色设计，Claude 少女与 Codex / ChatGPT 白龙暂缓。T5 的美术由 Codex 负责，T6 的代码由 Claude 负责。
+
+P7（QQ / B站）最后再做，目前未分配实现负责人。优先调研 AstrBot + NapCat 和现成桥接方案；调研、审查不代表认领实现，开工前仍须在任务清单明确负责人和接口范围。任务清单见 `docs/tasks.md`，每个任务一份说明放在 `docs/tasks/`。
 
 ## 工作方式
 
@@ -29,7 +31,7 @@ P7（QQ / B站）最后再做。任务清单见 `docs/tasks.md`，每个任务�
 
 - 不读取、不打印、不提交 `.env`、数据库（`data/`、`*.sqlite3`）、`data/private-*`（私人立绘、试听）。
 - Coopanion（`/Coopanion/`，AGPL-3.0，大肥鱼贴图另有版权）只在本机读取，**不复制它的代码，不提交、不分发它的贴图或由它导出的文件**。
-- 不用 DeepSeek / Anthropic / OpenAI 的官方 logo 当图标或形象。角色都是二创，要能看出是原创设计。
+- 按用户 2026-11-07 的要求，已确认的鲸娘设计及对应标志保留，不为去标志重画角色。这不改变上面的 Coopanion 素材限制，也不表示获得第三方贴图的分发许可。
 - 不做 `git push` 到主分支、`hexo deploy`、发布到任何公开渠道，除非用户明确要求。
 - 删除文件优先移到回收区；批量删除、改动 `.git`、改系统设置先问用户。
 - 环境注意：D 盘是 **exFAT，没有任何文件权限控制**，沙箱类保护在 D 盘不起作用，危险操作要靠审批。

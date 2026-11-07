@@ -9,9 +9,9 @@
 | T11 | 工具把关安全修复：命令只读误判、移动文件时目标目录的权限检查、停止任务时正在跑的命令要一起停 | Claude | 待开始（优先于 T3，不阻塞 T6） | 待写；Codex 已复现，复现用例请补在任务说明里 |
 | T3 | 外部 MCP 服务接入（经我们的服务转发，统一把关） | Claude | 待开始（依赖 T2、T11） | 待写 |
 | T4 | 应用内确认气泡真机走查（工作区外写、删除、命令） | Claude + 用户 | 待开始 | 需要用户在场点击 |
-| T5 | P8 出图：鲸娘、Claude 少女、ChatGPT 白龙分层素材 | Codex | 进行中（原画草稿待审，图层未交付） | `docs/tasks/T5-character-art.md`；按 T6 冻结后的图层规格出图 |
-| T6 | P8 代码：`rig_studio`、形象包格式与加载，替换借用的大肥鱼 | Claude | 进行中 | `docs/tasks/T6-rig-studio.md`（先定规格，供 T5 出图遵循） |
+| T5 | P8 美术：复用已确认鲸娘的十动作与分层素材 | Codex | 进行中（收敛为原鲸娘；运行时接入未交付） | `docs/tasks/T5-character-art.md`；Claude / Codex 其他形象暂缓，保留对应标志 |
+| T6 | P8 代码：`rig_studio`、形象包格式与加载，接入已确认鲸娘 | Claude | 进行中 | `docs/tasks/T6-rig-studio.md`；按原设计适配，先与 T5 对齐姿态切换及遮挡补全范围 |
 | T7 | 内存优化（目标 ≤ 350 MB） | 待定 | 待开始 | `tools/measure_pet.ps1` |
 | T8 | P4 外放场景验收、连续 10 分钟对话 | 用户 + 待定 | 待开始 | |
-| T9 | P7 QQ / B站 | — | 最后再做 | |
+| T9 | P7 QQ / B站 | 待分配 | 最后再做（先调研） | QQ 优先评估 AstrBot + NapCat + 桌宠大脑桥接；Codex 参与调研、审查，尚未认领实现 |
 | T10 | 开发日志与项目页 | — | 项目完结后 | 草稿已在 MyBlog `_drafts` |

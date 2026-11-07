@@ -374,3 +374,12 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 删除：`build/`、`dist/`（10 月的 v1 打包，含一份私人 .env 副本；需要时用 `tools/build_windows.py` 重新打包）、`bundle-smoke/`、旧自研 agent 代码和实验探针、各类检查日志与测试残留、素材目录里重复的两个 zip、v1 一次性脚本（configure_emilia / configure_emilia_animation / configure_asr / clone_actor_voice）、被替代的 run_p4_checks / run_v2_checks；代码里没人调用的函数（旧情绪规则、旧撤销接口等）。
 - 检查脚本：`tools/run_checks.bat`（单元测试 + 桌宠自检，不联网）；`tools/run_agent_checks.bat`（再加真实模型的干活实测）。
 - 验证：Windows 本机单元测试 187 项通过（新增 `tests/test_housekeeping.py`）；桌宠自检通过（新增 `housekeep_ok`）。
+
+### P8 美术范围调整与 P7 职责说明（2026-11-07，待 PR 审查）
+
+- 按用户最新要求，T5 / T6 只推进此前已确认的鲸娘十动作，保留原设计和对应标志；Claude 少女与 Codex / ChatGPT 白龙暂缓。新侧向鲸娘原画降为历史草稿，未覆盖或删除原始生成文件。
+- `art/deepseek-whale/approved-poses-preview.png` 已加入当前设计基准。Pillow 检查：1500×714 RGB，与用户本次附图转换为 RGBA 后的全部像素一致，也与本机旧分层包预览字节一致；`art/concepts.json` 已记录 SHA-256 和各草稿状态。
+- 已查阅本机旧分层包的清单和 QA：10 姿态、16 原图、184 基础图层、33 表情图层，旧报告记录回拼差异为 0。本次未重新校验整套图层，也未把被忽略的 `output/` 图层目录作为新交付上传。可见像素切片不等同于已补全遮挡面的骨骼素材，原十动作的接入契约已在 PR #2 请求 Claude 确认。
+- P7 / T9 仍未分配实现负责人，Codex 本次只参与调研与审查。AstrBot / NapCat、外部 Agent 桥接插件与现有 DSH 插件的调研及记忆隔离意见已同步到 PR #1；未安装服务、登录 QQ 或开始实现。
+- 离线验证：在不含私人数据的当前代码隔离快照运行 `tools/run_checks.bat`，仅将解释器指向项目虚拟环境、禁用用户回收区清理，并让本机骨骼查找指向现有项目路径（未复制第三方资源）。187 项单元测试通过，3 项因隔离目录无 Coopanion 按设计跳过；桌宠自检 `passed=true`、`remaining_workers=0`，两步退出码均为 0。首次未指定本机模型位置时退回整图立绘，骨骼下落项 `fell` 失败，补足模型查找环境后通过。
+- 未验证：新骨骼素材编译、全套图层重新回拼、十动作的 T6 动画接入及用户真机验收。本次是范围与参考资料调整，未声明阶段完成。
