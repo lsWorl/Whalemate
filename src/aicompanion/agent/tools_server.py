@@ -46,10 +46,22 @@ READ_ONLY = {
 READ_ONLY_GIT = {'status', 'rev-parse', 'ls-files'}
 # 会显示差异的子命令：仓库配置里的 diff.external / textconv 会让它们启动外部程序，所以只有明确带上关闭开关时才算只读
 GIT_DIFFING = {'diff': ('--no-ext-diff', '--no-textconv'), 'show': ('--no-ext-diff', '--no-textconv'), 'blame': ('--no-textconv',)}
-# git log 只认不显示差异的选项（-p、--stat、-G/-S 等会走 diff 驱动，不在名单里就当作会改东西）
-GIT_LOG_FLAGS = re.compile(r'(?i)^(--oneline|--graph|--decorate(=\w+)?|--no-decorate|--all|--reverse|--first-parent|--no-merges|--merges|'
-                           r'--name-only|--name-status|--abbrev-commit|--date=[\w-]+|-n|-\d+|--max-count=\d+|--skip=\d+|'
-                           r'--(format|pretty|since|until|after|before|author|committer|grep)=.*|--)$')
+# 免确认时每个子命令允许的选项：**完整拼写、逐个精确匹配**。git 接受长选项的唯一前缀缩写（--ext-di = --ext-diff），
+# 所以不能用"包含 / 前缀"判断危险选项；名单外的（包括任何缩写）一律转确认。'--' 之后都是路径，不再当选项看。
+_DIFF_VIEW = (r'--stat|--numstat|--shortstat|--name-only|--name-status|--summary|--color|--no-color|--word-diff|--color-words|-w|-b|'
+              r'--ignore-all-space|--ignore-space-change|--ignore-blank-lines|--minimal|--patience|--histogram|-R|-U\d+|--unified=\d+|'
+              r'--no-renames|-M|--find-renames|--check|--exit-code|--quiet|--relative|--no-prefix|--abbrev(=\d+)?')
+GIT_OPTIONS = {
+    'status': re.compile(r'^(-s|--short|-b|--branch|--porcelain(=v[12])?|--long|-u(no|normal|all)?|--untracked-files=(no|normal|all)|--ignored|--no-renames)$'),
+    'rev-parse': re.compile(r'^(--show-toplevel|--abbrev-ref|--short(=\d+)?|--verify|--git-dir|--is-inside-work-tree|--show-prefix|-q|--quiet|--symbolic-full-name)$'),
+    'ls-files': re.compile(r'^(-c|--cached|-m|--modified|-o|--others|-d|--deleted|-i|--ignored|--exclude-standard|-s|--stage|-z|--full-name)$'),
+    'diff': re.compile(r'^(--no-ext-diff|--no-textconv|--cached|--staged|--no-index|' + _DIFF_VIEW + r')$'),
+    'show': re.compile(r'^(--no-ext-diff|--no-textconv|--oneline|-s|--no-patch|--abbrev-commit|--(format|pretty)=[^%]*(%[^G][^%]*)*|' + _DIFF_VIEW + r')$'),
+    'blame': re.compile(r'^(--no-textconv|-L|-L\S+|-w|-e|-s|-l|-t|-M|-C|--porcelain|--line-porcelain|--date=[\w-]+|--show-email|--root)$'),
+    'log': re.compile(r'^(--oneline|--graph|--decorate(=\w+)?|--no-decorate|--all|--reverse|--first-parent|--no-merges|--merges|'
+                      r'--name-only|--name-status|--abbrev-commit|--date=[\w-]+|-n|-\d+|--max-count=\d+|--skip=\d+|'
+                      r'--(format|pretty)=[^%]*(%[^G][^%]*)*|--(since|until|after|before|author|committer|grep)=.*)$'),
+}
 # 每条命令运行时都带上的 git 覆盖：关掉文件系统监视钩子、签名校验、分页程序（这些都会执行仓库配置里写的程序，且 status / log 本身就会触发）。
 # diff.external 不在这里覆盖（置空会让用户同意过的 git diff 报错）；只读判断要求 diff / show 带 --no-ext-diff --no-textconv。
 GIT_SAFE_CONFIG = (('core.fsmonitor', 'false'), ('log.showSignature', 'false'), ('core.pager', 'cat'))
@@ -107,17 +119,37 @@ def is_read_only_command(command: str) -> bool:
         head = re.split(r'[()]', raw)[0].lower()
         words = [head] + words[1:]
         if head in ('git', 'git.exe') and len(words) > 1:
-            sub, rest = words[1].lower(), [w.lower().strip('"\'') for w in words[2:]]
-            # git -c / --config-env / --exec-path 等全局选项能改配置或换执行程序：不算只读
-            if sub.startswith('-'): return False
-            if any(w.startswith(('--ext-diff', '--textconv', '--output', '--exec', '--upload-pack', '--receive-pack', '--config')) for w in rest): return False
-            if sub in READ_ONLY_GIT: continue
-            if sub in GIT_DIFFING and all(flag in rest for flag in GIT_DIFFING[sub]): continue
-            if sub == 'log' and all(not w.startswith('-') or GIT_LOG_FLAGS.match(w) for w in rest) and '%G' not in part: continue   # %G? 等占位符会调用签名程序
-            if sub in READ_ONLY_GIT_LIST and all(w in READ_ONLY_GIT_LIST[sub] for w in rest): continue   # git branch -D、git remote add 不算
+            if _git_read_only(part): continue
             return False
         if ' '.join(w.lower() for w in words[:2]) in READ_ONLY or head in READ_ONLY: continue
         return False
+    return True
+
+
+def _git_read_only(part: str) -> bool:
+    """一段 git 命令是否免确认。参数按 PowerShell 传给外部程序的样子拆开：变量、数组、子表达式、splat 展开后是什么看不出来，
+    一律转确认；选项必须在子命令的完整名单里（精确匹配，缩写不认），diff/show/blame 还必须带上关闭外部程序的开关。"""
+    tokens = re.findall(r"'[^']*'|\"[^\"]*\"|\S+", part)
+    if len(tokens) < 2: return False
+    args = []
+    for token in tokens[1:]:
+        if token[0] == "'": args.append(token[1:-1]); continue                 # 单引号：原样，不展开
+        if '$' in token or token[0] in '@(' or (token[0] != '"' and (',' in token or '(' in token)) or token == '--%':
+            return False                                                         # $变量、@splat、(子表达式)、a,b 数组、--% 停止解析
+        args.append(token.strip('"'))
+    sub, rest = args[0].lower(), args[1:]
+    if sub.startswith('-'): return False                                         # git -c / --exec-path 等全局选项
+    if sub in READ_ONLY_GIT_LIST:
+        return all(w.lower() in READ_ONLY_GIT_LIST[sub] for w in rest)          # git branch -D、git remote add 不算
+    if sub not in GIT_OPTIONS: return False
+    options = []
+    for i, w in enumerate(rest):
+        if w == '--': break                                                      # 之后都是路径
+        if w.startswith('-'): options.append(w)
+    if not all(GIT_OPTIONS[sub].match(w) for w in options): return False
+    if sub in GIT_DIFFING:
+        # 关闭开关必须在，而且名单里没有能重新打开它们的选项（--ext-diff / --textconv 及其缩写都不在名单里）
+        return all(flag in options for flag in GIT_DIFFING[sub])
     return True
 
 

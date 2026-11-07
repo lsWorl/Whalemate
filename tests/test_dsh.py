@@ -259,6 +259,46 @@ class ToolBoxTest(unittest.TestCase):
         self.assertEqual(run('status', '--short', env=env).returncode, 0)
         self.assertFalse(marker.exists())
 
+    def test_git_option_abbreviations_and_expansions_need_approval(self):
+        """Codex 复现：git 接受长选项缩写，--ext-di 在关闭开关之后重新打开外部 diff。名单外的一律转确认。"""
+        for command in ('git diff --no-ext-diff --no-textconv --ext-di --no-index -- a.txt b.txt',
+                        'git diff --no-ext-diff --no-textconv --ext a b', 'git diff --no-ext-diff --no-textconv --textc a',
+                        'git show --no-ext-diff --no-textconv --ext-diff HEAD', 'git blame --no-textconv --textco a.txt',
+                        'git log --pat', 'git log --oneline --ext-d', 'git status --porc --ext',
+                        "$o = '--ext-diff'; git diff --no-ext-diff --no-textconv $o a b", 'git diff --no-ext-diff --no-textconv @o a b',
+                        'git diff --no-ext-diff --no-textconv a,--ext-diff b', 'git diff --% --no-ext-diff --no-textconv --ext-diff',
+                        'git diff --no-ext-diff --no-textconv "--ext-di" a', "git diff --no-ext-diff --no-textconv '--ext-di' a",
+                        'git diff --no-ext-diff --no-textconv "$(\'--ext-diff\')" a', 'git log --format=%G?'):
+            self.assertFalse(is_read_only_command(command), command)
+        for command in ('git diff --no-ext-diff --no-textconv -- --ext-diff', 'git diff --no-textconv --no-ext-diff --stat HEAD~1',
+                        "git diff --no-ext-diff --no-textconv -- 'a b.txt'", 'git status --short', 'git status -s -b',
+                        'git show --no-ext-diff --no-textconv --stat HEAD', 'git log --oneline -5 -- src'):
+            self.assertTrue(is_read_only_command(command), command)
+
+    def test_allowed_git_diff_never_starts_repo_configured_program(self):
+        """名单内的 diff / show / log 用真实 git 跑：仓库里配好的 diff.external 和 textconv 都不会被启动。"""
+        import os, shlex, shutil, subprocess, sys
+        from aicompanion.agent.tools_server import git_safe_env
+        if not shutil.which('git'): self.skipTest('没有 git')
+        repo = self.inside/'repo2'; repo.mkdir(); marker = self.inside/'marker2.txt'
+        probe = self.inside/'probe2.py'; probe.write_text(f'open({str(marker)!r}, "w").write("x")\n')
+        env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t', GIT_COMMITTER_EMAIL='t@t')
+        env.update(git_safe_env(env))
+        git = lambda *a: subprocess.run(['git', *a], cwd=repo, env=env, capture_output=True, text=True)
+        git('init', '-q'); (repo/'f.txt').write_text('a\n'); (repo/'.gitattributes').write_text('*.txt diff=probe\n')
+        git('add', '.'); git('commit', '-qm', 'a'); (repo/'f.txt').write_text('b\n')
+        program = f'"{sys.executable}" "{probe}"'.replace('\\', '/')
+        git('config', 'diff.external', program); git('config', 'diff.probe.textconv', program)
+        commands = ['git diff --no-ext-diff --no-textconv', 'git diff --no-textconv --no-ext-diff --stat',
+                    'git show --no-ext-diff --no-textconv --stat HEAD', 'git log --oneline -1', 'git status --short']
+        for command in commands:
+            self.assertTrue(is_read_only_command(command), command)
+            result = subprocess.run(shlex.split(command), cwd=repo, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, (command, result.stderr)); self.assertFalse(marker.exists(), command)
+        # 对照：新版 git（Windows 实测）接受 --ext-di 缩写并重新打开外部 diff——上面的分类必须拦住它；旧版 git 直接报"无效选项"
+        control = subprocess.run(['git', 'diff', '--no-ext-diff', '--no-textconv', '--ext-di'], cwd=repo, env=env, capture_output=True)
+        if control.returncode == 0: self.assertTrue(marker.exists())
+
     def test_git_internals_are_not_free_to_write(self):
         config = self.inside/'.git'/'config'
         self.assertTrue(self.call('write_file', path=str(config), content='[core]\nfsmonitor = evil')[1])
