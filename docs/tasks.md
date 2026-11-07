@@ -13,5 +13,5 @@
 | T6 | P8 代码：十姿态分层包的编译与渲染，接入已确认鲸娘 | Claude | 代码已合入（PR #2）；观感待用户验收 | `docs/tasks/T6-rig-studio.md` 第 A 节已确认；原 1254 画布、十姿态与小幅运动 |
 | T7 | 内存优化（目标 ≤ 350 MB） | 待定 | 待开始 | `tools/measure_pet.ps1` |
 | T8 | P4 外放场景验收、连续 10 分钟对话 | 用户 + 待定 | 待开始 | |
-| T9 | P7 QQ / B站 | Claude 实现，Codex 方案与代码审查 | 进行中（`task/t9-astrbot-bridge`，用户决定提前做） | `docs/tasks/T9-astrbot-bridge.md`；QQ 采用 AstrBot + NapCat + 桌宠大脑桥接；主人绑定、全链路场景隔离、离线不切第二人格 |
+| T9 | P7 QQ / B站 | Claude 实现，Codex 方案与代码审查 | 第一版已合入（PR #6）；一键接入 QQ 进行中（`task/t9-qq-oneclick`） | `docs/tasks/T9-astrbot-bridge.md`；QQ 采用 AstrBot + NapCat + 桌宠大脑桥接；主人绑定、全链路场景隔离、离线不切第二人格 |
 | T10 | 开发日志与项目页 | — | 项目完结后 | 草稿已在 MyBlog `_drafts` |

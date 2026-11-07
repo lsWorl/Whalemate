@@ -21,7 +21,19 @@ QQ ⇄ NapCat ⇄ AstrBot ─(本插件，POST 127.0.0.1)→ AICompanion 桌宠 
 
 聊天平台上她不会动手干活。桌宠没开或接口没打开时，插件回一句离线提示（可留空 = 不回），**不会改用 AstrBot 自己的模型**。
 
-## 安装步骤（Windows，同一台电脑）
+## 一键接入（推荐，Windows x64）
+
+不用自己装任何东西：桌宠"设置 → 聊天平台"点 **接入 QQ**。
+1. 确认下载提示后，桌宠从 NapCat、uv、PyPI 的官方地址下载固定版本的组件，校验后装进 `%LOCALAPPDATA%\AICompanion\qq\`，
+   并自动写好 NapCat ↔ AstrBot、插件 ↔ 桌宠两段连接（各自的随机令牌，只监听本机），然后启动它们。
+2. 页面出现二维码后，用手机 QQ 扫码登录**机器人账号**（建议用小号）。验证码、设备验证需要你自己完成，桌宠不会绕过。
+3. 显示"已连接"后，填你自己的 QQ 号（主人），在列表里勾选允许她说话的群，保存。
+
+页面上有 启动 / 停止 / 重试 / 复制诊断信息；端口、令牌、组件目录、Python 包镜像在"高级设置"里。
+已经有 AstrBot 的，在高级设置里点"改为接入已有的 AstrBot…"，选它的根目录：桌宠只安装 / 更新这个插件和它自己的配置文件，
+不改你的 cmd_config.json、其他插件、NapCat 和账号数据；NapCat 和 AstrBot 之间的连接沿用你原来的。
+
+## 手动安装步骤（Windows，同一台电脑）
 
 1. **桌宠**：设置 → 聊天平台，勾选"打开本机接口"，填你的 QQ 号和允许的群号，保存；点"复制令牌"。
 2. **AstrBot**：按官方文档安装并打开管理面板（默认 http://localhost:6185）：https://docs.astrbot.app/deploy/astrbot/desktop.html（桌面版）或 https://docs.astrbot.app/deploy/astrbot/windows.html
