@@ -26,7 +26,7 @@ class ChatController:
         self.memory_service.maybe_extract_memory(content,self.character.id,message_id)
         return message_id
 
-    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None):
+    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None,reply_filter=None):
         """channel / scene / situation 见 ContextService.build；聊天平台进来的消息 offer_tasks=False（不在聊天平台上提议动手）。"""
         self.database.start_turn(turn_id,character.id)
         parts,status,error = [],'complete',''
@@ -59,6 +59,8 @@ class ChatController:
             vocab = self.vocabs.get(character.id)
             from aicompanion.pet.script import Vocab, strip_cues
             content = strip_cues(content, vocab or Vocab())
+            # QQ 的图片发送标签由适配层转换；历史保留实际文字 / 表情说明，不混入传输标签。
+            if reply_filter is not None: content = reply_filter(content, status)
             self.database.finish_turn(turn_id,character.id,content,status,error,channel=channel,source=source)
 
     def stream_user_message(self,content):

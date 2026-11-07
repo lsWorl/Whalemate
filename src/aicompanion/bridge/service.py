@@ -134,6 +134,8 @@ class BridgeService:
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
+        images = payload.get('images') or []
+        if not text and images: text = '请看看这张图片'
         if not text: return {'reply': '', 'silent': True, 'reason': 'empty'}
         mode = self.classify(platform, sender_id, group_id)
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
@@ -153,6 +155,12 @@ class BridgeService:
                 return {'reply': '今天的额度用完啦，明天再聊～' if private else '', 'silent': not private, 'reason': 'quota'}
             if not private and not self._reserve_public():
                 return {'reply': '', 'silent': True, 'reason': 'daily_limit'}
+            if images:
+                from aicompanion.bridge.media import MediaError
+                try: text = self.media.describe(images, text, purpose)
+                except MediaError as error: return {'reply': str(error), 'silent': False, 'reason': 'bad_image'}
+                if self.quota.check_silent(purpose) == 'stop':
+                    return {'reply': '', 'silent': True, 'reason': 'quota'}
             if private:
                 # 爹：和桌面同一段相处，正常更新心情、提取记忆
                 message_id = controller.record_user_message(text, source=platform, channel='desktop')
@@ -211,21 +219,32 @@ class BridgeService:
         from aicompanion.pet.script import Vocab, strip_cues
         private = mode['owner'] and not mode['group']
         turn = str(uuid4()); parts = []
+        offer = self.media.offer(mode['channel'])
+        situation += offer.prompt()
+        delivery = {}
+        def filter_reply(raw, status):
+            if chime and (not raw.strip() or SILENCE in raw or raw.strip('【】') == '不说'):
+                delivery.update(reply='', images=[], history='')
+            else: delivery.update(self.media.render(raw, status, offer, mode['channel']))
+            return delivery['history']
         try:
             for token in controller.generate(turn, character, CancellationToken(), text, channel=mode['channel'],
                                              scene=mode['scene'], situation=situation, source=platform,
-                                             offer_tasks=False, purpose=purpose, through_id=message_id):
+                                             offer_tasks=False, purpose=purpose, through_id=message_id, reply_filter=filter_reply):
                 parts.append(token)
         except Exception as error:
             return {'reply': '', 'silent': True, 'reason': 'error', 'error': str(error)[:200]}
-        reply = strip_cues(''.join(parts), controller.vocabs.get(character.id) or Vocab()).strip()
-        if chime and (not reply or SILENCE in reply or reply.strip('【】') == '不说'):
+        reply = delivery.get('reply', '')
+        outgoing = delivery.get('images', [])
+        if chime and not (reply or outgoing):
             self.database.drop_reply(turn, character.id)
             self.maybe_remember(character.id, mode['channel'])
             return {'reply': '', 'silent': True, 'reason': 'chime_silent'}
-        if mode['group'] and reply: self.database.set_setting(f'bridge_last_spoke:{mode["channel"]}', self.clock())
+        if mode['group'] and (reply or outgoing): self.database.set_setting(f'bridge_last_spoke:{mode["channel"]}', self.clock())
         if not private: self.maybe_remember(character.id, mode['channel'])
-        return {'reply': reply, 'silent': not reply, 'reason': ('chime' if chime else 'ok') if reply else 'empty_reply'}
+        result = {'reply': reply, 'silent': not (reply or outgoing), 'reason': ('chime' if chime else 'ok') if reply or outgoing else 'empty_reply'}
+        if outgoing: result['images'] = outgoing
+        return result
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------
     def maybe_remember(self, character_id, channel, background=True):

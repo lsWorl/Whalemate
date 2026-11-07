@@ -65,6 +65,19 @@ class BridgePageFlowTest(unittest.TestCase):
         self.assertIsNone(self.runtime.server); self.assertFalse(setting(self.db, 'bridge_enabled'))
         page.timer.stop(); page.deleteLater()
 
+    def test_media_settings_are_saved_with_people(self):
+        from aicompanion.ui.bridge_page import BridgePage
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page)
+        self.addCleanup(page.deleteLater)
+        self.assertTrue(page.vision_enabled.isChecked()); self.assertTrue(page.memes_enabled.isChecked())
+        page.vision_enabled.setChecked(False); page.memes_enabled.setChecked(False)
+        page.meme_root.setText(str(Path(self.tmp.name)/'memes'))
+        page.vision_model.setText('deepseek-flash'); page.meme_cooldown.setValue(120)
+        page.save_people(); self.wait(page)
+        self.assertFalse(self.db.get_setting('qq_vision_enabled')); self.assertFalse(self.db.get_setting('qq_memes_enabled'))
+        self.assertEqual(self.db.get_setting('qq_meme_root'), page.meme_root.text())
+        self.assertEqual(self.db.get_setting('qq_meme_cooldown'), 120)
+
     def test_start_error_remains_visible_after_status_refresh(self):
         from aicompanion.ui.bridge_page import BridgePage
         self.db.set_setting('qq_mode', 'auto')

@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from unittest import mock
+import tempfile
 
 PLUGIN = Path(__file__).resolve().parents[1]/'integrations'/'astrbot_plugin_aicompanion'/'main.py'
 
@@ -44,15 +46,18 @@ def load_plugin():
 
 
 class Event:
-    def __init__(self, text, sender='10001', group='', platform='aiocqhttp', called=True):
+    def __init__(self, text, sender='10001', group='', platform='aiocqhttp', called=True, images=None):
         self.message_str = text; self.sender = sender; self.group = group; self.platform = platform
         self.is_at_or_wake_command = called; self.stopped = False
+        self.images = images or []
     def get_platform_name(self): return self.platform
     def get_group_id(self): return self.group
     def get_sender_id(self): return self.sender
     def get_sender_name(self): return '阿青'
     def stop_event(self): self.stopped = True
     def plain_result(self, text): return ('plain', text)
+    def get_messages(self): return self.images
+    def chain_result(self, chain): return ('chain', chain)
 
 
 class PluginTests(unittest.TestCase):
@@ -77,7 +82,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(p.route(Event('在吗')), {'platform': 'qq', 'sender_id': '10001', 'sender_name': '阿青', 'group_id': '', 'text': '在吗', 'called': True})
         self.assertIsNone(p.route(Event('在吗', platform='telegram')))        # 其他平台交还给 AstrBot
         self.assertIsNone(p.route(Event('/help')))                             # AstrBot 指令
-        self.assertIsNone(p.route(Event('')))                                  # 只有图片
+        self.assertIsNone(p.route(Event('')))                                  # 完全空消息
         self.assertIsNone(p.route(Event('大家好', group='99999')))            # 没交给她的群
         self.assertIs(p.route(Event('大家好', group='30003', called=False))['called'], False)   # 群里没叫她也转发（旁听），标明没叫
         self.assertIs(p.route(Event('大家好', group='30003'))['called'], True)
@@ -106,6 +111,57 @@ class PluginTests(unittest.TestCase):
     def test_untouched_events_keep_propagating(self):
         event = Event('/help')
         self.assertEqual(self.run_handler(self.plugin(), event, {'reply': 'x'}), []); self.assertFalse(event.stopped)
+
+    def test_picture_only_message_uses_managed_converter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'photo.png'
+            try:
+                from PIL import Image
+            except ImportError: self.skipTest('压缩测试需要 AstrBot 自带的 Pillow')
+            Image.new('RGB', (1800, 1000), 'blue').save(path)
+            class Segment:
+                type = 'Image'
+                async def convert_to_file_path(self): return str(path)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = Event('', images=[Segment()])
+            out = self.run_handler(plugin, event, {'reply': '蓝色图片', 'silent': False})
+            self.assertEqual(out, [('plain', '蓝色图片')])
+            self.assertTrue(plugin.sent['images'][0].startswith('data:image/jpeg;base64,'))
+            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[收到图片]')
+
+    def test_picture_converter_refuses_unmanaged_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            managed = Path(folder)/'temp'; managed.mkdir()
+            outside = Path(folder)/'outside.png'; outside.write_bytes(b'not-an-image')
+            class Segment:
+                type = 'Image'
+                async def convert_to_file_path(self): return str(outside)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: str(managed)
+            self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '没能读取', 'silent': False})
+            self.assertNotIn('images', plugin.sent); self.assertIn('未能读取', plugin.sent['text'])
+
+    def test_group_passive_or_vision_disabled_does_not_open_image(self):
+        class Segment:
+            type = 'Image'
+            async def convert_to_file_path(self): raise AssertionError('不应读取图片')
+        plugin = self.plugin(group_only_when_called=False)
+        self.run_handler(plugin, Event('', group='30003', called=False, images=[Segment()]), {'reply': '', 'silent': True})
+        self.assertNotIn('images', plugin.sent)
+        self.assertIn('旁听不自动识图', plugin.sent['text'])
+        plugin.pet_vision = False
+        self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '', 'silent': True})
+        self.assertNotIn('images', plugin.sent)
+        self.assertIn('识图已关闭', plugin.sent['text'])
+
+    def test_meme_is_sent_as_astrbot_image_message_even_without_text(self):
+        components = types.ModuleType('astrbot.api.message_components')
+        components.Image = type('Image', (), {'fromBase64': staticmethod(lambda value: ('image', value))})
+        components.Plain = lambda value: ('text', value)
+        with mock.patch.dict(sys.modules, {'astrbot.api.message_components': components}):
+            result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '', 'silent': False, 'images': ['data:image/png;base64,YWJj']})
+            self.assertEqual(result, [('chain', [('image', 'YWJj')])])
+            result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '好呀', 'silent': False, 'images': ['file:///private.png']})
+            self.assertEqual(result, [('chain', [('text', '好呀')])])
 
 
 class HeartbeatTests(unittest.TestCase):

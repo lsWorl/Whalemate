@@ -69,6 +69,17 @@ class BridgePage(QWidget):
         self.chime.setToolTip('群里的消息她都"听得到"。没人叫她时按这里决定要不要插话；她也可能觉得没什么好说而不说。')
         pl.addRow('你的 QQ 号（她管你叫爹）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
         pl.addRow('群里活跃度', self.chime); pl.addRow('', self.strangers)
+
+        self.vision_enabled = QCheckBox('看懂收到的图片（DeepSeek 官方接口）')
+        self.vision_enabled.setChecked(bool(database.get_setting('qq_vision_enabled', True)))
+        self.vision_enabled.setToolTip('只识别正在和她说话的人发来的图片；原图不存入聊天记录，识图会产生模型用量。')
+        self.memes_enabled = QCheckBox('聊天时可以发表情包')
+        self.memes_enabled.setChecked(bool(database.get_setting('qq_memes_enabled', True)))
+        self.meme_root = QLineEdit(str(database.get_setting('qq_meme_root', '') or ''))
+        self.meme_root.setPlaceholderText('留空使用自带鲸娘表情；也可选本地表情包目录')
+        choose_memes = QPushButton('选择图库…'); choose_memes.clicked.connect(self._choose_memes)
+        meme_row = QHBoxLayout(); meme_row.addWidget(self.meme_root, 1); meme_row.addWidget(choose_memes)
+        pl.addRow('', self.vision_enabled); pl.addRow('', self.memes_enabled); pl.addRow('表情图库', meme_row)
         save_people = QPushButton('保存'); save_people.clicked.connect(self.save_people); pl.addRow('', save_people)
         layout.addWidget(people)
         self._fill_groups([])
@@ -83,6 +94,10 @@ class BridgePage(QWidget):
         renew = QPushButton('换一个'); renew.clicked.connect(self._renew)
         token_row = QHBoxLayout(); token_row.addWidget(self.token, 1); token_row.addWidget(copy); token_row.addWidget(renew)
         self.daily = QSpinBox(); self.daily.setRange(0, 2000); self.daily.setValue(int(setting(database, 'bridge_public_daily'))); self.daily.setSuffix(' 条 / 天')
+        self.vision_model = QLineEdit(str(database.get_setting('qq_vision_model', 'deepseek-flash') or 'deepseek-flash'))
+        self.meme_cooldown = QSpinBox(); self.meme_cooldown.setRange(0, 3600)
+        self.meme_cooldown.setValue(int(database.get_setting('qq_meme_cooldown', 60)))
+        self.meme_cooldown.setSuffix(' 秒')
         self.autostart = QCheckBox('打开桌宠时自动启动 QQ 服务，退出时停止'); self.autostart.setChecked(bool(database.get_setting('qq_autostart', True)))
         self.index = QLineEdit(database.get_setting('qq_index_url', '') or ''); self.index.setPlaceholderText('留空 = PyPI 官方源；下载慢时可填镜像地址')
         self.root = QLineEdit(str(self.qq.layout.root)); self.root.setReadOnly(True)
@@ -91,6 +106,7 @@ class BridgePage(QWidget):
         self.versions = QLabel(''); self.versions.setWordWrap(True)
         form.addRow('', self.enabled); form.addRow('接口端口', self.port); form.addRow('插件令牌', token_row)
         form.addRow('群和陌生人每天最多回复', self.daily); form.addRow('', self.autostart); form.addRow('Python 包镜像', self.index)
+        form.addRow('识图模型', self.vision_model); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
         form.addRow('组件目录', self.root); form.addRow('', open_logs); form.addRow('', existing); form.addRow('组件版本', self.versions)
         al = QVBoxLayout(self.advanced); al.addWidget(inner); inner.setVisible(False)
         self.advanced.toggled.connect(inner.setVisible)
@@ -235,6 +251,10 @@ class BridgePage(QWidget):
         self.qq.layout.root.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.qq.layout.root)))
 
+    def _choose_memes(self):
+        folder = QFileDialog.getExistingDirectory(self, '选择表情包目录（含分类子文件夹或 manifest.json）')
+        if folder: self.meme_root.setText(folder)
+
     def _show_versions(self):
         components = self.qq.layout.manifest().get('components') or {}
         self.versions.setText('；'.join(f'{k} {v.get("version")}' for k, v in components.items()) or '未安装')
@@ -255,6 +275,12 @@ class BridgePage(QWidget):
         db.set_setting('bridge_groups', groups)   # 插件下次心跳就会拿到
         db.set_setting('bridge_strangers', self.strangers.isChecked())
         db.set_setting('bridge_chime', self.chime.currentData())
+
+        db.set_setting('qq_vision_enabled', self.vision_enabled.isChecked())
+        db.set_setting('qq_memes_enabled', self.memes_enabled.isChecked())
+        db.set_setting('qq_meme_root', self.meme_root.text().strip())
+        db.set_setting('qq_vision_model', self.vision_model.text().strip() or 'deepseek-flash')
+        db.set_setting('qq_meme_cooldown', self.meme_cooldown.value())
         self.refresh()
 
     def save(self):

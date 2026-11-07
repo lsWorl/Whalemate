@@ -13,7 +13,7 @@ import json
 import secrets
 import threading
 
-MAX_BODY = 64*1024
+MAX_BODY = 5*1024*1024   # 最多 3 张、每张 1 MiB 的图片（base64 有约 1/3 额外体积）
 
 
 class BridgeServer:
@@ -67,7 +67,9 @@ class BridgeServer:
                                   'onebot': {'connected': bool(onebot.get('connected')), 'self_id': str(onebot.get('self_id') or '')[:20],
                                              'error': str(onebot.get('error') or '')[:200]}}
         from aicompanion.bridge.service import setting
-        return {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []]}
+        return {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []],
+                'media': {'vision': bool(self.service.database.get_setting('qq_vision_enabled', True)),
+                          'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸娘')}}
 
     @property
     def port(self) -> int:
