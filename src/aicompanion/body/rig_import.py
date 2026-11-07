@@ -170,9 +170,20 @@ def ensure_whale_rig(project_root: Path, configured: str = '', scheme: str = 'de
 
 def load_rig(path: Path) -> dict:
     data = json.loads(Path(path).read_text(encoding='utf-8'))
+    if data.get('format') == 'AICompanionPoseRig':     # 十姿态分层包（posepack.js 渲染）
+        from aicompanion.body.pose_pack import check_runtime
+        problems = check_runtime(data, Path(path).parent)
+        if problems: raise RigImportError('；'.join(problems[:3]))
+        return data
     if data.get('format') != RIG_FORMAT or data.get('version') != RIG_VERSION:
         raise RigImportError(f'{path} 不是受支持的骨骼模型。')
+    base = Path(path).parent
     for part in data['parts']:
         if part['deformer'] not in data['deformers']: raise RigImportError(f'部件 {part["id"]} 的变形器不存在。')
-        if not (Path(path).parent/part['tex']).is_file(): raise RigImportError(f'缺少贴图 {part["tex"]}')
+        if not (base/part['tex']).is_file(): raise RigImportError(f'缺少贴图 {part["tex"]}')
+    features = data.get('features') or {}
+    textures = [item['tex'] for side in (features.get('eyes') or {}).values() for item in side.values()]
+    textures += [item['tex'] for item in (features.get('sprites') or {}).values()]
+    for tex in textures:
+        if not (base/tex).is_file(): raise RigImportError(f'缺少五官贴图 {tex}')
     return data

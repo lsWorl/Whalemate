@@ -41,6 +41,17 @@
     });
   }
 
+  /* 每个引擎自己持有的纹理：不用 Texture.fromURL（它按 URL 进全局缓存，同一个模型重载时新旧引擎会共用同一批纹理，
+     旧引擎 dispose 时就把新引擎正在用的纹理销毁了）。这里的纹理不进缓存，谁加载谁释放。 */
+  function loadOwnTexture(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(new PIXI.Texture(new PIXI.BaseTexture(new PIXI.ImageResource(img))));
+      img.onerror = () => reject(new Error('读取失败 ' + url));
+      img.src = url;
+    });
+  }
+
   /* ---------- 变形器 ---------- */
   function makeDeformers(defs) {
     const params = {};
@@ -141,7 +152,7 @@
   }
 
   /* ---------- 表情 ---------- */
-  const EXPRESSIONS = ['neutral', 'happy', 'love', 'surprised', 'sleep', 'drag', 'dizzy'];
+  const EXPRESSIONS = ['neutral', 'happy', 'love', 'surprised', 'sleep', 'drag', 'dizzy', 'shy', 'smug'];   // shy / smug 只有自己的形象包才有贴片
   const POSE_FACE = { idle: 'neutral', talking: 'neutral', thinking: 'neutral', working: 'neutral', celebrate: 'happy',
     error: 'dizzy', wait: 'neutral', sleepy: 'sleep', grabbed: 'drag', poked: 'surprised', patted: 'love', falling: 'drag', dizzy: 'dizzy' };
 
@@ -151,7 +162,7 @@
     const base = url.slice(0, url.lastIndexOf('/') + 1);
     const tex = {};
     const load = async name => {
-      if (!tex[name]) { tex[name] = await PIXI.Texture.fromURL(base + name); tex[name].alpha = alphaOf(tex[name]); }
+      if (!tex[name]) { tex[name] = await loadOwnTexture(base + name); tex[name].alpha = alphaOf(tex[name]); }
       return tex[name];
     };
     const def = makeDeformers(rig.deformers);
@@ -172,7 +183,7 @@
       const mesh = gridMesh(await load(item.tex), item.rect, [2, 2], featDeformer);
       mesh.zIndex = z; mesh.baseRect = item.rect; figure.addChild(mesh); meshes.push(mesh); return mesh;
     };
-    faceSets.neutral = { eyes: [], movers: [], mouth: null };
+    faceSets.neutral = { eyes: [], movers: [], mouth: null, brows: null };
     for (const side of ['eyeL', 'eyeR']) {
       const eye = F.eyes[side] || {};
       for (const [layer, dz] of [['ball', 0], ['iris', 0.01], ['hl', 0.02], ['lash', 0.03]]) {
@@ -182,22 +193,25 @@
       }
     }
     for (const name of EXPRESSIONS) {
-      faceSets[name] ||= { eyes: [], movers: [], mouth: null };
+      faceSets[name] ||= { eyes: [], movers: [], mouth: null, brows: null };
       for (const side of ['eyeL', 'eyeR']) {
         const item = F.sprites[`${name}_${side}`];
         if (item) faceSets[name].eyes.push(await featMesh(item, featZ + 0.05));
       }
       const mouth = F.sprites[`${name}_mouth`];
       if (mouth) faceSets[name].mouth = await featMesh(mouth, featZ + 0.06);
+      const brows = F.sprites[`${name}_brows`];   // 眉毛跟着表情走，眨眼时不消失
+      if (brows) faceSets[name].brows = await featMesh(brows, featZ + 0.04);
     }
-    // 说话时张开的嘴：用开心的嘴按开口程度纵向缩放
-    const talkMouth = F.sprites.happy_mouth ? await featMesh(F.sprites.happy_mouth, featZ + 0.07) : null;
+    // 说话时张开的嘴：形象包有专门的张嘴贴片就用它，否则用开心的嘴；按开口程度纵向缩放
+    const openMouth = F.sprites.talk_mouth || F.sprites.happy_mouth;
+    const talkMouth = openMouth ? await featMesh(openMouth, featZ + 0.07) : null;
     const blush = new PIXI.Graphics(); blush.zIndex = featZ - 0.02; figure.addChild(blush);
-    for (const set of Object.values(faceSets)) { for (const m of set.eyes) m.visible = false; if (set.mouth) set.mouth.visible = false; }
+    for (const set of Object.values(faceSets)) { for (const m of set.eyes) m.visible = false; if (set.mouth) set.mouth.visible = false; if (set.brows) set.brows.visible = false; }
     if (talkMouth) talkMouth.visible = false;
     figure.sortChildren();
     const arms = { near: meshes.filter(m => m.deformer === 'armNear'), far: meshes.filter(m => m.deformer === 'armFar') };
-    return { rig, figure, meshes, def, faceSets, talkMouth, blush, arms };
+    return { rig, figure, meshes, def, faceSets, talkMouth, blush, arms, textures: Object.values(tex) };
   }
 
   /* ---------- 动作引擎 ---------- */
@@ -210,7 +224,8 @@
       finF: new Spring(90, 9, 30), ahoge: new Spring(140, 6, 38), head: new Spring(70, 10, 16), nod: new Spring(90, 12, 8),
       armN: new Spring(60, 9, 150), armF: new Spring(60, 9, 150), legB: new Spring(80, 10, 40), legF: new Spring(80, 10, 40),
       lean: new Spring(60, 10, 20), squash: new Spring(260, 14, 0.4), swing: new Spring(28, 2.6, 55),
-      gazeX: new Spring(160, 18, 2), gazeY: new Spring(160, 18, 2), turnX: new Spring(70, 12, 12), turnY: new Spring(70, 12, 8),
+      gazeX: new Spring(160, 18, 1.6), gazeY: new Spring(160, 18, 1.2),   // 上限和 rig_pack.GAZE_MAX 一致（编译时按它检查虹膜不出眼白）
+      turnX: new Spring(70, 12, 12), turnY: new Spring(70, 12, 8),
       facing: new Spring(220, 26, 1.2),
     };
     S.facing.x = 1;
@@ -249,9 +264,11 @@
       if (name !== face) { faceSwapUntil = t + 0.08; face = name; }
       const swapping = t < faceSwapUntil;
       const shown = swapping || (blinking && name === 'neutral') ? 'sleep' : name;
+      const browsSet = faceSets[name]?.brows ? name : 'neutral';
       for (const [key, set] of Object.entries(faceSets)) {
         for (const m of set.eyes) m.visible = key === shown;
         if (set.mouth) set.mouth.visible = false;
+        if (set.brows) set.brows.visible = key === browsSet;
       }
       const set = faceSets[name] || faceSets.neutral;
       // 嘴：说话时在闭嘴贴片和张嘴贴片之间切换，张嘴按开口程度纵向缩放
@@ -399,7 +416,8 @@
       // 标注表情只在"平常"姿势下生效，被拎起、摔晕等强烈状态优先
       if (exprOverride && ['idle', 'talking', 'thinking', 'wait', 'working'].includes(pose)) {
         const name = exprOverride.name;
-        expr = name === 'smug' ? 'happy' : name === 'shy' ? 'neutral' : name;
+        // 形象包有 shy / smug 贴片时直接用；没有时（大肥鱼）用开心 / 平静代替
+        expr = faceSets[name]?.eyes.length ? name : name === 'smug' ? 'happy' : name === 'shy' ? 'neutral' : name;
         if (!faceSets[expr] || !faceSets[expr].eyes.length) expr = 'neutral';
       }
       if (pose === 'talking' && state.mood === 'happy' && open < 0.12) expr = 'happy';
@@ -450,8 +468,13 @@
       if (name === 'jump') { hop(22, 0.45); return true; }
       motion = { name, start: t, dur: MOTIONS[name] }; S.squash.kick(-0.8); return true;
     }
+    function dispose() {
+      // 换模型时释放这个引擎自己加载的贴图（loadOwnTexture，不和别的引擎共用）
+      figure.destroy({ children: true });
+      for (const tex of built.textures || []) tex.destroy(true);
+    }
     return {
-      tick, hop, bounce, setPose, hitmap, probe, state, express, playMotion,
+      tick, hop, bounce, setPose, hitmap, probe, state, express, playMotion, dispose,
       busy: () => busy() || !!motion || !!exprOverride,
       set(values) { const { pose, ...rest } = values; Object.assign(state, rest); if (pose) setPose(pose); },
       diagnostics: () => ({ frames, t, pose: state.pose, face, hopping: hopping(), armNear: P.armNear.a, neck: P.neck.a,
@@ -459,5 +482,5 @@
     };
   }
 
-  window.RigRenderer = { createFigure, createEngine, Spring };
+  window.RigRenderer = { createFigure, createEngine, Spring, readJSON, alphaOf, meshHit, gridMesh, loadOwnTexture };
 })();

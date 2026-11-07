@@ -10,10 +10,7 @@
     "kind": "sprites",
     "path": "sprites/sprites.json",
     "display_height": 300,
-    "rig": {
-      "source": "coopanion-local",
-      "note": "本机 Coopanion 的大肥鱼（不随本项目分发）；找不到时使用 sprites"
-    },
+    "rig": {"source": "posepack", "path": "rig/rig.json", "note": "原鲸娘十姿态分层包（art/deepseek-whale 用 tools/rig_studio.py compile-poses 编译）；加载失败时依次退回本机 Coopanion 大肥鱼、整张立绘"},
     "vocab": {
       "expressions": {
         "平静": "neutral",
