@@ -74,14 +74,14 @@ class PluginTests(unittest.TestCase):
 
     def test_routes_only_qq_sessions_it_owns(self):
         p = self.plugin()
-        self.assertEqual(p.route(Event('在吗')), {'platform': 'qq', 'sender_id': '10001', 'sender_name': '阿青', 'group_id': '', 'text': '在吗'})
+        self.assertEqual(p.route(Event('在吗')), {'platform': 'qq', 'sender_id': '10001', 'sender_name': '阿青', 'group_id': '', 'text': '在吗', 'called': True})
         self.assertIsNone(p.route(Event('在吗', platform='telegram')))        # 其他平台交还给 AstrBot
         self.assertIsNone(p.route(Event('/help')))                             # AstrBot 指令
         self.assertIsNone(p.route(Event('')))                                  # 只有图片
         self.assertIsNone(p.route(Event('大家好', group='99999')))            # 没交给她的群
-        self.assertIsNone(p.route(Event('大家好', group='30003', called=False)))   # 群里没叫她
-        self.assertEqual(p.route(Event('大家好', group='30003'))['group_id'], '30003')
-        self.assertIsNotNone(self.plugin(group_only_when_called=False).route(Event('大家好', group='30003', called=False)))
+        self.assertIs(p.route(Event('大家好', group='30003', called=False))['called'], False)   # 群里没叫她也转发（旁听），标明没叫
+        self.assertIs(p.route(Event('大家好', group='30003'))['called'], True)
+        self.assertIsNone(self.plugin(group_only_when_called=True).route(Event('大家好', group='30003', called=False)))   # 旧行为仍可选
 
     def test_reply_and_stop(self):
         event = Event('在吗')
@@ -97,6 +97,11 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(out, [('plain', '她现在不在电脑旁，晚点再来找她吧～')]); self.assertTrue(event.stopped)
         event = Event('在吗')
         self.assertEqual(self.run_handler(self.plugin(offline_reply=''), event, error=OSError('x')), []); self.assertTrue(event.stopped)
+
+    def test_overheard_message_gets_no_offline_reply(self):
+        event = Event('大家好', group='30003', called=False)
+        self.assertEqual(self.run_handler(self.plugin(), event, error=OSError('x')), [])   # 桌宠不在时，旁听的消息不替她出声
+        self.assertTrue(event.stopped)
 
     def test_untouched_events_keep_propagating(self):
         event = Event('/help')

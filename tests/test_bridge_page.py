@@ -144,6 +144,15 @@ class BridgePageFlowTest(unittest.TestCase):
             self.assertEqual(page.qq.last_error, '')
         page.close()
 
+    def test_group_activity_dropdown_saves(self):
+        from aicompanion.bridge.service import setting
+        from aicompanion.ui.bridge_page import BridgePage
+        page = BridgePage(self.db); self.wait(page)
+        self.assertEqual(page.chime.currentData(), 'often')            # 用户选的默认：爱聊天
+        page.chime.setCurrentIndex(page.chime.findData('off')); page.save_people(); self.wait(page)
+        self.assertEqual(setting(self.db, 'bridge_chime'), 'off')
+        page.timer.stop(); page.deleteLater()
+
 
 if __name__ == '__main__':
     unittest.main()
