@@ -134,7 +134,7 @@ class UsagePage(QWidget):
         self.top = QLabel(''); self.top.setWordWrap(True); layout.addWidget(self.top)
         form = QFormLayout()
         self.total = self._money(database.get_setting('quota_daily_total', 0))
-        self.limits = {p: self._money(database.get_setting(f'quota_daily:{p}', 0)) for p in ('companion', 'agent', 'memory', 'purpose')}
+        self.limits = {p: self._money(database.get_setting(f'quota_daily:{p}', 0)) for p in ('companion', 'qq', 'agent', 'memory', 'purpose')}
         form.addRow('每日总额度（元，0 = 不限）', self.total)
         for p, box in self.limits.items(): form.addRow(f'　{meter.PURPOSES[p]}额度（元）', box)
         layout.addLayout(form)

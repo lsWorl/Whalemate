@@ -121,10 +121,13 @@ class SettingsWindow(QDialog):
         ml.addWidget(self.table)
         buttons=QHBoxLayout(); refresh=QPushButton('刷新'); refresh.clicked.connect(self.refresh)
         delete=QPushButton('删除选中记忆'); delete.clicked.connect(self.delete_memory)
-        buttons.addWidget(refresh); buttons.addWidget(delete); ml.addLayout(buttons)
+        private=QPushButton('设为只在私下用'); private.clicked.connect(lambda:self.set_memory_scope('private'))
+        shared=QPushButton('设为共享'); shared.clicked.connect(lambda:self.set_memory_scope('pet'))
+        buttons.addWidget(refresh); buttons.addWidget(delete); buttons.addWidget(private); buttons.addWidget(shared); ml.addLayout(buttons)
         self.archive_label=QLabel(''); ml.addWidget(self.archive_label)
         ml.addWidget(QLabel('记忆会随时间变模糊，低于 30% 就从记忆卡移出（全量存档仍保留，再提到会重新记住）。\n'
-                            '手动删除 = 真的忘掉：存档里的同一事实也会删除，以后不会再被记住；聊天正文不受影响。'))
+                            '手动删除 = 真的忘掉：存档里的同一事实也会删除，以后不会再被记住；聊天正文不受影响。\n'
+                            '记忆在桌面和 QQ 之间共享（群里听来的事她在桌面上也记得）；标成"只在私下用"的，她不会在群聊和陌生人私聊里用。'))
         self.tabs.addTab(memories,'记忆')
         purposes=QWidget(); pl=QVBoxLayout(purposes)
         self.purpose_table=QTableWidget(0,4); self.purpose_table.setHorizontalHeaderLabels(['状态','类型','心里惦记的事','计划时间'])
@@ -148,6 +151,8 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.agent_pages import AgentPage, AuditPage, UsagePage
         self.agent_page=AgentPage(self.database); self.tabs.addTab(self.agent_page,'干活')
         self.audit_page=AuditPage(self.database); self.tabs.addTab(self.audit_page,'操作日志')
+        from aicompanion.ui.bridge_page import BridgePage
+        self.bridge_page=BridgePage(self.database); self.tabs.addTab(self.bridge_page,'聊天平台')
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)
@@ -248,7 +253,8 @@ class SettingsWindow(QDialog):
         rows=self.database.recent_memories(1000,self.controller.character.id); self.table.setRowCount(len(rows))
         for i,row in enumerate(rows):
             clarity=float(row['clarity']); state='清楚' if clarity>=0.6 else '模糊'
-            values=(row['category'],row['content'],f'{state} {clarity:.0%}','私下' if row['scope']=='pet' else row['scope'],row['updated_at'])
+            scope={'private':'只在私下用','pet':'共享','qq':'共享（QQ 上听来的）','bili':'共享（B站上听来的）'}.get(row['scope'],row['scope'])
+            values=(row['category'],row['content'],f'{state} {clarity:.0%}',scope,row['updated_at'])
             for j,value in enumerate(values):
                 item=QTableWidgetItem(str(value)); item.setData(Qt.ItemDataRole.UserRole,row['id']); self.table.setItem(i,j,item)
         archive=self.database.memory_archive(self.controller.character.id,100000)
@@ -259,6 +265,13 @@ class SettingsWindow(QDialog):
         for i,row in enumerate(purposes):
             for j,value in enumerate((status.get(row['status'],row['status']),kinds.get(row['kind'],row['kind']),row['content'],row['due_at'].replace('T',' ')[:16])):
                 self.purpose_table.setItem(i,j,QTableWidgetItem(value))
+
+    def set_memory_scope(self,scope):
+        """记忆默认在桌面和 QQ 共享；"只在私下用"的不会在群聊和陌生人私聊里用。"""
+        rows={index.row() for index in self.table.selectedIndexes()}
+        # 标成私下时，内容高度重合的副本（例如之前从群里整理出来的）一起标成私下
+        self.controller.memory_service.set_scope([self.table.item(r,0).data(Qt.ItemDataRole.UserRole) for r in rows],self.controller.character.id,scope)
+        self.refresh()
 
     def delete_memory(self):
         selected={index.row() for index in self.table.selectedIndexes()}
@@ -288,7 +301,7 @@ class SettingsWindow(QDialog):
                           ('ptt_key',self.ptt_key.currentData()),('echo_backend',self.echo_backend.currentData()),
                           ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
                           ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value())]: self.database.set_setting(key,value)
-        self.agent_page.save(); self.usage_page.save()
+        self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
         self.accept()
 
     def _validate_model_input(self):

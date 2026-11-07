@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id),
-    turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text'
+    turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text',
+    channel TEXT NOT NULL DEFAULT 'desktop', sender TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL,
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS reminders (
     character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id)
 );
 CREATE INDEX IF NOT EXISTS ix_messages_character ON chat_messages(character_id, id);
+CREATE INDEX IF NOT EXISTS ix_messages_channel ON chat_messages(character_id, channel, id);
 CREATE INDEX IF NOT EXISTS ix_memories_character ON memories(character_id, importance);
 CREATE INDEX IF NOT EXISTS ix_archive_character ON memory_archive(character_id, fact_key);
 CREATE INDEX IF NOT EXISTS ix_inbox_character ON memory_inbox(character_id, processed, id);

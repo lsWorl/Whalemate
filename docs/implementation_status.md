@@ -454,3 +454,39 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 运行时报告输入 116,781（含缓存命中 86,063）、输出 2,752 词元；此为运行时统计，不代替服务商账单。假密钥场景确有 read_file 的 denied 记录，复制批准后文件内容一致；不是把模拟或 initialize 成功记作模型通过。
 - tools/run_checks.bat：246 项单测 OK（4 跳过：3 项未安装 Playwright、1 项 POSIX 专用），桌宠 passed=true、tools_listed=10、env_blocked=true、tools_gate=true、failed_checks=[]、remaining_workers=0，两步 exit=0。没有新增依赖，本轮没有重新测量或声称性能改善。
 - 未验证：用户真实点击确认气泡、正式打包与最终动画观感；待 Claude 复审本轮提交后再恢复 PR 可合并结论。报告和控制台在忽略目录 output/t2-live-validation/real-run-1/ 与 real-console.log，未提交凭据、临时会话或测试报告。
+
+
+## T9 QQ 接入第一版（PR #6，分支 task/t9-astrbot-bridge，未合入）
+
+做了什么：
+- 平台交给 AstrBot + NapCat，项目里只写转发插件 `integrations/astrbot_plugin_aicompanion`。
+- 桌宠这边：
+  - 本机接口 `bridge/server.py`，只监听 127.0.0.1，带令牌；
+  - 身份规则 `bridge/service.py`；
+  - 设置 → 聊天平台。
+- 数据库 v4：`chat_messages` 增加 `channel`、`sender` 两列。频道隔离：主人私聊 = desktop；群 = `qq:group:<群号>`；陌生人 = `qq:user:<号>`。公开场合只用公开记忆，不带摘要和信任度。
+- Codex 审计（deb41d4）后修了两个并发问题：
+  - 额度和当日条数核验放进串行区，条数原子预留；
+  - 每轮只看到自己那条为止的历史。
+  - 群消息带"昵称#编号"（编号按账号全局分配，起初用号码后四位，Codex 指出会撞后改），并保存稳定 ID。
+
+怎么验证：
+- 容器：`tests/test_bridge.py` 14 项（含 5 项并发回归，断言模型调用次数和每轮历史）、`tests/test_astrbot_plugin.py` 4 项。
+- Windows：Codex 在 deb41d4 上跑 `run_checks.bat`，259 项 OK，桌宠自检 passed。
+
+- 用户 2026-11-07 决定记忆全部共享：
+  - 群聊记录在群内共享；
+  - 群里 / 陌生人那里听来的事在后台整理进同一份记忆（写清楚是谁的，scope=qq），桌面上也能用；
+  - 桌面记住的事在群里也能用，只有记忆页标成"只在私下用"（scope=private）的不在公开场合用；
+  - 和主人的对话摘要、信任度只在私下用。
+
+- Codex 复审 2f52ed8 / 9eedb95 后的修正：
+  - 拿到处理锁后按最新设置重新判断身份，排队期间解绑 / 移出群 / 服务关闭的请求作废，不调用模型；
+  - 数据库升到 v5，兼容 T9 初版的"v4、有 channel、没有 sender"库（先备份）；
+  - 公开来源的记忆整理看不到"只在私下用"的记忆，不能覆盖桌面记住的事实键，和私下记忆内容高度重合的不收。
+
+没验证的部分：
+- 真机 QQ（需要用户的 AstrBot / NapCat 环境）；
+- 主动消息、图片 / 语音消息（未做）；
+- 主人同时在桌面和 QQ 上说话时，桌面这一侧的交错（只在文档里说明了策略，没有加锁）；
+- 修复后的提交还没在 Windows 上复跑。

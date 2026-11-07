@@ -87,11 +87,15 @@ class DecayTests(Base):
         self.assertEqual(self.db.inbox('emilia'), [])
 
     def test_scope_filters_public_scene(self):
-        self.db.upsert_memory('用户私下说的秘密', 'emilia', 'secret', 'event', 3, scope='pet')
+        """记忆默认在各处共享；只有标成 private 的不在公开场合用（用户 2026-11-07 决定）。"""
+        self.db.upsert_memory('用户私下说的秘密', 'emilia', 'secret', 'event', 3, scope='private')
+        self.db.upsert_memory('用户在桌面上说喜欢蓝色', 'emilia', 'color', 'preference', 2, scope='pet')
         self.db.upsert_memory('用户在群里说喜欢原神', 'emilia', 'game', 'preference', 2, scope='qq')
         pet = [r['fact_key'] for r, _, _ in select_for_prompt(self.db.memory_card('emilia'), scene='pet')]
         public = [r['fact_key'] for r, _, _ in select_for_prompt(self.db.memory_card('emilia'), scene='qq')]
-        self.assertEqual(set(pet), {'secret', 'game'}); self.assertEqual(public, ['game'])
+        self.assertEqual(set(pet), {'secret', 'color', 'game'}); self.assertEqual(set(public), {'color', 'game'})
+        self.db.upsert_memory('用户私下说的秘密（更新）', 'emilia', 'secret', 'event', 3)   # 再次提到不会把"只在私下用"改回共享
+        self.assertEqual(next(r['scope'] for r in self.db.memory_card('emilia') if r['fact_key'] == 'secret'), 'private')
 
 
 class MigrationTests(Base):

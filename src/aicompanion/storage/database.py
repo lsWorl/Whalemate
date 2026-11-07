@@ -60,6 +60,15 @@ class Database:
                                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                     if "emotion_state" in tables:
                         connection.execute("ALTER TABLE emotion_state RENAME TO legacy_emotion")
+                if version < 5 and "chat_messages" in tables:
+                    # v5（T9 修订版；试用过 T9 初版的库是"v4、有 channel、没有 sender"，同样按缺哪列补哪列）。
+                    # 聊天记录按"频道"隔离。desktop = 桌面和已绑定主人的私聊（同一个她、同一段相处）；
+                    # qq:group:<群号> / qq:user:<号> = 公开场合，聊天记录互不可见（记忆另行共享，见 bridge/service.py）。
+                    # sender：聊天平台上说话人的稳定 ID（平台:号），昵称会重名，不能只靠昵称区分群友。
+                    existing = {r[1] for r in connection.execute("PRAGMA table_info(chat_messages)")}
+                    for name, definition in (("channel", "TEXT NOT NULL DEFAULT 'desktop'"), ("sender", "TEXT NOT NULL DEFAULT ''")):
+                        if name not in existing:
+                            connection.execute(f"ALTER TABLE chat_messages ADD COLUMN {name} {definition}")
                 if version < 2 and "memories" in tables:
                     # v2：记忆卡增加清晰度、上次想起时间、作用范围
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(memories)")}
@@ -108,28 +117,39 @@ class Database:
         with self.transaction() as connection:
             connection.execute("UPDATE characters SET name=?,description=?,speaking_style=?,model_path=?,voice=? WHERE id=?", (character.name, character.description, character.speaking_style, character.model_path, character.voice, character.id))
 
-    def add_message(self, role: str, content: str, character_id="emilia", turn_id=None, status="complete", source="text") -> int:
+    def add_message(self, role: str, content: str, character_id="emilia", turn_id=None, status="complete", source="text", channel="desktop", sender="") -> int:
         with self.transaction() as connection:
-            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source) VALUES (?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source))
+            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel,sender) VALUES (?,?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel, sender))
             return cursor.lastrowid
 
-    def recent_messages(self, limit=30, character_id="emilia", before_id=None) -> list[sqlite3.Row]:
+    def reserve_daily(self, key: str, limit: int) -> bool:
+        """原子地"判断没到上限就加一"：同一事务里读和写，多个线程 / 多个服务实例同时来也不会超过 limit。"""
         with self.transaction() as connection:
-            rows = connection.execute("SELECT * FROM chat_messages WHERE character_id=? AND (? IS NULL OR id<?) ORDER BY id DESC LIMIT ?", (character_id, before_id, before_id, limit)).fetchall()
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+            used = int(json.loads(row[0])) if row else 0
+            if used >= limit: return False
+            connection.execute("INSERT INTO app_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(used+1)))
+            return True
+
+    def recent_messages(self, limit=30, character_id="emilia", before_id=None, channel="desktop") -> list[sqlite3.Row]:
+        """只返回同一频道的记录：桌面（含已绑定主人的私聊）看不到群聊和陌生人，公开场合也看不到桌面。"""
+        with self.transaction() as connection:
+            rows = connection.execute("SELECT * FROM chat_messages WHERE character_id=? AND channel=? AND (? IS NULL OR id<?) ORDER BY id DESC LIMIT ?", (character_id, channel, before_id, before_id, limit)).fetchall()
             return list(reversed(rows))
 
     def start_turn(self, turn_id, character_id) -> None:
         with self.transaction() as connection:
             connection.execute("INSERT INTO conversation_turns(id,character_id) VALUES (?,?)", (turn_id, character_id))
 
-    def finish_turn(self, turn_id, character_id, content, status, error="") -> None:
+    def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text") -> None:
         with self.transaction() as connection:
             if content.strip():
                 row=connection.execute("SELECT id FROM chat_messages WHERE turn_id=? AND character_id=? AND role='assistant'",(turn_id,character_id)).fetchone()
                 if row:
                     connection.execute("UPDATE chat_messages SET status=? WHERE id=?",(status,row['id']))
                 else:
-                    connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status) VALUES ('assistant',?,?,?,?)", (content, character_id, turn_id, status))
+                    connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel) VALUES ('assistant',?,?,?,?,?,?)", (content, character_id, turn_id, status, source, channel))
             connection.execute("UPDATE conversation_turns SET status=?,error=? WHERE id=? AND character_id=?", (status, error, turn_id, character_id))
 
     def set_delivered_reply(self,turn_id,character_id,content,status):
@@ -152,11 +172,15 @@ class Database:
             if connection.execute('SELECT 1 FROM memory_tombstones WHERE character_id=?',(character_id,)).fetchone(): return
             connection.execute('INSERT INTO conversation_summaries(character_id,summary,through_id) VALUES (?,?,?) ON CONFLICT(character_id) DO UPDATE SET summary=excluded.summary,through_id=excluded.through_id,updated_at=CURRENT_TIMESTAMP',(character_id,summary[:3000],through_id))
 
-    def upsert_memory(self, content, character_id="emilia", fact_key="", category="preference", importance=2, confidence=1, source_ids=(), scope="pet") -> bool:
+    def upsert_memory(self, content, character_id="emilia", fact_key="", category="preference", importance=2, confidence=1, source_ids=(), scope="pet", guard=None) -> bool:
+        """guard(connection, key) → bool：在同一个写事务里、写入之前做的检查（公开来源的记忆用它按此刻的 private 状态把关，
+        和设置页的 set_memory_scope 互斥，没有"检查完、写之前"的空隙）。"""
         key = fact_key or hashlib.sha256(content.strip().encode()).hexdigest()
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT 1 FROM memory_tombstones WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone():
+                return False
+            if guard is not None and not guard(connection, key):
                 return False
             row = connection.execute("SELECT id,content FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
             values = (content[:1000], category, max(1,min(5,importance)), max(0,min(1,confidence)), json.dumps(list(source_ids)))
@@ -169,6 +193,11 @@ class Database:
                 connection.execute("INSERT INTO memory_archive(character_id,content,category,fact_key,importance,scope,source_ids,reason) VALUES (?,?,?,?,?,?,?,?)",
                                    (character_id, content[:1000], category, key, values[2], scope, values[4], 'updated' if row else 'created'))
             return True
+
+    def set_memory_scope(self, ids, character_id, scope) -> None:
+        """记忆页里"只在私下用 / 共享"的切换。"""
+        with self.transaction() as connection:
+            connection.executemany("UPDATE memories SET scope=? WHERE id=? AND character_id=?", [(scope, i, character_id) for i in ids])
 
     def recent_memories(self, limit=100, character_id="emilia"):
         with self.transaction() as connection:
