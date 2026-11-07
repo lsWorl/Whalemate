@@ -213,7 +213,8 @@
       finF: new Spring(90, 9, 30), ahoge: new Spring(140, 6, 38), head: new Spring(70, 10, 16), nod: new Spring(90, 12, 8),
       armN: new Spring(60, 9, 150), armF: new Spring(60, 9, 150), legB: new Spring(80, 10, 40), legF: new Spring(80, 10, 40),
       lean: new Spring(60, 10, 20), squash: new Spring(260, 14, 0.4), swing: new Spring(28, 2.6, 55),
-      gazeX: new Spring(160, 18, 2), gazeY: new Spring(160, 18, 2), turnX: new Spring(70, 12, 12), turnY: new Spring(70, 12, 8),
+      gazeX: new Spring(160, 18, 1.6), gazeY: new Spring(160, 18, 1.2),   // 上限和 rig_pack.GAZE_MAX 一致（编译时按它检查虹膜不出眼白）
+      turnX: new Spring(70, 12, 12), turnY: new Spring(70, 12, 8),
       facing: new Spring(220, 26, 1.2),
     };
     S.facing.x = 1;

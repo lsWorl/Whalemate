@@ -62,8 +62,8 @@ def make(out: str | Path, canvas: int = 2048) -> Path:
         x = EYES[side]
         def draw(d):
             if kind == 'ball': d.ellipse(scaled((x-55, EYE_Y-75, x+55, EYE_Y+75)), fill=WHITE + (255,))
-            elif kind == 'iris': d.ellipse(scaled((x-45, EYE_Y-60, x+45, EYE_Y+60)), fill=BLUE + (255,))
-            elif kind == 'hl': d.ellipse(scaled((x-30, EYE_Y-45, x-5, EYE_Y-20)), fill=WHITE + (255,))
+            elif kind == 'iris': d.ellipse(scaled((x-30, EYE_Y-42, x+30, EYE_Y+42)), fill=BLUE + (255,))
+            elif kind == 'hl': d.ellipse(scaled((x-16, EYE_Y-26, x-2, EYE_Y-12)), fill=WHITE + (255,))
             else: d.arc(scaled((x-60, EYE_Y-85, x+60, EYE_Y+40)), 200, 340, fill=DARK + (255,), width=max(2, int(12*k)))
         return draw
     for side in EYES:

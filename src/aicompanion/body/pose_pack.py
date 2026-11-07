@@ -99,7 +99,7 @@ def check(art: Path, root: dict) -> tuple[dict, list[str], Report]:
 
 def compile_posepack(art: str | Path, out: str | Path, texture_scale: float = 0.5, verify: bool = False) -> Report:
     from PIL import Image
-    from aicompanion.body.rig_pack import check_output
+    from aicompanion.body.rig_pack import check_output, publish
     art, out = Path(art), Path(out)
     root = read_source(art)
     problems = check_output(art, out)
@@ -173,12 +173,7 @@ def compile_posepack(art: str | Path, out: str | Path, texture_scale: float = 0.
                                       'variants': variants, 'motion': motion, 'cheeks': cheeks}
             report.poses.append(name); report.parts += len(parts)
         (temp/'rig.json').write_text(json.dumps(runtime, ensure_ascii=False, indent=1), encoding='utf-8')
-        final.mkdir(exist_ok=True)
-        for item in ('textures', 'rig.json'):
-            old = final/item
-            if old.is_dir(): shutil.rmtree(old)
-            elif old.exists(): old.unlink()
-            shutil.move(str(temp/item), str(old))
+        publish(temp, final)
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     return report

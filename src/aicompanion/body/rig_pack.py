@@ -52,6 +52,10 @@ PIVOTS = ('body', 'waist', 'neck', 'armNear', 'armFar', 'legBack', 'legFront', '
 PIVOT_PART = {'armNear': 'arm_near', 'armFar': 'arm_far', 'legBack': 'leg_back', 'legFront': 'leg_front', 'tail': 'tail',
               'finNear': 'fin_near', 'finFar': 'fin_far', 'ahoge': 'ahoge', 'neck': 'face', 'waist': 'body'}   # body 支点在脚底，不检查
 EYE_LAYERS = ('ball', 'iris', 'hl', 'lash')
+# 视线：渲染器（rig.js 的 gazeX / gazeY 弹簧）把虹膜整体平移，硬上限 X ±1.6、Y ±1.2 骨骼单位（弹簧在上限处截断，不会超调）；
+# 高光再乘 1.25。编译时按眼白的真实 alpha 轮廓检查：虹膜 / 高光在这个移动范围内任何位置都不能露出眼白之外。
+GAZE_MAX = (1.6, 1.2)
+EYE_MOVERS = {'iris': 1.0, 'hl': 1.25}
 EXPRESSIONS = {'neutral': True, 'happy': True, 'love': True, 'surprised': True, 'sleep': True, 'drag': True, 'dizzy': True,
                'shy': False, 'smug': False}
 
@@ -111,12 +115,61 @@ def check_output(art: Path, out: Path) -> list[str]:
         if not out.is_dir(): return [f'输出位置 {out} 是一个文件']
         others = sorted(p.name for p in out.iterdir() if p.name not in OWNED)
         if others: return [f'输出目录 {out} 里还有不是编译器生成的东西（{"、".join(others[:5])}），为安全起见不覆盖；请换一个空目录']
+        if not any(out.iterdir()): return []
+        # 非空目录：必须有编译器写的 rig.json，且 textures/ 里每个文件都是这份 rig.json 引用的——否则可能是别人的东西
         rig = out/'rig.json'
-        if rig.exists():
-            try: kind = json.loads(rig.read_text(encoding='utf-8')).get('source', {}).get('kind')
-            except (OSError, ValueError, AttributeError): kind = None
-            if kind not in ('pack', 'posepack'): return [f'{rig} 不是形象包编译出来的（可能是别的模型），不覆盖']
+        try: data = json.loads(rig.read_text(encoding='utf-8'))
+        except (OSError, ValueError): return [f'输出目录 {out} 里没有可识别的编译结果（rig.json），为安全起见不覆盖；请换一个空目录']
+        if not isinstance(data, dict) or (data.get('source') or {}).get('kind') not in ('pack', 'posepack'):
+            return [f'{rig} 不是形象包编译出来的（可能是别的模型），不覆盖']
+        owned = owned_textures(data)
+        textures = out/'textures'
+        if textures.exists():
+            if not textures.is_dir(): return [f'{textures} 不是文件夹，不覆盖']
+            foreign = sorted(str(p.relative_to(out)).replace('\\', '/') for p in textures.rglob('*') if p.is_file()
+                             and str(p.relative_to(out)).replace('\\', '/') not in owned)
+            if foreign: return [f'{textures} 里有不是这次编译结果引用的文件（{"、".join(foreign[:5])}），为安全起见不覆盖；请换一个空目录']
     return []
+
+
+def owned_textures(rig: dict) -> set[str]:
+    """rig.json 引用的贴图（相对路径），两种格式都认。"""
+    out = {p['tex'] for p in rig.get('parts') or [] if isinstance(p, dict) and 'tex' in p}
+    features = rig.get('features') or {}
+    out |= {item['tex'] for side in (features.get('eyes') or {}).values() for item in side.values()}
+    out |= {item['tex'] for item in (features.get('sprites') or {}).values()}
+    for pose in (rig.get('poses') or {}).values():
+        out |= {p['tex'] for p in pose.get('parts', [])}
+        out |= {p['tex'] for layers in (pose.get('variants') or {}).values() for p in layers}
+    return out
+
+
+def publish(staging: Path, final: Path, items=('textures', 'rig.json')):
+    """把 staging 里编好的 items 换进 final：旧的先挪到旁边的备份目录，全部换好才删备份；
+    任何一步失败都把已挪入的新文件撤掉、旧文件挪回，保证 rig.json 和贴图始终是同一代。"""
+    final.mkdir(parents=True, exist_ok=True)
+    backup = Path(tempfile.mkdtemp(prefix=f'.{final.name}-old-', dir=final.parent))
+    moved_old, moved_new = [], []
+    try:
+        for name in items:
+            if (final/name).exists() or (final/name).is_symlink():
+                shutil.move(str(final/name), str(backup/name)); moved_old.append(name)
+        for name in items:
+            shutil.move(str(staging/name), str(final/name)); moved_new.append(name)
+    except BaseException:
+        for name in moved_new:
+            target = final/name
+            try:
+                if target.is_dir(): shutil.rmtree(target)
+                elif target.exists(): target.unlink()
+            except OSError: pass
+        for name in moved_old:
+            try: shutil.move(str(backup/name), str(final/name))
+            except OSError: pass
+        raise
+    finally:
+        if all((final/n).exists() for n in items) or not moved_old:
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def read_pack(art: Path) -> dict:
@@ -140,6 +193,31 @@ def _scan(path: Path, canvas, problems) -> Layer | None:
         problems.append(f'{path.name} 是空的（全透明）'); return None
     x0, y0, x1, y1 = box
     return Layer(path, (max(0, x0-PAD), max(0, y0-PAD), min(canvas[0], x1+PAD), min(canvas[1], y1+PAD)), box)
+
+
+def eye_escape(ball_path: Path, item_path: Path, dx: int, dy: int) -> int:
+    """虹膜 / 高光平移到 [-dx, dx]×[-dy, dy] 内任意位置时，落在眼白 alpha 轮廓外的像素数（并集）。"""
+    from PIL import Image, ImageChops
+    with Image.open(ball_path) as b, Image.open(item_path) as i:
+        ball = b.convert('RGBA').getchannel('A').point(lambda a: 255 if a > 8 else 0)
+        item = i.convert('RGBA').getchannel('A').point(lambda a: 255 if a > 40 else 0)
+    box = item.getbbox()
+    if box is None: return 0
+    # 只处理虹膜周围一块，外扩移动范围
+    x0, y0, x1, y1 = max(0, box[0]-dx), max(0, box[1]-dy), min(item.width, box[2]+dx), min(item.height, box[3]+dy)
+    item, ball = item.crop((x0, y0, x1, y1)), ball.crop((x0, y0, x1, y1))
+    w, h = item.size
+
+    def shift(image, ox, oy):
+        sheet = Image.new('L', (w, h), 0); sheet.paste(image, (ox, oy)); return sheet
+    swept = item
+    for ox in range(-dx, dx+1):
+        if ox: swept = ImageChops.lighter(swept, shift(item, ox, 0))
+    row = swept
+    for oy in range(-dy, dy+1):
+        if oy: swept = ImageChops.lighter(swept, shift(row, 0, oy))
+    outside = ImageChops.subtract(swept, ball)
+    return outside.histogram()[255]
 
 
 def _near(point, bbox, slack) -> bool:
@@ -181,15 +259,16 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
                 if scanned: features[f'eye:{side}:{layer}'] = scanned
             elif layer in ('ball', 'iris'):
                 problems.append(f'缺少中性眼 face/neutral/{side}_{layer}.png')
-    inset = 10*canvas[1]/2048   # 视线最大偏移 ±8 px（高光 ±10 px）：虹膜、高光要比眼白收进这么多，才不会跑出眼眶
     for side in ('eyeL', 'eyeR'):
         ball = features.get(f'eye:{side}:ball')
-        for layer in ('iris', 'hl'):
+        for layer, mover in EYE_MOVERS.items():
             item = features.get(f'eye:{side}:{layer}')
             if ball and item:
-                b, c = ball.content, item.content
-                if c[0] < b[0]+inset or c[1] < b[1]+inset or c[2] > b[2]-inset or c[3] > b[3]-inset:
-                    problems.append(f'face/neutral/{side}_{layer}.png 要画在眼白以内、四边各收进至少 {inset:.0f} px（视线移动时不跑出眼眶）')
+                dx, dy = (round(GAZE_MAX[0]*mover/space.scale), round(GAZE_MAX[1]*mover/space.scale))
+                outside = eye_escape(ball.path, item.path, dx, dy)
+                if outside:
+                    problems.append(f'face/neutral/{side}_{layer}.png 在视线移动范围（±{dx}×±{dy} px）内有 {outside} 个像素会露到眼白外面：'
+                                    f'把它画小一点或往眼白中间收（渲染器不做遮罩）')
     for name, required in EXPRESSIONS.items():
         pieces = ['mouth', 'brows'] if name == 'neutral' else ['eyeL', 'eyeR', 'mouth', 'brows']
         have = []
@@ -225,12 +304,7 @@ def compile_pack(art: str | Path, out: str | Path) -> Report:
     final, out = out, Path(tempfile.mkdtemp(prefix=f'.{out.name}-', dir=out.parent))
     try:
         _write(pack, found, features, pivots_px, space, out, report)
-        final.mkdir(exist_ok=True)
-        for name in ('textures', 'rig.json'):
-            old = final/name
-            if old.is_dir(): shutil.rmtree(old)
-            elif old.exists(): old.unlink()
-            shutil.move(str(out/name), str(old))
+        publish(out, final)
     finally:
         shutil.rmtree(out, ignore_errors=True)
     return report
