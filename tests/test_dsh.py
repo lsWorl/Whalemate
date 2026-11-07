@@ -205,6 +205,37 @@ class ToolBoxTest(unittest.TestCase):
         self.assertEqual(self.call('run_powershell', command='Get-Date')[0], 'ran Get-Date'); self.assertEqual(self.asked, [])
         self.assertTrue(self.call('run_powershell', command='Remove-Item x')[1]); self.assertEqual(self.asked, ['command'])
 
+    def test_move_checks_source_and_target(self):
+        own = self.inside/'mine.txt'
+        self.call('write_file', path=str(own), content='x')                       # 她这次新建的文件
+        self.assertTrue(self.call('move_path', source=str(own), destination=str(self.outside/'mine.txt'))[1])
+        self.assertEqual(self.asked, ['move']); self.assertTrue(own.exists())    # 挪到外面也要问，拒绝后原地不动
+        self.assertFalse(self.call('move_path', source=str(own), destination=str(self.inside/'sub'/'m.txt'))[1])
+        self.assertEqual(self.asked, ['move'])                                    # 放开的文件夹里随便挪
+        foreign = self.outside/'theirs.txt'; foreign.write_text('t')
+        self.assertTrue(self.call('move_path', source=str(foreign), destination=str(self.inside/'t.txt'))[1])
+        self.assertEqual(self.asked, ['move', 'move']); self.assertTrue(foreign.exists())
+
+    def test_read_only_bypasses(self):
+        for command in ('& $c x', "$c='Remove-Item'; & $c a", '.("Remove-Item") x', "& 'Remove-Item' x", "iex 'rm x'",
+                        'git branch -D old', 'git remote add o u', 'git diff --output=x.txt', 'Get-Content a | Tee-Object b',
+                        'npx hexo server', 'Start-Process notepad', 'mkdir x'):
+            self.assertFalse(is_read_only_command(command), command)
+        for command in ('Get-ChildItem | Format-Table Name', 'Get-ChildItem D:\\del\\x', 'git branch -a', 'git remote -v', '& Get-Date'):
+            self.assertTrue(is_read_only_command(command), command)
+
+    def test_stop_kills_running_command(self):
+        import sys, time
+        box = ToolBox(trash=Path(self.tmp.name)/'trash'); box.task = Task(run_id=1, allowed=[self.inside])
+        threading.Timer(0.5, box.task.cancelled.set).start()
+        start = time.monotonic()
+        text = box._run_process([sys.executable, '-c', 'import time; time.sleep(30)'], self.inside, dict(__import__('os').environ))
+        self.assertLess(time.monotonic()-start, 5); self.assertIn('停', text)
+        box.task = Task(run_id=2, allowed=[self.inside])
+        text = box._run_process([sys.executable, '-c', 'import time; time.sleep(30)'], self.inside, dict(__import__('os').environ), timeout=0.5)
+        self.assertIn('超过', text)
+        self.assertIn('hello', box._run_process([sys.executable, '-c', 'print("hello")'], self.inside, dict(__import__('os').environ)))
+
     def test_cancelled_task_refuses(self):
         self.box.task.cancelled.set()
         self.assertTrue(self.call('list_dir', path=str(self.inside))[1])

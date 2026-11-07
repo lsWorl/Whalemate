@@ -43,11 +43,16 @@ READ_ONLY = {
     'write-output', 'echo', 'write-host', 'compare-object', 'get-unique', 'tree', 'findstr', 'where.exe', 'systeminfo',
     'python --version', 'python -v', 'node --version', 'node -v', 'npm --version', 'git --version',
 }
-READ_ONLY_GIT = {'status', 'log', 'diff', 'show', 'branch', 'remote', 'rev-parse', 'ls-files', 'blame'}
-DANGER_HINT = re.compile(r'(?i)\b(remove-item|rm|del|erase|rd|rmdir|format|clear-content|set-content|out-file|add-content|new-item|'
-                         r'move-item|mv|copy-item|cp|rename-item|ren|stop-process|kill|invoke-webrequest|iwr|curl|wget|start-process|'
-                         r'set-executionpolicy|reg|shutdown|restart-computer|git\s+(push|reset|clean|checkout|commit)|npm\s+(publish|install|i)|'
-                         r'hexo\s+(deploy|d|clean)|pip\s+install)\b|>{1,2}')
+READ_ONLY_GIT = {'status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'blame'}
+READ_ONLY_GIT_LIST = {'branch': {'-a', '-r', '-v', '-vv', '--list', '--all', '--remotes', '--show-current'}, 'remote': {'-v', '--verbose'}}
+# 会改东西的命令名：出现在命令里的任何位置（包括被藏在字符串、脚本块里）都不算只读。
+# 前后不能紧挨字母、连字符、点、路径分隔符，避免 Format-Table、D:\\del\\ 这类误判。
+DANGER_HINT = re.compile(r'(?i)(?<![\w\-.\\/:$])(remove-item|rm|del|erase|rd|rmdir|format|clear-content|set-content|out-file|add-content|'
+                         r'new-item|ni|md|mkdir|move-item|mv|move|copy-item|cp|copy|rename-item|ren|stop-process|kill|invoke-webrequest|iwr|'
+                         r'invoke-restmethod|irm|curl|wget|start-process|saps|start|set-executionpolicy|reg|shutdown|restart-computer|'
+                         r'set-item|si|set-itemproperty|new-itemproperty|remove-itemproperty)(?![\w\-.\\/:])'
+                         r'|\bgit\s+(push|reset|clean|checkout|commit|branch\s+-[dDmM]|remote\s+(add|remove|rm|set-url))'
+                         r'|\b(npm|pnpm|yarn|pip|npx)\s+\w')
 
 
 SAFE_METHODS = {'tostring', 'trim', 'trimend', 'trimstart', 'split', 'replace', 'substring', 'tolower', 'toupper', 'contains', 'startswith',
@@ -73,18 +78,26 @@ def is_read_only_command(command: str) -> bool:
     """每一段的开头都是只读命令（或变量、字面量、表达式），没有重定向写文件，也没有调用会改东西的 .NET 方法。"""
     text = command.strip()
     if not text or re.search(r'(?<![<>=!-])>{1,2}', text) or '`' in text: return False
+    if DANGER_HINT.search(text) or re.search(r'(?i)--output|-outfile|tee-object|invoke-expression|\biex\b|-encodedcommand', text): return False
     for method in re.findall(r'(?:\.|::)(\w+)\s*\(', text):
         if method.lower() not in SAFE_METHODS: return False
     for part in _segments(text):
         if re.match(r'^\$[\w:.]+\s*=[^=]', part): part = part.split('=', 1)[1].strip()   # $x = ...：看等号右边
         words = part.split()
+        invoked = bool(words) and (words[0] in ('&', '.') or (words[0][:1] in '&.' and len(words[0]) > 1 and words[0][1] in '$"\'('))
         while words and words[0] in ('&', '.', '('): words = words[1:]   # & 命令 / . 脚本 都按后面的命令算
-        raw = words[0].lstrip('&(') if words else ''
+        raw = words[0].lstrip('&.(') if words else ''
+        if invoked and (not raw or raw[0] in '$"\'@[('):
+            return False   # & $变量 / & "字符串" / .(…)：调用的是什么命令看不出来，一律当作会改东西
         if not raw or raw[0] in '$"\'@[0123456789-+' or raw.lower() in ('if', 'else', 'elseif', 'foreach', 'for', 'while'):
             continue   # 变量、字面量、表达式、比较、流程控制（括号里的内容已经单独检查过）
         head = re.split(r'[()]', raw)[0].lower()
         words = [head] + words[1:]
-        if head == 'git' and len(words) > 1 and words[1].lower() in READ_ONLY_GIT: continue
+        if head == 'git' and len(words) > 1:
+            sub, rest = words[1].lower(), [w.lower() for w in words[2:]]
+            if sub in READ_ONLY_GIT: continue
+            if sub in READ_ONLY_GIT_LIST and all(w in READ_ONLY_GIT_LIST[sub] for w in rest): continue   # git branch -D、git remote add 不算
+            return False
         if ' '.join(w.lower() for w in words[:2]) in READ_ONLY or head in READ_ONLY: continue
         return False
     return True
@@ -315,8 +328,13 @@ class ToolBox:
         for p in (src, dst):
             reason = _secret_reason(p, self.secrets)
             if reason: raise PermissionError(f'{p} 不能动（{reason}）')
-        if not (self._allowed(src) and self._allowed(dst)) and str(src).lower() not in self.task.created:
-            self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
+        # 源和目标分别检查：她这次自己建的文件可以在放开的文件夹里随便挪，但挪到外面一样要问
+        source_ok = self._allowed(src) or str(src).lower() in self.task.created
+        target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
+        if not (source_ok and target_ok):
+            where = [] if source_ok else ['原位置在放开的文件夹外']
+            if not target_ok: where.append('目标在放开的文件夹外')
+            self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '，'.join(where)+'。移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
         backup = self._backup(src)
         dst.parent.mkdir(parents=True, exist_ok=True); shutil.move(str(src), str(dst))
         return f'已移动到 {dst}'+(f'；原样留底在 {backup}' if backup else '')
@@ -364,19 +382,42 @@ class ToolBox:
         script = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference="SilentlyContinue"; '+command
         args = [exe, '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script]
         flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        if sandbox.IS_WINDOWS:
+            with sandbox.low_integrity(): return self._run_process(args, folder, env, flags)
+        return self._run_process(args, folder, env, flags)
 
-        def launch():
-            return subprocess.run(args, cwd=str(folder), env=env, capture_output=True, timeout=COMMAND_TIMEOUT, creationflags=flags)
-        try:
-            if sandbox.IS_WINDOWS:
-                with sandbox.low_integrity(): done = launch()
-            else:
-                done = launch()
-        except subprocess.TimeoutExpired:
-            return f'命令超过 {COMMAND_TIMEOUT} 秒被停止了。长时间运行的程序请用 Start-Process 放到后台。'
-        out = (done.stdout or b'').decode('utf-8', 'replace'); err = (done.stderr or b'').decode('utf-8', 'replace')
-        text = out+(('\n[stderr]\n'+err) if err.strip() else '')+f'\n[退出码 {done.returncode}]'
+    def _run_process(self, args, folder: Path, env: dict, flags: int = 0, timeout: float = COMMAND_TIMEOUT) -> str:
+        """运行命令；任务被停止或超时时连同它启动的子进程一起结束。"""
+        proc = subprocess.Popen(args, cwd=str(folder), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=flags)
+        out_parts, err_parts = [], []
+        readers = [threading.Thread(target=lambda s=stream, b=box: b.append(s.read()), daemon=True)
+                   for stream, box in ((proc.stdout, out_parts), (proc.stderr, err_parts))]
+        for r in readers: r.start()
+        deadline = time.monotonic()+timeout; stopped = ''
+        while proc.poll() is None:
+            if self.task.cancelled.is_set(): stopped = '任务已停止，命令也一起停下了。'
+            elif time.monotonic() > deadline: stopped = f'命令超过 {int(timeout)} 秒被停止了。长时间运行的程序请用 Start-Process 放到后台。'
+            if stopped:
+                self._kill_tree(proc); break
+            time.sleep(0.1)
+        for r in readers: r.join(timeout=2)
+        if stopped: return stopped
+        out = b''.join(out_parts).decode('utf-8', 'replace'); err = b''.join(err_parts).decode('utf-8', 'replace')
+        text = out+(('\n[stderr]\n'+err) if err.strip() else '')+f'\n[退出码 {proc.returncode}]'
         return text[-OUTPUT_LIMIT:] if len(text) > OUTPUT_LIMIT else text
+
+    @staticmethod
+    def _kill_tree(proc):
+        """Windows 上用 taskkill /T 连子进程一起结束（PowerShell 里起的程序不会因为父进程被杀而退出）。"""
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True, timeout=10,
+                               creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            proc.kill()
+        except Exception:
+            pass
+        try: proc.wait(timeout=5)
+        except Exception: pass
 
 
 class ToolServer:
