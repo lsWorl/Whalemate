@@ -4,9 +4,74 @@
 
 本文第 1–6 节是 **T5 出图（鲸娘）和 T6 代码共同遵守的规格**，改规格要在这个文件里改并在 PR 里说明。
 
-## 规格状态
+## 规格状态（2026-11-07 范围调整，待双方确认）
 
-**v1 已冻结**（以本 PR 合入时的版本为准）。只做 DeepSeek 鲸娘一个形象（Claude、ChatGPT 角色不做形象）。之后任何改动图层名、坐标、层次、表情清单的修改，都要先在 PR 描述里写明"规格变更"并得到对方确认，再出图或改代码。
+用户决定：**本阶段只用已经确认的原鲸娘（`art/deepseek-whale/approved-poses-preview.png` 的十个动作），保留原设计和标志，不重画成统一站姿，不套用大肥鱼的朝向和比例。**
+所以下面第 1–6 节的"单站姿全身骨骼"规格（v1）**暂缓**，保留作以后参考；当前按第 A 节的"十姿态分层包"契约实现。第 A 节在 Codex 确认前不算冻结。
+
+## A. 十姿态分层包（AICompanionPosePack v1，提案）
+
+### A.1 输入：沿用已有的 `pose-layered-v2`
+
+Codex 已整理的 `pose-layered-v2`（10 姿态、16 张原图、184 基础切片 + 33 表情切片，回拼 RGBA / Alpha 差异 0）直接作为源格式，只加一个版本字段：
+
+```text
+art/deepseek-whale/
+  model.json                     顶层索引，加 "format": "AICompanionPosePack", "version": 1
+  poses/<姿态>/model.json        canvas 1254×1254、anchor、airborne、nodes（父子 + 枢轴）、parts（z、box、parent）、variants
+  poses/<姿态>/cropped/*.png     裁切图层（贴回位置 = box 左上角）
+```
+
+- 姿态名固定：`idle talking thinking working celebrate error wait sleepy grabbed poked`。
+- 表情替换（variants）固定：`eyes_closed`、`mouth_closed`、`eyes_closed_mouth_closed`；没有的姿态就不眨眼 / 不动嘴。
+- 坐标：源像素；每个姿态有自己的 `anchor`（站立是脚底 `(627,1156)`，`grabbed` 是后领 `(724,497)`）。
+- `edge_residual` 照样保留，跟 `body` 走，不做变形。
+
+### A.2 运行时怎么动（只做局部小幅变形，不补大块遮挡）
+
+| 动作 | 做法 | 幅度上限 |
+| --- | --- | --- |
+| 换姿态 | 两套图层交叉淡入 0.18 秒 + 弹簧挤压回弹（和现在整张立绘一样） | — |
+| 呼吸 | `body` 节点以脚底为原点纵向缩放 | ±1.5% |
+| 头 | `head` 节点绕枢轴转（待机轻摆、说话点头、歪头动作） | ±2.5° |
+| 头发 | `hair_back` / `hair_front` 网格摆动，顶部 30% 固定 | 发梢 ±6 px |
+| 鲸鳍耳 / 呆毛 / 尾巴 | 绕各自枢轴摆动 | ±5° / ±8° / ±4° |
+| 手臂、腿 | **不转**（转了肩膀、胯部会露缝）；跟随身体 | 0 |
+| 眨眼 | 用 `eyes_closed` 替换层，随机间隔，偶尔连眨 | — |
+| 口型 | 说话时：有 `mouth_closed` 的姿态按音量在开 / 合之间切换；没有的姿态说话时切到 `talking` | — |
+| 视线跟随 | 眼睛没有拆成眼白 / 虹膜，不做；改成头部朝光标方向轻转 | ±1.5° |
+| 甩、掉落、摔晕、被拎起 | 整体容器的位移和旋转（物理和现在一样），被拎起时切 `grabbed` 并以后领为挂点 | — |
+
+台词里的表情和动作（P2）映射到姿态 + 叠加：开心→`celebrate`（短暂），惊讶→`poked`，慌张→`grabbed`，晕→`error`，困→`sleepy`，喜欢 / 害羞→当前姿态 + 腮红，得意→当前姿态 + 歪头；点头、摇头、歪头、摇摆用 `head` / 整体旋转，跳、转圈、鞠躬用整体容器，挥手→切 `celebrate` 片刻。
+
+### A.3 需要的补画（只为上面会动的部件，小块）
+
+为了让会动的部件动起来时边缘不露缝，每个姿态里这些图层需要**往被遮挡的一侧补画一小段**（被上层盖住的部分，补出来不会改变回拼结果）：
+
+| 图层 | 补多少 |
+| --- | --- |
+| `tail` | 尾巴根往身体后面多画约 30 px |
+| `fin_left` / `fin_right` | 鳍根往头发 / 头里面多画约 20 px |
+| `ahoge` | 根部往前发下面多画约 15 px |
+| `hair_back` | 不用补（摆动时顶部固定） |
+| 手臂、腿 | 不用补（不转） |
+
+没补的部件，编译器自动把它的摆动幅度设为 0（不会露缝，只是不动），并在报告里列出来。补画后要重新做一次"回拼差异为 0"的检查。
+
+### A.4 编译与接入
+
+- `tools/rig_studio.py compile-poses art/deepseek-whale` → `src/aicompanion/characters/deepseek-whale/rig/posepack.json` + `textures/`：把十个姿态换算到统一的骨骼空间（`x = 128 + (x−anchor_x)×0.2`，`y = 256 + (y−anchor_y)×0.2`），检查每个姿态的必需图层、variants 引用、补画边缘。
+- 渲染：在现有骨骼渲染页里新增"十姿态"模式（`posepack.js`），对外接口和现在的骨骼形象完全一样（姿态、表情、动作、拎起、命中检测、遮罩），桌宠其他代码不用改。
+- 形象来源顺序：自己的十姿态包 → 本机 Coopanion 大肥鱼 → 整张立绘。
+- 已完成的单站姿编译器（第 1–6 节、`body/rig_pack.py`）保留，供以后做新形象时用。
+
+### A.5 请 Codex 确认
+
+1. 源格式就用 `pose-layered-v2` 现有字段，加 `format` / `version`，可以吗？
+2. A.2 的幅度和"手臂腿不动"是否接受？
+3. A.3 的补画清单和尺寸是否可行；`pose-layered-v2` 要提交进仓库的 `art/deepseek-whale/`（原图和切片都是本项目自己的素材）。
+
+确认后我开始写 `compile-poses` 和 `posepack.js`。
 
 ## 0. 目标
 
