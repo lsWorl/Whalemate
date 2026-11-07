@@ -182,7 +182,8 @@ class AgentSession(QObject):
                  '尽量在后台完成，不要让用户手动操作；用户点名的路径、文件名、程序就用那个，不要擅自换；一句话里有几件事要按顺序全部做完。',
                  f'当前工作区：{cwd}。放开写的文件夹：{"；".join(str(a) for a in allowed) or "无"}——在这些里面写和改不用问；'
                  '在外面写、删除任何文件、运行会改东西的命令时，工具会自动弹窗问用户，你不用自己再问一遍。'
-                 '如果工具返回"被拒绝"，就停下来如实告诉用户，不要换个办法绕过去，也不要教用户怎么绕过。密钥文件和我的数据库是读不到的，也别去找。']
+                 '如果工具返回"被拒绝"，就停下来如实告诉用户，不要换个办法绕过去，也不要教用户怎么绕过。密钥文件和我的数据库是读不到的，也别去找。'
+                 '看 git 差异时写 `git diff --no-ext-diff --no-textconv`（show 同样；blame 加 --no-textconv），这样不用弹窗。']
         if blog: lines.append(f'用户的 Hexo 博客在 {blog}：草稿放 source/_drafts，本地预览用 `npx hexo server --draft -p 4000`（后台启动，别阻塞）。')
         if (project/'docs'/'implementation_status.md').exists():
             lines.append(f'AICompanion 项目在 {project}，写开发日志的素材在 docs/implementation_status.md。')
@@ -222,10 +223,12 @@ class AgentSession(QObject):
         """自己的工具每调用一次记一步审计（参数、审批结果、结果或错误）。"""
         import json
         state = self.run_state
-        if not state.get('run_id'): return
-        state['seq'] += 1
+        run_id = record.get('run_id') or state.get('run_id')   # 记在调用开始时的任务名下：迟到的回调不会算进下一个任务
+        if not run_id: return
+        if run_id == state.get('run_id'): state['seq'] += 1; seq = state['seq']
+        else: seq = 0
         database = self.window.database
-        step_id = database.add_agent_step(state['run_id'], state['seq'], record['tool'], json.dumps(record['args'], ensure_ascii=False)[:4000],
+        step_id = database.add_agent_step(run_id, seq, record['tool'], json.dumps(record['args'], ensure_ascii=False)[:4000],
                                           'tool', record['decision'])
         database.finish_agent_step(step_id, record.get('result', '')[:500], record.get('error', '')[:500])
 
