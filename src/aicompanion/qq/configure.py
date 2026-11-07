@@ -115,10 +115,12 @@ def is_our_plugin(path: Path) -> bool:
 
 
 def plugin_config(astrbot_root: Path, pet_url: str, token: str) -> None:
-    """data/config/astrbot_plugin_aicompanion_config.json：只设地址和令牌，用户改过的其他项（离线提示等）保留。"""
+    """data/config/astrbot_plugin_aicompanion_config.json：设地址和令牌，用户改过的其他项（离线提示等）保留。
+    group_only_when_called 统一关掉：旧版插件默认开、AstrBot 会把默认值写进这个文件，不改的话升级后她还是只能被 @ 才说话；
+    群里插不插话现在由桌宠的"群里活跃度"决定（选"只在被叫时说话"就是旧行为）。"""
     path = Path(astrbot_root)/'data'/'config'/f'{PLUGIN_NAME}_config.json'
     conf = read_json(path, {})
-    conf.update({'pet_url': pet_url, 'token': token})
+    conf.update({'pet_url': pet_url, 'token': token, 'group_only_when_called': False})
     write_json(path, conf)
 
 

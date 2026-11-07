@@ -7,7 +7,7 @@ class ContextService:
         self.database, self.memory = database, memory
 
     def build(self, character, query="", channel="desktop", scene="pet", situation="", through_id=None):
-        """channel：读哪一段聊天记录；scene：pet = 私下（桌面或已绑定的主人），其他 = 公开场合（群、陌生人）。
+        """channel：读哪一段聊天记录；scene：pet = 私下（桌面或已绑定的爹），其他 = 公开场合（群、陌生人）。
         公开场合只用公开范围的记忆，不带桌面上的摘要和信任度，也看不到桌面的聊天记录。situation：这次在哪、和谁说话。
         through_id：只看到这条消息为止（聊天平台的请求绑定自己那条消息，之后别人插进来的消息不算进这一轮）。"""
         private = scene == "pet"
@@ -19,7 +19,7 @@ class ContextService:
         summary=self.database.load_summary(character.id) if private and not self.database.has_deleted_memories(character.id) else ''
         relationship=self.database.relationship(character.id)
         trust = (f"长期相处的信任程度：{relationship['trust']}（不要向用户直接报数值）。" if private else
-                 "这是公开场合：对方不一定是你的主人，其他人也看得到你的回复；不要假装和对方很熟。")
+                 "这是公开场合：对方不一定是你爹，其他人也看得到你的回复；跟不熟的人别装熟，但也不用客气得像客服。")
         prompt = f"""你正在扮演 {character.name}，与用户进行自然的长期陪伴对话。
 人设：{character.description}
 说话风格：{character.speaking_style}

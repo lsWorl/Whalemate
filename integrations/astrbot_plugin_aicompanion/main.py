@@ -21,7 +21,7 @@ except ImportError:   # pragma: no cover
 
 HEARTBEAT_SECONDS = 15
 QQ_ADAPTERS = {'aiocqhttp': 'qq', 'qq_official': 'qq', 'qq_official_webhook': 'qq'}
-DEFAULTS = {'pet_url': 'http://127.0.0.1:18765', 'token': '', 'groups': [], 'group_only_when_called': True,
+DEFAULTS = {'pet_url': 'http://127.0.0.1:18765', 'token': '', 'groups': [], 'group_only_when_called': False,
             'offline_reply': '她现在不在电脑旁，晚点再来找她吧～', 'timeout': 60, 'skip_prefixes': ['/']}
 
 
@@ -51,9 +51,13 @@ class AICompanionBridge(Star):
         if group_id:
             allowed = self.pet_groups if self.pet_groups is not None else self.option('groups')
             if group_id not in [str(g).strip() for g in allowed]: return None
-            if self.option('group_only_when_called') and not getattr(event, 'is_at_or_wake_command', False): return None
+            called = bool(getattr(event, 'is_at_or_wake_command', False))
+            if self.option('group_only_when_called') and not called: return None
+        else:
+            called = True
+        # 群里没叫她的消息也转过去：她"旁听"大家聊天，要不要插话由桌宠按"群里活跃度"决定
         return {'platform': platform, 'sender_id': str(event.get_sender_id()), 'sender_name': event.get_sender_name() or '',
-                'group_id': group_id, 'text': text}
+                'group_id': group_id, 'text': text, 'called': called}
 
     async def post(self, path: str, payload: dict, timeout: float) -> 'aiohttp.ClientResponse':
         if self.session is None or self.session.closed:
@@ -81,7 +85,7 @@ class AICompanionBridge(Star):
 
     async def heartbeat_once(self):
         onebot, groups = await self.onebot_state()
-        payload = {'astrbot': 'plugin-0.2', 'onebot': onebot, 'groups': groups}
+        payload = {'astrbot': 'plugin-0.3', 'onebot': onebot, 'groups': groups}
         async with await self.post('/v1/heartbeat', payload, 10) as response:
             if response.status == 200:
                 data = await response.json()
@@ -113,6 +117,7 @@ class AICompanionBridge(Star):
             result = await self.ask_pet(payload)
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
             logger.warning(f'AICompanion 不在线或没有回应：{error}')
+            if not payload['called']: return   # 旁听的消息：她不在也不用替她出声
             offline = str(self.option('offline_reply') or '')
             if offline: yield event.plain_result(offline)
             return

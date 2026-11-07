@@ -122,6 +122,11 @@ class Database:
             cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel,sender) VALUES (?,?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel, sender))
             return cursor.lastrowid
 
+    def drop_reply(self, turn_id, character_id) -> None:
+        """群里插话时模型选择不说：把这一轮的回复从记录里拿掉（没发出去的话不算她说过）。"""
+        with self.transaction() as connection:
+            connection.execute("DELETE FROM chat_messages WHERE turn_id=? AND character_id=? AND role='assistant'", (turn_id, character_id))
+
     def reserve_daily(self, key: str, limit: int) -> bool:
         """原子地"判断没到上限就加一"：同一事务里读和写，多个线程 / 多个服务实例同时来也不会超过 limit。"""
         with self.transaction() as connection:

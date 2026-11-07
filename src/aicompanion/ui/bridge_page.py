@@ -1,6 +1,6 @@
 """设置 → 聊天平台（T9）：一键接入 QQ。
 
-普通用户只看到：接入 QQ → 扫码登录 → 填主人 QQ 号、勾选群 → 已连接。端口、令牌、组件目录等放在"高级设置"里。
+普通用户只看到：接入 QQ → 扫码登录 → 填你的 QQ 号（她管你叫爹）、勾选群 → 已连接。端口、令牌、组件目录等放在"高级设置"里。
 所有耗时操作（下载、安装、启动、查状态）都在后台线程里做，结果通过信号回到界面线程。
 """
 from __future__ import annotations
@@ -10,14 +10,16 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
                                QWidget)
 
-from aicompanion.bridge.service import setting
+from aicompanion.bridge.service import CHIME, setting
+
+CHIME_TEXT = {'off': '只在被叫时说话（@ 她或提到她名字）', 'sometimes': '偶尔插句话', 'often': '爱聊天，常插话'}
 
 ACTION_TEXT = {'接入 QQ': '接入 QQ', '准备组件': '准备组件', '启动': '启动', '重试': '重试', '刷新二维码': '刷新二维码',
-               '保存': '保存主人和群', '查看步骤': '查看步骤'}
+               '保存': '保存 QQ 号和群', '查看步骤': '查看步骤'}
 
 
 class _Signals(QObject):
@@ -54,14 +56,19 @@ class BridgePage(QWidget):
         for w in (self.title, self.detail, self.qrcode, self.bar): cl.addWidget(w)
         cl.addLayout(buttons); layout.addWidget(card)
 
-        # ---- 主人和群 ----
+        # ---- 爹和群 ----
         people = QGroupBox('谁能和她说话'); pl = QFormLayout(people)
         self.owner = QLineEdit(str(database.get_setting('bridge_owner:qq', '') or ''))
         self.owner.setPlaceholderText('你自己的 QQ 号（不是机器人的）')
         self.groups = QListWidget(); self.groups.setMaximumHeight(140)
         self.groups_hint = QLabel('机器人登录并连上后，这里会列出它所在的群，勾选允许她说话的群。'); self.groups_hint.setWordWrap(True)
         self.strangers = QCheckBox('也回复陌生人的私聊'); self.strangers.setChecked(bool(setting(database, 'bridge_strangers')))
-        pl.addRow('主人的 QQ 号', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint); pl.addRow('', self.strangers)
+        self.chime = QComboBox()
+        for key in CHIME: self.chime.addItem(CHIME_TEXT[key], key)
+        self.chime.setCurrentIndex(max(0, self.chime.findData(setting(database, 'bridge_chime'))))
+        self.chime.setToolTip('群里的消息她都"听得到"。没人叫她时按这里决定要不要插话；她也可能觉得没什么好说而不说。')
+        pl.addRow('你的 QQ 号（她管你叫爹）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
+        pl.addRow('群里活跃度', self.chime); pl.addRow('', self.strangers)
         save_people = QPushButton('保存'); save_people.clicked.connect(self.save_people); pl.addRow('', save_people)
         layout.addWidget(people)
         self._fill_groups([])
@@ -89,7 +96,7 @@ class BridgePage(QWidget):
         self.advanced.toggled.connect(inner.setVisible)
         layout.addWidget(self.advanced)
         note = QLabel('桌宠会从 NapCat 和 AstrBot 的官方发布地址下载原版组件，放在上面的组件目录里，不改你电脑上的 QQ。'
-                      '扫码登录和账号验证需要你自己完成。主人的私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
+                      '扫码登录和账号验证需要你自己完成。你（爹）的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
                       '不想在群里被提到的记忆，到"记忆"页标成"只在私下用"。聊天平台上她不会动手干活。')
         note.setWordWrap(True); note.setStyleSheet('color:#666'); layout.addWidget(note); layout.addStretch(1)
 
@@ -241,12 +248,13 @@ class BridgePage(QWidget):
         db = self.database
         owner = self.owner.text().strip()
         if owner and not re.fullmatch(r'\d{5,12}', owner):
-            return QMessageBox.warning(self, '主人 QQ 号', 'QQ 号应该是 5 到 12 位数字。')
+            return QMessageBox.warning(self, '你的 QQ 号', 'QQ 号应该是 5 到 12 位数字。')
         db.set_setting('bridge_owner:qq', owner)
         groups = [self.groups.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.groups.count())
                   if self.groups.item(i).checkState() == Qt.CheckState.Checked]
         db.set_setting('bridge_groups', groups)   # 插件下次心跳就会拿到
         db.set_setting('bridge_strangers', self.strangers.isChecked())
+        db.set_setting('bridge_chime', self.chime.currentData())
         self.refresh()
 
     def save(self):

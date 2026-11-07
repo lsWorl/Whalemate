@@ -322,7 +322,7 @@ class QQManager:
             return Status('onebot_down', 'QQ 登录了，但还没连上 AstrBot', '重试', hint or str(onebot.get('error') or ''), groups=groups)
         bot = str(onebot.get('self_id') or '')
         if not self.owner_bound():
-            return Status('need_owner', '已连接。请填写你自己的 QQ 号（主人）', '保存', groups=groups, bot=bot)
+            return Status('need_owner', '已连接。请填写你自己的 QQ 号（她管你叫爹）', '保存', groups=groups, bot=bot)
         return Status('connected', '已连接', '', groups=groups, bot=bot)
 
     def _remember_bot(self):

@@ -85,8 +85,8 @@ class MemoryService:
         return f"memory_through:{character_id}" if channel == "desktop" else f"memory_through:{character_id}:{channel}"
 
     def analyze(self, character_id, client, cancellation: CancellationToken, channel="desktop") -> None:
-        """把一段聊天整理成记忆。channel 不是 desktop 时是群聊 / 陌生人私聊：说话的不是主人，记忆写清楚是谁的，
-        记成 qq 来源（桌面和各处共享，用户 2026-11-07 决定），不写对话摘要（摘要只属于和主人的相处）。"""
+        """把一段聊天整理成记忆。channel 不是 desktop 时是群聊 / 陌生人私聊：说话的不只是爹，记忆写清楚是谁的，
+        记成 qq 来源（桌面和各处共享，用户 2026-11-07 决定），不写对话摘要（摘要只属于和爹的相处）。"""
         if self.database.has_deleted_memories(character_id):
             return
         public = channel != "desktop"
@@ -109,8 +109,8 @@ class MemoryService:
             '使用已有相同事实键更新更正后的事实；无新事实返回空数组。不要输出 Markdown。'
         )
         if public:
-            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#编号"（标着"主人"的是主人）。'
-                            '记忆必须写清楚是谁的事，例如"群友大壮#2 是程序员"、"主人在群里说周末去爬山"；不要把群友的事记成主人的；'
+            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#编号"（标着"【爹】"的是用户本人，也就是她爹）。'
+                            '记忆必须写清楚是谁的事，例如"群友大壮#2 是程序员"、"爹在群里说周末去爬山"；不要把群友的事记成爹的；'
                             'fact_key 里带上说话人标记（如 "qq#2:job"）。群里的玩笑、刷屏、对她的调侃不用记。summary 留空。')
         context = json.dumps({"previous_summary":'' if public else self.database.load_summary(character_id),"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
                               "existing": [{"content":r['content'],"fact_key":r['fact_key']} for r in existing]}, ensure_ascii=False)

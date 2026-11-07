@@ -157,10 +157,11 @@ class ConfigureTests(Base):
         self.assertFalse((target/'stale.txt').exists())
         configure.plugin_config(root, 'http://127.0.0.1:18765', 'tok')
         path = root/'data'/'config'/f'{specs.PLUGIN_NAME}_config.json'
-        data = json.loads(path.read_text(encoding='utf-8')); data['offline_reply'] = '我的离线提示'; path.write_text(json.dumps(data), encoding='utf-8')
+        data = json.loads(path.read_text(encoding='utf-8')); data['offline_reply'] = '我的离线提示'; data['group_only_when_called'] = True; path.write_text(json.dumps(data), encoding='utf-8')
         configure.plugin_config(root, 'http://127.0.0.1:19000', 'tok2')
         data = json.loads(path.read_text(encoding='utf-8'))
         self.assertEqual((data['pet_url'], data['token'], data['offline_reply']), ('http://127.0.0.1:19000', 'tok2', '我的离线提示'))
+        self.assertIs(data['group_only_when_called'], False)   # 旧版插件存下的"只在被叫时"改掉：插不插话由桌宠的群里活跃度决定
         # 同名但不是我们装的：拒绝，原样保留
         other = self.root/'other'; configure.astrbot_init(other)
         foreign = other/'data'/'plugins'/specs.PLUGIN_NAME; foreign.mkdir(); (foreign/'main.py').write_text('user code', encoding='utf-8')

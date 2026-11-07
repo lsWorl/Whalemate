@@ -89,7 +89,7 @@ class BridgeTests(unittest.TestCase):
         self.ask(OWNER, '大家好', group=GROUP)
         history, prompt = self.client.calls[-1]
         self.assertNotIn('桌面上说的悄悄话', prompt+' '.join(t.content for t in history))
-        self.assertIn('你的主人', prompt)
+        self.assertIn('你爹', prompt); self.assertNotIn('主人', prompt)
 
     def test_who_gets_an_answer(self):
         self.assertEqual(self.ask(STRANGER, '在吗')['reason'], 'not_allowed')                 # 陌生人私聊默认不回
@@ -147,7 +147,7 @@ class MemorySharingTests(BridgeTests.__base__):
         self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
         memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#1:job'), None)
         self.assertIsNotNone(memory); self.assertEqual(memory['scope'], 'qq')
-        self.assertIn('不要把群友的事记成主人的', seen[-1])
+        self.assertIn('不要把群友的事记成爹的', seen[-1])
         self.assertEqual(self.db.load_summary(self.cid), '')                # 群聊不写对话摘要
         self.assertEqual(memory_service.pending(self.cid, channel), 0)
         history, prompt = self.controller.context.build(self.controller.character, '大壮')   # 桌面上她也知道
@@ -237,7 +237,7 @@ class MemorySharingTests(BridgeTests.__base__):
 
     def test_owner_label_in_group_and_no_regex_memory_for_group(self):
         self.ask(OWNER, '我叫阿青', group=GROUP, name='阿青')
-        self.assertIn('主人阿青#1：我叫阿青', self.client.calls[-1][0][-1].content)
+        self.assertIn('【爹】阿青#1：我叫阿青', self.client.calls[-1][0][-1].content)
         self.assertFalse(any('名字是阿青' in m['content'] for m in self.db.recent_memories(character_id=self.cid)))   # 群里不按"用户"套规则
 
     def test_private_summary_and_marked_memories_stay_out_of_groups(self):
@@ -351,6 +351,87 @@ class ConcurrencyTests(BridgeTests.__base__):
         def close(): self.service.closed = True   # Runtime 重启 / 关闭时 BridgeServer.close 会这样做
         result = self.queued(lambda: self.ask(OWNER, '在吗'), close)
         self.assertEqual(result['reason'], 'closed'); self.assertEqual(self.client.calls, [])
+
+
+class GroupChimeTests(BridgeTests.__base__):
+    """群里没叫她的消息：旁听（记进群聊记录），按活跃度插话；可以选择不说。"""
+    setUp = BridgeTests.setUp; tearDown = BridgeTests.tearDown; ask = BridgeTests.ask
+
+    def hear(self, sender, text, name='大壮'):
+        return self.service.handle({'platform': 'qq', 'sender_id': sender, 'sender_name': name, 'group_id': GROUP, 'text': text, 'called': False})
+
+    def setUp_rolls(self, rolls, now=1000.0):
+        self.rolls = list(rolls); self.now = [now]
+        self.service.chance = lambda: self.rolls.pop(0) if self.rolls else 0.99
+        self.service.clock = lambda: self.now[0]
+
+    def group_rows(self):
+        return self.db.recent_messages(50, self.cid, channel=f'qq:group:{GROUP}')
+
+    def test_overheard_messages_are_recorded_without_calling_the_model(self):
+        self.db.set_setting('bridge_chime', 'off')
+        self.assertEqual(self.hear(STRANGER, '今天好热')['reason'], 'observed')
+        self.assertEqual(self.hear(OWNER, '开空调啊', name='阿青')['reason'], 'observed')
+        self.assertEqual(self.client.calls, [])
+        self.assertEqual([r['content'] for r in self.group_rows()], ['大壮#1：今天好热', '【爹】阿青#2：开空调啊'])
+        self.assertEqual(self.db.recent_messages(10, self.cid), [])   # 桌面频道不变
+        # 后来被 @ 时，她看得到刚才大家聊了什么
+        self.ask(STRANGER, '你觉得呢', group=GROUP, name='大壮')
+        self.assertIn('今天好热', ' '.join(t.content for t in self.client.calls[-1][0]))
+
+    def test_mentioning_her_name_counts_as_calling(self):
+        self.db.set_setting('bridge_chime', 'off')
+        result = self.hear(STRANGER, '鲸娘你吃饭了没')
+        self.assertEqual(result['reason'], 'ok'); self.assertEqual(result['reply'], '好呀')
+
+    def test_old_plugin_without_called_field_is_treated_as_called(self):
+        self.assertEqual(self.ask(STRANGER, '在吗', group=GROUP)['reason'], 'ok')
+
+    def test_chime_needs_enough_messages_cooldown_and_luck(self):
+        self.setUp_rolls([0.1, 0.9, 0.1])   # often：概率 0.3，至少两条新消息，间隔 90 秒
+        self.assertEqual(self.hear(STRANGER, '第一条')['reason'], 'observed')   # 才一条，不插话（不掷骰子）
+        result = self.hear(STRANGER, '第二条')
+        self.assertEqual((result['reason'], result['reply']), ('chime', '好呀'))
+        self.assertIn('没有叫你', self.client.calls[-1][1]); self.assertIn('【不说】', self.client.calls[-1][1])
+        self.hear(STRANGER, '第三条'); self.hear(STRANGER, '第四条')
+        self.assertEqual(len(self.client.calls), 1)                              # 冷却中
+        self.now[0] += 100
+        self.assertEqual(self.hear(STRANGER, '第五条')['reason'], 'observed')   # 掷到 0.9，没插
+        self.assertEqual(self.hear(STRANGER, '第六条')['reason'], 'chime')
+        self.db.set_setting('bridge_chime', 'off'); self.now[0] += 1000
+        self.hear(STRANGER, 'a'); self.hear(STRANGER, 'b')
+        self.assertEqual(len(self.client.calls), 2)
+
+    def test_silence_marker_sends_nothing_and_leaves_no_trace(self):
+        self.setUp_rolls([0.0])
+        self.client.generate_reply_stream = lambda history, prompt, cancellation=None: iter(['【不说】'])
+        self.hear(STRANGER, '一'); result = self.hear(STRANGER, '二')
+        self.assertEqual((result['reply'], result['reason']), ('', 'chime_silent'))
+        self.assertFalse(any(r['role'] == 'assistant' for r in self.group_rows()))
+        self.assertIsNone(self.db.get_setting(f'bridge_last_spoke:qq:group:{GROUP}', None))   # 没说话不算冷却
+
+    def test_chime_daily_cap_and_quota(self):
+        self.setUp_rolls([0.0]*10)
+        self.db.set_setting('bridge_chime_daily', 1)
+        self.hear(STRANGER, '一'); self.assertEqual(self.hear(STRANGER, '二')['reason'], 'chime')
+        self.now[0] += 1000; self.hear(STRANGER, '三')
+        self.assertEqual(self.hear(STRANGER, '四')['reason'], 'observed')     # 今天插话次数用完
+        self.db.set_setting('bridge_chime_daily', 10); self.quota.state = 'stop'
+        self.assertEqual(self.hear(STRANGER, '五')['reason'], 'observed')     # 额度用完也不插话
+        self.assertEqual(len(self.client.calls), 1)
+
+    def test_overhearing_does_not_wait_while_she_is_talking(self):
+        self.setUp_rolls([0.0]*10)
+        self.service.lock.acquire()
+        try:
+            self.hear(STRANGER, '一'); result = self.hear(STRANGER, '二')   # 锁被占着也立刻返回，只记录不插话
+        finally:
+            self.service.lock.release()
+        self.assertEqual(result['reason'], 'observed'); self.assertEqual(len(self.group_rows()), 2)
+
+    def test_removed_group_is_not_overheard(self):
+        self.db.set_setting('bridge_groups', [])
+        self.assertEqual(self.hear(STRANGER, '一')['reason'], 'not_allowed'); self.assertEqual(self.group_rows(), [])
 
 
 class MigrationTests(unittest.TestCase):
