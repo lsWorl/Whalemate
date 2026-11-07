@@ -1,6 +1,6 @@
 # T2：MCP 服务改用官方 `mcp` 包
 
-负责：Codex　审查：Claude　分支：`codex/mcp-official-sdk`
+负责：Codex　审查：Claude　分支：`task/t2-mcp-sdk`
 
 ## 背景
 

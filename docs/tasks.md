@@ -6,10 +6,11 @@
 | --- | --- | --- | --- | --- |
 | T1 | 协作规则、`.gitattributes`、任务清单 | Claude | 待审查 | 本 PR |
 | T2 | MCP 服务改用官方 `mcp` 包（统一接口） | Codex | 待开始 | `docs/tasks/T2-mcp-official-sdk.md` |
-| T3 | 外部 MCP 服务接入（经我们的服务转发，统一把关） | Claude | 待开始（依赖 T2） | 待写 |
+| T11 | 工具把关安全修复：命令只读误判、移动文件时目标目录的权限检查、停止任务时正在跑的命令要一起停 | Claude | 待开始（优先于 T3，不阻塞 T6） | 待写；Codex 已复现，复现用例请补在任务说明里 |
+| T3 | 外部 MCP 服务接入（经我们的服务转发，统一把关） | Claude | 待开始（依赖 T2、T11） | 待写 |
 | T4 | 应用内确认气泡真机走查（工作区外写、删除、命令） | Claude + 用户 | 待开始 | 需要用户在场点击 |
-| T5 | P8 出图：鲸娘、Claude 少女、ChatGPT 白龙分层素材 | Codex | 待开始 | 计划书 §4.5 |
-| T6 | P8 代码：`rig_studio`、形象包格式与加载，替换借用的大肥鱼 | Claude | 待开始（与 T5 并行） | 待写 |
+| T5 | P8 出图：鲸娘、Claude 少女、ChatGPT 白龙分层素材 | Codex | 待开始 | 按 `docs/tasks/T6-rig-studio.md` 的图层规格出图 |
+| T6 | P8 代码：`rig_studio`、形象包格式与加载，替换借用的大肥鱼 | Claude | 进行中 | `docs/tasks/T6-rig-studio.md`（先定规格，供 T5 出图遵循） |
 | T7 | 内存优化（目标 ≤ 350 MB） | 待定 | 待开始 | `tools/measure_pet.ps1` |
 | T8 | P4 外放场景验收、连续 10 分钟对话 | 用户 + 待定 | 待开始 | |
 | T9 | P7 QQ / B站 | — | 最后再做 | |

@@ -19,7 +19,7 @@ P7（QQ / B站）最后再做。任务清单见 `docs/tasks.md`，每个任务�
 
 ## 工作方式
 
-- 一个任务一个分支：`claude/<主题>` 或 `codex/<主题>`，从最新的 `collaboration-baseline`（以后是 main）拉出。
+- 一个任务一个分支，按任务命名：`task/<任务编号>-<主题>`（例如 `task/t2-mcp-sdk`、`task/t6-rig-studio`），不用 agent 名字做前缀；从最新的 `collaboration-baseline`（以后是 main）拉出。负责方写在 `docs/tasks.md` 里。
 - 改动通过 PR 合入；另一方审查，用户最后合并。**不直接推送到主分支，不 force push 别人的分支。**
 - PR 描述写清：做了什么、改了哪些文件、怎么验证的（贴命令和结果）、还有什么没验证。
 - 开工前在 `docs/tasks.md` 把任务标成"进行中 + 负责方"，避免两边做同一件事。
