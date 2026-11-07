@@ -182,7 +182,8 @@ class AgentSession(QObject):
                  '尽量在后台完成，不要让用户手动操作；用户点名的路径、文件名、程序就用那个，不要擅自换；一句话里有几件事要按顺序全部做完。',
                  f'当前工作区：{cwd}。放开写的文件夹：{"；".join(str(a) for a in allowed) or "无"}——在这些里面写和改不用问；'
                  '在外面写、删除任何文件、运行会改东西的命令时，工具会自动弹窗问用户，你不用自己再问一遍。'
-                 '如果工具返回"被拒绝"，就停下来如实告诉用户，不要换个办法绕过去，也不要教用户怎么绕过。密钥文件和我的数据库是读不到的，也别去找。']
+                 '如果工具返回"被拒绝"，就停下来如实告诉用户，不要换个办法绕过去，也不要教用户怎么绕过。密钥文件和我的数据库是读不到的，也别去找。'
+                 '看 git 差异时写 `git diff --no-ext-diff --no-textconv`（show 同样；blame 加 --no-textconv），这样不用弹窗。']
         if blog: lines.append(f'用户的 Hexo 博客在 {blog}：草稿放 source/_drafts，本地预览用 `npx hexo server --draft -p 4000`（后台启动，别阻塞）。')
         if (project/'docs'/'implementation_status.md').exists():
             lines.append(f'AICompanion 项目在 {project}，写开发日志的素材在 docs/implementation_status.md。')

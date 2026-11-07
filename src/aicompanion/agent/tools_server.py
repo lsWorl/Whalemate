@@ -43,7 +43,16 @@ READ_ONLY = {
     'write-output', 'echo', 'write-host', 'compare-object', 'get-unique', 'tree', 'findstr', 'where.exe', 'systeminfo',
     'python --version', 'python -v', 'node --version', 'node -v', 'npm --version', 'git --version',
 }
-READ_ONLY_GIT = {'status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'blame'}
+READ_ONLY_GIT = {'status', 'rev-parse', 'ls-files'}
+# 会显示差异的子命令：仓库配置里的 diff.external / textconv 会让它们启动外部程序，所以只有明确带上关闭开关时才算只读
+GIT_DIFFING = {'diff': ('--no-ext-diff', '--no-textconv'), 'show': ('--no-ext-diff', '--no-textconv'), 'blame': ('--no-textconv',)}
+# git log 只认不显示差异的选项（-p、--stat、-G/-S 等会走 diff 驱动，不在名单里就当作会改东西）
+GIT_LOG_FLAGS = re.compile(r'(?i)^(--oneline|--graph|--decorate(=\w+)?|--no-decorate|--all|--reverse|--first-parent|--no-merges|--merges|'
+                           r'--name-only|--name-status|--abbrev-commit|--date=[\w-]+|-n|-\d+|--max-count=\d+|--skip=\d+|'
+                           r'--(format|pretty|since|until|after|before|author|committer|grep)=.*|--)$')
+# 每条命令运行时都带上的 git 覆盖：关掉文件系统监视钩子、签名校验、分页程序（这些都会执行仓库配置里写的程序，且 status / log 本身就会触发）。
+# diff.external 不在这里覆盖（置空会让用户同意过的 git diff 报错）；只读判断要求 diff / show 带 --no-ext-diff --no-textconv。
+GIT_SAFE_CONFIG = (('core.fsmonitor', 'false'), ('log.showSignature', 'false'), ('core.pager', 'cat'))
 READ_ONLY_GIT_LIST = {'branch': {'-a', '-r', '-v', '-vv', '--list', '--all', '--remotes', '--show-current'}, 'remote': {'-v', '--verbose'}}
 # 会改东西的命令名：出现在命令里的任何位置（包括被藏在字符串、脚本块里）都不算只读。
 # 前后不能紧挨字母、连字符、点、路径分隔符，避免 Format-Table、D:\\del\\ 这类误判。
@@ -82,7 +91,11 @@ def is_read_only_command(command: str) -> bool:
     for method in re.findall(r'(?:\.|::)(\w+)\s*\(', text):
         if method.lower() not in SAFE_METHODS: return False
     for part in _segments(text):
-        if re.match(r'^\$[\w:.]+\s*=[^=]', part): part = part.split('=', 1)[1].strip()   # $x = ...：看等号右边
+        assign = re.match(r'^\$\{?([\w:.]+)\}?\s*[-+*/]?=[^=]', part)
+        if assign:
+            if ':' in assign.group(1) and not assign.group(1).lower().startswith(('script:', 'local:', 'global:', 'private:')):
+                return False   # $env:X = …、$function:… 这类是写环境变量 / 提供程序，不是普通变量（会改变后面命令的行为）
+            part = part.split('=', 1)[1].strip()   # $x = ...：看等号右边
         words = part.split()
         invoked = bool(words) and (words[0] in ('&', '.') or (words[0][:1] in '&.' and len(words[0]) > 1 and words[0][1] in '$"\'('))
         while words and words[0] in ('&', '.', '('): words = words[1:]   # & 命令 / . 脚本 都按后面的命令算
@@ -93,14 +106,29 @@ def is_read_only_command(command: str) -> bool:
             continue   # 变量、字面量、表达式、比较、流程控制（括号里的内容已经单独检查过）
         head = re.split(r'[()]', raw)[0].lower()
         words = [head] + words[1:]
-        if head == 'git' and len(words) > 1:
-            sub, rest = words[1].lower(), [w.lower() for w in words[2:]]
+        if head in ('git', 'git.exe') and len(words) > 1:
+            sub, rest = words[1].lower(), [w.lower().strip('"\'') for w in words[2:]]
+            # git -c / --config-env / --exec-path 等全局选项能改配置或换执行程序：不算只读
+            if sub.startswith('-'): return False
+            if any(w.startswith(('--ext-diff', '--textconv', '--output', '--exec', '--upload-pack', '--receive-pack', '--config')) for w in rest): return False
             if sub in READ_ONLY_GIT: continue
+            if sub in GIT_DIFFING and all(flag in rest for flag in GIT_DIFFING[sub]): continue
+            if sub == 'log' and all(not w.startswith('-') or GIT_LOG_FLAGS.match(w) for w in rest) and '%G' not in part: continue   # %G? 等占位符会调用签名程序
             if sub in READ_ONLY_GIT_LIST and all(w in READ_ONLY_GIT_LIST[sub] for w in rest): continue   # git branch -D、git remote add 不算
             return False
         if ' '.join(w.lower() for w in words[:2]) in READ_ONLY or head in READ_ONLY: continue
         return False
     return True
+
+
+def git_safe_env(env: dict) -> dict:
+    """git 的命令行级配置覆盖（GIT_CONFIG_COUNT/KEY/VALUE，优先级高于仓库配置），并清掉会指定外部程序的环境变量。"""
+    for key in [k for k in env if k.upper() in ('GIT_EXTERNAL_DIFF', 'GIT_PAGER', 'GIT_SSH_COMMAND', 'GIT_CONFIG_PARAMETERS')]: env.pop(key)
+    base = int(env.get('GIT_CONFIG_COUNT') or 0) if str(env.get('GIT_CONFIG_COUNT') or '0').isdigit() else 0
+    out = {'GIT_CONFIG_COUNT': str(base+len(GIT_SAFE_CONFIG))}
+    for i, (key, value) in enumerate(GIT_SAFE_CONFIG, base):
+        out[f'GIT_CONFIG_KEY_{i}'] = key; out[f'GIT_CONFIG_VALUE_{i}'] = value
+    return out
 
 
 def _norm(path: str | Path) -> Path:
@@ -236,6 +264,11 @@ class ToolBox:
     def _check_write(self, record, path: Path, action: str):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能改（{reason}）')
+        if any(part.lower() == '.git' for part in path.parts):
+            # .git 里的配置和钩子能让之后的 git 命令（包括只读的 status / diff）执行任意程序：放开的文件夹里也要问，且不记住
+            self._ask(record, 'write', f'要{action}，位置在 Git 仓库的内部目录里：\n{path}',
+                      '.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
+            return
         if self._allowed(path): return
         folder = path if path.is_dir() else path.parent
         self._ask(record, 'write', f'要在放开的文件夹外{action}：\n{path}',
@@ -340,8 +373,9 @@ class ToolBox:
         # 源和目标分别检查：她这次自己建的文件可以在放开的文件夹里随便挪，但挪到外面一样要问
         source_ok = self._allowed(src) or str(src).lower() in self.current.created
         target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
+        if any(part.lower() == '.git' for p in (src, dst) for part in p.parts): source_ok = target_ok = False   # 挪进 / 挪出 .git 都要问
         if not (source_ok and target_ok):
-            where = [] if source_ok else ['原位置在放开的文件夹外']
+            where = [] if source_ok else ['原位置在放开的文件夹外或 .git 里']
             if not target_ok: where.append('目标在放开的文件夹外')
             self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '，'.join(where)+'。移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
         backup = self._backup(src)
@@ -387,6 +421,7 @@ class ToolBox:
         env = sandbox.child_env(os.environ.copy()) if sandbox.IS_WINDOWS else os.environ.copy()
         for key in [k for k in env if k.upper().endswith('_API_KEY') or k.upper() in ('QWEN_API_KEY', 'SPEECH_API_KEY')]:
             env.pop(key, None)   # 命令里拿不到你的密钥
+        env.update(git_safe_env(env))
         exe = os.path.join(os.getenv('SystemRoot', r'C:\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
         script = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference="SilentlyContinue"; '+command
         args = [exe, '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script]
@@ -412,6 +447,9 @@ class ToolBox:
                 self._kill_tree(proc); break
             time.sleep(0.1)
         for r in readers: r.join(timeout=2)
+        for stream in (proc.stdout, proc.stderr):
+            try: stream.close()
+            except OSError: pass
         if stopped: return stopped
         out = b''.join(out_parts).decode('utf-8', 'replace'); err = b''.join(err_parts).decode('utf-8', 'replace')
         text = out+(('\n[stderr]\n'+err) if err.strip() else '')+f'\n[退出码 {proc.returncode}]'

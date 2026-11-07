@@ -191,6 +191,7 @@ class ToolBoxTest(unittest.TestCase):
     def test_commands(self):
         self.assertTrue(is_read_only_command('Get-ChildItem D:\\x | Measure-Object'))
         self.assertTrue(is_read_only_command('git status; git log -3'))
+        self.assertFalse(is_read_only_command('git status; git log -3 -p'))
         self.assertFalse(is_read_only_command('Remove-Item D:\\x -Recurse'))
         self.assertFalse(is_read_only_command('Get-ChildItem > out.txt'))
         self.assertFalse(is_read_only_command('npm install'))
@@ -218,11 +219,54 @@ class ToolBoxTest(unittest.TestCase):
 
     def test_read_only_bypasses(self):
         for command in ('& $c x', "$c='Remove-Item'; & $c a", '.("Remove-Item") x', "& 'Remove-Item' x", "iex 'rm x'",
-                        'git branch -D old', 'git remote add o u', 'git diff --output=x.txt', 'Get-Content a | Tee-Object b',
+                        'git branch -D old', 'git remote add o u', 'git diff --no-ext-diff --no-textconv --output=x.txt', 'Get-Content a | Tee-Object b',
                         'npx hexo server', 'Start-Process notepad', 'mkdir x'):
             self.assertFalse(is_read_only_command(command), command)
         for command in ('Get-ChildItem | Format-Table Name', 'Get-ChildItem D:\\del\\x', 'git branch -a', 'git remote -v', '& Get-Date'):
             self.assertTrue(is_read_only_command(command), command)
+
+    def test_git_external_programs_need_approval(self):
+        """Codex 复现的绕过：设环境变量 GIT_EXTERNAL_DIFF 后 git diff --ext-diff 被当作只读执行。"""
+        for command in ("$env:GIT_EXTERNAL_DIFF = 'python probe.py'; git diff --no-index --ext-diff a.txt b.txt",
+                        "${env:GIT_EXTERNAL_DIFF}='x'; git status", 'git diff a.txt', 'git show HEAD', 'git log -p', 'git log --stat',
+                        'git log -S secret', 'git blame a.txt', 'git -c core.pager=evil status', 'git --exec-path=x status',
+                        'git diff --no-ext-diff --no-textconv --ext-diff a b', 'git log --format=%G?', '$function:x = {1}'):
+            self.assertFalse(is_read_only_command(command), command)
+        for command in ('git diff --no-ext-diff --no-textconv a.txt', 'git show --no-ext-diff --no-textconv HEAD --stat',
+                        'git log --oneline -5', 'git log --format=%h%x09%s --since=2026-01-01', 'git blame --no-textconv a.txt',
+                        "$x = 'a'; git status", "$script:n = 1; git ls-files"):
+            self.assertTrue(is_read_only_command(command), command)
+        ran = []
+        box = ToolBox(trash=Path(self.tmp.name)/'trash', run_command=lambda command, folder: ran.append(command) or 'ran')
+        box.approve = lambda kind, title, detail: (self.asked.append(kind), 'no')[1]
+        box.task = Task(run_id=8, allowed=[self.inside.resolve()])
+        repro = "$env:GIT_EXTERNAL_DIFF = 'python probe.py'; git diff --no-index --ext-diff a.txt b.txt"
+        text, error = box.call('run_powershell', {'command': repro, 'cwd': str(self.inside)})
+        self.assertTrue(error); self.assertEqual(self.asked, ['command']); self.assertEqual(ran, [])   # 拒绝后根本没运行
+
+    def test_git_safe_env_blocks_repo_configured_programs(self):
+        """仓库配置里的 fsmonitor 会让 git status 执行程序：运行环境里的覆盖要关掉它；外部 diff 环境变量被清掉。"""
+        import os, shutil, subprocess, sys
+        from aicompanion.agent.tools_server import git_safe_env
+        if not shutil.which('git'): self.skipTest('没有 git')
+        repo = self.inside/'repo'; repo.mkdir(); marker = self.inside/'marker.txt'
+        probe = self.inside/'probe.py'; probe.write_text(f'open({str(marker)!r}, "w").write("x")\n')
+        run = lambda *a, env=None: subprocess.run(['git', *a], cwd=repo, env=env, capture_output=True, text=True)
+        run('init', '-q'); (repo/'f.txt').write_text('a')
+        run('config', 'core.fsmonitor', f'"{sys.executable}" "{probe}"')
+        env = dict(os.environ, GIT_EXTERNAL_DIFF=f'"{sys.executable}" "{probe}"'); env.update(git_safe_env(env))
+        self.assertNotIn('GIT_EXTERNAL_DIFF', env)
+        self.assertEqual(run('status', '--short', env=env).returncode, 0)
+        self.assertFalse(marker.exists())
+
+    def test_git_internals_are_not_free_to_write(self):
+        config = self.inside/'.git'/'config'
+        self.assertTrue(self.call('write_file', path=str(config), content='[core]\nfsmonitor = evil')[1])
+        self.assertEqual(self.asked, ['write']); self.assertFalse(config.exists())
+        hook = self.inside/'mine.txt'; self.call('write_file', path=str(hook), content='x')
+        self.assertTrue(self.call('move_path', source=str(hook), destination=str(self.inside/'.git'/'hooks'/'pre-commit'))[1])
+        self.assertEqual(self.asked, ['write', 'move'])
+        self.assertFalse(self.call('write_file', path=str(self.inside/'.gitignore'), content='x')[1])   # .gitignore 不受影响
 
     def test_stop_kills_running_command(self):
         import sys, time
@@ -286,7 +330,7 @@ class ToolBoxTest(unittest.TestCase):
         try: os.kill(child, 0); alive = True
         except OSError: alive = False
         if alive:   # 可能是僵尸进程：看状态
-            alive = 'Z' not in open(f'/proc/{child}/stat').read().split()[2] if os.path.exists(f'/proc/{child}/stat') else False
+            alive = 'Z' not in Path(f'/proc/{child}/stat').read_text().split()[2] if os.path.exists(f'/proc/{child}/stat') else False
         self.assertFalse(alive)
 
     def test_cancelled_task_refuses(self):
