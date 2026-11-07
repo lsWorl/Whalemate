@@ -32,7 +32,7 @@
       "iris and highlight clipping",
       "原画布到运行时画布的坐标变换"
     ],
-    "status": "needs-revision-to-preserve-approved-original-poses"
+    "status": "historical-single-pose-spec-deferred"
   },
   "credits": {
     "role": "原创原画参考",
@@ -118,6 +118,16 @@
       "chatgpt-dragon"
     ],
     "deterministic_pillow_processing_authorized": true,
-    "delivery_status": "待与 T6 确认原姿态接入契约；完整图层尚未提交"
+    "delivery_status": "待与 T6 确认原姿态接入契约；完整图层尚未提交",
+    "contract_pull_request": "https://github.com/lsWorl/AICompanion/pull/2",
+    "contract_revision": "8f732d638a5b506ae2741c53a34fe2ea8bba1e2c",
+    "contract_status": "十姿态方案已由双方确认",
+    "target_format": "AICompanionPosePack",
+    "target_version": 1,
+    "source_canvas": [
+      1254,
+      1254
+    ],
+    "official_logos_allowed": true
   }
 }
