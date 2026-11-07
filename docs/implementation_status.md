@@ -374,3 +374,13 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 删除：`build/`、`dist/`（10 月的 v1 打包，含一份私人 .env 副本；需要时用 `tools/build_windows.py` 重新打包）、`bundle-smoke/`、旧自研 agent 代码和实验探针、各类检查日志与测试残留、素材目录里重复的两个 zip、v1 一次性脚本（configure_emilia / configure_emilia_animation / configure_asr / clone_actor_voice）、被替代的 run_p4_checks / run_v2_checks；代码里没人调用的函数（旧情绪规则、旧撤销接口等）。
 - 检查脚本：`tools/run_checks.bat`（单元测试 + 桌宠自检，不联网）；`tools/run_agent_checks.bat`（再加真实模型的干活实测）。
 - 验证：Windows 本机单元测试 187 项通过（新增 `tests/test_housekeeping.py`）；桌宠自检通过（新增 `housekeep_ok`）。
+
+### T2 官方 MCP 协议适配（2026-11-07，待互审）
+
+- 新增 `agent/mcp_server.py`，使用官方 `mcp==2.3.0` 的 `MCPServer` 注册现有 10 个工具；`ToolBox` 的授权规则、回收区和执行实现保持不变，旧手写 `ToolServer` 已删除。T11 的命令安全修复仍由独立 PR 维护。
+- 本机回环 Streamable HTTP、随机 Bearer 令牌、Host/Origin 检查、SDK 输入校验和 `is_error` 工具失败结果；支持 `2025-03-26` / `2025-06-18` / `2025-11-25` 旧协议与 `2026-07-28` 新协议。审批阻塞时另一个只读请求可以返回。
+- 协议服务在后台按需启动；未安装 Agent 可选依赖时，基础聊天和桌宠仍可加载。第一次实际干活时在工作线程启动服务。关闭服务会等待 HTTP 线程退出；等待 UI 确认的工具会响应原任务的取消事件。
+- `requirements-agent-lock.txt` 锁定 Agent 的 31 个分发包，基础三项依赖仍沿用 `requirements-lock.txt`。`setup_dsh.bat` 使用该锁文件；其真实模型验收行为保留，README 已注明只安装依赖的独立命令。
+- 验证：194 项离线单元测试全部通过；Qt 桌宠自检 `passed=true`、`tools_listed=10`、`env_blocked=true`、`tools_gate=true`、退出剩余工作线程 0；`pip check` 通过。自检不再清理用户真正的回收区，也不加载私人面板背景。
+- 性能：`tools/measure_pet.ps1` 本轮空闲预览总工作集 452.2 MB、私有内存 360.0 MB、整机 CPU 1.4%（20 逻辑核，采样 10 秒）；历史记录约 440 MB 不是本轮受控前后对照，不能据此归因差值。独立 MCP 进程测量：加载 SDK 前 27.2 MB → 服务启动后 75.1 MB → 官方客户端调用后 78.0 MB，关闭后 77.8 MB（模块仍驻留）。桌宠尚未达到 350 MB 目标，继续由 T7 优化；延迟加载可避免未使用干活时的 SDK 常驻开销。
+- 未验证：真实 DSH/模型的六个收费场景、真实点击确认气泡、Windows 打包后 MCP 运行。真实验收脚本会读取本机 `.env`，本轮按协作规则未执行，也没有把模拟结果标成真实接口验收。报告和截图位于忽略的 `output/t2-check/` 与 `docs/pet-v2/smoke/`。

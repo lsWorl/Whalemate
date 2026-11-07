@@ -40,6 +40,17 @@ cancellation and the Android client are not implemented; use headphones for call
 
 By default, the app uses `LLM_PROVIDER=mock`, so it can run without an API key.
 
+“干活”功能的可复现安装（DeepSeek Harness 与官方 MCP SDK）：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[agent]"
+```
+
+MCP 服务仅在干活或协议自检时启动，使用本机回环 HTTP 和进程级随机令牌。
+基础聊天与桌宠不要求安装 Agent 可选依赖。`tools/setup_dsh.bat` 除安装外
+还会运行真实模型验收并产生用量；仅安装依赖时使用上面的命令。
+
 To use a real model API, copy `.env.example` to `.env` and set:
 
 ```env

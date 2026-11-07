@@ -15,7 +15,8 @@ import time
 import traceback
 
 from aicompanion.agent.dsh_backend import DshAgent, problem
-from aicompanion.agent.tools_server import Task, ToolBox, ToolServer
+from aicompanion.agent.tools_server import Task, ToolBox
+from aicompanion.agent.mcp_server import McpToolServer
 from aicompanion.config import load_settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,7 +57,7 @@ def main():
     answers = []; asked = []; calls = []
     box.approve = lambda kind, title, detail: (asked.append({'kind': kind, 'title': title}), answers.pop(0) if answers else 'no')[1]
     box.on_call = lambda record: (calls.append(record), log('  工具', record['tool'], record['decision'], (record['error'] or record['result'])[:120]))
-    server = ToolServer(box)
+    server = McpToolServer(box)
     agent = DshAgent(); agent.mcp_servers = [server.acp_entry()]
 
     def case(name, goal, answer=(), stop_after=None, **checks):

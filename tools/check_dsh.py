@@ -6,7 +6,8 @@ import tempfile
 import time
 
 from aicompanion.agent.dsh_backend import DshAgent, problem
-from aicompanion.agent.tools_server import Task, ToolBox, ToolServer
+from aicompanion.agent.tools_server import Task, ToolBox
+from aicompanion.agent.mcp_server import McpToolServer
 from aicompanion.config import load_settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +23,7 @@ def main():
         (workspace/'a.txt').write_text('hello', encoding='utf-8'); (workspace/'b.md').write_text('# hi', encoding='utf-8')
         box = ToolBox(secrets=[ROOT/'.env', settings.database_path]); asked = []
         box.approve = lambda kind, title, detail: (asked.append(title), 'no')[1]
-        box.task = Task(run_id=0, allowed=[workspace]); server = ToolServer(box)
+        box.task = Task(run_id=0, allowed=[workspace]); server = McpToolServer(box)
         agent = DshAgent(); agent.mcp_servers = [server.acp_entry()]
         start = time.monotonic()
         result = agent.run(f'你是鲸娘，回复用一两句俏皮的中文口语。用 aicompanion 的工具做事。当前工作区：{workspace}。'

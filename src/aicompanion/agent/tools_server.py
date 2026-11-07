@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import fnmatch
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import json
 import os
 from pathlib import Path, PureWindowsPath
 import re
@@ -377,59 +375,3 @@ class ToolBox:
         out = (done.stdout or b'').decode('utf-8', 'replace'); err = (done.stderr or b'').decode('utf-8', 'replace')
         text = out+(('\n[stderr]\n'+err) if err.strip() else '')+f'\n[退出码 {done.returncode}]'
         return text[-OUTPUT_LIMIT:] if len(text) > OUTPUT_LIMIT else text
-
-
-class ToolServer:
-    """MCP（Streamable HTTP，只回 JSON）服务，只监听 127.0.0.1，带一次性令牌。"""
-
-    def __init__(self, box: ToolBox):
-        self.box = box; self.token = os.urandom(16).hex()
-        server = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *a): pass
-
-            def do_GET(self):
-                self.send_response(405); self.end_headers()
-
-            def do_POST(self):
-                if self.headers.get('Authorization') != f'Bearer {server.token}':
-                    self.send_response(401); self.end_headers(); return
-                try: body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
-                except ValueError: body = {}
-                if 'id' not in body:
-                    self.send_response(202); self.end_headers(); return
-                reply = server.handle(body)
-                data = json.dumps(reply, ensure_ascii=False).encode('utf-8')
-                self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(data)))
-                self.end_headers(); self.wfile.write(data)
-
-        self.httpd = ThreadingHTTPServer(('127.0.0.1', 0), Handler); self.httpd.daemon_threads = True
-        threading.Thread(target=self.httpd.serve_forever, daemon=True, name='aicompanion-tools').start()
-
-    @property
-    def url(self) -> str:
-        return f'http://127.0.0.1:{self.httpd.server_address[1]}/mcp'
-
-    def acp_entry(self) -> dict:
-        return {'type': 'http', 'name': 'aicompanion', 'url': self.url, 'headers': [{'name': 'Authorization', 'value': f'Bearer {self.token}'}]}
-
-    def handle(self, body: dict) -> dict:
-        method = body.get('method'); params = body.get('params') or {}; rid = body.get('id')
-        if method == 'initialize':
-            result = {'protocolVersion': params.get('protocolVersion') or '2025-03-26', 'capabilities': {'tools': {}},
-                      'serverInfo': {'name': 'aicompanion', 'version': '1'}}
-        elif method == 'tools/list':
-            result = {'tools': ToolBox.TOOLS}
-        elif method == 'tools/call':
-            text, error = self.box.call(params.get('name', ''), params.get('arguments') or {})
-            result = {'content': [{'type': 'text', 'text': text}], 'isError': error}
-        elif method == 'ping':
-            result = {}
-        else:
-            return {'jsonrpc': '2.0', 'id': rid, 'error': {'code': -32601, 'message': f'unsupported: {method}'}}
-        return {'jsonrpc': '2.0', 'id': rid, 'result': result}
-
-    def close(self):
-        try: self.httpd.shutdown(); self.httpd.server_close()
-        except Exception: pass

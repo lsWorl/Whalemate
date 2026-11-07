@@ -35,6 +35,9 @@ def main():
         controller = ChatController(database, MemoryService(database), MockLLMClient())
         controller.character = registry.active()
         window = MainWindow(controller, settings, registry)
+        # 临时验收/预览不能清理用户真正的回收区和 DSH 会话。
+        from aicompanion.agent.housekeeping import Report
+        window.agent.housekeep = Report
         window.pet.show()
         if args.preview:
             # 预览：角色常驻 90 秒，可以亲手戳、拖、双击输入、右键菜单。

@@ -8,7 +8,8 @@ import unittest
 
 from aicompanion.agent import dsh_backend
 from aicompanion.agent.dsh_backend import DshAgent, pick_workspace
-from aicompanion.agent.tools_server import Task, ToolBox, ToolServer, is_read_only_command
+from aicompanion.agent.tools_server import Task, ToolBox, is_read_only_command
+from aicompanion.agent.mcp_server import McpToolServer, tool_client
 
 
 class FakeRuntime:
@@ -210,18 +211,25 @@ class ToolBoxTest(unittest.TestCase):
         self.assertTrue(self.call('list_dir', path=str(self.inside))[1])
 
     def test_mcp_server_round_trip(self):
-        server = ToolServer(self.box)
-        import urllib.request
-        def post(body, token=server.token):
-            request = urllib.request.Request(server.url, data=json.dumps(body).encode(), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'})
-            return json.loads(urllib.request.urlopen(request, timeout=5).read())
+        import asyncio
+        server = McpToolServer(self.box)
+        async def check():
+            async with tool_client(server, mode='legacy') as client:
+                self.assertEqual(client.server_info.name, 'aicompanion')
+                self.assertEqual(len((await client.list_tools()).tools), 10)
+                (self.inside/'r.txt').write_text('hello')
+                reply = await client.call_tool('read_file', {'path': str(self.inside/'r.txt')})
+                self.assertFalse(reply.is_error)
+                self.assertIn('hello', reply.content[0].text)
+            token, server.token = server.token, 'wrong'
+            try:
+                with self.assertRaises(Exception):
+                    async with tool_client(server):
+                        pass
+            finally:
+                server.token = token
         try:
-            self.assertEqual(post({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26'}})['result']['serverInfo']['name'], 'aicompanion')
-            self.assertGreaterEqual(len(post({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})['result']['tools']), 8)
-            (self.inside/'r.txt').write_text('hello')
-            reply = post({'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'read_file', 'arguments': {'path': str(self.inside/'r.txt')}}})
-            self.assertIn('hello', reply['result']['content'][0]['text'])
-            with self.assertRaises(Exception): post({'jsonrpc': '2.0', 'id': 4, 'method': 'tools/list'}, token='wrong')
+            asyncio.run(check())
         finally:
             server.close()
 
