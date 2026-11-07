@@ -1,0 +1,15 @@
+{
+  "Format": "AICompanionAnimatedIllustration",
+  "Version": 1,
+  "Canvas": [1024, 1536],
+  "Textures": {
+    "Base": "emilia-fanart.png",
+    "Blink": "emilia-blink.png",
+    "Talk": "emilia-talk.png"
+  },
+  "Patches": {
+    "Eyes": [518, 193, 68, 22],
+    "Mouth": [522, 239, 25, 15]
+  },
+  "Engine": "pixi-mesh-not-cubism"
+}

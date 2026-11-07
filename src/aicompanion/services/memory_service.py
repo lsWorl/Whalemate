@@ -13,14 +13,13 @@ class MemoryService:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def build_memory_context(self, query="", character_id="emilia") -> str:
-        memories = self.database.recent_memories(character_id=character_id)
-        grams = {query[i:i+2] for i in range(len(query)-1)}
-        def score(row):
-            matches = sum(gram in row['content'] for gram in grams)
-            return matches * 4 + row['importance'] + row['confidence']
-        selected = sorted(memories, key=score, reverse=True)[:8]
-        return "\n".join(f"- {row['content']}" for row in selected) or "暂无已确认的长期记忆。"
+    def build_memory_context(self, query="", character_id="emilia", scene="pet") -> str:
+        """按相关性、重要度和清晰度挑记忆；模糊的会标出来；和这句话相关而被用上的记忆清晰度回升。"""
+        from aicompanion.brain.memory_card import render, select_for_prompt
+        selected = select_for_prompt(self.database.memory_card(character_id), query, 8, scene)
+        recalled = [row['id'] for row, _, matched in selected if matched]
+        if recalled: self.database.touch_memories(recalled)
+        return render(selected)
 
     def maybe_extract_memory(self, user_message: str, character_id="emilia", source_id=None) -> None:
         # 离线规则仅识别明确稳定信息，否定、假设和过去偏好交给模型分析。
@@ -52,14 +51,16 @@ class MemoryService:
         existing = [dict(r) for r in self.database.recent_memories(character_id=character_id)]
         instruction = (
             '仅提取用户明确表达的稳定事实、偏好、重要经历和关系事件。不要将假设、否定或角色猜测当事实。'
-            '输出 JSON {"memories":[{"content":"摘要","fact_key":"稳定语义键",'
+            '输出 JSON {"summary":"延续此前摘要的简短中文对话摘要，不编造事实", "memories":[{"content":"摘要","fact_key":"稳定语义键",'
             '"category":"identity|preference|event|relationship","importance":2,"confidence":0.9,"source_ids":[消息ID]}]}。'
             '使用已有相同事实键更新更正后的事实；无新事实返回空数组。不要输出 Markdown。'
         )
-        context = json.dumps({"messages": [{"id":r['id'],"content":r['content']} for r in users],
+        context = json.dumps({"previous_summary":self.database.load_summary(character_id),"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
                               "existing": [{"content":r['content'],"fact_key":r['fact_key']} for r in existing]}, ensure_ascii=False)
         # 使用可取消流式调用，即使这里仅需要完整结构化结果。
-        raw = ''.join(client.generate_reply_stream([ChatTurn("user", context)], instruction, cancellation))
+        from aicompanion.usage.meter import using
+        with using('memory', character_id):
+            raw = ''.join(client.generate_reply_stream([ChatTurn("user", context)], instruction, cancellation))
         cancellation.check()
         raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         data = json.loads(raw)
@@ -88,4 +89,6 @@ class MemoryService:
                 continue
             self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources)
         self.database.set_setting(marker,last_id)
+        summary=data.get('summary')
+        if isinstance(summary,str): self.database.save_summary(character_id,summary,last_id)
 

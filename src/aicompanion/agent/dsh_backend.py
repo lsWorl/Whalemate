@@ -1,0 +1,310 @@
+"""干活交给 DeepSeek Harness（DSH）负责"想"，真正动手的工具由我们自己执行（tools_server.py）。
+
+为什么这样分：DSH 0.2.1rc2 在 Windows 上没有可用的沙箱和审批通道，exFAT 盘更是没有任何权限控制（实测它能直接写工作区外、
+直接永久删除）。所以照 Claude Code / Codex 的做法，在执行前把关：
+
+- 运行时：pip 包 deepseek-harness-sdk 自带的 dsh 运行时，用 ACP 模式（Agent Client Protocol，Zed 等编辑器用的协议）
+  在后台子进程里跑，以 Windows 低完整性级别启动；
+- 工具：补丁关掉 DSH 自带的写文件、PowerShell、bash、搜文件、后台任务、代码工作流；读写文件和命令改由本进程的
+  MCP 服务提供，每一步按规则放行或弹确认气泡（见 tools_server.py）。网页搜索 / 读取、分身、待办这些不碰本机的工具保留；
+- 停止：ACP 的 session/cancel，真正的中断；兜底再关进程；
+- 用量：会话结束后读 DSH 的会话投影缓存里的 tokenUsage（未缓存输入、缓存命中、输出）；
+- 隐私：关闭"随请求上传会话日志"和遥测；命令子进程里去掉各类 *_API_KEY。
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import json
+import os
+from pathlib import Path
+import queue
+import subprocess
+import threading
+import time
+from typing import Callable
+
+from aicompanion.agent.paths import protected_reason, task_folders
+
+DEFAULT_MODEL = 'deepseek-v4-flash'
+MCP_PREFIX = 'mcp__aicompanion__'
+DISABLED_ROWS = ('tool-pwsh', 'tool-bash', 'persistent-pwsh', 'persistent-bash', 'tool-fs', 'tool-fs-search', 'tool-jobs',
+                 'tool-workflow', 'ptc-runtime')
+PATCH = ("# AICompanion：不随请求上传会话日志；关掉自带的改文件 / 命令行 / 搜文件工具（改用 AICompanion 的 MCP 工具，执行前把关）\n"
+         "- id: session-log-deepseek\n  config:\n    enabled: false\n"
+         + ''.join(f'- id: {row}\n  disabled: true\n' for row in DISABLED_ROWS))
+PROMPT_TIMEOUT = 30*60
+
+
+def dsh_home() -> Path:
+    """DSH 的数据目录，放在 LocalLow（低完整性进程能写的位置）。"""
+    from aicompanion.agent.sandbox import low_root
+    return low_root()/'dsh'
+
+
+def problem() -> str:
+    """运行时是否可用；空串表示可用。"""
+    try:
+        import importlib.util
+        if importlib.util.find_spec('deepseek_harness_runtime') is None:
+            return '还没有安装 DeepSeek Harness，请运行 tools\\setup_dsh.bat'
+    except (ImportError, ValueError):
+        return '还没有安装 DeepSeek Harness，请运行 tools\\setup_dsh.bat'
+    return ''
+
+
+def pick_workspace(goal: str, default: str) -> Path:
+    """任务里点名的第一个存在的文件夹；否则默认工作区；都不行就用户主目录。受保护的位置不当工作区。"""
+    for folder in task_folders(goal):
+        if folder.is_dir(): return folder
+        if folder.parent.is_dir() and not protected_reason(folder.parent): return folder.parent
+    path = Path(default).expanduser() if default else Path.home()
+    return path if path.is_dir() and not protected_reason(path.resolve()) else Path.home()
+
+
+def dsh_base_url(base_url: str) -> str | None:
+    """聊天用的是 OpenAI 兼容地址，DSH 走 Messages 接口：官方地址就交给 DSH 用默认值，自建代理原样传入。"""
+    from urllib.parse import urlparse
+    if not base_url: return None
+    host = (urlparse(base_url).hostname or '').lower()
+    if host == 'api.deepseek.com': return None
+    return base_url
+
+
+@dataclass
+class Usage:
+    prompt: int = 0
+    completion: int = 0
+    cached: int = 0
+
+    @property
+    def total(self) -> int: return self.prompt+self.completion
+
+
+@dataclass
+class DshResult:
+    status: str                 # done / failed / cancelled / limit
+    text: str
+    steps: list = field(default_factory=list)   # [(工具名, 一句话, 参数)]
+    usage: Usage = field(default_factory=Usage)
+    raw: str = ''               # 失败时的运行时输出（写进审计记录，方便排查）
+
+
+def tool_name(title: str) -> str:
+    return title[len(MCP_PREFIX):] if title.startswith(MCP_PREFIX) else title
+
+
+def describe_tool(name: str, data: dict) -> str:
+    """把工具调用变成一句话（审计和进度显示用）。"""
+    target = (data.get('command') or data.get('path') or data.get('source') or data.get('pattern') or data.get('url')
+              or data.get('query') or '')
+    return f'{name}：{str(target)[:120]}' if target else name
+
+
+class AcpConnection:
+    """和 dsh 运行时之间的 ACP（JSON-RPC，一行一条）连接。测试时可以换成假的 transport。"""
+
+    def __init__(self, proc):
+        self.proc = proc; self.lock = threading.Lock(); self.next_id = 0; self.waiters: dict = {}
+        self.listeners: list[Callable[[dict], None]] = []; self.requests: Callable[[dict], dict | None] = lambda m: None
+        self.stderr: list[str] = []
+        threading.Thread(target=self._read, daemon=True, name='dsh-acp-reader').start()
+        if getattr(proc, 'stderr', None) is not None:
+            threading.Thread(target=self._read_stderr, daemon=True, name='dsh-acp-stderr').start()
+
+    def _send(self, message: dict):
+        data = json.dumps(message, ensure_ascii=False)+'\n'
+        with self.lock:
+            self.proc.stdin.write(data); self.proc.stdin.flush()
+
+    def request(self, method: str, params: dict, timeout: float = 60):
+        with self.lock:
+            self.next_id += 1; rid = self.next_id; box = queue.Queue(); self.waiters[rid] = box
+        self._send({'jsonrpc': '2.0', 'id': rid, 'method': method, 'params': params})
+        try: reply = box.get(timeout=timeout)
+        except queue.Empty: raise TimeoutError(f'{method} 超时')
+        finally: self.waiters.pop(rid, None)
+        if isinstance(reply, BaseException): raise reply
+        if 'error' in reply: raise RuntimeError(f'{method}：{(reply["error"] or {}).get("message")}')
+        return reply.get('result') or {}
+
+    def notify(self, method: str, params: dict):
+        self._send({'jsonrpc': '2.0', 'method': method, 'params': params})
+
+    def _read(self):
+        try:
+            for line in self.proc.stdout:
+                try: message = json.loads(line)
+                except ValueError: continue
+                if 'id' in message and 'method' in message:
+                    try: result = self.requests(message)
+                    except Exception: result = None
+                    reply = {'jsonrpc': '2.0', 'id': message['id']}
+                    if result is None: reply['error'] = {'code': -32601, 'message': 'not supported'}
+                    else: reply['result'] = result
+                    self._send(reply)
+                elif 'id' in message:
+                    box = self.waiters.get(message['id'])
+                    if box: box.put(message)
+                else:
+                    for listener in list(self.listeners):
+                        try: listener(message)
+                        except Exception: pass
+        finally:
+            closed = ConnectionError('DSH 运行时退出了'+(('：'+'\n'.join(self.stderr[-5:])) if self.stderr else ''))
+            for box in list(self.waiters.values()): box.put(closed)
+
+    def _read_stderr(self):
+        for line in self.proc.stderr:
+            self.stderr.append(line.rstrip()); del self.stderr[:-200]
+
+    def close(self):
+        try: self.proc.stdin.close()
+        except Exception: pass
+        try:
+            self.proc.terminate(); self.proc.wait(timeout=3)
+        except Exception:
+            try: self.proc.kill()
+            except Exception: pass
+
+
+class DshAgent:
+    """一个 dsh 运行时（ACP），每个任务开一个新会话。所有方法都在后台线程调用。"""
+
+    def __init__(self, launcher: Callable[[dict], object] | None = None):
+        self.launcher = launcher        # 测试时换成假的进程
+        self.conn: AcpConnection | None = None; self.key = None; self.lock = threading.Lock()
+        self.mcp_servers: list[dict] = []   # tools_server.ToolServer.acp_entry()
+        self.session_id = None; self.stopping = False; self.done = threading.Event()
+
+    # ---- 运行时 -----------------------------------------------------------------
+    def _launch(self, api_key: str, base_url: str):
+        env = os.environ.copy()
+        home = dsh_home(); home.mkdir(parents=True, exist_ok=True)
+        patch = home/'aicompanion.patch.yml'; patch.write_text(PATCH, encoding='utf-8')
+        env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
+        if api_key: env['DEEPSEEK_API_KEY'] = api_key
+        if dsh_base_url(base_url): env['DEEPSEEK_BASE_URL'] = dsh_base_url(base_url)
+        if self.launcher: return self.launcher(env)
+        from aicompanion.agent import sandbox
+        from deepseek_harness_runtime import resolve_bundled_launch_args
+        env = sandbox.child_env(env)
+        args = [*resolve_bundled_launch_args(), '--profile', 'acp', '--patch', str(patch)]
+        def start():
+            # 运行时的当前目录固定在 C 盘数据目录：打包的虚拟路径按当前盘拼接，放 D 盘会找不到 koffi.node（实测）
+            return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8',
+                                    env=env, cwd=str(home), bufsize=1, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if sandbox.IS_WINDOWS:
+            with sandbox.low_integrity(): return start()   # 运行时和它的子进程都是低完整性
+        return start()
+
+    def _ensure(self, api_key: str, base_url: str) -> AcpConnection:
+        with self.lock:
+            key = (api_key, base_url)
+            if self.conn is not None and self.key == key and self.conn.proc.poll() is None: return self.conn
+            self._close_locked()
+            conn = AcpConnection(self._launch(api_key, base_url))
+            conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
+            self.conn, self.key = conn, key
+            return conn
+
+    def _close_locked(self):
+        conn, self.conn, self.key = self.conn, None, None
+        if conn is not None: conn.close()
+
+    def close(self):
+        with self.lock: self._close_locked()
+
+    def stop(self):
+        """停下当前任务：先发 session/cancel（DSH 会在当前一步结束后停），5 秒没停就关掉运行时。"""
+        self.stopping = True
+        conn, sid = self.conn, self.session_id
+        if conn and sid:
+            try: conn.notify('session/cancel', {'sessionId': sid})
+            except Exception: pass
+        def later():
+            if not self.done.wait(5): self.close()
+        threading.Thread(target=later, daemon=True, name='dsh-stop').start()
+
+    # ---- 用量 -----------------------------------------------------------------------
+    @staticmethod
+    def _usage(session_id: str) -> Usage | None:
+        """DSH 的会话投影缓存里有累计用量（一个任务一个会话，所以就是这次任务的用量）。"""
+        path = dsh_home()/'storages'/'session_projcache'/'sessions'/f'{session_id}.json'
+        for _ in range(4):
+            try:
+                totals = json.loads(path.read_text(encoding='utf-8'))['record']['rows']['tokenUsage']['val']['totals']
+                fresh, cache, out = int(totals.get('uncachedInputTokens') or 0), int(totals.get('cacheReadTokens') or 0), int(totals.get('outputTokens') or 0)
+                return Usage(fresh+cache, out, cache)
+            except (OSError, ValueError, KeyError, TypeError):
+                time.sleep(0.25)
+        return None
+
+    # ---- 跑一个任务 ----------------------------------------------------------------
+    def run(self, prompt: str, cwd: Path, model: str = DEFAULT_MODEL, api_key: str = '', base_url: str = '',
+            on_event: Callable[[str, dict], None] | None = None) -> DshResult:
+        on_event = on_event or (lambda kind, data: None)
+        self.stopping = False; self.done.clear(); self.session_id = None
+        steps: list = []; text: list[str] = []; context = {'used': [], 'chars': 0, 'final_from': 0}; calls: dict = {}
+
+        def listen(message):
+            params = message.get('params') or {}
+            if params.get('sessionId') != self.session_id: return
+            update = params.get('update') or {}; kind = update.get('sessionUpdate')
+            if kind == 'agent_message_chunk':
+                chunk = (update.get('content') or {}).get('text') or ''
+                if chunk: text.append(chunk); context['chars'] += len(chunk); on_event('text', {'text': chunk})
+            elif kind == 'tool_call':
+                name = tool_name(str(update.get('title') or 'tool')); args = update.get('rawInput') or {}
+                calls[update.get('toolCallId')] = name
+                context['final_from'] = len(text)   # 工具调用前说的话是过程，最后回复只取最后一次工具调用之后的
+                context['chars'] += len(json.dumps(args, ensure_ascii=False))
+                line = describe_tool(name, args if isinstance(args, dict) else {})
+                steps.append((name, line, args)); on_event('tool', {'tool': name, 'summary': line})
+            elif kind == 'tool_call_update' and update.get('status') in ('completed', 'failed'):
+                on_event('step', {'ok': update.get('status') == 'completed', 'tool': calls.get(update.get('toolCallId'), '')})
+            elif kind == 'usage_update':
+                context['used'].append(int(update.get('used') or 0))   # 每次请求一条：这次请求的上下文大小
+
+        conn = None
+        try:
+            conn = self._ensure(api_key, base_url)
+            conn.listeners.append(listen)
+            session = conn.request('session/new', {'cwd': str(cwd), 'mcpServers': self.mcp_servers}, 60)
+            self.session_id = session.get('sessionId')
+            if not self.session_id: raise RuntimeError('DSH 没有返回会话')
+            wanted = json.dumps(['deepseek-official', model], separators=(',', ':'))
+            option = next((o for o in session.get('configOptions') or [] if o.get('id') == 'model'), None)
+            if option and option.get('currentValue') != wanted and model:
+                try: conn.request('session/set_config_option', {'sessionId': self.session_id, 'configId': 'model', 'value': wanted}, 30)
+                except Exception: pass   # 模型名不认识时用 DSH 的默认模型
+            if self.stopping: raise InterruptedError
+            reply = conn.request('session/prompt', {'sessionId': self.session_id, 'prompt': [{'type': 'text', 'text': prompt}]}, PROMPT_TIMEOUT)
+            reason = reply.get('stopReason') or 'end_turn'
+        except InterruptedError:
+            reason = 'cancelled'
+        except Exception as error:
+            if self.stopping: reason = 'cancelled'
+            else:
+                stderr = '\n'.join(conn.stderr[-15:]) if conn else ''
+                self.close()   # 运行时可能已经坏了，下次重新启动
+                self.done.set()
+                return DshResult('failed', f'出错了：{str(error)[:300]}', steps, self._final_usage(on_event, context), stderr[:8000])
+        finally:
+            if conn is not None and listen in conn.listeners: conn.listeners.remove(listen)
+        usage = self._final_usage(on_event, context)
+        self.done.set()
+        status = {'end_turn': 'done', 'cancelled': 'cancelled', 'max_tokens': 'limit', 'max_turn_requests': 'limit'}.get(reason, 'failed')
+        reply_text = ''.join(text[context['final_from']:]).strip() or ''.join(text).strip()
+        if status == 'cancelled': reply_text = '好，我停下了。'   # 停下时的半句话是过程，不当回复
+        elif not reply_text: reply_text = '做完了。' if status == 'done' else f'没有做完（{reason}）。'
+        return DshResult(status, reply_text, steps, usage, '' if status in ('done', 'cancelled') else '\n'.join((conn.stderr if conn else [])[-15:]))
+
+    def _final_usage(self, on_event, context) -> Usage:
+        """优先用 DSH 记的准确用量；它的缓存文件常常还没写到最新（实测），这时按每次请求的上下文大小估算：
+        输入 = 各次请求上下文之和，缓存命中 ≈ 上一次请求的上下文（同一对话前缀），输出 ≈ 回复和工具参数字数 / 1.6。"""
+        used = context['used']
+        estimate = Usage(sum(used), int(context['chars']/1.6), sum(used[:-1]))
+        exact = self._usage(self.session_id) if self.session_id else None
+        usage = exact if exact is not None and exact.prompt >= 0.7*estimate.prompt else estimate
+        if usage.total: on_event('usage', {'prompt': usage.prompt, 'completion': usage.completion, 'cached': usage.cached, 'estimated': usage is estimate})
+        return usage

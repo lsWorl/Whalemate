@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 
 from aicompanion.llm.base import ChatTurn
 from aicompanion.domain.cancellation import CancellationToken, ReplyCancelled
+from aicompanion.usage import meter
 
 
 class LLMResponseError(RuntimeError):
@@ -48,6 +49,9 @@ class OpenAICompatibleClient:
         self.temperature = temperature
         # 保存请求超时时间，避免网络卡住时程序一直等待。
         self.timeout_seconds = timeout_seconds
+        # 流式请求时让接口在最后一块返回用量；个别平台不认这个参数时自动关掉。
+        self.stream_usage = True
+        self.last_usage = None
 
     def generate_reply(self, messages: list[ChatTurn], system_prompt: str) -> str:
         """非流式生成完整回复。"""
@@ -56,6 +60,8 @@ class OpenAICompatibleClient:
         payload = self._build_payload(messages, system_prompt, stream=False)
         # 发送请求并解析 JSON。
         data = self._post_json(payload)
+        meter.report(self.model, data.get("usage") if isinstance(data, dict) else None,
+                     self._chars(messages, system_prompt))
 
         try:
             # OpenAI-compatible 非流式响应通常在 choices[0].message.content。
@@ -80,16 +86,25 @@ class OpenAICompatibleClient:
 
         # 构造流式请求体。
         payload = self._build_payload(messages, system_prompt, stream=True)
+        if self.stream_usage:
+            payload["stream_options"] = {"include_usage": True}
         # 把请求体封装成 urllib 可以发送的 Request。
         request = self._build_request(payload)
         cancellation = cancellation or CancellationToken()
+        usage = None; produced = 0; prompt_chars = self._chars(messages, system_prompt)
         completed = False
         has_text = False
+        abort_read = None
         cancellation.check()
 
         try:
             # urlopen 返回一个可迭代的响应对象，SSE 每一行是一段事件。
             with urlopen(request, timeout=min(self.timeout_seconds, 10)) as response:
+                # shutdown 唤醒阻塞读取；close 仍由执行请求的线程负责。
+                sock = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+                if sock:
+                    abort_read = lambda: sock.shutdown(socket.SHUT_RDWR)
+                    cancellation.register(abort_read)
                 # 逐行读取服务端返回的流式内容。
                 for raw_line in response:
                     cancellation.check()
@@ -109,6 +124,8 @@ class OpenAICompatibleClient:
                     # 从单个 SSE 事件里提取新增文本。
                     token = self._parse_stream_token(event_data)
                     data = json.loads(event_data)
+                    if isinstance(data, dict) and data.get("usage"):
+                        usage = data["usage"]
                     choices = data.get("choices", [])
                     if choices and choices[0].get("finish_reason") is not None:
                         reason = choices[0]["finish_reason"]
@@ -118,6 +135,7 @@ class OpenAICompatibleClient:
                     # 某些事件只包含 role、finish_reason 等信息，没有 content。
                     if token:
                         has_text = True
+                        produced += len(token)
                         yield token
                 cancellation.check()
                 if not completed:
@@ -126,7 +144,13 @@ class OpenAICompatibleClient:
                     raise LLMResponseError("模型未返回文本，请调整输入或稍后重试。")
         except HTTPError as error:
             # HTTPError 表示服务端明确返回了 4xx/5xx，例如 key 错、模型名错、余额不足。
-            raise self._build_http_error(error) from error
+            built = self._build_http_error(error)
+            if error.code == 400 and self.stream_usage and not produced and "stream_options" in str(built):
+                # 平台不支持 stream_options：关掉后重试一次，之后改用估算
+                self.stream_usage = False
+                yield from self.generate_reply_stream(messages, system_prompt, cancellation)
+                return
+            raise built from error
         except (URLError, socket.timeout, TimeoutError) as error:
             cancellation.check()
             # 网络错误或超时统一转成对用户更友好的说明。
@@ -134,6 +158,73 @@ class OpenAICompatibleClient:
         except (HTTPException, OSError, UnicodeDecodeError) as error:
             cancellation.check()
             raise LLMResponseError("接收回复时连接中断，已保留收到的内容。") from error
+        finally:
+            if abort_read:
+                cancellation.unregister(abort_read)
+            # 不论正常结束、出错还是被打断，已经发生的用量都要记上
+            if produced or usage:
+                self.last_usage = usage
+                meter.report(self.model, usage, prompt_chars, produced)
+
+    @staticmethod
+    def _chars(messages, system_prompt) -> int:
+        return len(system_prompt or "")+sum(len(m.content) for m in messages)
+
+    # ---- P5：工具调用（agent 通路，非流式） ------------------------------------
+    def chat(self, messages: list[dict], tools: list[dict] | None = None,
+             cancellation: CancellationToken | None = None, temperature: float | None = None,
+             max_tokens: int | None = None, extra: dict | None = None) -> dict:
+        """messages 为原始 OpenAI 格式（含 tool / tool_calls）。返回
+        {content, tool_calls:[{id,name,arguments}], reasoning, finish_reason, usage}。"""
+        cancellation = cancellation or CancellationToken()
+        cancellation.check()
+        payload = {"model": self.model, "messages": messages, "stream": False,
+                   "temperature": self.temperature if temperature is None else temperature}
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+        if extra:
+            payload.update(extra)
+        request = self._build_request(payload)
+        abort = None
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                sock = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+                if sock:
+                    abort = lambda: sock.shutdown(socket.SHUT_RDWR)
+                    cancellation.register(abort)
+                raw = response.read()
+            cancellation.check()
+            data = json.loads(raw.decode("utf-8"))
+        except HTTPError as error:
+            raise self._build_http_error(error) from error
+        except (URLError, socket.timeout, TimeoutError) as error:
+            cancellation.check()
+            raise self._build_network_error(error) from error
+        except (HTTPException, OSError) as error:
+            cancellation.check()
+            raise LLMResponseError("请求模型时连接中断。") from error
+        except json.JSONDecodeError as error:
+            raise LLMResponseError("模型 API 返回的不是合法 JSON。") from error
+        finally:
+            if abort:
+                cancellation.unregister(abort)
+        chars = sum(len(str(m.get("content") or "")) for m in messages)
+        try:
+            choice = data["choices"][0]; message = choice["message"]
+        except (KeyError, IndexError, TypeError) as error:
+            raise LLMResponseError("模型响应格式不符合预期：" + self._shorten(str(data))) from error
+        content = message.get("content") or ""
+        calls = []
+        for i, call in enumerate(message.get("tool_calls") or []):
+            fn = call.get("function") or {}
+            calls.append({"id": call.get("id") or f"call_{i}", "name": fn.get("name") or "",
+                          "arguments": fn.get("arguments") or "{}"})
+        meter.report(self.model, data.get("usage"), chars, len(content)+sum(len(c["arguments"]) for c in calls))
+        return {"content": content, "tool_calls": calls, "reasoning": message.get("reasoning_content") or "",
+                "finish_reason": choice.get("finish_reason") or "", "usage": data.get("usage")}
 
     def _build_payload(
         self,

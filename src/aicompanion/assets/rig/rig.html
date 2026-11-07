@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}canvas{display:block}</style></head>
+<body><canvas id="scene"></canvas>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="../live2d/vendor/pixi.min.js"></script>
+<script src="rig.js"></script>
+<script>
+/* 宿主（Qt WebChannel 对象 rig）与渲染器之间的胶水；没有 Qt 时（测试）通过 window.rigApi 直接驱动。 */
+let app, engine, bridge;
+const api = window.rigApi = {
+  async load(url) {
+    if (engine) { app.ticker.remove(engine.tick); app.stage.removeChildren(); engine = null; }
+    const built = await RigRenderer.createFigure(app, url);
+    app.stage.addChild(built.figure); engine = RigRenderer.createEngine(app, built);
+    app.ticker.add(() => {
+      if (!engine) return;
+      engine.tick(app.ticker.deltaMS);
+      const fps = engine.busy() ? 60 : 24;
+      if (app.ticker.maxFPS !== fps) app.ticker.maxFPS = fps;
+    });
+    return true;
+  },
+  set: values => engine && engine.set(values),
+  command: c => {
+    if (!engine) return;
+    if (c.hop) engine.hop(c.hop.height, c.hop.duration);
+    if (c.bounce) engine.bounce(c.bounce);
+    if (c.express) engine.express(c.express, c.seconds || 3);
+    if (c.motion) engine.playMotion(c.motion);
+  },
+  hitmap: () => engine ? engine.hitmap() : null,
+  probe: (x, y) => engine ? engine.probe(x, y) : null,
+  diagnostics: () => engine ? engine.diagnostics() : { ready: false },
+  gpu: () => {
+    // 判断是否真的用上了显卡（SwiftShader / llvmpipe 表示退回到软件渲染）
+    const gl = app.renderer.gl, info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    return { renderer: info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown', fps: app.ticker.FPS, maxFPS: app.ticker.maxFPS,
+             webgl2: typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext };
+  },
+};
+app = new PIXI.Application({ view: document.getElementById('scene'), resizeTo: window, backgroundAlpha: 0,
+  antialias: true, resolution: window.devicePixelRatio || 1, autoDensity: true });
+if (window.qt && window.QWebChannel) {
+  new QWebChannel(qt.webChannelTransport, channel => {
+    bridge = channel.objects.rig;
+    bridge.stateChanged.connect(raw => api.set(JSON.parse(raw)));
+    bridge.commandIssued.connect(raw => api.command(JSON.parse(raw)));
+    bridge.modelChanged.connect(url => api.load(url).then(() => bridge.report('ready')).catch(e => bridge.report('error:' + e.message)));
+    bridge.initialModel(url => url && api.load(url).then(() => bridge.report('ready')).catch(e => bridge.report('error:' + e.message)));
+    // 宿主每 30 ms 把光标位置发过来；这里用 CPU 判断是否在角色身上（不读显卡，不会卡帧）
+    bridge.probeRequested.connect((x, y) => { const r = api.probe(x, y); if (r) bridge.probed(JSON.stringify(r)); });
+  });
+}
+</script></body></html>

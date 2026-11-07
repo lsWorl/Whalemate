@@ -1,4 +1,7 @@
-"""下载真实示例资源并记录来源；不下载或伪造定制动漫角色模型。"""
+"""下载 Live2D 渲染运行库（用于导入外部 Cubism 模型）并记录来源。
+
+v2 起不再下载或自带 Haru 示例模型；不下载或伪造定制动漫角色模型。
+"""
 from pathlib import Path
 import json
 import io
@@ -30,8 +33,6 @@ def main():
         target = None
         if name.endswith('/Core/live2dcubismcore.min.js'):
             target = ROOT/'vendor/live2dcubismcore.min.js'
-        elif '/Samples/Resources/Haru/' in name and not name.endswith('/'):
-            target = ROOT/'Haru'/name.split('/Samples/Resources/Haru/',1)[1]
         elif name.endswith(('LICENSE.md','NOTICE.md')) and name.count('/')==1:
             target = ROOT/name.rsplit('/',1)[1]
         if target:
@@ -43,22 +44,6 @@ def main():
             print(target.relative_to(ROOT))
     if not (ROOT/'vendor/live2dcubismcore.min.js').is_file():
         raise RuntimeError('Core missing from SDK archive')
-    return 0
-    base = 'https://raw.githubusercontent.com/Live2D/CubismWebSamples/develop/Samples/Resources/Haru/'
-    model_path = ROOT/'Haru/Haru.model3.json'
-    download(base+'Haru.model3.json',model_path)
-    refs = json.loads(model_path.read_text())['FileReferences']
-    files = [refs['Moc'],*refs['Textures']]
-    files += [refs[k] for k in ('Physics','Pose','DisplayInfo','UserData') if k in refs]
-    files += [r['File'] for r in refs.get('Expressions',[])]
-    files += [r['File'] for group in refs.get('Motions',{}).values() for r in group]
-    files += [r['Sound'] for group in refs.get('Motions',{}).values() for r in group if 'Sound' in r]
-    for name in sorted(set(files)):
-        target = (ROOT/'Haru'/name).resolve()
-        if not target.is_relative_to((ROOT/'Haru').resolve()):
-            raise ValueError('Unsafe asset path')
-        download(base+name,target)
-    download('https://raw.githubusercontent.com/Live2D/CubismWebSamples/develop/LICENSE.md',ROOT/'Haru/LICENSE.md')
     return 0
 
 

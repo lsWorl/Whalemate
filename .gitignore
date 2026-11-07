@@ -1,6 +1,61 @@
+# Local configuration and credentials; keep the shareable template.
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+
+# Python environments, caches, and package metadata.
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
-data/*.sqlite3
-.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local runtime data: conversations, settings, backups, and private art/voices.
+/data/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+*.log
+
+# Build products, generated art packs, experiments, and retired code.
+/build/
+/dist/
+/output/
+/bundle-smoke/
+/bundle-pet-smoke/
+/bundle-emilia-smoke/
+
+# Generated speech samples and machine-specific verification reports/screenshots.
+# Runtime assets under src/aicompanion/assets and characters stay versioned.
+/docs/audio/
+/docs/*-smoke/
+/docs/*-smoke*.json
+/docs/ui-*.png
+/docs/pet-v2/smoke/
+/docs/pet-v2/*-sprites.jpg
+/src/aicompanion/characters/*/sprites/_preview.jpg
+
+# Third-party reference checkout; imported textures remain local-only.
+/Coopanion/
+
+# Per-machine editor/agent settings; shared agent instructions stay versioned.
+.idea/
+.vscode/
+.claude/settings.local.json
+.claude/worktrees/
+.worktrees/
+.DS_Store
+Thumbs.db
+desktop.ini

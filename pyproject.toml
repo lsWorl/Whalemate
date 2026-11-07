@@ -6,10 +6,18 @@ requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.7",
     "python-dotenv>=1.0",
+    "webrtcvad-wheels==2.0.14.post1",
 ]
+
+[project.optional-dependencies]
+local-asr = ["sherpa-onnx>=1.12,<3", "numpy"]
+agent = ["deepseek-harness-sdk==0.2.1rc2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+aicompanion = ["assets/live2d/**/*", "assets/live2d/*.html", "assets/live2d/*.md", "characters/**/*", "assets/rig/*", "assets/voice/*"]
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]

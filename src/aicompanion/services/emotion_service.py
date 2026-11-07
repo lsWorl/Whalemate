@@ -20,6 +20,7 @@ class EmotionService:
             state.mood = 'angry'
         elif any(word in text for word in ('开心','谢谢','高兴','成功')):
             state.mood = 'happy'
+            self.database.record_relationship_event(character_id)
         self.database.save_emotion(state,character_id)
         return state
 

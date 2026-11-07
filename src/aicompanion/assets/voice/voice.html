@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head><body>
+<script>
+// 收音和播放放在同一个网页里，让 Chromium 的回声消除拿到"她自己在说什么"作为参考。
+// 收音：getUserMedia(echoCancellation) → 16 kHz → 每 64 ms 一块 16-bit PCM（base64）交给 Python。
+// 播放：Python 发来 WAV（base64），用 WebAudio 播放，开始 / 结束时回报。
+let bridge = null, micCtx = null, micStream = null, node = null, source = null;
+let playCtx = null, playing = null;
+
+function b64ToBytes(b64) { const s = atob(b64); const out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; }
+function bytesToB64(bytes) { let s = ''; const step = 0x8000; for (let i = 0; i < bytes.length; i += step) s += String.fromCharCode.apply(null, bytes.subarray(i, i + step)); return btoa(s); }
+function report(obj) { if (bridge) bridge.captureState(JSON.stringify(obj)); }
+
+async function startCapture(label) {
+  stopCapture();
+  try {
+    const want = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+    let stream = await navigator.mediaDevices.getUserMedia({ audio: want });
+    if (label) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const hit = devices.find(d => d.kind === 'audioinput' && d.label && (d.label === label || d.label.includes(label) || label.includes(d.label)));
+      if (hit && hit.deviceId !== stream.getAudioTracks()[0].getSettings().deviceId) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: hit.deviceId } }, want) });
+      }
+    }
+    micStream = stream;
+    micCtx = new AudioContext({ sampleRate: 16000 });
+    source = micCtx.createMediaStreamSource(stream);
+    node = micCtx.createScriptProcessor(1024, 1, 1);
+    node.onaudioprocess = e => {
+      const f = e.inputBuffer.getChannelData(0); const pcm = new Int16Array(f.length);
+      for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff; }
+      if (bridge) bridge.pcm(bytesToB64(new Uint8Array(pcm.buffer)), micCtx.sampleRate);
+    };
+    const mute = micCtx.createGain(); mute.gain.value = 0;   // ScriptProcessor 必须接到输出才会运行；静音，不回放
+    source.connect(node); node.connect(mute); mute.connect(micCtx.destination);
+    const s = stream.getAudioTracks()[0].getSettings();
+    report({ ok: true, rate: micCtx.sampleRate, label: stream.getAudioTracks()[0].label,
+             echoCancellation: s.echoCancellation, noiseSuppression: s.noiseSuppression, autoGainControl: s.autoGainControl });
+  } catch (err) {
+    report({ ok: false, error: String(err && err.name || err) + ': ' + String(err && err.message || '') });
+  }
+}
+
+function stopCapture() {
+  try { if (node) node.disconnect(); if (source) source.disconnect(); } catch (e) {}
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (micCtx) micCtx.close();
+  node = source = micStream = micCtx = null;
+}
+
+async function playWav(b64) {
+  stopPlayback();
+  try {
+    if (!playCtx) playCtx = new AudioContext();
+    if (playCtx.state !== 'running') await playCtx.resume();
+    const buffer = await playCtx.decodeAudioData(b64ToBytes(b64).buffer);
+    const node = playCtx.createBufferSource(); node.buffer = buffer; node.connect(playCtx.destination);
+    node.onended = () => { if (playing === node) { playing = null; bridge && bridge.playbackEnded(); } };
+    playing = node; node.start();
+    bridge && bridge.playbackStarted();
+  } catch (err) {
+    playing = null; bridge && bridge.playbackFailed(String(err && err.message || err));
+  }
+}
+
+function stopPlayback() {
+  if (playing) { const n = playing; playing = null; try { n.stop(); } catch (e) {} }
+}
+
+new QWebChannel(qt.webChannelTransport, channel => {
+  bridge = channel.objects.voice;
+  bridge.startCapture.connect(startCapture);
+  bridge.stopCapture.connect(stopCapture);
+  bridge.playWav.connect(playWav);
+  bridge.stopPlayback.connect(stopPlayback);
+  bridge.ready();
+});
+</script>
+</body></html>

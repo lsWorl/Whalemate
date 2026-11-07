@@ -40,7 +40,12 @@ def main() -> int:
     # 解析命令行参数，得到 args.message 和 args.no_stream。
     args = parser.parse_args()
 
-    settings = load_settings()
+    try:
+        settings = load_settings()
+        client = create_llm_client(settings)
+    except (ValueError, RuntimeError) as error:
+        print(f"LLM configuration failed: {error}")
+        return 1
     print("LLM diagnostics")
     print(f"- provider: {settings.llm_provider}")
     print(f"- base_url: {settings.llm_base_url}")
@@ -50,7 +55,6 @@ def main() -> int:
     print()
 
     # 根据 settings 创建实际的 LLM 客户端。
-    client = create_llm_client(settings)
     # 这里构造一个最小系统提示词，只用于诊断，不影响正式聊天窗口的角色 prompt。
     system_prompt = (
         "You are a warm AI companion. Reply naturally in Chinese, "

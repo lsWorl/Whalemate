@@ -1,0 +1,159 @@
+"""聊天面板的新外观：半透明立绘背景、圆角气泡对话、系统消息小标签。
+
+`ChatView.append(sender, text)` 返回的句柄兼容旧的 QListWidgetItem 用法：
+`handle.setText('名字: 内容')` / `handle.text()`，名字前缀会被自动去掉。
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPixmap
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+
+from aicompanion.ui import theme
+
+SYSTEM_SENDERS = {'任务': '🛠', '步骤': '·', '确认': '🔒', '提议': '💡', '提醒': '⏰'}
+
+
+class Backdrop(QWidget):
+    """面板底板：浅色渐变 + 右侧半透明立绘。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pixmap: QPixmap | None = None; self.opacity = 0.22; self._scaled = None
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+
+    def set_image(self, path: str | Path | None, opacity: float = 0.22):
+        self.pixmap = None; self._scaled = None; self.opacity = max(0.0, min(1.0, float(opacity)))
+        if path and Path(path).exists():
+            pixmap = QPixmap(str(path))
+            if not pixmap.isNull(): self.pixmap = pixmap
+        self.update()
+
+    def resizeEvent(self, event):
+        self._scaled = None; super().resizeEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        gradient = QLinearGradient(0, 0, self.width(), self.height())
+        gradient.setColorAt(0, QColor(theme.BG_TOP)); gradient.setColorAt(1, QColor(theme.BG_BOTTOM))
+        painter.fillRect(self.rect(), gradient)
+        if self.pixmap and self.opacity > 0:
+            if self._scaled is None or self._scaled.height() != int(self.height()*1.02):
+                self._scaled = self.pixmap.scaledToHeight(int(self.height()*1.02), Qt.TransformationMode.SmoothTransformation)
+            x = self.width()-int(self._scaled.width()*0.86)   # 靠右，稍微出框一点更自然
+            painter.setOpacity(self.opacity); painter.drawPixmap(x, self.height()-self._scaled.height(), self._scaled)
+            painter.setOpacity(1.0)
+        painter.end()
+
+
+def avatar_from(path: str | Path | None, size: int = 44) -> QPixmap | None:
+    """从全身立绘上部截一个圆形头像（脸大约在宽 43%、高 14.5% 处）。"""
+    if not path or not Path(path).exists(): return None
+    source = QPixmap(str(path))
+    if source.isNull(): return None
+    side = int(min(source.width()*0.3, source.height()*0.17))
+    x = int(source.width()*0.43-side/2); y = int(source.height()*0.145-side/2)
+    crop = source.copy(max(0, x), max(0, y), side, side).scaled(size*2, size*2, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+    out = QPixmap(size*2, size*2); out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    clip = QPainterPath(); clip.addEllipse(QRectF(0, 0, size*2, size*2)); painter.setClipPath(clip)
+    painter.drawPixmap(0, 0, crop); painter.end()
+    out.setDevicePixelRatio(2.0)
+    return out
+
+
+class Bubble(QFrame):
+    def __init__(self, kind: str, text: str):
+        super().__init__()
+        self.kind = kind
+        self.setObjectName({'user': 'UserBubble', 'her': 'HerBubble'}.get(kind, 'SystemChip'))
+        layout = QVBoxLayout(self); layout.setContentsMargins(*((12, 8, 12, 8) if kind != 'system' else (10, 3, 10, 3)))
+        self.label = QLabel(text); self.label.setWordWrap(True); self.label.setTextFormat(Qt.TextFormat.PlainText)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.label.setObjectName('BubbleText' if kind != 'system' else 'ChipText')
+        layout.addWidget(self.label)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+
+
+class MessageHandle:
+    def __init__(self, view: 'ChatView', sender: str, row: QWidget, bubble: Bubble):
+        self.view = view; self.sender = sender; self.row = row; self.bubble = bubble
+
+    def text(self) -> str:
+        return f'{self.sender}: {self.bubble.label.text()}'
+
+    def setText(self, text: str):
+        prefix = f'{self.sender}: '
+        if text.startswith(prefix): text = text[len(prefix):]
+        elif text.startswith(f'{self.sender}:'): text = text[len(self.sender)+1:]
+        self.bubble.label.setText(text); self.view._limit(self.bubble); self.view.follow()
+
+
+class ChatView(QScrollArea):
+    def __init__(self, me: str = '你', parent=None):
+        super().__init__(parent)
+        self.me = me; self.her = ''
+        self.setWidgetResizable(True); self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setObjectName('ChatView'); self.viewport().setAutoFillBackground(False)
+        self.body = QWidget(); self.body.setObjectName('ChatBody'); self.body.setAutoFillBackground(False)
+        self.column = QVBoxLayout(self.body); self.column.setContentsMargins(14, 12, 14, 12); self.column.setSpacing(8)
+        self.column.addStretch(1)
+        self.setWidget(self.body)
+        self._stick = True
+        self.verticalScrollBar().valueChanged.connect(lambda v: setattr(self, '_stick', v >= self.verticalScrollBar().maximum()-40))
+        self.verticalScrollBar().rangeChanged.connect(lambda lo, hi: self.verticalScrollBar().setValue(hi) if self._stick else None)
+
+    def clear(self):
+        while self.column.count() > 1:
+            item = self.column.takeAt(1)
+            if item.widget(): item.widget().deleteLater()
+        self._stick = True
+
+    def _kind(self, sender):
+        if sender == self.me: return 'user'
+        if sender in SYSTEM_SENDERS: return 'system'
+        return 'her'
+
+    def _row(self, sender, text):
+        kind = self._kind(sender)
+        if kind == 'system': text = f'{SYSTEM_SENDERS[sender]} {sender} · {text}' if sender != '步骤' else text
+        bubble = Bubble(kind, text)
+        row = QWidget(); line = QHBoxLayout(row); line.setContentsMargins(0, 0, 0, 0); line.setSpacing(0)
+        if kind == 'user': line.addStretch(1); line.addWidget(bubble)
+        elif kind == 'her': line.addWidget(bubble); line.addStretch(1)
+        else: line.addStretch(1); line.addWidget(bubble); line.addStretch(1)
+        self._limit(bubble)
+        return row, bubble
+
+    def _limit(self, bubble):
+        """短消息按文字自然宽度显示（不被挤成两行），长消息在最大宽度处换行。"""
+        width = max(220, int(self.viewport().width()*(0.86 if bubble.kind == 'system' else 0.76)))-24
+        metrics = bubble.label.fontMetrics()
+        natural = max((metrics.horizontalAdvance(line) for line in bubble.label.text().split('\n')), default=0)+6
+        bubble.label.setMinimumWidth(min(natural, width)); bubble.label.setMaximumWidth(width)
+
+    def append(self, sender, text, index=None) -> MessageHandle:
+        """index 不为空时插到历史顶部的第 index 条（加载更早记录用）。"""
+        row, bubble = self._row(sender, text)
+        if index is not None: self.column.insertWidget(1+index, row)
+        else: self.column.addWidget(row); self._stick = True
+        return MessageHandle(self, sender, row, bubble)
+
+    def follow(self):
+        if self._stick: QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))
+
+    def scrollToBottom(self):
+        self._stick = True; self.follow()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        for i in range(1, self.column.count()):
+            row = self.column.itemAt(i).widget()
+            bubble = row.findChild(Bubble) if row else None
+            if bubble: self._limit(bubble)
+
+    def sizeHint(self):
+        return QSize(420, 520)

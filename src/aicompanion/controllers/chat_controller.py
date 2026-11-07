@@ -15,9 +15,10 @@ class ChatController:
         self.character = database.characters()[0] if database.characters() else DEFAULT_CHARACTER
         self.context = ContextService(database,memory_service)
         self.emotions = EmotionService(database)
-
-    def load_recent_history(self):
-        return self.context.build(self.character)[0]
+        # 每个角色的表情 / 动作词表（来自角色包）；模型可在台词里标注，存库前去掉
+        self.vocabs = {}
+        # P5：允许在回复里用 <task> 提议动手（由界面根据设置打开）
+        self.agent_enabled = False
 
     def record_user_message(self,content,source='text'):
         message_id = self.database.add_message('user',content,self.character.id,source=source)
@@ -32,10 +33,17 @@ class ChatController:
             history,prompt = self.context.build(character,query)
             if proactive:
                 prompt += '\n现在是角色主动开启话题：'+proactive+'。只发一句自然问候或追问，不编造经历。'
-            for token in self.llm_client.generate_reply_stream(history,prompt,cancellation):
-                cancellation.check()
-                parts.append(token)
-                yield token
+            vocab = self.vocabs.get(character.id)
+            if vocab: prompt += vocab.prompt()
+            if self.agent_enabled and not proactive:
+                from aicompanion.pet.script import TASK_PROMPT
+                prompt += TASK_PROMPT
+            from aicompanion.usage.meter import using
+            with using('companion',character.id,turn_id):
+                for token in self.llm_client.generate_reply_stream(history,prompt,cancellation):
+                    cancellation.check()
+                    parts.append(token)
+                    yield token
             cancellation.check()
             if not ''.join(parts).strip():
                 raise RuntimeError('模型未返回有效内容。')
@@ -46,12 +54,13 @@ class ChatController:
             status,error = 'failed',str(exc)
             raise
         finally:
-            self.database.finish_turn(turn_id,character.id,''.join(parts),status,error)
+            content = ''.join(parts)
+            vocab = self.vocabs.get(character.id)
+            from aicompanion.pet.script import Vocab, strip_cues
+            content = strip_cues(content, vocab or Vocab())
+            self.database.finish_turn(turn_id,character.id,content,status,error)
 
     def stream_user_message(self,content):
         self.record_user_message(content)
         yield from self.generate(str(uuid4()),self.character,CancellationToken(),content)
-
-    def send_user_message(self,content):
-        return ''.join(self.stream_user_message(content))
 
