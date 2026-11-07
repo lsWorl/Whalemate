@@ -70,6 +70,8 @@ class BridgePageFlowTest(unittest.TestCase):
         page = BridgePage(self.db); page.timer.stop(); self.wait(page)
         self.addCleanup(page.deleteLater)
         self.assertTrue(page.vision_enabled.isChecked()); self.assertTrue(page.memes_enabled.isChecked())
+        self.assertEqual(page.community_source.currentData(), 'bilibili')
+        self.assertTrue(page.community_auto.isChecked())
         page.vision_enabled.setChecked(False); page.memes_enabled.setChecked(False)
         page.meme_root.setText(str(Path(self.tmp.name)/'memes'))
         page.vision_model.setText('deepseek-flash'); page.meme_cooldown.setValue(120)

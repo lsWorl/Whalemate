@@ -240,6 +240,7 @@ class QQMediaTests(unittest.TestCase):
         result = self.ask(images=[], text='哈哈今天运气真好')
         self.assertEqual(len(result['images']), 1)
         self.assertIn('不需要等别人要求', self.chat.calls[-1][1])
+        self.assertIn('不能虚构自己实际抽卡', self.chat.calls[-1][1])
         self.now += 61
         self.ask(images=[], text='你以后多带点表情包')
         prompt = self.chat.calls[-1][1]; self.assertIn('不必等人要求', prompt)
