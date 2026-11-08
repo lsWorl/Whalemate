@@ -140,3 +140,30 @@ class CatalogTests(unittest.TestCase):
         with mock.patch.dict(os.environ,{'SystemDrive':'Z:'}),mock.patch.object(Path,'resolve',autospec=True,side_effect=resolved):
             with self.assertRaises(ValueError):self.cat.import_image(self.path,self.meta)
         self.assertFalse(outside.exists());self.assertFalse((self.library/'memes').exists())
+
+
+class OriginalSpriteCopyTests(unittest.TestCase):
+    """T13 新建图库会把仓库自带的 6 张姿态图复制进用户目录：按内容哈希认出来、按原创通过；同目录的其他图仍待审核。"""
+    setUp = CatalogTests.setUp; tearDown = CatalogTests.tearDown
+    def test_copied_original_sprites_are_approved_by_content_only(self):
+        import shutil
+        sprites = self.cat.builtin_root
+        (self.library/'happy').mkdir(exist_ok=True)
+        shutil.copyfile(sprites/'celebrate.png', self.library/'happy'/'celebrate.png')
+        self.path.write_bytes(png(0xff123456))                       # 同目录里用户自己的图
+        self.cat.scan()
+        rows = {r['relative_path']: r for r in self.cat.rows()}
+        original = rows['happy/celebrate.png']
+        self.assertEqual((original['review_status'], original['metadata']['license']), ('approved', 'project-original'))
+        self.assertEqual(original['metadata']['semantic'], '开心、庆祝、赞同')
+        self.assertEqual(rows[self.path.relative_to(self.library).as_posix()]['review_status'], 'pending_review')
+
+    def test_previously_pending_copy_is_upgraded_but_rejected_is_kept(self):
+        import shutil
+        (self.library/'happy').mkdir(exist_ok=True)
+        target = self.library/'happy'/'celebrate.png'; shutil.copyfile(self.cat.builtin_root/'celebrate.png', target)
+        aid, _ = self.cat.register(target, self.library, {'category': 'happy'})     # 旧版扫描：无许可 → 待审核
+        self.assertEqual(self.cat.get(aid)['review_status'], 'pending_review')
+        self.cat.scan(); self.assertEqual(self.cat.get(aid)['review_status'], 'approved')
+        with self.db.transaction() as c: c.execute("UPDATE expression_assets SET review_status='rejected',enabled=0 WHERE asset_id=?", (aid,))
+        self.cat.scan(); self.assertEqual(self.cat.get(aid)['review_status'], 'rejected')

@@ -121,14 +121,42 @@ class AssetCatalog:
                     meta=dict(conf.get('asset_defaults') or {}); meta.update(raw.get('asset_metadata') or {})
                     meta.update(category=category.name,semantic=raw.get('description',category.name))
                     entries.append((path,meta))
+        originals=self.original_sprites() if root!=self.builtin_root.resolve() else {}
         for path,metadata in entries[:2048]:
             if cancellation:cancellation.check()
             try:
+                # 用户图库里和仓库自带姿态图内容完全相同的文件（例如 T13 新建图库时补入的 6 张）：按原创素材归档。
+                # 只认内容哈希，不认目录名或 manifest，用户之后放进同一目录的其他图不会被误标。
+                original=originals.get(self._digest(path)) if originals else None
+                if original:metadata=dict(metadata,**original)
                 aid,reused=self.register(path,root,metadata)
+                if original:self._approve_original(aid,original)
                 counts['reused' if reused else 'imported']+=1
                 if self.get(aid)['review_status']!='approved': counts['pending']+=1
             except (ValueError,OSError,TypeError): counts['invalid']+=1
         return counts
+    def original_sprites(self):
+        """仓库自带 6 张原创姿态图的内容哈希 → 内置元数据。"""
+        from aicompanion.bridge.media import BUILTINS
+        result={}
+        for key,(name,desc) in BUILTINS.items():
+            path=self.builtin_root/name
+            try:result[self._digest(path)]=dict(category=key,semantic=desc,emotions=[key],intents=desc.split('、'),
+                       character_id='deepseek-whale',license='project-original',author='AICompanion 原创姿态',source='repository:T5')
+            except OSError:continue
+        return result
+    @staticmethod
+    def _digest(path):
+        with Path(path).open('rb') as file:data=file.read(MAX_BYTES+1)
+        return hashlib.sha256(data).hexdigest() if 0<len(data)<=MAX_BYTES else None
+    def _approve_original(self,asset_id,original):
+        """之前已按"无许可"登记成待审核的同一张原创图，补上原创元数据并通过；用户已拒绝 / 停用的不动。"""
+        with self.db.transaction() as c:
+            row=c.execute('SELECT metadata,review_status FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if not row or row['review_status']!='pending_review':return
+            metadata=json.loads(row['metadata']);metadata.update(original)
+            c.execute("UPDATE expression_assets SET metadata=?,review_status='approved',enabled=1 WHERE asset_id=?",
+                      (json.dumps(metadata,ensure_ascii=False),asset_id))
     def get(self,asset_id):
         with self.db.transaction() as c: row=c.execute('SELECT * FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
         if row is None: return None
