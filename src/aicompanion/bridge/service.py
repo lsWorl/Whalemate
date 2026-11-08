@@ -159,7 +159,7 @@ class BridgeService:
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         images = payload.get('images') or []
-        if not text and images: text = '请看看这张图片'
+        if not text and images: text = '[收到图片]'
         if not text: return {'reply': '', 'silent': True, 'reason': 'empty'}
         mode = self.classify(platform, sender_id, group_id)
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
@@ -260,6 +260,7 @@ class BridgeService:
         """在锁里生成回复。插话时模型可以回 {SILENCE} 表示不说：这条不发出去，也不留在聊天记录里。"""
         from aicompanion.bridge.social import NATURAL_PROMPT
         from aicompanion.bridge.community import prompt as community_prompt, maybe_refresh
+        from aicompanion.bridge.chat_card import prompt as card_prompt
         private = mode['owner'] and not mode['group']
         turn = str(uuid4()); parts = []
         offer = self.media.offer(mode['channel'])
@@ -270,8 +271,10 @@ class BridgeService:
         learned = self.social.profile(mode['channel'], stable_sender)
         if learned.get('preferences', {}).get('no_memes'): offer.categories = {}
         situation += NATURAL_PROMPT + self.social.prompt(mode['channel'], stable_sender) + offer.prompt()
-        situation += community_prompt(self.database, text, mode['channel'].split(':')[-1] if mode['group'] else '')
-        maybe_refresh(self.database, mode['channel'].split(':')[-1] if mode['group'] else '')
+        group = mode['channel'].split(':')[-1] if mode['group'] else ''
+        situation += card_prompt(self.database, character.id, text, owner=mode['owner'], group=group)
+        situation += community_prompt(self.database, text, group)
+        maybe_refresh(self.database, group)
         delivery = {}
         def filter_reply(raw, status):
             if mode['group'] and (not raw.strip() or raw.strip() in (SILENCE, '不说')):

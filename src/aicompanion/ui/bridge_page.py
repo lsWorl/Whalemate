@@ -10,9 +10,9 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSpinBox, QVBoxLayout,
-                               QWidget)
+                               QPlainTextEdit, QWidget)
 
 from aicompanion.bridge.service import CHIME, setting
 
@@ -94,6 +94,10 @@ class BridgePage(QWidget):
         self.learning.setChecked(bool(database.get_setting('qq_social_learning', True)))
         review_social = QPushButton('查看 / 清除表达习惯…'); review_social.clicked.connect(self._review_social)
         social_form.addRow('', self.avatar_enabled); social_form.addRow('', self.learning); social_form.addRow('', review_social)
+        self.chat_card_enabled = QCheckBox('使用聊天卡和社区知识（表情只读懂，不分析）')
+        self.chat_card_enabled.setChecked(bool(database.get_setting('qq_chat_card_enabled', True)))
+        review_card = QPushButton('查看 / 导入聊天卡与世界书…'); review_card.clicked.connect(self._chat_card)
+        social_form.addRow('', self.chat_card_enabled); social_form.addRow('', review_card)
         self.community_source = QComboBox()
         self.community_source.addItem('日常闲聊（不读取热榜）', 'off')
         self.community_source.addItem('哔哩哔哩 / 动漫游戏', 'bilibili'); self.community_source.addItem('V2EX / 技术社区', 'v2ex')
@@ -102,7 +106,7 @@ class BridgePage(QWidget):
         self.community_auto.setChecked(bool(database.get_setting('qq_community_auto', True)))
         self.community_groups = QCheckBox('本次社区选择只应用到上面勾选的群')
         refresh_community = QPushButton('现在逛逛社区'); refresh_community.clicked.connect(self._refresh_community)
-        self.community_status = QLabel('只看公开标题，不上传聊天；新话题保留一天，相关时才用。'); self.community_status.setWordWrap(True)
+        self.community_status = QLabel('读取公开话题及受限社区词义，不上传聊天；相关时只供理解，不向群友科普。'); self.community_status.setWordWrap(True)
         social_form.addRow('社区语境', self.community_source); social_form.addRow('', self.community_groups)
         social_form.addRow('', self.community_auto); social_form.addRow('', refresh_community); social_form.addRow('', self.community_status)
         save_people = QPushButton('保存'); save_people.clicked.connect(self.save_people); pl.addRow('', save_people)
@@ -298,6 +302,54 @@ class BridgePage(QWidget):
         if box.clickedButton() is clear:
             memory.clear(); self.database.set_setting('qq_avatars:'+self._social_id(), {})
 
+    def _chat_card(self):
+        import json
+        from aicompanion.bridge.chat_card import builtin, load_json, normalize_card, normalize_book
+        cid = self._social_id()
+        pending = {'card': self.database.get_setting('qq_chat_card:'+cid, None),
+                   'book': self.database.get_setting('qq_chat_book:'+cid, []) or []}
+        dialog = QDialog(self); dialog.setWindowTitle('聊天卡与社区世界书'); dialog.resize(650, 500)
+        layout = QVBoxLayout(dialog)
+        hint = QLabel('只调整聊天表达，保留她的身份、关系和记忆。社区知识按当前消息的关键词使用，不逐条科普。\n'
+                      '支持 JSON 聊天卡、SillyTavern CCv2 的 personality / mes_example / character_book，以及独立世界书。')
+        hint.setWordWrap(True); layout.addWidget(hint)
+        preview = QPlainTextEdit(); preview.setReadOnly(True); layout.addWidget(preview)
+        def show():
+            card = pending['card'] or (builtin() if cid == 'deepseek-whale' else None)
+            from aicompanion.bridge.community_knowledge import available
+            preview.setPlainText(json.dumps({'聊天卡': card, '额外世界书': pending['book'],
+                                            '联网社区知识': available(self.database, self.community_source.currentData())}, ensure_ascii=False, indent=2))
+        def import_file(book=False):
+            path, _ = QFileDialog.getOpenFileName(dialog, '导入世界书' if book else '导入聊天卡', '', 'JSON 文件 (*.json)')
+            if not path: return
+            try:
+                data = load_json(path)
+                if book:
+                    if isinstance(data, dict) and data.get('spec') == 'chara_card_v2': data = data.get('data', {})
+                    entries = normalize_book(data.get('character_book', data) if isinstance(data, dict) else data)
+                    if not entries: raise ValueError('没有可用的关键词知识条目')
+                    pending['book'] = entries
+                else: pending['card'] = normalize_card(data)
+                show()
+            except (OSError, ValueError) as error: QMessageBox.warning(dialog, '没有导入', str(error))
+        buttons = QHBoxLayout()
+        for title, action in (('导入聊天卡 JSON…', lambda: import_file()), ('导入世界书 JSON…', lambda: import_file(True))):
+            button = QPushButton(title); button.clicked.connect(action); buttons.addWidget(button)
+        reset = QPushButton('恢复内置卡 / 清空额外知识')
+        def restore(): pending.update(card=None, book=[]); show()
+        reset.clicked.connect(restore); buttons.addWidget(reset); layout.addLayout(buttons)
+        save = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        save.button(QDialogButtonBox.StandardButton.Save).setText('保存')
+        save.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        save.accepted.connect(dialog.accept); save.rejected.connect(dialog.reject); layout.addWidget(save)
+        show()
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            from aicompanion.storage.database import Database
+            def apply(connection):
+                Database.set_setting_in(connection, 'qq_chat_card:'+cid, pending['card'])
+                Database.set_setting_in(connection, 'qq_chat_book:'+cid, pending['book'])
+            self.database.locked(apply)
+
     def _refresh_community(self):
         source = self.community_source.currentData()
         if source == 'off':
@@ -309,6 +361,11 @@ class BridgePage(QWidget):
                 value = refresh(self.database, source)
                 import time
                 message = value['source']+' · '+time.strftime('%m-%d %H:%M', time.localtime(value['at']))+'\n'+' / '.join(value['topics'][:5])
+                from aicompanion.bridge.community_knowledge import refresh as learn
+                try:
+                    knowledge = learn(self.database, source)
+                    if knowledge: message += f'\n已学习 {len(knowledge["entries"])} 条社区词义（附来源；每周刷新）。'
+                except Exception: message += '\n社区词义本次未更新，保留已有知识。'
             except Exception: message = '这次没有逛成，旧话题保留；可以稍后重试。'
             self.signals.community.emit(message)
         threading.Thread(target=work, daemon=True).start()
@@ -344,6 +401,7 @@ class BridgePage(QWidget):
         db.set_setting('qq_meme_cooldown', self.meme_cooldown.value())
         db.set_setting('qq_avatars_enabled', self.avatar_enabled.isChecked())
         db.set_setting('qq_social_learning', self.learning.isChecked())
+        db.set_setting('qq_chat_card_enabled', self.chat_card_enabled.isChecked())
         db.set_setting('qq_community_auto', self.community_auto.isChecked())
         if self.community_groups.isChecked():
             for group in groups: db.set_setting('qq_community_for:'+str(group), self.community_source.currentData())

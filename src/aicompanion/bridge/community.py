@@ -72,7 +72,10 @@ def maybe_refresh(database, group='', clock=time.time):
         if identity in IN_FLIGHT or clock()-ATTEMPTS.get(identity, 0) < 1800: return
         IN_FLIGHT.add(identity); ATTEMPTS[identity] = clock()
     def work():
-        try: refresh(database, source)
+        try:
+            refresh(database, source)
+            from aicompanion.bridge.community_knowledge import refresh as learn
+            learn(database, source)
         except Exception: pass  # 离线、限流或来源不可用时沿用已有语境，不编造新梗
         finally:
             with FETCH_LOCK: IN_FLIGHT.discard(identity)

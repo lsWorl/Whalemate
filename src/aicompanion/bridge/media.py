@@ -99,14 +99,17 @@ class QQMedia:
             return question + '\n[图片未识别：当前聊天接口不是 DeepSeek 官方接口；不能猜测图片内容。]'
         model = str(self.db.get_setting('qq_vision_model', 'deepseek-flash') or 'deepseek-flash').strip()
         instruction = ('这是聊天账号的头像，不是聊天附件。只描述可见图案、颜色、文字和画风，不推断真人身份、性别、年龄、性格或账号主人现实外貌。'
-                       if avatar else '请描述这些图片，保留可辨认文字、人物表情和与问题相关的细节。')
+                       if avatar else '这一步只给聊天大脑提供内部视觉理解，不是回复发图人。先判断是表情包、照片还是任务截图。'
+                       '表情包只用简短文字记录表达的情绪、态度或反差和必要文字，不逐项分析构图、人物、颜色，不解释梗来源。'
+                       '普通照片抓住聊天重点；明确读字或处理截图的任务才保留相关文字和细节。看不清就注明，不能补编。')
         content = [{'type': 'text', 'text': instruction+'用户问题：'+question[:1500]}]
         content += [{'type': 'image_url', 'image_url': {'url': value}} for value in values]
+        task = bool(re.search(r'截图|排错|报错|识别|文字|写.{0,4}什么|读.{0,4}(?:字|图)|分析', question))
         try:
             vision = self.vision_factory(base_url=base, api_key=client.api_key, model=model,
                                          temperature=0.0, timeout_seconds=min(client.timeout_seconds, 40))
             with meter.using(purpose, self.controller.character.id):
-                result = vision.chat([{'role': 'user', 'content': content}], max_tokens=900,
+                result = vision.chat([{'role': 'user', 'content': content}], max_tokens=300 if avatar else (900 if task else 400),
                                      cancellation=CancellationToken())
             caption = str(result.get('content') or '').strip()
             if not caption: raise MediaError('视觉接口未返回内容')

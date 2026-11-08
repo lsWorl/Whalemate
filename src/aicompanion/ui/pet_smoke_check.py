@@ -160,6 +160,7 @@ def schedule_pet_smoke_check(window, database, output):
         from aicompanion.ui.bridge_page import BridgePage
         page = BridgePage(database); page.timer.stop()
         state['qq_media_settings_ready'] = (page.vision_enabled.isChecked() and page.memes_enabled.isChecked()
+                                            and page.chat_card_enabled.isChecked()
                                             and page.vision_model.text() == 'deepseek-flash')
         page.deleteLater()
     later(21500, qq_media)

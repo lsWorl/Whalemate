@@ -83,6 +83,19 @@ class QQMediaTests(unittest.TestCase):
         self.assertEqual(len(self.vision.calls), 2)
         self.assertEqual(len(self.db.recent_messages(10, self.cid, channel='qq:group:30003')), 2)
 
+    def test_sticker_observation_is_internal_and_empty_image_does_not_request_analysis(self):
+        self.ask(text='')
+        history, prompt = self.chat.calls[-1]
+        self.assertTrue(history[-1].content.startswith('[收到图片]'))
+        self.assertNotIn('请看看这张图片', history[-1].content)
+        self.assertIn('只在心里读懂情绪和含义', prompt)
+        self.assertIn('不分析画面', prompt)
+        messages, options = self.vision.calls[-1]
+        self.assertIn('内部视觉理解', messages[0]['content'][0]['text'])
+        self.assertEqual(options['max_tokens'], 400)
+        self.ask(text='这张截图写了什么文字？')
+        self.assertEqual(self.vision.calls[-1][1]['max_tokens'], 900)  # 正常截图任务保留原来的识别预算
+
     def test_unauthorized_closed_and_quota_requests_never_decode_or_call_vision(self):
         self.assertEqual(self.ask(sender_id='20002')['reason'], 'not_allowed')
         self.assertEqual(self.ask(group_id='99999')['reason'], 'not_allowed')
