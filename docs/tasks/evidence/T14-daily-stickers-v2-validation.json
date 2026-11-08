@@ -1,0 +1,33 @@
+{
+  "formal_assets": 171,
+  "first_prepare": {
+    "total": 171,
+    "existing": 0,
+    "reused": 108,
+    "bundled": 62,
+    "downloaded": 1,
+    "bytes": 81588986
+  },
+  "repeat_prepare": {
+    "total": 171,
+    "existing": 171,
+    "reused": 0,
+    "bundled": 0,
+    "downloaded": 0,
+    "bytes": 81588986
+  },
+  "first_import": {
+    "imported": 171,
+    "reused": 0,
+    "invalid": 0
+  },
+  "repeat_import": {
+    "imported": 0,
+    "reused": 171,
+    "invalid": 0
+  },
+  "approved": 171,
+  "unique_SHA256": 171,
+  "seconds": 15.74,
+  "real_user_database_modified": false
+}

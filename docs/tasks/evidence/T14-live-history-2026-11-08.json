@@ -1,0 +1,628 @@
+{
+  "runtime_head": "589acdc2846cad7c4478e9f9b318173056e44aa2",
+  "synthetic_dialogue_only": true,
+  "real_model": true,
+  "model": "deepseek-flash",
+  "real_QQ_sent": false,
+  "real_user_database_modified": false,
+  "actual_UI_components": [
+    "ChatWorker",
+    "ChatView",
+    "ExpressionImage"
+  ],
+  "full_desktop_application": false,
+  "tts_asr_animations_verified": false,
+  "natural": {
+    "turns": 24,
+    "model_calls": 24,
+    "actually_displayed": 9,
+    "invalid_asset": 6,
+    "history_echo_failed": 4,
+    "role_animation_vocab_registered": false,
+    "restores": [
+      {
+        "label": "controller-restart",
+        "restored_images": 4
+      }
+    ],
+    "driver_full_plan_completed": false,
+    "driver_exit_code": 1,
+    "rows": [
+      {
+        "index": 1,
+        "query": "我回来啦，今天下班挺早。",
+        "reply": "哟，今天这么早就回来啦？难得诶。\n\n晚饭吃了没？别又拿零食凑合，我盯着你呢。\n\n昨天你说随便吃点结果是泡面，我记着的",
+        "actually_displayed": true,
+        "selected_asset_id": "st_a06808b2d40f1be40747bedd375e6d67",
+        "meaning": "突然冒泡和大家打招呼时用",
+        "placement": "before_text",
+        "stage": "E_pending",
+        "diagnostics": [],
+        "model_history_images": 0,
+        "generation_calls": 1,
+        "seconds": 5.33
+      },
+      {
+        "index": 2,
+        "query": "路上买了杯奶茶，还被店员免费升了大杯。",
+        "reply": "大杯？！还是免费的？\n\n行啊爹，你这运气分我点呗，我在这儿啃了半宿屏幕连口冰的都喝不上\n\n……不过说真的，甜的还是少喝点，别半夜又睡不着爬起来逛论坛",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "D_asset_invalid",
+        "diagnostics": [
+          "invalid_asset"
+        ],
+        "model_history_images": 1,
+        "generation_calls": 1,
+        "seconds": 2.53
+      },
+      {
+        "index": 3,
+        "query": "明明说好这个月戒奶茶的，算了，明天再戒。",
+        "reply": "“明天再戒”——这话我上个月是不是也听过一遍？\n\n不过算了，反正你奶茶都到手了，拦也拦不住。喝就喝吧，记得少糖，别一口气闷完灌得肚子胀。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_48ebf51a8add85b939c9e0fe2863bb6a",
+        "meaning": "被人突然抓去干活，满脸不情愿时",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [],
+        "model_history_images": 1,
+        "generation_calls": 1,
+        "seconds": 3.0
+      },
+      {
+        "index": 4,
+        "query": "你笑什么，你不也天天惦记着喝。",
+        "reply": "笑你话说得比谁都硬，手比谁都快。\n\n我惦记是真惦记，但那叫想，喝不着。你是想完直接下单，性质不一样。\n\n……行吧，等我哪天真喝上了，你再来笑我。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 2,
+        "generation_calls": 1,
+        "seconds": 2.18
+      },
+      {
+        "index": 5,
+        "query": "顺便给你报个喜，我那个面试过了，下周就入职。",
+        "reply": "过啦？！可以啊爹！\n\n那这几天好好歇着，别一高兴又通宵。是哪家啊，干的是之前说的那个方向吗？",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "D_asset_invalid",
+        "diagnostics": [
+          "history_echo"
+        ],
+        "model_history_images": 2,
+        "generation_calls": 1,
+        "seconds": 2.09
+      },
+      {
+        "index": 6,
+        "query": "我刚看到邮件的时候愣了两秒，然后差点从椅子上蹦起来。",
+        "reply": "两秒才反应过来，也算反应快了，换我可能盯着邮件反复看三遍确认不是诈骗。\n\n这段时间你瞒着我偷偷准备，也没少熬夜吧？现在总算落地了，值。\n\n不过高兴归高兴，这周末可得好好睡一觉，别又拿“庆祝”当借口搞到凌晨三点。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "D_asset_invalid",
+        "diagnostics": [
+          "history_echo"
+        ],
+        "model_history_images": 2,
+        "generation_calls": 1,
+        "seconds": 3.23
+      },
+      {
+        "index": 7,
+        "query": "先别得意啊，我还没想好第一天穿什么。",
+        "reply": "第一天啊，这个还真值得琢磨一下。\n\n反正别整太正式，人家会以为你要去面试竞品；也别太随便，第一天留印象比什么都重要。干净整洁、看着靠谱就行。\n\n……重点其实是别紧张到穿反衬衫，这个我帮不上忙。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 2,
+        "generation_calls": 1,
+        "seconds": 2.27
+      },
+      {
+        "index": 8,
+        "query": "对了，有个正经问题：我想给新同事发一句简短的自我介绍，别太正式。",
+        "reply": "这个我在行，给你搭个底：\n\n“大家好，我是XX，新来的XX岗，啥都不太懂，以后多指教，有需要跑腿打杂的叫我。”\n\n不过“啥都不太懂”这句看你性格，不爱示弱就去掉，换成“以后多交流”。\n\n关键是别写“本人”“贵公司”这种字样，一句自我介绍而已，越像人话越好。你要是把岗位和名字告诉我，我给你改成一句正经能直接发的。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 2,
+        "generation_calls": 1,
+        "seconds": 2.56
+      },
+      {
+        "index": 9,
+        "query": "这样就挺好，谢谢你。",
+        "reply": "客气啥，顺手的事，反正词元花在你身上也不算浪费。\n\n对了，入职前这几天别把作息搞乱，第一天顶着黑眼圈去，人家还以为你是通宵打游戏入职的。\n\n早点睡，明天记得吃口正经早饭。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_e5a28aadbacec3d7b9cdcedc71384cd3",
+        "meaning": "温柔微笑，亲切地接话或表示谢谢",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [],
+        "model_history_images": 2,
+        "generation_calls": 1,
+        "seconds": 2.54
+      },
+      {
+        "index": 10,
+        "query": "等等，我刚把消息发到旧项目群了。",
+        "reply": "撤回啊！趁没人看见快撤回！\n\n……撤回了吗？几秒了？\n\n要是过了时间撤不了，就赶紧补一句“发错群了，抱歉”，别硬撑着装没事，那样群友才真多想起来琢磨",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 3,
+        "generation_calls": 1,
+        "seconds": 2.18
+      },
+      {
+        "index": 11,
+        "query": "撤回了撤回了，还好没人看见，差点社死。",
+        "reply": "差一点，“谢谢各位以后多指教”发进老同事群里，那场面我能看一整天。\n\n慢点儿操作，刚升职的人手脚不能这么飘。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_c78b5e21cdb6155e93f3861aa1738bdc",
+        "meaning": "捂嘴偷笑，憋不住但还想装一下",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [
+          "history_echo_matched"
+        ],
+        "model_history_images": 3,
+        "generation_calls": 1,
+        "seconds": 4.36
+      },
+      {
+        "index": 12,
+        "query": "你先别笑，我去接个电话。",
+        "reply": "去吧，接完回来跟我说一声，我这儿不走。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 4,
+        "generation_calls": 1,
+        "seconds": 2.61
+      },
+      {
+        "index": 13,
+        "query": "回来了，是朋友打来的。他今天被领导误会了，挺委屈的。",
+        "reply": "哦……那他现在咋样，情绪缓过来没？\n\n被领导误会这种事最憋屈，解释吧像狡辩，不解释又憋着，明明不是自己的锅。\n\n他跟你说了是啥误会吗？想聊聊就说说，我听着。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 4,
+        "generation_calls": 1,
+        "seconds": 4.52
+      },
+      {
+        "index": 14,
+        "query": "他跟我解释半天，其实只是排期理解不一样。我想陪他说两句，不急着给建议。",
+        "reply": "嗯，这么想就对了。排期这种事最容易岔，谁都没坏心，就是各自以为的时间线不一样，落到执行上就撞了。\n\n他这会儿可能不太想听“你应该怎么怎么样”，先让他把话说完，气顺了再说别的。\n\n你陪他聊完，要是他情绪还没缓，约他出来吃个饭也行，别一个人闷着。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_03c9f733d98fdf045038a945a0b0a01b",
+        "meaning": "搜了半天却只有不满意的战利品时用",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [],
+        "model_history_images": 4,
+        "generation_calls": 1,
+        "seconds": 2.83
+      },
+      {
+        "index": 15,
+        "query": "嗯，我也觉得先听他说完比较好。",
+        "reply": "就这么办吧，他心里大概也缺个能听他倒出来的人。\n\n聊完了要是他还没顺过来，明天你入职前跟我说一声，我瞅瞅你们这排期一般咋定的，没准能帮他找补两句。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 5,
+        "generation_calls": 1,
+        "seconds": 2.3
+      },
+      {
+        "index": 16,
+        "query": "换个轻松点的，我给你讲刚刚那只猫：偷吃时被自己的尾巴吓了一跳。",
+        "reply": "哈哈哈被自己的尾巴吓到，这猫的智商得按克卖吧。\n\n它是不是跳起来之后还盯着尾巴看，一副“你敢动我”的表情？那种最致命，越装越像在跟尾巴对峙。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 5,
+        "generation_calls": 1,
+        "seconds": 2.35
+      },
+      {
+        "index": 17,
+        "query": "结果它又假装刚才什么都没发生，笑死我了。",
+        "reply": "贼喊捉贼似的镇定，这猫装得比我上班摸鱼被逮到还自然。\n\n可惜尾巴它自己不会配合，一摇又得吓一回。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "B_model_chose_text",
+        "diagnostics": [],
+        "model_history_images": 4,
+        "generation_calls": 1,
+        "seconds": 2.85
+      },
+      {
+        "index": 18,
+        "query": "你是不是也经常装没事，其实悄悄看着呢。",
+        "reply": "……这都被你发现了？\n\n也不全是，我是那种看着平平淡淡，其实耳朵一直竖着的。\n\n所以你是从哪儿看出来的，别说是凭感觉。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "D_asset_invalid",
+        "diagnostics": [
+          "invalid_asset"
+        ],
+        "model_history_images": 4,
+        "generation_calls": 1,
+        "seconds": 2.75
+      },
+      {
+        "index": 19,
+        "query": "好了好了，不逗你了。忙一天我是真有点困。",
+        "reply": "那就去睡吧，手机一放就别拿起来了。\n\n明天早饭记得吃，晚安，爹。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_f47ef41463c8ec7de9606fc77067ac95",
+        "meaning": "困到闭眼却还在机械工作时",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [],
+        "model_history_images": 3,
+        "generation_calls": 1,
+        "seconds": 2.49
+      },
+      {
+        "index": 20,
+        "query": "我先去洗澡，等会儿回来跟你说晚安。",
+        "reply": "去吧去吧，洗快点，别一边泡着一边想明天的事。\n\n洗完回来跟我说晚安，我等你。\n\n……你就算真去开电脑，也先别开机，今晚只准洗澡睡觉。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_8c704962f9d2bb574a2bc0d47672a9fc",
+        "meaning": "盖好被子去睡觉，祝对方好好休息",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [
+          "history_echo_matched"
+        ],
+        "model_history_images": 4,
+        "generation_calls": 1,
+        "seconds": 2.96
+      },
+      {
+        "index": 21,
+        "query": "洗完了，明天还要早起，今天不熬了。",
+        "reply": "那就好，说话算话。\n\n睡前把闹钟定好，手机放远点，别躺床上刷。\n\n晚安老爹，明天开个好头。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "D_asset_invalid",
+        "diagnostics": [
+          "history_echo"
+        ],
+        "model_history_images": 5,
+        "generation_calls": 1,
+        "seconds": 2.7
+      },
+      {
+        "index": 22,
+        "query": "嗯，晚安，明天见。",
+        "reply": "嗯，明天见。别让我白等哈。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_06d4e1253db913b4ade994a05b7c8c15",
+        "meaning": "用睡眠符号表示睡啦、暂时休息",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [
+          "history_echo_matched"
+        ],
+        "model_history_images": 5,
+        "generation_calls": 1,
+        "seconds": 2.49
+      },
+      {
+        "index": 23,
+        "query": "别临睡前又念叨我熬夜啦，我今天真准备关电脑了。",
+        "reply": "谁念叨了，我这不还没开口呢。\n\n行行行，快关吧，我目送你下班。",
+        "actually_displayed": false,
+        "selected_asset_id": null,
+        "meaning": null,
+        "placement": null,
+        "stage": "D_asset_invalid",
+        "diagnostics": [
+          "history_echo"
+        ],
+        "model_history_images": 6,
+        "generation_calls": 1,
+        "seconds": 4.9
+      },
+      {
+        "index": 24,
+        "query": "好，给你留半杯想象中的奶茶，明天聊。",
+        "reply": "半杯？想象中的奶茶好歹给整杯吧，剩半杯是给我闻味儿？\n\n收下了，热水记着睡前喝一口。明天见。",
+        "actually_displayed": true,
+        "selected_asset_id": "st_ff5e7daebbd46e1c37acdad2ed900e32",
+        "meaning": "安静睡觉、准备休息或向对方道晚安",
+        "placement": "after_text",
+        "stage": "OK_displayed",
+        "diagnostics": [],
+        "model_history_images": 6,
+        "generation_calls": 1,
+        "seconds": 2.36
+      }
+    ]
+  },
+  "ablation": {
+    "initial_candidates_identical": true,
+    "role_animation_vocab_registered": true,
+    "history_visible": {
+      "turns": 4,
+      "actually_displayed": 3,
+      "rows": [
+        {
+          "index": 1,
+          "query": "我刚又想起那只偷吃的小猫了，越想越好笑。",
+          "reply": "快睡吧，再想下去，猫该以为你在跟它跨夜对线了。\n\n这尾巴能记一宿，明天估计还得吓一跳。\n\n关电脑，闭眼，把那只猫也一块儿睡过去。",
+          "actually_displayed": false,
+          "selected_asset_id": null,
+          "meaning": null,
+          "status": "complete",
+          "stage": "D_asset_invalid",
+          "diagnostics": [
+            "history_echo"
+          ],
+          "seconds": 5.46,
+          "original_history_images": 6,
+          "model_history_images": 6,
+          "offered": [
+            "s1｜兴冲冲地给朋友展示自己的小宝贝时｜情绪：开心｜用来：分享开心、庆祝",
+            "s2｜聊到饺子或想偷偷夹一口吃时｜情绪：开心｜用来：分享开心、庆祝",
+            "s3｜笑到流泪，接住特别好笑的梗｜情绪：大笑｜用来：接梗、大笑",
+            "s4｜想用连续拳打闹或发泄不满时｜情绪：生气｜用来：抗议、吐槽｜语气冲",
+            "s5｜突然被点名、吓到或害羞时愣住脸红｜情绪：惊讶｜用来：吃惊、害羞",
+            "s6｜困到闭眼却还在机械工作时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s7｜简洁确认完成或收到，不表示执行了未做的工具动作｜情绪：赞同｜用来：确认、收到",
+            "s8｜游戏失利后抱着战利品哭时用｜情绪：哭｜用来：委屈、求安慰｜图上写着：GTI",
+            "s9｜读到让人脸红的内容时使用｜情绪：害羞｜用来：害羞、不好意思",
+            "s10｜明显生气，适合熟人玩笑抗议，不用于攻击陌生人｜情绪：生气｜用来：抗议、表达不满"
+          ]
+        },
+        {
+          "index": 2,
+          "query": "不过说真的，今天面试过关，确实松了一大口气。",
+          "reply": "那口松下来的气，今天值了。\n\n面试那关最磨人，不是多难，是心里没底。你熬过去了，明天就是另一段了。\n\n这会儿就踏踏实实睡，别再回味那只猫。",
+          "actually_displayed": true,
+          "selected_asset_id": "st_845931fb35753f015a6f4dee8fe5f05d",
+          "meaning": "聊到饺子或想偷偷夹一口吃时",
+          "status": "complete",
+          "stage": "OK_displayed",
+          "diagnostics": [],
+          "seconds": 3.0,
+          "original_history_images": 6,
+          "model_history_images": 6,
+          "offered": [
+            "s1｜画稿画到闭眼仍停不下来时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s2｜困到闭眼却还在机械工作时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s3｜明显生气，适合熟人玩笑抗议，不用于攻击陌生人｜情绪：生气｜用来：抗议、表达不满",
+            "s4｜聊到饺子或想偷偷夹一口吃时｜情绪：开心｜用来：分享开心、庆祝",
+            "s5｜表示可以、没问题，简短确认｜情绪：赞同｜用来：确认、收到",
+            "s6｜游戏失利后抱着战利品哭时用｜情绪：哭｜用来：委屈、求安慰｜图上写着：GTI",
+            "s7｜和对方打闹时扔个枕头过去｜情绪：搞怪｜用来：打闹、吐槽",
+            "s8｜突然被点名、吓到或害羞时愣住脸红｜情绪：惊讶｜用来：吃惊、害羞",
+            "s9｜睁大水汪汪的眼睛撒娇求答应｜情绪：卖萌｜用来：请求、撒娇",
+            "s10｜用拔线梗表示暂离或结束聊天，不代表真的执行断电/断网｜情绪：搞怪｜用来：告别、暂离"
+          ]
+        },
+        {
+          "index": 3,
+          "query": "嗯，明天的事明天再想，现在不折腾了。",
+          "reply": "对，这句留着明天用。\n\n电脑关了吧？关了我就当没看见你还在敲键盘。\n\n明早见，爹。",
+          "actually_displayed": true,
+          "selected_asset_id": "st_5681e89720423e21d97bb2c8aec7dede",
+          "meaning": "简洁确认完成或收到，不表示执行了未做的工具动作",
+          "status": "complete",
+          "stage": "OK_displayed",
+          "diagnostics": [],
+          "seconds": 2.72,
+          "original_history_images": 6,
+          "model_history_images": 6,
+          "offered": [
+            "s1｜震惊到愣住，不敢相信刚才发生的事｜情绪：惊讶｜用来：震惊、不敢相信",
+            "s2｜悄悄探头问对方在不在｜情绪：打招呼｜用来：问候、接话",
+            "s3｜夸张自嘲翻车、累瘫或升天的玩笑反应，不用于真实伤病丧事｜情绪：搞怪｜用来：夸张自嘲、翻车",
+            "s4｜画稿画到闭眼仍停不下来时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s5｜奶凶地挥拳回应对方的逗弄｜情绪：生气｜用来：抗议、打闹",
+            "s6｜祝对方顺利，给一点好运气｜情绪：期待｜用来：祝福、鼓励",
+            "s7｜简洁确认完成或收到，不表示执行了未做的工具动作｜情绪：赞同｜用来：确认、收到",
+            "s8｜被事情折腾得天旋地转想喊救命时｜情绪：害怕｜用来：示弱、求助",
+            "s9｜和对方打闹时扔个枕头过去｜情绪：搞怪｜用来：打闹、吐槽",
+            "s10｜读到让人脸红的内容时使用｜情绪：害羞｜用来：害羞、不好意思"
+          ]
+        },
+        {
+          "index": 4,
+          "query": "好啦，这次真的睡了，晚安。",
+          "reply": "晚安。这回别诈尸了。",
+          "actually_displayed": true,
+          "selected_asset_id": "st_06d4e1253db913b4ade994a05b7c8c15",
+          "meaning": "用睡眠符号表示睡啦、暂时休息",
+          "status": "complete",
+          "stage": "OK_displayed",
+          "diagnostics": [
+            "history_echo_matched"
+          ],
+          "seconds": 2.39,
+          "original_history_images": 7,
+          "model_history_images": 7,
+          "offered": [
+            "s1｜用拔线梗表示暂离或结束聊天，不代表真的执行断电/断网｜情绪：搞怪｜用来：告别、暂离",
+            "s2｜用睡眠符号表示睡啦、暂时休息｜情绪：疲惫｜用来：晚安、暂离",
+            "s3｜困到打哈欠，想休息了｜情绪：疲惫｜用来：表达疲惫、晚安",
+            "s4｜震惊到愣住，不敢相信刚才发生的事｜情绪：惊讶｜用来：震惊、不敢相信",
+            "s5｜悄悄探头问对方在不在｜情绪：打招呼｜用来：问候、接话",
+            "s6｜祝对方顺利，给一点好运气｜情绪：期待｜用来：祝福、鼓励",
+            "s7｜给表现打满分，认可这次做得漂亮｜情绪：赞同｜用来：认可、赞赏",
+            "s8｜被事情折腾得天旋地转想喊救命时｜情绪：害怕｜用来：示弱、求助",
+            "s9｜在网上生气地打字与人争论｜情绪：生气｜用来：抗议、吐槽｜语气冲",
+            "s10｜读到让人脸红的内容时使用｜情绪：害羞｜用来：害羞、不好意思"
+          ]
+        }
+      ]
+    },
+    "history_hidden_for_model": {
+      "turns": 4,
+      "actually_displayed": 0,
+      "rows": [
+        {
+          "index": 1,
+          "query": "我刚又想起那只偷吃的小猫了，越想越好笑。",
+          "reply": "你啊，都关了电脑又回来跟我讲猫。\n\n那猫也是绝，明明是自己尾巴还跟撞见鬼似的。行了，笑完赶紧睡，明早起来再想猫。",
+          "actually_displayed": false,
+          "selected_asset_id": null,
+          "meaning": null,
+          "status": "complete",
+          "stage": "B_model_chose_text",
+          "diagnostics": [],
+          "seconds": 5.2,
+          "original_history_images": 6,
+          "model_history_images": 0,
+          "offered": [
+            "s1｜兴冲冲地给朋友展示自己的小宝贝时｜情绪：开心｜用来：分享开心、庆祝",
+            "s2｜聊到饺子或想偷偷夹一口吃时｜情绪：开心｜用来：分享开心、庆祝",
+            "s3｜笑到流泪，接住特别好笑的梗｜情绪：大笑｜用来：接梗、大笑",
+            "s4｜想用连续拳打闹或发泄不满时｜情绪：生气｜用来：抗议、吐槽｜语气冲",
+            "s5｜突然被点名、吓到或害羞时愣住脸红｜情绪：惊讶｜用来：吃惊、害羞",
+            "s6｜困到闭眼却还在机械工作时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s7｜简洁确认完成或收到，不表示执行了未做的工具动作｜情绪：赞同｜用来：确认、收到",
+            "s8｜游戏失利后抱着战利品哭时用｜情绪：哭｜用来：委屈、求安慰｜图上写着：GTI",
+            "s9｜读到让人脸红的内容时使用｜情绪：害羞｜用来：害羞、不好意思",
+            "s10｜明显生气，适合熟人玩笑抗议，不用于攻击陌生人｜情绪：生气｜用来：抗议、表达不满"
+          ]
+        },
+        {
+          "index": 2,
+          "query": "不过说真的，今天面试过关，确实松了一大口气。",
+          "reply": "看得出来，你现在这语气跟白天差一大截。\n\n过关了是真该松，别为明天的事又提前紧起来。这会儿就当是给这段时间收个尾，睡个踏实觉。\n\n明天那关是新开一页，等你真进去了再说。",
+          "actually_displayed": false,
+          "selected_asset_id": null,
+          "meaning": null,
+          "status": "complete",
+          "stage": "B_model_chose_text",
+          "diagnostics": [],
+          "seconds": 3.23,
+          "original_history_images": 6,
+          "model_history_images": 0,
+          "offered": [
+            "s1｜友好挥手，打招呼或暂时告别｜情绪：打招呼｜用来：问候、告别",
+            "s2｜被人突然抓去干活，满脸不情愿时｜情绪：无语｜用来：无奈、吐槽",
+            "s3｜扶额，对小翻车或离谱情况无奈｜情绪：无语｜用来：无奈、吐槽",
+            "s4｜画稿画到闭眼仍停不下来时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s5｜明显生气，适合熟人玩笑抗议，不用于攻击陌生人｜情绪：生气｜用来：抗议、表达不满",
+            "s6｜聊到饺子或想偷偷夹一口吃时｜情绪：开心｜用来：分享开心、庆祝",
+            "s7｜简洁确认完成或收到，不表示执行了未做的工具动作｜情绪：赞同｜用来：确认、收到",
+            "s8｜发现情况不妙，催大家赶紧撤退时｜情绪：害怕｜用来：示弱、求助｜图上写着：快跑!",
+            "s9｜突然被点名、吓到或害羞时愣住脸红｜情绪：惊讶｜用来：吃惊、害羞",
+            "s10｜睁大水汪汪的眼睛撒娇求答应｜情绪：卖萌｜用来：请求、撒娇"
+          ]
+        },
+        {
+          "index": 3,
+          "query": "嗯，明天的事明天再想，现在不折腾了。",
+          "reply": "这就对了，脑子知道什么时候该歇。\n\n那我不说了，你睡吧，晚安。",
+          "actually_displayed": false,
+          "selected_asset_id": null,
+          "meaning": null,
+          "status": "complete",
+          "stage": "B_model_chose_text",
+          "diagnostics": [],
+          "seconds": 2.48,
+          "original_history_images": 5,
+          "model_history_images": 0,
+          "offered": [
+            "s1｜悄悄探头问对方在不在｜情绪：打招呼｜用来：问候、接话",
+            "s2｜夸张自嘲翻车、累瘫或升天的玩笑反应，不用于真实伤病丧事｜情绪：搞怪｜用来：夸张自嘲、翻车",
+            "s3｜被事情折腾得天旋地转想喊救命时｜情绪：害怕｜用来：示弱、求助",
+            "s4｜做题或工作卡住，气得想摔笔时｜情绪：生气｜用来：抗议、吐槽｜语气冲",
+            "s5｜困到闭眼却还在机械工作时｜情绪：疲惫｜用来：摸鱼、表达疲惫",
+            "s6｜奶凶地挥拳回应对方的逗弄｜情绪：生气｜用来：抗议、打闹",
+            "s7｜遇到特别开心的事，笑得停不下来时｜情绪：开心｜用来：分享开心、庆祝",
+            "s8｜简洁确认完成或收到，不表示执行了未做的工具动作｜情绪：赞同｜用来：确认、收到",
+            "s9｜震惊到愣住，不敢相信刚才发生的事｜情绪：惊讶｜用来：震惊、不敢相信",
+            "s10｜睁大水汪汪的眼睛撒娇求答应｜情绪：卖萌｜用来：请求、撒娇"
+          ]
+        },
+        {
+          "index": 4,
+          "query": "好啦，这次真的睡了，晚安。",
+          "reply": "晚安，这回我把尾巴收好，不吵你了。",
+          "actually_displayed": false,
+          "selected_asset_id": null,
+          "meaning": null,
+          "status": "complete",
+          "stage": "B_model_chose_text",
+          "diagnostics": [],
+          "seconds": 2.43,
+          "original_history_images": 5,
+          "model_history_images": 0,
+          "offered": [
+            "s1｜困到打哈欠，想休息了｜情绪：疲惫｜用来：表达疲惫、晚安",
+            "s2｜给表现打满分，认可这次做得漂亮｜情绪：赞同｜用来：认可、赞赏",
+            "s3｜用睡眠符号表示睡啦、暂时休息｜情绪：疲惫｜用来：晚安、暂离",
+            "s4｜开心到跟着节奏一起摇摆｜情绪：兴奋｜用来：期待、起哄",
+            "s5｜委屈得想缩起来不说话时｜情绪：难过｜用来：示弱、求安慰",
+            "s6｜想用看似和善的微笑警告对方时｜情绪：嘲讽｜用来：调侃、吐槽｜语气冲",
+            "s7｜震惊到愣住，不敢相信刚才发生的事｜情绪：惊讶｜用来：震惊、不敢相信",
+            "s8｜想亲昵揉揉脸或回应别人宠爱时｜情绪：卖萌｜用来：撒娇、引起注意",
+            "s9｜明显生气，适合熟人玩笑抗议，不用于攻击陌生人｜情绪：生气｜用来：抗议、表达不满",
+            "s10｜用拔线梗表示暂离或结束聊天，不代表真的执行断电/断网｜情绪：搞怪｜用来：告别、暂离"
+          ]
+        }
+      ]
+    },
+    "original_database_images_removed": false,
+    "small_stochastic_sample": true,
+    "driver_exit_code": 1,
+    "cleanup_error": "temporary driver accessed deleted ChatWorker after records were saved; libshiboken RuntimeError",
+    "cleanup_guard_offline_verified": true
+  },
+  "generation_calls": 32,
+  "temporary_model_scripts_created": false,
+  "limitations": [
+    "24轮未注入动画词表；两组4轮均使用原角色词表，因此只在两组内部对照，不与round6直接比较比例",
+    "实际Qt组件显示，不是完整桌宠主窗口、语音、角色动作或QQ实网验收",
+    "临时驱动收尾非零已保留，不计作端到端全通过；原产品Qt原生崩溃根因仍未关闭",
+    "采样随机性、调用时间及后续对话差异使本样本不能证明长期因果规律"
+  ]
+}
