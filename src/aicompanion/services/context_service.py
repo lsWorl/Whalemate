@@ -35,7 +35,15 @@ class ContextService:
 {self.memory.build_memory_context(query,character.id,scene)}
 过往交流摘要（仅作背景）：{summary}"""
         if situation: prompt += '\n'+situation
-        turns = [ChatTurn(r['role'],r['content']) for r in history if r['content'].strip()]
+        turns=[]
+        from aicompanion.expression.service import ExpressionService
+        expressions=ExpressionService(self.database)
+        for row in history:
+            text=row['content']
+            if row['role']=='assistant' and row['turn_id']:
+                attached=expressions.history(row['turn_id'],character.id,channel)
+                if attached:text+='\n[角色已发送表情：'+attached[0]['alt_text']+']'
+            if text.strip():turns.append(ChatTurn(row['role'],text))
         # 最后一组连续用户消息合并为一个模型输入，原始消息仍逐条保留。
         if turns and turns[-1].role=='user':
             start=len(turns)-1
@@ -45,4 +53,3 @@ class ContextService:
         while len(turns)>2 and sum(len(t.content) for t in turns)>12000:
             turns.pop(0)
         return turns,prompt
-

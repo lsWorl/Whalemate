@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
         self.vocab=Vocab(); self.cue_streams={}; self.pending_cues={}; self.sentence_cues={}
         self.pet=DesktopPetWindow(self.database)
         self.coordinator=ConversationCoordinator(); self.workers=set(); self.tasks=set()
+        self.expression_results={}; self.displayed_attachments=set(); self.history_epoch=0
         self.items={}; self.texts={}; self.proactive_keys={}; self.closing=False; self.exit_requested=False
         self.delivered={}; self.reply_characters={}; self.reply_voice={}; self.reply_status={}
         # 语气词：每轮回复只发一声反应（或再加第一句短话），文字留在气泡
@@ -218,7 +219,7 @@ class MainWindow(QMainWindow):
         self.roles.setCurrentIndex(max(0,self.roles.findData(self.controller.character.id))); self.roles.blockSignals(False)
 
     def _load_history(self,older=False):
-        if not older: self.chat_list.clear(); self.first_history_id=None
+        if not older: self.chat_list.clear(); self.first_history_id=None; self.history_epoch+=1
         rows=self.database.recent_messages(30,self.controller.character.id,self.first_history_id if older else None)
         if rows: self.first_history_id=rows[0]['id']
         for index,row in enumerate(rows):
@@ -226,7 +227,14 @@ class MainWindow(QMainWindow):
             note={'cancelled':'（被打断）','failed':'（没说完）','interrupted':'（中断了）'}.get(row['status'],'' if row['status']=='complete' else f"（{row['status']}）")
             content=strip_cues(row['content'],self.vocab)+(f"\n{note}" if note else '')
             if row['source']=='agent' and content.startswith('[干活]'): content='🛠 '+content[4:].lstrip()
-            self.chat_list.append(sender,content,index if older else None)
+            handle=self.chat_list.append(sender,content,index if older else None)
+            if row['role']=='assistant' and row['turn_id']:
+                for attachment in self.controller.expression.history(row['turn_id'],self.controller.character.id):
+                    cid=self.controller.character.id; epoch=self.history_epoch
+                    worker=TaskWorker(lambda token,a=attachment:self.controller.expression.catalog.resolve(a['asset_id'],a['revision'],approved=False),self)
+                    self.tasks.add(worker)
+                    worker.succeeded.connect(lambda media,h=handle,a=attachment,cid=cid,epoch=epoch: h.setAttachment(*media,a['placement']) if media and cid==self.controller.character.id and epoch==self.history_epoch and not self.closing else None)
+                    worker.finished.connect(lambda w=worker:self._task_finished(w));worker.start()
         if not older: self.chat_list.scrollToBottom()
 
     def _append_message(self,sender,content):
@@ -372,6 +380,7 @@ class MainWindow(QMainWindow):
         for worker in self.workers: worker.cancellation.cancel()
         if old in self.items and self.texts.get(old): self.items[old].setText(self.items[old].text()+'\n[已打断]')
         elif old in self.items: self.items[old].setText(self.controller.character.name+': [已打断]')
+        if old:self.controller.expression.cancel(old,self.reply_characters.get(old,self.controller.character.id))
         self.speech.stop(); self.sentences=SentenceBuffer(); self.subtitle.clear(); self.subtitle.hide()
         self._pet_subtitle(''); self.pet.dispatch('interrupted')
         self.pet.hide_activity(); self.pet.finish_reply(); self.sentence_cues.clear()
@@ -403,11 +412,39 @@ class MainWindow(QMainWindow):
         worker=ChatWorker(self.controller,generation,self.controller.character,query,proactive,self)
         self.workers.add(worker)
         if key: self.proactive_keys[generation]=(self.controller.character.id,key)
-        worker.token_received.connect(self._token); worker.result.connect(self._result)
+        worker.expression_event.connect(self._expression_event); worker.result.connect(self._result)
         worker.finished.connect(lambda w=worker:self._worker_finished(w))
         worker.start(); self._status('正在回应…'); self.pet.dispatch('message_sent')
         self.cue_streams[generation]=CueStream(self.vocab); self.pending_cues[generation]=[]
         self.pet.show_activity('thinking')
+
+    def _expression_event(self,generation,payload):
+        if not self.coordinator.accepts(generation) or self.closing:return
+        if payload[0]=='text':self._token(generation,payload[1]);return
+        _,event,media=payload
+        if event.generation_id!=generation:return
+        if event.kind=='attachment_ready':self._display_attachment(generation,event.attachment,media)
+        elif event.kind=='final':self.expression_results[generation]=(event.result,media)
+
+    def _display_attachment(self,generation,attachment,media):
+        if not attachment or attachment.delivery_id in self.displayed_attachments:return
+        if not self.coordinator.accepts(generation) or self.closing:return
+        if not (self.isVisible() or (self.pet.isVisible() and self.database.get_setting('pet_bubble_enabled',True))):
+            self.controller.expression.receipt(attachment.delivery_id,'cancelled');return
+        catalog=self.controller.expression.catalog;row=catalog.get(attachment.asset_id)
+        if (not self.database.get_setting('qq_memes_enabled',True) or not media or not row or not row['enabled'] or row['review_status']!='approved'
+                or row['revision']!=attachment.revision or row['root']!=str(catalog.root)):
+            self.controller.expression.receipt(attachment.delivery_id,'failed');return
+        handle=self.items.get(generation)
+        if handle is None:return
+        handle.setText(self.controller.character.name+': '+self.texts.get(generation,''))
+        if handle.setAttachment(*media,attachment.placement):
+            self.displayed_attachments.add(attachment.delivery_id)
+            self.controller.expression.receipt(attachment.delivery_id,'displayed')
+            if self.pet.isVisible() and self.database.get_setting('pet_bubble_enabled',True):
+                self.pet.bubble.say_image(*media,self.pet._head_point(),key='expression:'+generation)
+            self.pet.hide_activity()
+        else:self.controller.expression.receipt(attachment.delivery_id,'failed')
 
     def _token(self,generation,token):
         if not self.coordinator.accepts(generation) or self.closing: return
@@ -424,6 +461,7 @@ class MainWindow(QMainWindow):
             self._pet_subtitle(self.texts[generation][-180:])
 
     def _result(self,generation,state,error):
+        expression,media=self.expression_results.pop(generation,(None,None))
         key=self.proactive_keys.pop(generation,None)
         if key and state!='complete': self.database.release_proactive(*key)
         purpose_id=self.purpose_ids.pop(generation,None)
@@ -440,6 +478,12 @@ class MainWindow(QMainWindow):
             if rest and state=='complete':
                 self.texts[generation]+=rest; self.items[generation].setText(self.controller.character.name+': '+self.texts[generation])
                 for sentence in self.sentences.feed(rest): self._enqueue_sentence(sentence,generation)
+        if state=='complete' and expression and expression.status=='complete':
+            for attachment in expression.attachments:self._display_attachment(generation,attachment,media)
+            if expression.attachments and not self.texts.get(generation,'').strip() and not any(a.delivery_id in self.displayed_attachments for a in expression.attachments):
+                state='failed';error='表情未能显示';self.reply_status[generation]='failed';self._sync_delivery(generation)
+                if purpose_id:self.purposes.release(purpose_id)
+                if key:self.database.release_proactive(*key)
         if state=='complete':
             self.pet.dispatch('reply_finished',ok=True,celebrate=getattr(self,'celebrate_next',False)); self.celebrate_next=False
             for sentence in self.sentences.feed('',True): self._enqueue_sentence(sentence,generation)

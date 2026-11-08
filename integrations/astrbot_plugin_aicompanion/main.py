@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.5.1'
+PLUGIN_VERSION = '0.6.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 QQ_ADAPTERS = {'aiocqhttp': 'qq', 'qq_official': 'qq', 'qq_official_webhook': 'qq'}
@@ -42,6 +42,7 @@ class AICompanionBridge(Star):
         self.pet_vision = True
         self.pet_name = '鲸娘'
         self.avatar_backoff = {}
+        self.expression_attempts = set()
         self.heartbeat_task = None
         try:
             self.heartbeat_task = asyncio.get_running_loop().create_task(self.heartbeat_loop())
@@ -230,12 +231,61 @@ class AICompanionBridge(Star):
             response.raise_for_status()
             return await response.json()
 
+    async def expression_control(self,path,payload):
+        async with await self.post('/v1/expression/'+path,payload,5) as response:
+            if response.status!=200:return {}
+            return await response.json()
+
+    async def send_expression(self,event,result):
+        """平台 await send 成功才 ACK；超时结果未知，绝不自动重发。"""
+        import hashlib
+        expression=result.get('expression')
+        if result.get('expression_version')!=1 or not isinstance(expression,dict):return False
+        attachments=expression.get('attachments') or []
+        if not attachments:return False
+        item=attachments[0]
+        if not isinstance(item,dict):return False
+        delivery=str(item.get('delivery_id') or '')
+        if not re.fullmatch(r'[a-f0-9]{32}',delivery):return False
+        if delivery in self.expression_attempts:return True
+        value=item.get('data_uri');placement=item.get('placement')
+        if not isinstance(value,str) or len(value)>MAX_IMAGE_BYTES*4//3+128 or placement not in ('before_text','after_text'):return False
+        match=re.fullmatch(r'data:image/(?:png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)',value)
+        if not match:return False
+        try:raw=base64.b64decode(match[1],validate=True)
+        except ValueError:return False
+        if not raw or len(raw)>MAX_IMAGE_BYTES or hashlib.sha256(raw).hexdigest()!=item.get('content_sha256'):return False
+        self.expression_attempts.add(delivery)
+        if len(self.expression_attempts)>2048:self.expression_attempts={delivery}
+        try:permission=await self.expression_control('claim',{'delivery_id':delivery})
+        except Exception:return True
+        if not permission.get('allowed'):return permission.get('reason')!='media_unavailable'
+        status='unknown';cancelled=None
+        try:
+            from astrbot.api.message_components import Image,Plain
+            image=Image.fromBase64(match[1]);text=str(expression.get('text') or '')
+            chain=([image,Plain(text)] if placement=='before_text' else [Plain(text),image]) if text else [image]
+            # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。
+            await asyncio.wait_for(event.send(event.chain_result(chain)),timeout=min(30,float(self.option('timeout'))))
+            status='accepted'
+        except asyncio.CancelledError as error:cancelled=error
+        except Exception as error:
+            # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。
+            if type(error).__name__=='ActionFailed':status='failed'
+        try:
+            await asyncio.shield(self.expression_control('ack',{'delivery_id':delivery,'status':status}))
+        except Exception:pass  # ACK 可幂等补报；不能据此重发图片。
+        if cancelled:raise cancelled
+        return True
+
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def on_message(self, event: AstrMessageEvent):
         payload = self.route(event)
         if payload is None: return
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
         event.stop_event()
+        payload['expression_version']=1
+        payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
         try:
             await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)
@@ -248,16 +298,8 @@ class AICompanionBridge(Star):
             return
         reply = str(result.get('reply') or '').strip()
         if result.get('silent'): return
-        images = result.get('images') or []
-        if images:
-            from astrbot.api.message_components import Image, Plain
-            chain = [Plain(reply)] if reply else []
-            for value in images[:1]:
-                if isinstance(value, str) and len(value) <= MAX_IMAGE_BYTES*4//3+128:
-                    match = re.fullmatch(r'data:image/(?:png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)', value)
-                    if match: chain.append(Image.fromBase64(match[1]))
-            if chain: yield event.chain_result(chain)
-        elif reply: yield event.plain_result(reply)
+        if await self.send_expression(event,result):return
+        if reply:yield event.plain_result(reply)
 
     async def terminate(self):
         if self.heartbeat_task: self.heartbeat_task.cancel()

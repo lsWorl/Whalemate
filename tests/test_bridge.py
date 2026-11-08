@@ -565,7 +565,7 @@ class EarlyV4Tests(unittest.TestCase):
             db.add_message('user', '新消息', 'emilia', channel='qq:group:30003', sender='qq:1')
             Database(path).initialize()                                      # 重复打开
             self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
-            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 5)
+            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 6)
 
 
 class ServerTests(unittest.TestCase):

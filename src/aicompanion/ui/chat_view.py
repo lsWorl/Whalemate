@@ -76,6 +76,15 @@ class Bubble(QFrame):
         layout.addWidget(self.label)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
 
+    def set_attachment(self,data,mime,placement):
+        from aicompanion.ui.expression_image import ExpressionImage
+        if hasattr(self,'image'):self.image.stop();self.layout().removeWidget(self.image);self.image.deleteLater()
+        self.image=ExpressionImage(self)
+        valid=self.image.load(data,mime)
+        self.layout().insertWidget(0 if placement=='before_text' else self.layout().count(),self.image)
+        self.label.setVisible(bool(self.label.text()))
+        return valid
+
 
 class MessageHandle:
     def __init__(self, view: 'ChatView', sender: str, row: QWidget, bubble: Bubble):
@@ -88,7 +97,10 @@ class MessageHandle:
         prefix = f'{self.sender}: '
         if text.startswith(prefix): text = text[len(prefix):]
         elif text.startswith(f'{self.sender}:'): text = text[len(self.sender)+1:]
-        self.bubble.label.setText(text); self.view._limit(self.bubble); self.view.follow()
+        self.bubble.label.setText(text); self.bubble.label.setVisible(bool(text)); self.view._limit(self.bubble); self.view.follow()
+
+    def setAttachment(self,data,mime,placement='after_text'):
+        valid=self.bubble.set_attachment(data,mime,placement);self.view.follow();return valid
 
 
 class ChatView(QScrollArea):

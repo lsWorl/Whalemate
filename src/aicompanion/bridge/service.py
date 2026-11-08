@@ -75,11 +75,19 @@ class BridgeService:
             quota = Quota(database)
         self.quota = quota
         self.lock = PROCESS_LOCK
+        self.expression_bindings={}; self.expression_lock=threading.Lock()
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
 
     def close(self) -> None:
         """Runtime 关闭 / 重启时调用：之后排队的回复拿到锁直接放弃，旁听的消息也不再落库（等正在写的那条写完）。"""
-        with RECORD_LOCK: self.closed = True
+        with RECORD_LOCK:
+            self.closed = True
+            with self.expression_lock:
+                ids=list(self.expression_bindings)
+            if ids:
+                with self.database.transaction() as c:
+                    for delivery in ids:
+                        c.execute("UPDATE expression_deliveries SET status=CASE WHEN status='sending' THEN 'unknown' ELSE 'cancelled' END WHERE delivery_id=? AND status IN ('pending','sending')",(delivery,))
 
     # ---- 规则 --------------------------------------------------------------------
     def classify(self, platform: str, sender_id: str, group_id: str, connection=None) -> dict | None:
@@ -164,7 +172,7 @@ class BridgeService:
         mode = self.classify(platform, sender_id, group_id)
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         if mode['group'] and payload.get('called', True) is False and not self.called_by_name(text):
-            return self._overhear(mode, platform, sender_id, group_id, name, text)
+            return self._overhear(mode, platform, sender_id, group_id, name, text, payload)
         with self.lock:
             # 拿到锁以后、读任何上下文之前，按此刻的设置重新判断身份：排队期间爹解绑 / 群被移出 / 服务被关，旧请求都作废
             if self.closed: return {'reply': '', 'silent': True, 'reason': 'closed'}
@@ -215,9 +223,9 @@ class BridgeService:
             situation += avatar_info
             if '头像' in original_text and not avatar_info:
                 situation += '\n本次没有读取到可用头像，不能猜测头像内容；可以请对方稍后再试或直接发图。'
-            return self._reply(controller, character, mode, situation, platform, purpose, message_id, text)
+            return self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload)
 
-    def _overhear(self, mode, platform, sender_id, group_id, name, text) -> dict:
+    def _overhear(self, mode, platform, sender_id, group_id, name, text, request=None) -> dict:
         """群里没叫她的消息：先记进群聊记录（她"听到"了，之后被叫或整理记忆时都看得到），再看要不要插话。
         记录不排队等 PROCESS_LOCK：她正在别处说话时，群里刷屏的消息不会堆在锁上等到插件超时；这时也不插话。"""
         controller = self.controller; character = controller.character
@@ -252,53 +260,103 @@ class BridgeService:
                          '标着【爹】的是你爹，群里其他人都看得到你的回复。看看最近大家在聊什么：有想接的话、能接的梗、或者聊到你感兴趣 / 熟悉的事，'
                          f'就像群友一样自然插一句；话题跟你没关系、别人正聊得热乎不需要你、或者没什么好说的，就只回复{SILENCE}，别硬聊。'
                          '不要提桌面上发生的事。')
-            return self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True)
+            return self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request)
         finally:
             self.lock.release()
 
-    def _reply(self, controller, character, mode, situation, platform, purpose, message_id, text, chime=False) -> dict:
-        """在锁里生成回复。插话时模型可以回 {SILENCE} 表示不说：这条不发出去，也不留在聊天记录里。"""
+    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None):
+        """统一大脑生成；这里只提供 QQ 场景和最终静默过滤，不再分类随机选图。"""
         from aicompanion.bridge.social import NATURAL_PROMPT
-        from aicompanion.bridge.community import prompt as community_prompt, maybe_refresh
-        from aicompanion.bridge.chat_card import prompt as card_prompt
-        private = mode['owner'] and not mode['group']
-        turn = str(uuid4()); parts = []
-        offer = self.media.offer(mode['channel'])
-        stable_sender = ''
-        rows = self.database.recent_messages(1, character.id, before_id=message_id+1, channel=mode['channel'])
-        if rows: stable_sender = rows[-1]['sender'] or ('qq:'+str(self.database.get_setting('bridge_owner:qq', '')) if private else '')
-        self.social.cid = character.id
-        learned = self.social.profile(mode['channel'], stable_sender)
-        if learned.get('preferences', {}).get('no_memes'): offer.categories = {}
-        situation += NATURAL_PROMPT + self.social.prompt(mode['channel'], stable_sender) + offer.prompt()
-        group = mode['channel'].split(':')[-1] if mode['group'] else ''
-        situation += card_prompt(self.database, character.id, text, owner=mode['owner'], group=group)
-        situation += community_prompt(self.database, text, group)
-        maybe_refresh(self.database, group)
-        delivery = {}
-        def filter_reply(raw, status):
-            if mode['group'] and (not raw.strip() or raw.strip() in (SILENCE, '不说')):
-                delivery.update(reply='', images=[], history='')
-            else: delivery.update(self.media.render(raw, status, offer, mode['channel']))
-            return delivery['history']
+        from aicompanion.bridge.community import prompt as community_prompt,maybe_refresh
+        from aicompanion.bridge.chat_card import prompt as card_prompt,selected_source
+        from aicompanion.expression.domain import ExpressionContext,CommunityContext
+        from aicompanion.bridge.media import inline_image
+        from dataclasses import replace
+        request=request or {};private=mode['owner'] and not mode['group'];turn=uuid4().hex
+        stable=platform+':'+str(request.get('sender_id') or '')
+        group=mode['channel'].split(':')[-1] if mode['group'] else ''
+        sender=str(request.get('sender_id') or '')
+        bot=str(request.get('bot_account_id') or '')
+        if not re.fullmatch(r'\d{5,12}',bot):bot='request-'+turn
+        scope=f'{platform}:{bot}:'+('group:'+group if group else 'user:'+sender)
+        version=type(request.get('expression_version')) is int and request['expression_version']==1
+        self.social.cid=character.id;learned=self.social.profile(mode['channel'],stable)
+        background=community_prompt(self.database,text,group)
+        situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)
+        situation+=card_prompt(self.database,character.id,text,owner=mode['owner'],group=group)+background
+        maybe_refresh(self.database,group)   # 原有调度，不增加新的社区任务
+        context=ExpressionContext(turn,character.id,scope,mode['channel'],mode['scene'],
+            'group_chime' if chime else 'user_reply',community=CommunityContext(selected_source(self.database,group),(background[:1200],) if background else ()),
+            no_memes=bool(learned.get('preferences',{}).get('no_memes')),more_memes=bool(learned.get('preferences',{}).get('more_memes')),supports_images=version)
+        delivered=[]
+        def event(value):
+            if value.kind=='final':delivered.append(value.result)
+        def filter_reply(raw,status):
+            return '' if mode['group'] and raw.strip() in (SILENCE,'不说') else raw
         try:
-            for token in controller.generate(turn, character, CancellationToken(), text, channel=mode['channel'],
-                                             scene=mode['scene'], situation=situation, source=platform,
-                                             offer_tasks=False, purpose=purpose, through_id=message_id, reply_filter=filter_reply):
-                parts.append(token)
-        except Exception as error:
-            return {'reply': '', 'silent': True, 'reason': 'error', 'error': str(error)[:200]}
-        reply = delivery.get('reply', '')
-        outgoing = delivery.get('images', [])
+            for _ in controller.generate(turn,character,CancellationToken(),text,channel=mode['channel'],scene=mode['scene'],
+                situation=situation,source=platform,offer_tasks=False,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
+                expression_context=context,on_expression_event=event):pass
+        except Exception:
+            return {'reply':'','silent':True,'reason':'error'}
+        if self.closed or controller.character.id!=character.id:
+            controller.expression.cancel(turn,character.id);return {'reply':'','silent':True,'reason':'closed'}
+        expression=delivered[-1];attachments=expression.attachments
+        wire=expression.wire();wire['attachments']=[]
+        for attachment in attachments:
+            media=controller.expression.catalog.resolve(attachment.asset_id,attachment.revision)
+            if media is None:
+                controller.expression.receipt(attachment.delivery_id,'failed');continue
+            item=attachment.__dict__.copy();item['data_uri']=inline_image(*media);wire['attachments'].append(item)
+            with self.expression_lock:
+                self.expression_bindings[attachment.delivery_id]=(platform,sender,group,character.id)
+                if len(self.expression_bindings)>256:
+                    oldest=next(iter(self.expression_bindings));self.expression_bindings.pop(oldest,None)
+        reply=expression.text;outgoing=wire['attachments']
+        if not outgoing:wire['decision']={'action':'text_only','asset_id':None,'placement':None,'origin':'no_marker'}
         if chime and not (reply or outgoing):
-            self.database.drop_reply(turn, character.id)
-            self.maybe_remember(character.id, mode['channel'])
-            return {'reply': '', 'silent': True, 'reason': 'chime_silent'}
-        if mode['group'] and (reply or outgoing): self.database.set_setting(f'bridge_last_spoke:{mode["channel"]}', self.clock())
-        if not private: self.maybe_remember(character.id, mode['channel'])
-        result = {'reply': reply, 'silent': not (reply or outgoing), 'reason': ('chime' if chime else 'ok') if reply or outgoing else 'empty_reply'}
-        if outgoing: result['images'] = outgoing
+            self.database.drop_reply(turn,character.id);self.maybe_remember(character.id,mode['channel'])
+            return {'reply':'','silent':True,'reason':'chime_silent'}
+        if mode['group'] and (reply or outgoing):self.database.set_setting('bridge_last_spoke:'+mode['channel'],self.clock())
+        if not private:self.maybe_remember(character.id,mode['channel'])
+        result={'reply':reply,'silent':not (reply or outgoing),'reason':('chime' if chime else 'ok') if reply or outgoing else 'empty_reply'}
+        if version:result.update(expression_version=1,expression=wire)
         return result
+
+    def expression_claim(self,payload):
+        """只领取宿主已绑定的这轮/会话，客户端不能改收件人或文件。"""
+        if set(payload)!={'delivery_id'}:return {'allowed':False}
+        delivery=str(payload.get('delivery_id') or '')
+        with self.expression_lock:binding=self.expression_bindings.get(delivery)
+        if not binding:return {'allowed':False}
+        platform,sender,group,cid=binding
+        expression=getattr(self.controller,'expression',None)
+        if expression is None:return {'allowed':False}
+        row=expression.delivery(delivery)
+        media_valid=bool(row and expression.catalog.resolve(row['asset_id'],row['revision']) is not None)
+        with RECORD_LOCK:
+            if self.closed:return {'allowed':False}
+            def claim(c):
+                if self.controller.character.id!=cid or self.classify(platform,sender,group,c) is None:return {'allowed':False,'reason':'revoked'}
+                if not media_valid:return {'allowed':False,'reason':'media_unavailable'}
+                if not self.database.setting_in(c,'qq_memes_enabled',True):return {'allowed':False,'reason':'media_unavailable'}
+                current=c.execute('SELECT * FROM expression_deliveries WHERE delivery_id=?',(delivery,)).fetchone()
+                asset=c.execute('SELECT enabled,review_status,root FROM expression_assets WHERE asset_id=?',(row['asset_id'],)).fetchone()
+                from pathlib import Path
+                configured=str(self.database.setting_in(c,'qq_meme_root','') or '').strip()
+                root=Path(configured).expanduser().resolve() if configured else expression.catalog.builtin_root.resolve()
+                if asset and Path(asset['root'])!=root:return {'allowed':False,'reason':'media_unavailable'}
+                if (not current or current['status']!='pending' or not asset or not asset['enabled']
+                    or asset['review_status']!='approved' or expression.clock()-current['created_at']>120):return {'allowed':False,'reason':'stale'}
+                c.execute("UPDATE expression_deliveries SET status='sending',updated_at=? WHERE delivery_id=?",(expression.clock(),delivery));return {'allowed':True}
+            return self.database.locked(claim)
+
+    def expression_ack(self,payload):
+        if set(payload)!={'delivery_id','status'}:return {'ok':False}
+        delivery=str(payload.get('delivery_id') or '');status=payload.get('status')
+        with self.expression_lock:known=delivery in self.expression_bindings
+        if not known or status not in ('accepted','failed','unknown'):return {'ok':False}
+        return {'ok':self.controller.expression.receipt(delivery,status)}
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------
     def maybe_remember(self, character_id, channel, background=True):

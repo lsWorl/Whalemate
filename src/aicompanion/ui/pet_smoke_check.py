@@ -165,6 +165,37 @@ def schedule_pet_smoke_check(window, database, output):
         page.deleteLater()
     later(21500, qq_media)
 
+    def expression_start():
+        import re
+        from uuid import uuid4
+        original=window.controller.llm_client
+        class ExpressionModel:
+            calls=0
+            def generate_reply_stream(self,history,prompt,cancellation):
+                self.calls+=1
+                asset=re.search(r'"asset_id": "(st_[a-f0-9]{32})"',prompt).group(1)
+                yield '<sticker asset_id="'+asset+'" position="before_text"/>'
+                yield '【开心】好耶，表达自检完成！<挥手>'
+        model=ExpressionModel();window.controller.llm_client=model
+        generation=uuid4().hex;window.coordinator.active=generation
+        window._start(generation,query='合成的庆祝消息')
+        def check():
+            state['expression_flow']=bool(window.controller.expression.history(generation,window.controller.character.id))
+            state['expression_single_request']=model.calls==1
+            state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
+            from aicompanion.ui.library_page import LibraryPage
+            page=LibraryPage(database,window.controller.character.id)
+            state['expression_library_ready']=page.table.rowCount()>=6;page.deleteLater()
+            window._load_history(); window.show()  # 可见窗口完成布局后再截图，避免离屏抓图使用旧几何。
+            def restored():
+                from aicompanion.ui.expression_image import ExpressionImage
+                state['expression_history_ready']=bool(window.chat_list.findChildren(ExpressionImage))
+                window.grab().save(str(output/'expression-panel.png')); window.hide()
+            QTimer.singleShot(200,restored)
+            window.controller.llm_client=original
+        QTimer.singleShot(400,check)
+    later(24200,expression_start)
+
     def agent():
         # P5/P6：干活交给 DeepSeek Harness（需要联网和真实模型，自检只检查是否已安装、会话对象是否就绪）
         from aicompanion.agent.dsh_backend import problem
@@ -244,6 +275,7 @@ def schedule_pet_smoke_check(window, database, output):
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('qq_media_settings_ready')
+        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_history_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')

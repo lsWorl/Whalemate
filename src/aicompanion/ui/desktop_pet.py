@@ -159,7 +159,9 @@ class DesktopPetWindow(QWidget):
         self.last_line = text
         # 正在显示回复字幕时不用台词覆盖。
         if self.subtitle_text and self.bubble.isVisible() and key not in ('poke', 'poke_angry', 'grabbed', 'wake'): return False
-        self.show_bubble(text, 4.5, typewriter=True)
+        from aicompanion.expression.service import ExpressionService
+        result=ExpressionService.local_result(text,self.active_id if hasattr(self,'active_id') else '')
+        self.show_bubble(result.text, 4.5, typewriter=True)
         return True
 
     def show_bubble(self, text, seconds=8.0, typewriter=False, kind='line', key=None):

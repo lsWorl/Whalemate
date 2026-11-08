@@ -6,6 +6,7 @@ class ChatWorker(QThread):
     """worker 自己拥有取消令牌，所有结果携带 generation_id。"""
 
     token_received = Signal(str,str)
+    expression_event = Signal(str,object)
     result = Signal(str,str,str)
 
     def __init__(self,controller,generation_id,character,query='',proactive='',parent=None):
@@ -16,9 +17,22 @@ class ChatWorker(QThread):
 
     def run(self):
         try:
-            for token in self.controller.generate(self.generation_id,self.character,self.cancellation,self.query,self.proactive):
+            from aicompanion.expression.domain import ExpressionContext
+            context=ExpressionContext(self.generation_id,self.character.id,'desktop:'+self.character.id,
+                       trigger='proactive' if self.proactive else 'user_reply',proactive_reason=self.proactive,early_before=True)
+            outcome=['complete']
+            def expression(event):
+                if event.result:outcome[0]=event.result.status
+                media=None
+                attachment=event.attachment or (event.result.attachments[0] if event.result and event.result.attachments else None)
+                if attachment:
+                    media=self.controller.expression.catalog.resolve(attachment.asset_id,attachment.revision)
+                self.expression_event.emit(self.generation_id,('expression',event,media))
+            for token in self.controller.generate(self.generation_id,self.character,self.cancellation,self.query,self.proactive,
+                                                  expression_context=context,on_expression_event=expression):
                 self.token_received.emit(self.generation_id,token)
-            self.result.emit(self.generation_id,'complete','')
+                self.expression_event.emit(self.generation_id,('text',token))
+            self.result.emit(self.generation_id,outcome[0] if outcome[0]!='suppressed' else 'complete','回复过滤失败' if outcome[0]=='failed' else '')
         except ReplyCancelled:
             self.result.emit(self.generation_id,'cancelled','')
         except Exception as error:
