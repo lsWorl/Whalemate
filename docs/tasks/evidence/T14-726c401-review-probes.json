@@ -1,0 +1,33 @@
+{
+  "head": "726c40169d93447228b962a037174356070ce9c4",
+  "synthetic_only": true,
+  "network_used": false,
+  "trace_race": {
+    "receipt_between_delivery_read_and_trace_write": true,
+    "delivery_status": "displayed",
+    "trace_stage": "E_pending",
+    "trace_delivery_status": "pending"
+  },
+  "qq_after_text_failure": [
+    {
+      "failure": "ActionFailed",
+      "attempted_components": [
+        "text",
+        "image"
+      ],
+      "acks": [
+        "accepted"
+      ]
+    },
+    {
+      "failure": "TimeoutError",
+      "attempted_components": [
+        "text",
+        "image"
+      ],
+      "acks": [
+        "accepted"
+      ]
+    }
+  ]
+}
