@@ -41,7 +41,7 @@ class ChatController:
         context=replace(context,supports_images=context.supports_images and on_expression_event is not None,
                         early_before=context.early_before and reply_filter is None)
         self.database.start_turn(turn_id,character.id)
-        parts=[];status='complete';error='';attachment=None;parser=None;candidates=()
+        parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
             history,prompt=self.context.build(character,query,channel,scene,situation,through_id)
@@ -71,10 +71,13 @@ class ChatController:
                         if attachment:on_expression_event(ExpressionEvent('attachment_ready',turn_id,attachment))
                         cancellation.check()
                     if clean and not ''.join(parts).strip():clean=clean.lstrip()   # 图在前时正文开头的空行去掉
-                    if clean:parts.append(clean);yield clean
+                    # 末尾的空行先压着：后面还有字才放出去，图在后时正文结尾不留一串空行
+                    clean=held+clean if clean else clean
+                    body=clean.rstrip();held=clean[len(body):] if clean else held
+                    if body:parts.append(body);yield body
             cancellation.check()
-            tail=parser.finish()
-            if tail:parts.append(tail);yield tail
+            tail=(held+parser.finish()).rstrip()
+            if tail.strip():parts.append(tail);yield tail
             cancellation.check()
             if attachment is None and parser.selection:
                 aid,placement=parser.selection

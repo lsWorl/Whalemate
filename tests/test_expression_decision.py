@@ -153,6 +153,8 @@ class DecisionTests(unittest.TestCase):
         text, _ = self.turn('<sticker id="{h}"/>\n\n哈哈\n\n\n\n真的')
         self.assertTrue(text.startswith('哈哈'))
         self.assertEqual(self.events[-1].result.text, '哈哈\n\n真的')
+        text, _ = self.turn('哈哈\n\n<sticker id="{h}"/>\n\n', turn='g9')
+        self.assertEqual(text, '哈哈')                                # 图在后时结尾不留空行
 
     def test_trace_has_no_chat_text_or_paths(self):
         self.add('smile', semantic='开心到笑出声')

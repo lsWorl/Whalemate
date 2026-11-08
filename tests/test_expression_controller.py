@@ -93,7 +93,7 @@ class ControllerTests(unittest.TestCase):
     def test_echo_annotation_is_not_a_delivery_or_visible_text(self):
         self.model.generate_reply_stream=lambda *args:iter('笑死\n[角色已发送表情：开心]')
         text,result=self.run_turn()
-        self.assertEqual(text,'笑死\n');self.assertFalse(result.attachments)
+        self.assertEqual(text,'笑死');self.assertFalse(result.attachments)   # 结尾空行不再放出
         self.assertIn('internal_annotation_echo',result.diagnostics)
         self.assertNotIn('角色已发送表情',self.db.recent_messages(1,self.char.id)[0]['content'])
 
