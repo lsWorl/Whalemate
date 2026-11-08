@@ -188,3 +188,26 @@ class MeaningAsIdTests(unittest.TestCase):
         stream = ExpressionStream([ID, other], {}, {'s1': ID, 's2': other}, {'开心到转圈': ID, '开心到跳': other})
         stream.feed('<sticker id="开心"/>'); stream.finish()
         self.assertIsNone(stream.selection); self.assertEqual(stream.rejected, ['free_text'])   # 对得上两张：不猜；只记形态
+
+
+class HtmlImgTagTests(unittest.TestCase):
+    """第八轮验收：模型写了 `<img src="">` 想贴图，原样露在正文里。隐藏它；代码块、行内代码和普通的 <in…> 文字不受影响。"""
+    def parse(self, raw, chunks=None):
+        stream = ExpressionStream([ID], {}, {'s1': ID}, {})
+        text = ''.join(stream.feed(c) for c in (chunks if chunks is not None else [raw]))+stream.finish()
+        return text, stream
+
+    def test_img_tags_hidden_at_every_split(self):
+        raw = '烤红薯 <img src=""> 你就不想着给我留一口'
+        for n in range(len(raw)+1):
+            text, stream = self.parse(raw, [raw[:n], raw[n:]])
+            self.assertEqual(text, '烤红薯  你就不想着给我留一口'); self.assertIn('html_img_tag', stream.diagnostics)
+        self.assertEqual(self.parse('好<img/>')[0], '好'); self.assertEqual(self.parse('好<img>')[0], '好')
+
+    def test_code_and_ordinary_angle_text_kept(self):
+        for raw in ('`<img src="a.png">`', '```html\n<img src="a.png">\n```', '<input> 和 <imgs> 都是普通文字', '1<img', 'a<i'):
+            self.assertEqual(self.parse(raw)[0], raw, raw)
+
+    def test_img_does_not_block_real_sticker(self):
+        text, stream = self.parse('<img src="">好耶<sticker id="s1"/>')
+        self.assertEqual((text, stream.selection), ('好耶', (ID, 'after_text')))

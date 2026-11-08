@@ -18,7 +18,9 @@ TAG = re.compile(r"""<\s*(sticker|meme|expression)\b([^<>\n]*?)/?\s*>\Z""", re.I
 HANDLE = re.compile(r's(?:[1-9]|10)\Z')
 # 旧版曾把内部附件回执拼进 assistant 正文；只剥离这个精确前缀，不把任意方括号当图片。
 HISTORY_ANNOTATIONS = ('[角色已发送表情：', '[角色已发送表情:')
-STARTS = ('<sticker', '<meme', '<expression', '<task>')+HISTORY_ANNOTATIONS
+# <img …>：第八轮验收里模型写过 `<img src="">` 想"贴图"，原样露在正文里；当作无效的图片标记隐藏（代码块里的照常保留）
+STARTS = ('<sticker', '<meme', '<expression', '<img ', '<img>', '<img/', '<task>')+HISTORY_ANNOTATIONS
+RESERVED = ('<sticker', '<meme', '<expression', '<img ', '<img>', '<img/')
 # 角色动画标注：给桌宠脸和动作用，屏幕上会被 CueStream 去掉，不算对方能看到的正文。
 CUE = re.compile(r'【[^】\n]{1,12}】|<[^<>\n/]{1,12}>')
 
@@ -90,6 +92,8 @@ class ExpressionStream:
 
     def _marker(self, raw):
         self.markers += 1
+        if raw.lower().startswith('<img'):
+            self.diagnose('html_img_tag'); return
         match = TAG.match(raw.strip())
         if not match:
             self.diagnose('invalid_marker'); return
@@ -165,7 +169,7 @@ class ExpressionStream:
                     if ch == '\n': self._emit(ch, out)
                     elif ch != ']': self.drop_annotation = True
                 return
-            reserved = low.startswith(('<sticker', '<meme', '<expression'))
+            reserved = low.startswith(RESERVED)
             if self.pending == '<task>':
                 self.task = self.pending; self.pending = ''; return
             if reserved and (ch == '>' or ch == '\n' or len(self.pending) > 512):
@@ -220,7 +224,7 @@ class ExpressionStream:
         out = []
         if self.pending:
             if any(self.pending.startswith(prefix) for prefix in HISTORY_ANNOTATIONS): self.diagnose('internal_annotation_echo')
-            elif not self.pending.lower().startswith(('<sticker', '<meme', '<expression')): self._emit(self.pending, out)
+            elif not self.pending.lower().startswith(RESERVED): self._emit(self.pending, out)
             else: self.markers += 1; self.diagnose('unfinished_marker')
         if self.task:
             self._emit(re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task), out)
