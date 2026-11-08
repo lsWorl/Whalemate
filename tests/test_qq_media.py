@@ -263,7 +263,7 @@ class QQMediaTests(unittest.TestCase):
         self.make_pack(); self.chat.answer = '笑死<meme name="happy"/>'
         result = self.ask(images=[], text='哈哈今天运气真好')
         self.assertEqual(len(self.sent_images(result)), 1)
-        self.assertIn('不需要等别人要求', self.chat.calls[-1][1])
+        self.assertIn('不用等对方开口要', self.chat.calls[-1][1])
         self.assertIn('不能虚构自己实际抽卡', self.chat.calls[-1][1])
         self.now += 61
         self.ask(images=[], text='你以后多带点表情包')

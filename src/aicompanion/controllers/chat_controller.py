@@ -42,25 +42,26 @@ class ChatController:
                         early_before=context.early_before and reply_filter is None)
         self.database.start_turn(turn_id,character.id)
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=()
+        report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
             history,prompt=self.context.build(character,query,channel,scene,situation,through_id)
             if proactive:
-                prompt+='\n现在是角色主动开启话题：'+proactive+'。只发一句自然问候或追问，不编造经历。'
+                prompt+='\n现在是你主动开启话题：'+proactive+'。说一两句自然的开场或追问就好，不编造经历。'
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
             if self.agent_enabled and not proactive and offer_tasks:
                 from aicompanion.pet.script import TASK_PROMPT
                 prompt+=TASK_PROMPT
-            candidates=self.expression.prepare(context,character,query,history)
-            prompt+=self.expression.prompt(candidates)
-            if context.more_memes:prompt+='\n对方偏好合适时用表情交流，但不要求每轮发图，仍由你自己决定。'
-            parser=ExpressionStream([c.asset_id for c in candidates],self.expression.legacy_map(candidates))
+            candidates,report=self.expression.prepare_report(context,character,query,history)
+            prompt+=self.expression.prompt(candidates,proactive=bool(proactive))
+            if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
+            parser=ExpressionStream([c.asset_id for c in candidates],self.expression.legacy_map(candidates),
+                                    {c.handle:c.asset_id for c in candidates if c.handle},
+                                    {c.summary:c.asset_id for c in candidates if c.summary})
             choices={c.asset_id:c for c in candidates}
             from aicompanion.usage.meter import using
-            # 格式示例只进入这一轮请求，不写聊天 / 记忆；候选检索仍只看真实上下文。
-            model_history=self.expression.format_examples(candidates)+history
             with using(purpose,character.id,turn_id):
-                for token in self.llm_client.generate_reply_stream(model_history,prompt,cancellation):
+                for token in self.llm_client.generate_reply_stream(history,prompt,cancellation):
                     cancellation.check()
                     clean=parser.feed(token)
                     if context.early_before and attachment is None and parser.selection and parser.selection[1]=='before_text':
@@ -102,6 +103,10 @@ class ChatController:
                 self.expression.receipt(attachment.delivery_id,'cancelled');attachment=None
             result=self.expression.result(turn_id,context,content,attachment,status,parser.diagnostics if parser else ())
             self.database.finish_turn(turn_id,character.id,content,status,error,channel=channel,source=source)
+            self.expression.record_trace(turn_id,context,report,parser.diagnostics if parser else (),
+                                         parser.markers if parser else 0,parser.selection if parser else None,
+                                         result.attachments[0] if result.attachments else None,status,
+                                         delivered=on_expression_event is not None)
             if on_expression_event:on_expression_event(ExpressionEvent('final',turn_id,result=result))
 
     def stream_user_message(self,content):

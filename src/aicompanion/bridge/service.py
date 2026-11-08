@@ -269,7 +269,7 @@ class BridgeService:
         from aicompanion.bridge.social import NATURAL_PROMPT
         from aicompanion.bridge.community import prompt as community_prompt,maybe_refresh
         from aicompanion.bridge.chat_card import prompt as card_prompt,selected_source
-        from aicompanion.expression.domain import ExpressionContext,CommunityContext
+        from aicompanion.expression.domain import ExpressionContext,CommunityContext,RelationshipSnapshot,owner_relationship
         from aicompanion.bridge.media import inline_image
         from dataclasses import replace
         request=request or {};private=mode['owner'] and not mode['group'];turn=uuid4().hex
@@ -287,7 +287,9 @@ class BridgeService:
         maybe_refresh(self.database,group)   # 原有调度，不增加新的社区任务
         context=ExpressionContext(turn,character.id,scope,mode['channel'],mode['scene'],
             'group_chime' if chime else 'user_reply',community=CommunityContext(selected_source(self.database,group),(background[:1200],) if background else ()),
-            no_memes=bool(learned.get('preferences',{}).get('no_memes')),more_memes=bool(learned.get('preferences',{}).get('more_memes')),supports_images=version)
+            no_memes=bool(learned.get('preferences',{}).get('no_memes')),more_memes=bool(learned.get('preferences',{}).get('more_memes')),supports_images=version,
+            # 只有绑定的爹在私聊里算本人；群里即使是爹也按公开场合（亲昵图不发到群里）
+            relationship=owner_relationship() if private else RelationshipSnapshot())
         delivered=[]
         def event(value):
             if value.kind=='final':delivered.append(value.result)

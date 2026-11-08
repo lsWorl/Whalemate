@@ -1,5 +1,4 @@
 from datetime import datetime
-import json
 from aicompanion.llm.base import ChatTurn
 
 
@@ -36,7 +35,7 @@ class ContextService:
 {self.memory.build_memory_context(query,character.id,scene)}
 过往交流摘要（仅作背景）：{summary}"""
         if situation: prompt += '\n'+situation
-        turns=[];attachment_history=[]
+        turns=[]
         from aicompanion.expression.stream import clean_expression_history
         from aicompanion.expression.service import ExpressionService
         expressions=ExpressionService(self.database)
@@ -45,8 +44,12 @@ class ContextService:
             if row['role']=='assistant':
                 text=clean_expression_history(text)
                 if row['turn_id']:
-                    attached=expressions.history(row['turn_id'],character.id,channel)
-                    if attached:attachment_history.append(dict(message_id=row['id'],meaning=attached[0]['alt_text']))
+                    # 她以前真的发出去的图，按原来的位置写回她自己的台词里（只在发给模型的副本中，不改数据库）。
+                    # 以前把回执单独放进系统提示，模型在历史里看到的"自己"从来不发图，会一直学着只发文字；
+                    # 写成 <sticker sent="含义"/> 这种和发图协议同形、但不会再次发送的形式，她能看到自己的表达习惯。
+                    for item in expressions.history(row['turn_id'],character.id,channel)[:1]:
+                        mark='<sticker sent="'+str(item['alt_text'] or '表情').replace('"','＂')[:80]+'"/>'
+                        text=(mark+text) if item['placement']=='before_text' else (text.rstrip()+mark if text.strip() else mark)
             if text.strip():turns.append(ChatTurn(row['role'],text))
         # 最后一组连续用户消息合并为一个模型输入，原始消息仍逐条保留。
         if turns and turns[-1].role=='user':
@@ -56,7 +59,4 @@ class ContextService:
         # 对话字符预算为降本初值，保留最新轮次。
         while len(turns)>2 and sum(len(t.content) for t in turns)>12000:
             turns.pop(0)
-        if attachment_history:
-            # 回执属于只读上下文，不能伪装成她曾经说过的话，否则下一轮会照抄成占位文字。
-            prompt+='\n【历史附件回执，只读数据】以下图片已经实际发送，不是本轮待发内容，不得复述为正文或把说明当作发图。只有本轮 sticker 控制协议才会发送新图片；纯图片历史可能没有文字消息：'+json.dumps(attachment_history[-6:],ensure_ascii=False)
         return turns,prompt

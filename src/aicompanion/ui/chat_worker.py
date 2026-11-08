@@ -17,9 +17,11 @@ class ChatWorker(QThread):
 
     def run(self):
         try:
-            from aicompanion.expression.domain import ExpressionContext
+            from aicompanion.expression.domain import ExpressionContext,owner_relationship
+            # 桌面上说话的就是用户本人（她爹）：和 QQ 绑定号的私聊一样，可以用亲昵 / 撒娇类表情
             context=ExpressionContext(self.generation_id,self.character.id,'desktop:'+self.character.id,
-                       trigger='proactive' if self.proactive else 'user_reply',proactive_reason=self.proactive,early_before=True)
+                       trigger='proactive' if self.proactive else 'user_reply',proactive_reason=self.proactive,early_before=True,
+                       relationship=owner_relationship())
             outcome=['complete']
             def expression(event):
                 if event.result:outcome[0]=event.result.status

@@ -173,8 +173,8 @@ def schedule_pet_smoke_check(window, database, output):
             calls=0
             def generate_reply_stream(self,history,prompt,cancellation):
                 self.calls+=1
-                asset=re.search(r'"asset_id": "(st_[a-f0-9]{32})"',prompt).group(1)
-                yield '<sticker asset_id="'+asset+'" position="before_text"/>'
+                handle=re.search(r'^(s\d+)｜',prompt,re.M).group(1)   # 本轮候选短编号
+                yield '<sticker id="'+handle+'"/>'
                 yield '【开心】好耶，表达自检完成！<挥手>'
         model=ExpressionModel();window.controller.llm_client=model
         generation=uuid4().hex;window.coordinator.active=generation
@@ -183,6 +183,8 @@ def schedule_pet_smoke_check(window, database, output):
             state['expression_flow']=bool(window.controller.expression.history(generation,window.controller.character.id))
             state['expression_single_request']=model.calls==1
             state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
+            traces=window.controller.expression.traces(5)
+            state['expression_trace_ready']=bool(traces) and traces[-1].get('stage') in ('OK_displayed','E_pending')
             from aicompanion.ui.library_page import LibraryPage
             page=LibraryPage(database,window.controller.character.id)
             state['expression_library_ready']=page.table.rowCount()>=6;page.deleteLater()
@@ -275,7 +277,7 @@ def schedule_pet_smoke_check(window, database, output):
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('qq_media_settings_ready')
-        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_history_ready'])
+        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')

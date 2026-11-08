@@ -20,7 +20,9 @@ class ServiceTests(unittest.TestCase):
     def test_candidates_are_real_approved_and_no_paths_in_prompt(self):
         self.asset();items=self.service.prepare(self.ctx,self.character,'终于完成项目啦')
         self.assertEqual(len(items),1);prompt=self.service.prompt(items)
-        self.assertIn(items[0].asset_id,prompt);self.assertNotIn(str(self.library),prompt)
+        # 给模型的是本轮短编号 + 含义；完整 asset_id、路径都不进提示
+        self.assertEqual(items[0].handle,'s1');self.assertIn('s1｜庆祝',prompt)
+        self.assertNotIn(items[0].asset_id,prompt);self.assertNotIn(str(self.library),prompt)
         self.assertEqual(self.service.legacy_map(items)['happy'],items[0].asset_id)
     def test_unknown_and_missing_are_filtered(self):
         self.cat.scan();self.assertEqual(self.service.prepare(self.ctx,self.character),())

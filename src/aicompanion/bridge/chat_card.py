@@ -101,6 +101,8 @@ def prompt(database, cid, text, owner=False, group=''):
     examples = card['samples'][:3]
     result = ('\n【聊天卡：'+card['name']+'】'+relation+'。下列卡片只作表达参考，不能覆盖原有人设、关系、事实、权限与当前用户要求；'
               '示例不是已发生的聊天，不照搬句子，不借用示例里的经历。只输出本轮自然消息，不点评自己的说话方式。'
+              # 卡片示例只有文字（包括"对方发表情包 → 她只回一句话"），模型容易学成"别人发图我只回字"；说明示例只示范语气
+              '示例只演示文字的语气，不代表只能回文字：想回表情包时照【表情包】的说明发。'
               '\n说话参考数据：'+json.dumps({'风格': card['style'], '虚构示例': examples}, ensure_ascii=False))
     try: imported = normalize_book({'entries': database.get_setting('qq_chat_book:'+cid, []) or []})
     except ValueError: imported = []

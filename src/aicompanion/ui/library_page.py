@@ -2,7 +2,7 @@
 import json
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon,QPixmap
-from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QPushButton,
+from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QPushButton,QCheckBox,
  QTableWidget,QTableWidgetItem,QLineEdit,QComboBox,QPlainTextEdit,QFileDialog,QMessageBox,QApplication)
 from aicompanion.expression.catalog import AssetCatalog,LICENSES
 from aicompanion.ui.chat_worker import TaskWorker
@@ -28,7 +28,14 @@ class LibraryPage(QWidget):
         layout.addLayout(form)
         approve=QPushButton('保存标注并确认许可、启用选中图片');approve.clicked.connect(self.approve);layout.addWidget(approve)
         self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setMaximumHeight(105);layout.addWidget(self.details)
-        self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status);self.refresh()
+        self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
+        # 最近几轮"发没发表情、卡在哪一步"：没发图时能直接看出是没候选、模型选了文字、格式没解析、图片校验失败还是显示 / 发送失败
+        decisions=QHBoxLayout();decisions.addWidget(QLabel('最近的表达决策（不含聊天内容）'))
+        self.debug=QCheckBox('开发模式：同时写入日志');self.debug.setChecked(bool(database.get_setting('expression_debug',False)))
+        self.debug.toggled.connect(lambda on:database.set_setting('expression_debug',bool(on)));decisions.addWidget(self.debug)
+        again=QPushButton('刷新');again.clicked.connect(self.show_traces);decisions.addWidget(again);layout.addLayout(decisions)
+        self.trace_view=QPlainTextEdit();self.trace_view.setReadOnly(True);self.trace_view.setMaximumHeight(120);layout.addWidget(self.trace_view)
+        self.refresh()
     def selected(self):
         row=self.table.currentRow()
         return self.table.item(row,0).data(Qt.ItemDataRole.UserRole) if row>=0 and self.table.item(row,0) else None
@@ -46,9 +53,17 @@ class LibraryPage(QWidget):
                     m.get('license','unknown'),'已使用' if row['asset_id'] in last else '未使用']
             values[1]+=' / '+('启用' if row['enabled'] else '停用')
             for col,value in enumerate(values,1):self.table.setItem(n,col,QTableWidgetItem(str(value)))
+        self.show_traces()
         stats=self.catalog.stats()
         self.summary.setText(f"图库：{self.catalog.root}\n共 {stats['total']} 张，已审核 {stats['approved']}，待审核 {stats['pending']}；缩略图缓存 {stats['thumbnail_bytes']//1024} KiB")
         self.table.resizeColumnsToContents()
+    def show_traces(self):
+        from aicompanion.expression.service import ExpressionService
+        import time
+        lines=[time.strftime('%m-%d %H:%M',time.localtime(e.get('at',0)))+'  '+ExpressionService.describe(e)
+               for e in reversed(ExpressionService(self.catalog.db).traces(20))]
+        self.trace_view.setPlainText('\n'.join(lines) or '还没有记录。聊几句后点"刷新"。')
+
     def select(self):
         row=self.catalog.get(self.selected()) if self.selected() else None
         if not row:return

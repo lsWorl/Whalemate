@@ -4,7 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 后续实现；Codex 审计 | 待 Claude 领取交接 / 补齐验收 | docs/tasks/T14-claude-handoff.md；用户已授权创建交接 PR；运行代码 4af066f，76 专项 / 全量 463（7 跳过）与 Smoke 通过；后续自然度 / 主动发言 / QQ 实测 / 图库交付 / 崩溃定位由 Claude 接手，Codex 停止并行编码 |
+| T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 进行中（Claude，PR #13）：已定位不爱发表情的根因并修复协议 / 历史 / 提示 / 候选，加单轮决策观测和 34 场景验收工具；真实模型验收与 Windows 检查待运行 | docs/tasks/T14-claude-handoff.md；用户已授权创建交接 PR；运行代码 4af066f，76 专项 / 全量 463（7 跳过）与 Smoke 通过；后续自然度 / 主动发言 / QQ 实测 / 图库交付 / 崩溃定位由 Claude 接手，Codex 停止并行编码 |
 | T14-0 | 智能表达协议与接入设计冻结（历史） | Codex；Claude 复审 | 负责人已授权进入 T14 正式开发 | docs/tasks/T14-smart-expression-design.md 已同步实际实现；最新正式指令要求旧标签统一适配，取代 v1 的直接移除策略；原设计保留 |
 | T1 | 协作规则、`.gitattributes`、任务清单 | Claude | 已合入 | PR #1 |
 | T2 | MCP 服务改用官方 `mcp` 包（统一接口） | Codex | 待复审（PR #4） | `docs/tasks/T2-mcp-official-sdk.md`；工作区隔离与行尾断言已修复，Codex 真实 DeepSeek 六类 / 八任务全通过，246 项离线检查通过 |

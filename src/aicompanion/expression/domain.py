@@ -28,6 +28,7 @@ class ExpressionCandidate:
     image_text: str = ''
     category: str = ''
     tone_strength: int = 1
+    handle: str = ''          # 本轮给模型看的短编号 s1～s10；每轮重新分配，只在这一轮有效
 
 @dataclass(frozen=True)
 class ExpressionContext:
@@ -44,6 +45,12 @@ class ExpressionContext:
     more_memes: bool = False
     supports_images: bool = True
     early_before: bool = False
+
+def owner_relationship() -> 'RelationshipSnapshot':
+    """已绑定的用户本人（桌面使用者 / QQ 绑定号的私聊）。沿用现有的"爹"绑定，不是 T15 的关系评分；
+    陌生人、群聊仍是默认的中性快照。"""
+    return RelationshipSnapshot('verified', 'owner', 'owner_family', True, 'bound')
+
 
 @dataclass(frozen=True)
 class ExpressionDecision:

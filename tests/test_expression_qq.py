@@ -13,8 +13,8 @@ import test_astrbot_plugin as plugin_fixture
 class Model:
     def __init__(self):self.position='after_text';self.pure=False;self.silent=False;self.calls=0
     def generate_reply_stream(self,history,prompt,cancellation):
-        self.calls+=1;ids=re.findall(r'"asset_id": "(st_[a-f0-9]{32})"',prompt)
-        marker=f'<sticker asset_id="{ids[0]}" position="{self.position}"/>' if ids else ''
+        self.calls+=1;ids=re.findall(r'^(s\d+)｜',prompt,re.M)
+        marker=f'<sticker id="{ids[0]}" position="{self.position}"/>' if ids else ''
         text='【不说】' if self.silent else ('' if self.pure else '好耶')
         yield marker+text if self.position=='before_text' else text+marker
 

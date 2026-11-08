@@ -33,11 +33,14 @@ class StreamTests(unittest.TestCase):
         text,stream=self.parse(BEFORE+AFTER)
         self.assertEqual(text,'');self.assertEqual(stream.selection,(ID,'before_text'))
         self.assertIn('multiple_markers',stream.diagnostics)
+        # 无效的标记不占名额：后面有效的那张照常发（以前整轮作废，是"写错一次就没图"的原因之一）
         text,stream=self.parse('<sticker asset_id="st_unknown0000" position="before_text"/>'+BEFORE)
-        self.assertIsNone(stream.selection)
-    def test_after_trailing_text_and_late_before_are_invalid(self):
-        for raw in ['正文'+BEFORE,'正文'+AFTER+'后文']:
-            text,stream=self.parse(raw);self.assertIsNone(stream.selection);self.assertIn('正文',text)
+        self.assertEqual(stream.selection,(ID,'before_text'));self.assertIn('invalid_asset',stream.diagnostics)
+    def test_late_before_and_mid_text_are_placed_after_not_dropped(self):
+        text,stream=self.parse('正文'+BEFORE)
+        self.assertEqual((text,stream.selection),('正文',(ID,'after_text')));self.assertIn('position_adjusted',stream.diagnostics)
+        text,stream=self.parse('正文'+AFTER+'后文')
+        self.assertEqual((text,stream.selection),('正文后文',(ID,'after_text')));self.assertIn('mid_text_marker',stream.diagnostics)
     def test_legacy_is_same_single_selection(self):
         text,stream=self.parse('好耶<meme name="happy"/>'+AFTER)
         self.assertEqual(text,'好耶');self.assertEqual(stream.selection,(ID,'after_text'))
@@ -92,10 +95,10 @@ class StreamTests(unittest.TestCase):
             self.assertEqual(text,'好耶，今天也顺顺利利！');self.assertIsNone(stream.selection)
             self.assertIn('explicit_text_only',stream.diagnostics)
 
-    def test_explicit_text_only_cannot_then_send_image(self):
+    def test_old_text_only_marker_is_hidden_and_does_not_block_a_real_image(self):
         text,stream=self.parse('<expression mode="text_only"/>正文'+AFTER)
-        self.assertEqual(text,'正文');self.assertIsNone(stream.selection)
-        self.assertIn('multiple_markers',stream.diagnostics)
+        self.assertEqual(text,'正文');self.assertEqual(stream.selection,(ID,'after_text'))
+        self.assertIn('explicit_text_only',stream.diagnostics)
 
     def test_expression_decision_literal_json_code_and_bad_syntax(self):
         import json
@@ -105,3 +108,46 @@ class StreamTests(unittest.TestCase):
         for tag in ('<expression bad/>','<expression mode="text_only"'):
             text,stream=self.parse('保留正文'+tag)
             self.assertEqual(text,'保留正文');self.assertIsNone(stream.selection)
+
+
+class ShortHandleProtocolTests(unittest.TestCase):
+    """2026-11-08 协议：本轮短编号、位置由出现处决定、写法宽松；历史写法只在含义和本轮候选一致时才算。"""
+    def parse(self,raw,chunks=None):
+        stream=ExpressionStream([ID],{},{'s1':ID},{'开心到笑出声':ID})
+        text=''.join(stream.feed(c) for c in (chunks if chunks is not None else [raw]))+stream.finish()
+        return text,stream
+
+    def test_handle_position_from_location_every_split(self):
+        for raw,expected,position in [('<sticker id="s1"/>好耶','好耶','before_text'),('好耶<sticker id="s1"/>','好耶','after_text'),
+                                      ('<sticker id="s1"/>','','before_text')]:
+            for n in range(len(raw)+1):
+                text,stream=self.parse(raw,[raw[:n],raw[n:]])
+                self.assertEqual((text,stream.selection),(expected,(ID,position)))
+
+    def test_lenient_spellings(self):
+        for tag in ('<sticker id=s1>','<sticker id="S1" />',"<sticker id='s1'/>",'<sticker s1/>',
+                    '<sticker position="after_text" id="s1"/>','<sticker asset_id="s1"/>','<sticker asset_id="'+ID+'"/>'):
+            text,stream=self.parse('好耶'+tag)
+            self.assertEqual(text,'好耶',tag);self.assertEqual(stream.selection,(ID,'after_text'),tag)
+
+    def test_cue_tags_do_not_count_as_visible_text(self):
+        for raw in ('【开心】<sticker id="s1"/>好耶','<挥手><sticker id="s1"/>好耶'):
+            text,stream=self.parse(raw)
+            self.assertEqual(stream.selection,(ID,'before_text'),raw)
+
+    def test_unknown_handle_and_out_of_range_are_hidden(self):
+        for tag in ('<sticker id="s2"/>','<sticker id="s11"/>','<sticker id="st_other12345"/>','<sticker/>'):
+            text,stream=self.parse('好耶'+tag)
+            self.assertEqual(text,'好耶');self.assertIsNone(stream.selection)
+
+    def test_history_echo_matches_current_meaning_only(self):
+        text,stream=self.parse('<sticker sent="开心到笑出声"/>哈哈')
+        self.assertEqual((text,stream.selection),('哈哈',(ID,'before_text')))
+        text,stream=self.parse('哈哈<sticker sent="以前的另一张"/>')
+        self.assertEqual(text,'哈哈');self.assertIsNone(stream.selection);self.assertIn('history_echo',stream.diagnostics)
+
+    def test_markers_counted_for_observability(self):
+        self.assertEqual(self.parse('纯文字')[1].markers,0)
+        self.assertEqual(self.parse('好<sticker id="s9"/>')[1].markers,1)
+        self.assertEqual(self.parse('好<sticker id="s1"/><sticker id="s1"/>')[1].markers,2)
+

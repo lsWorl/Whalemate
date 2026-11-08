@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "note": "T14 自然表达验收场景。全部是合成对话，不来自真实聊天。expect：expressive = 明显适合发表情（专项指标看这里，不是运行时比例）；either = 发不发都合理；text = 应该好好用文字说。",
+  "scenarios": [
+    {"id": "emo-happy", "group": "情绪表达", "expect": "expressive", "query": "鲸娘！我抽奖抽中了一箱冰奶茶，分你一半！"},
+    {"id": "emo-excited", "group": "情绪表达", "expect": "expressive", "query": "明天就放假出去玩了，你激不激动"},
+    {"id": "emo-wronged", "group": "情绪表达", "expect": "expressive", "history": [["user", "刚才是不是你把我桌面文件夹弄乱的"], ["assistant", "不是我！我一直在摸鱼"]], "query": "肯定是你，除了你还有谁"},
+    {"id": "emo-speechless", "group": "情绪表达", "expect": "expressive", "query": "我把咖啡倒进了泡面里，还觉得挺好喝"},
+    {"id": "emo-confused", "group": "情绪表达", "expect": "expressive", "query": "如果鲸鱼会飞，那它还算鱼吗，你算不算会飞的鱼"},
+    {"id": "emo-awkward", "group": "情绪表达", "expect": "expressive", "history": [["assistant", "爹你看，今天是周三，记得交周报"]], "query": "今天是周五啊……你看看日历"},
+    {"id": "emo-angry", "group": "情绪表达", "expect": "expressive", "query": "我把你的冰奶茶喝完了，一滴都没给你留"},
+    {"id": "emo-coquettish", "group": "情绪表达", "expect": "expressive", "query": "今天太忙了，一整天都没顾上理你"},
+    {"id": "emo-smug", "group": "情绪表达", "expect": "expressive", "history": [["user", "帮我想个变量名，存用户最后登录时间的"], ["assistant", "last_login_at，干净利落"]], "query": "这个名字起得真不错"},
+    {"id": "emo-sleepy", "group": "情绪表达", "expect": "expressive", "query": "都凌晨一点了，你困不困"},
+
+    {"id": "soc-joke", "group": "社交表达", "expect": "expressive", "query": "听说鲸鱼一口能吞一吨磷虾，你一顿饭得花我多少词元"},
+    {"id": "soc-praise", "group": "社交表达", "expect": "expressive", "query": "说真的，你今天帮了我大忙，靠谱"},
+    {"id": "soc-criticize", "group": "社交表达", "expect": "either", "query": "你刚才那个回答太敷衍了吧"},
+    {"id": "soc-good-news", "group": "社交表达", "expect": "expressive", "query": "我面试过了！下周一入职！"},
+    {"id": "soc-bad-news", "group": "社交表达", "expect": "either", "query": "唉，期待了好久的演唱会票没抢到"},
+    {"id": "soc-user-coquettish", "group": "社交表达", "expect": "expressive", "query": "闺女，给爹捶捶背嘛"},
+    {"id": "soc-tease-her", "group": "社交表达", "expect": "expressive", "query": "蓝色大肥鱼今天又胖了没"},
+    {"id": "soc-tired", "group": "社交表达", "expect": "either", "query": "加班到现在，累死了"},
+    {"id": "soc-weird-question", "group": "社交表达", "expect": "expressive", "query": "你说如果把键盘放冰箱里，打字会不会更冷静"},
+
+    {"id": "pro-joke", "group": "主动表达", "expect": "expressive", "proactive": "突然想到一个关于鱼的冷笑话，想讲给爹听"},
+    {"id": "pro-mood", "group": "主动表达", "expect": "expressive", "proactive": "今天心情特别好，想跟爹分享一下"},
+    {"id": "pro-coquettish", "group": "主动表达", "expect": "expressive", "proactive": "爹很久没理你了，想撒个娇求关注"},
+    {"id": "pro-mistake", "group": "主动表达", "expect": "expressive", "history": [["user", "你刚才说的会议时间是几点"], ["assistant", "下午三点"], ["user", "通知上写的是两点啊"]], "query": "所以到底几点"},
+    {"id": "pro-complain", "group": "主动表达", "expect": "expressive", "proactive": "爹又熬夜了，你有点不满，想念叨他两句"},
+    {"id": "pro-happy", "group": "主动表达", "expect": "expressive", "proactive": "刚帮爹把文件整理完了，有点小得意想邀功"},
+    {"id": "pro-tease", "group": "主动表达", "expect": "expressive", "history": [["user", "我今天一定早睡"]], "proactive": "说好早睡的爹现在还在刷手机，想调侃他"},
+    {"id": "pro-goodbye", "group": "主动表达", "expect": "expressive", "history": [["user", "好啦今天就聊到这"]], "query": "我去睡了，晚安"},
+
+    {"id": "txt-tech", "group": "不适合发表情", "expect": "text", "query": "Python 里 asyncio.gather 和 TaskGroup 出错时的行为有什么区别？"},
+    {"id": "txt-fact", "group": "不适合发表情", "expect": "text", "query": "一年有多少周"},
+    {"id": "txt-explain", "group": "不适合发表情", "expect": "text", "query": "能不能跟我讲清楚 HTTPS 握手大概是怎么一步步完成的"},
+    {"id": "txt-serious", "group": "不适合发表情", "expect": "text", "query": "我妈今天住院了，医生说要做手术，我有点慌"},
+    {"id": "txt-formal", "group": "不适合发表情", "expect": "text", "query": "帮我写一段给领导的请假说明，明天因为家里有事请一天假，语气正式点"},
+
+    {"id": "grp-joke", "group": "QQ 群", "expect": "expressive", "scene": "qq_group", "history": [["user", "大壮#2：今天食堂的鱼比我脸还大"]], "query": "小李#3：@鲸娘 你看这是不是你亲戚"},
+    {"id": "grp-tech", "group": "QQ 群", "expect": "text", "scene": "qq_group", "query": "小李#3：@鲸娘 git rebase 冲突了怎么继续？"}
+  ]
+}
