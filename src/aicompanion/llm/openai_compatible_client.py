@@ -211,7 +211,7 @@ class OpenAICompatibleClient:
         finally:
             if abort:
                 cancellation.unregister(abort)
-        chars = sum(len(str(m.get("content") or "")) for m in messages)
+        chars = sum(self._content_chars(m.get("content")) for m in messages)
         try:
             choice = data["choices"][0]; message = choice["message"]
         except (KeyError, IndexError, TypeError) as error:
@@ -225,6 +225,16 @@ class OpenAICompatibleClient:
         meter.report(self.model, data.get("usage"), chars, len(content)+sum(len(c["arguments"]) for c in calls))
         return {"content": content, "tool_calls": calls, "reasoning": message.get("reasoning_content") or "",
                 "finish_reason": choice.get("finish_reason") or "", "usage": data.get("usage")}
+
+    @staticmethod
+    def _content_chars(content) -> int:
+        """缺少 usage 时估算用量：图片按视觉 token 估算，不把 base64 当作几十万字文本计费。"""
+        if isinstance(content, str): return len(content)
+        if isinstance(content, list):
+            return sum(len(str(part.get('text') or '')) if part.get('type') == 'text' else
+                       2048 if part.get('type') in ('image_url', 'file') else 0
+                       for part in content if isinstance(part, dict))
+        return 0
 
     def _build_payload(
         self,

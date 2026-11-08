@@ -421,6 +421,15 @@ class ExistingInstanceTests(ManagerBase):
 
 
 class DiagnoseTests(ManagerBase):
+    def test_diagnostics_show_running_plugin_version_and_expired_heartbeat(self):
+        self.heartbeat = {'at': self.now, 'astrbot': 'plugin-0.5.1'}
+        self.assertIn('plugin-0.5.1（最近心跳', self.qq.diagnostics_text())
+        self.now += 120
+        self.assertIn('心跳已过期', self.qq.diagnostics_text())
+        self.heartbeat['astrbot'] = 'https://private.example/secret'
+        self.assertNotIn('private.example', self.qq.diagnostics_text())
+        self.assertIn('尚未收到有效版本心跳', self.qq.diagnostics_text())
+
     class WebUI:
         state = {'isLogin': False}
         def __init__(self, port, token): pass
@@ -469,7 +478,7 @@ class HeartbeatTests(Base):
             with urllib.request.urlopen(request, timeout=5) as response: reply = json.loads(response.read())
         finally:
             server.close()
-        self.assertEqual(reply, {'ok': True, 'groups': ['30003']})
+        self.assertEqual(reply, {'ok': True, 'groups': ['30003'], 'media': {'vision': True, 'name': '鲸娘'}})
         self.assertEqual(runtime.last_heartbeat['groups'], [{'id': '30003', 'name': '测试群'}])   # 不合法的群号丢掉
         self.assertTrue(runtime.last_heartbeat['onebot']['connected'])
 

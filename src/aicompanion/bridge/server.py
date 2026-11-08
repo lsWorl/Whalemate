@@ -13,7 +13,7 @@ import json
 import secrets
 import threading
 
-MAX_BODY = 64*1024
+MAX_BODY = 5*1024*1024   # 最多 3 张、每张 1 MiB 的图片（base64 有约 1/3 额外体积）
 
 
 class BridgeServer:
@@ -40,7 +40,7 @@ class BridgeServer:
 
             def do_POST(self):
                 if not self._authorized(): return self._send(401, {'error': 'unauthorized'})
-                if self.path not in ('/v1/chat', '/v1/heartbeat'): return self._send(404, {'error': 'not_found'})
+                if self.path not in ('/v1/chat', '/v1/heartbeat', '/v1/media-permission'): return self._send(404, {'error': 'not_found'})
                 try:
                     length = int(self.headers.get('Content-Length') or 0)
                     if length <= 0 or length > MAX_BODY: return self._send(413, {'error': 'too_large'})
@@ -49,6 +49,7 @@ class BridgeServer:
                 except ValueError:
                     return self._send(400, {'error': 'bad_json'})
                 if self.path == '/v1/heartbeat': return self._send(200, server.heartbeat(payload))
+                if self.path == '/v1/media-permission': return self._send(200, server.service.media_permission(payload))
                 self._send(200, server.service.handle(payload))
 
         self.httpd = ThreadingHTTPServer((host, port), Handler); self.httpd.daemon_threads = True
@@ -67,7 +68,9 @@ class BridgeServer:
                                   'onebot': {'connected': bool(onebot.get('connected')), 'self_id': str(onebot.get('self_id') or '')[:20],
                                              'error': str(onebot.get('error') or '')[:200]}}
         from aicompanion.bridge.service import setting
-        return {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []]}
+        return {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []],
+                'media': {'vision': bool(self.service.database.get_setting('qq_vision_enabled', True)),
+                          'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸娘')}}
 
     @property
     def port(self) -> int:

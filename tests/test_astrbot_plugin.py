@@ -1,11 +1,15 @@
 """AstrBot 插件（integrations/astrbot_plugin_aicompanion）：用假的 astrbot 接口检查转发规则和离线行为。
 不需要安装 AstrBot；aiohttp 没装时也用假模块代替。"""
 import asyncio
+import base64
+import io
 import importlib.util
 from pathlib import Path
 import sys
 import types
 import unittest
+from unittest import mock
+import tempfile
 
 PLUGIN = Path(__file__).resolve().parents[1]/'integrations'/'astrbot_plugin_aicompanion'/'main.py'
 
@@ -44,15 +48,18 @@ def load_plugin():
 
 
 class Event:
-    def __init__(self, text, sender='10001', group='', platform='aiocqhttp', called=True):
+    def __init__(self, text, sender='10001', group='', platform='aiocqhttp', called=True, images=None):
         self.message_str = text; self.sender = sender; self.group = group; self.platform = platform
         self.is_at_or_wake_command = called; self.stopped = False
+        self.images = images or []
     def get_platform_name(self): return self.platform
     def get_group_id(self): return self.group
     def get_sender_id(self): return self.sender
     def get_sender_name(self): return '阿青'
     def stop_event(self): self.stopped = True
     def plain_result(self, text): return ('plain', text)
+    def get_messages(self): return self.images
+    def chain_result(self, chain): return ('chain', chain)
 
 
 class PluginTests(unittest.TestCase):
@@ -61,7 +68,10 @@ class PluginTests(unittest.TestCase):
         cls.module = load_plugin()
 
     def plugin(self, **config):
-        return self.module.AICompanionBridge(context=None, config={'token': 't', 'groups': ['30003'], **config})
+        plugin = self.module.AICompanionBridge(context=None, config={'token': 't', 'groups': ['30003'], **config})
+        async def denied(payload): return {'allowed': False}
+        plugin.avatar_permission = denied
+        return plugin
 
     def run_handler(self, plugin, event, answer=None, error=None):
         async def fake(payload):
@@ -77,7 +87,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(p.route(Event('在吗')), {'platform': 'qq', 'sender_id': '10001', 'sender_name': '阿青', 'group_id': '', 'text': '在吗', 'called': True})
         self.assertIsNone(p.route(Event('在吗', platform='telegram')))        # 其他平台交还给 AstrBot
         self.assertIsNone(p.route(Event('/help')))                             # AstrBot 指令
-        self.assertIsNone(p.route(Event('')))                                  # 只有图片
+        self.assertIsNone(p.route(Event('')))                                  # 完全空消息
         self.assertIsNone(p.route(Event('大家好', group='99999')))            # 没交给她的群
         self.assertIs(p.route(Event('大家好', group='30003', called=False))['called'], False)   # 群里没叫她也转发（旁听），标明没叫
         self.assertIs(p.route(Event('大家好', group='30003'))['called'], True)
@@ -107,6 +117,127 @@ class PluginTests(unittest.TestCase):
         event = Event('/help')
         self.assertEqual(self.run_handler(self.plugin(), event, {'reply': 'x'}), []); self.assertFalse(event.stopped)
 
+    def test_picture_only_message_uses_managed_converter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'photo.png'
+            try:
+                from PIL import Image
+            except ImportError: self.skipTest('压缩测试需要 AstrBot 自带的 Pillow')
+            Image.new('RGB', (1800, 1000), 'blue').save(path)
+            class Segment:
+                type = 'Image'
+                async def convert_to_file_path(self): return str(path)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = Event('', images=[Segment()])
+            out = self.run_handler(plugin, event, {'reply': '蓝色图片', 'silent': False})
+            self.assertEqual(out, [('plain', '蓝色图片')])
+            self.assertTrue(plugin.sent['images'][0].startswith('data:image/jpeg;base64,'))
+            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[收到图片]')
+
+    def test_picture_converter_refuses_unmanaged_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            managed = Path(folder)/'temp'; managed.mkdir()
+            outside = Path(folder)/'outside.png'; outside.write_bytes(b'not-an-image')
+            class Segment:
+                type = 'Image'
+                async def convert_to_file_path(self): return str(outside)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: str(managed)
+            self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '没能读取', 'silent': False})
+            self.assertNotIn('images', plugin.sent); self.assertIn('未能读取', plugin.sent['text'])
+
+    def test_private_gif_and_webp_stickers_are_forwarded_as_actual_pixels(self):
+        try:
+            from PIL import Image
+        except ImportError: self.skipTest('压缩测试需要 AstrBot 自带的 Pillow')
+        with tempfile.TemporaryDirectory() as folder:
+            for extension in ('gif', 'webp'):
+                with self.subTest(extension=extension):
+                    path = Path(folder)/('sticker.'+extension)
+                    Image.new('RGB', (80, 80), 'blue').save(
+                        path, save_all=True, append_images=[Image.new('RGB', (80, 80), 'red')], duration=100, loop=0)
+                    class Segment:
+                        type = 'Image'
+                        async def convert_to_file_path(self): return str(path)
+                    plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+                    self.run_handler(plugin, Event('[动画表情]', images=[Segment()]), {'reply': '蓝色', 'silent': False})
+                    self.assertTrue(plugin.sent['has_image'])
+                    self.assertEqual(len(plugin.sent['images']), 1)
+                    with Image.open(io.BytesIO(base64.b64decode(plugin.sent['images'][0].split(',', 1)[1]))) as picture:
+                        red, green, blue = picture.getpixel((40, 40))
+                        self.assertGreater(blue, red+100)
+                        self.assertGreater(blue, green+100)  # 转发首帧图像，不能只转 [动画表情] 提示
+                    self.assertNotIn('未能读取', plugin.sent['text'])
+
+    def test_group_passive_or_vision_disabled_does_not_open_image(self):
+        class Segment:
+            type = 'Image'
+            async def convert_to_file_path(self): raise AssertionError('不应读取图片')
+        plugin = self.plugin(group_only_when_called=False)
+        self.run_handler(plugin, Event('', group='30003', called=False, images=[Segment()]), {'reply': '', 'silent': True})
+        self.assertNotIn('images', plugin.sent)
+        self.assertIn('旁听不自动识图', plugin.sent['text'])
+        plugin.pet_vision = False
+        self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '', 'silent': True})
+        self.assertNotIn('images', plugin.sent)
+        self.assertIn('识图已关闭', plugin.sent['text'])
+
+    def test_meme_is_sent_as_astrbot_image_message_even_without_text(self):
+        components = types.ModuleType('astrbot.api.message_components')
+        components.Image = type('Image', (), {'fromBase64': staticmethod(lambda value: ('image', value))})
+        components.Plain = lambda value: ('text', value)
+        with mock.patch.dict(sys.modules, {'astrbot.api.message_components': components}):
+            result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '', 'silent': False, 'images': ['data:image/png;base64,YWJj']})
+            self.assertEqual(result, [('chain', [('image', 'YWJj')])])
+            result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '好呀', 'silent': False, 'images': ['file:///private.png']})
+            self.assertEqual(result, [('chain', [('text', '好呀')])])
+
+    def test_avatar_only_downloads_after_desktop_permission_and_uses_sender(self):
+        plugin = self.plugin(); calls = []
+        async def permission(payload):
+            calls.append(('permission', payload.copy()))
+            return {'allowed': True, 'avatar_needed': True, 'avatar_subject': payload['sender_id']}
+        async def fetch(subject): calls.append(('fetch', subject)); return 'data:image/jpeg;base64,YWJj'
+        plugin.avatar_permission = permission; plugin.fetch_avatar = fetch
+        self.run_handler(plugin, Event('你好'), {'reply': '嗨', 'silent': False})
+        self.assertEqual([row[0] for row in calls], ['permission', 'fetch'])
+        self.assertEqual(calls[1][1], '10001'); self.assertIn('avatar', plugin.sent)
+        self.run_handler(plugin, Event('又来了'), {'reply': '', 'silent': True})
+        self.assertEqual(len(calls), 2)  # 防止失败或旧缓存导致每条消息抓取头像
+
+    def test_avatar_passive_denied_or_non_numeric_never_downloads(self):
+        plugin = self.plugin(group_only_when_called=False)
+        async def fetch(subject): raise AssertionError('不该抓头像')
+        plugin.fetch_avatar = fetch
+        for event in (Event('你好'), Event('大家好', group='30003', called=False), Event('你好', sender='arbitrary-url')):
+            self.run_handler(plugin, event, {'reply': '', 'silent': True})
+
+    def test_avatar_target_accepts_only_numeric_mentions_and_excludes_bot(self):
+        plugin = self.plugin()
+        event = Event('看看他的头像', group='30003')
+        event.get_self_id = lambda: '88888'
+        event.get_messages = lambda: [types.SimpleNamespace(type='At', qq=value) for value in ('88888', '40004', 'http://localhost')]
+        payload = plugin.route(event)
+        self.assertEqual(plugin.avatar_target(event, payload), '40004')
+        self.assertEqual(payload['mentioned_ids'], ['40004'])
+
+    def test_avatar_fetch_is_fixed_https_without_redirects_and_is_bounded(self):
+        plugin = self.plugin(); requests = []
+        class Content:
+            async def iter_chunked(self, size): yield b'x'*(129*1024)
+        class Response:
+            status = 200; content = Content()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): return False
+        class Session:
+            closed = False
+            def get(self, url, **kwargs): requests.append((url, kwargs)); return Response()
+        plugin.session = Session()
+        self.assertIsNone(asyncio.run(plugin.fetch_avatar('10001')))
+        self.assertEqual(requests[0][0], 'https://q1.qlogo.cn/g?b=qq&nk=10001&s=100')
+        self.assertFalse(requests[0][1]['allow_redirects'])
+        self.assertIsNone(asyncio.run(plugin.fetch_avatar('http://127.0.0.1')))
+        self.assertEqual(len(requests), 1)
+
 
 class HeartbeatTests(unittest.TestCase):
     @classmethod
@@ -131,6 +262,9 @@ class HeartbeatTests(unittest.TestCase):
         plugin.post = post
         asyncio.run(plugin.heartbeat_once())
         self.assertEqual(sent['path'], '/v1/heartbeat')
+        self.assertEqual(sent['payload']['astrbot'], 'plugin-'+self.module.PLUGIN_VERSION)
+        metadata = PLUGIN.with_name('metadata.yaml').read_text(encoding='utf-8')
+        self.assertIn('version: v'+self.module.PLUGIN_VERSION+'\n', metadata)
         self.assertEqual(sent['payload']['onebot'], {'connected': True, 'self_id': '888'})
         self.assertEqual(sent['payload']['groups'], [{'id': '30003', 'name': '测试群'}])
         self.assertEqual(plugin.pet_groups, ['30003'])

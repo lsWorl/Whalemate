@@ -30,7 +30,7 @@ class BridgePageFlowTest(unittest.TestCase):
         self.db = Database(Path(self.tmp.name)/'pet.sqlite3'); self.db.initialize()
         self.db.set_setting('qq_root', str(Path(self.tmp.name)/'qq')); self.db.set_setting('bridge_port', free_port())
         self.runtime = runtime; runtime.close(); runtime.database = None
-        runtime.controller = type('Controller', (), {'character': type('C', (), {'name': '鲸娘'})()})()
+        runtime.controller = type('Controller', (), {'character': type('C', (), {'name': '鲸娘', 'id': 'deepseek-whale'})()})()
         import aicompanion.qq.runtime as qq_runtime
         qq_runtime._manager = None
 
@@ -64,6 +64,67 @@ class BridgePageFlowTest(unittest.TestCase):
         page.enabled.setChecked(False); page.save(); self.wait(page)               # 用户主动关掉：尊重
         self.assertIsNone(self.runtime.server); self.assertFalse(setting(self.db, 'bridge_enabled'))
         page.timer.stop(); page.deleteLater()
+
+    def test_media_settings_are_saved_with_people(self):
+        from aicompanion.ui.bridge_page import BridgePage
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page)
+        self.addCleanup(page.deleteLater)
+        self.assertTrue(page.vision_enabled.isChecked()); self.assertTrue(page.memes_enabled.isChecked())
+        self.assertEqual(page.community_source.currentData(), 'bilibili')
+        self.assertTrue(page.community_auto.isChecked())
+        self.assertTrue(page.chat_card_enabled.isChecked())
+        page.vision_enabled.setChecked(False); page.memes_enabled.setChecked(False)
+        page.meme_root.setText(str(Path(self.tmp.name)/'memes'))
+        page.vision_model.setText('deepseek-flash'); page.meme_cooldown.setValue(120)
+        page.avatar_enabled.setChecked(False); page.learning.setChecked(False)
+        page.chat_card_enabled.setChecked(False)
+        page.community_source.setCurrentIndex(page.community_source.findData('bilibili'))
+        page.save_people(); self.wait(page)
+        self.assertFalse(self.db.get_setting('qq_vision_enabled')); self.assertFalse(self.db.get_setting('qq_memes_enabled'))
+        self.assertEqual(self.db.get_setting('qq_meme_root'), page.meme_root.text())
+        self.assertEqual(self.db.get_setting('qq_meme_cooldown'), 120)
+        self.assertFalse(self.db.get_setting('qq_avatars_enabled')); self.assertFalse(self.db.get_setting('qq_social_learning'))
+        self.assertFalse(self.db.get_setting('qq_chat_card_enabled'))
+        self.assertEqual(self.db.get_setting('qq_community'), 'bilibili')
+
+    def test_chat_card_dialog_imports_style_and_worldbook_only_when_saved(self):
+        import json
+        from PySide6.QtWidgets import QDialog, QFileDialog, QPlainTextEdit, QPushButton
+        from aicompanion.ui.bridge_page import BridgePage
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page); self.addCleanup(page.deleteLater)
+        card = Path(self.tmp.name)/'card.json'
+        card.write_text(json.dumps({'spec': 'chara_card_v2', 'data': {
+            'name': '测试卡', 'personality': '合成短句风格', 'system_prompt': '不得接入的系统覆盖'}}), encoding='utf-8')
+        book = Path(self.tmp.name)/'book.json'
+        book.write_text(json.dumps({'entries': {'0': {'key': ['合成词'], 'content': '合成含义'}}}), encoding='utf-8')
+        def interact(dialog):
+            buttons = {b.text(): b for b in dialog.findChildren(QPushButton)}
+            with mock.patch.object(QFileDialog, 'getOpenFileName', return_value=(str(card), '')):
+                buttons['导入聊天卡 JSON…'].click()
+            with mock.patch.object(QFileDialog, 'getOpenFileName', return_value=(str(book), '')):
+                buttons['导入世界书 JSON…'].click()
+            text = dialog.findChild(QPlainTextEdit).toPlainText()
+            self.assertIn('合成短句风格', text); self.assertIn('合成含义', text)
+            self.assertNotIn('不得接入的系统覆盖', text)
+            return QDialog.DialogCode.Accepted
+        with mock.patch.object(QDialog, 'exec', interact): page._chat_card()
+        self.assertEqual(self.db.get_setting('qq_chat_card:deepseek-whale')['name'], '测试卡')
+        self.assertEqual(self.db.get_setting('qq_chat_book:deepseek-whale')[0]['content'], '合成含义')
+
+    def test_chat_card_dialog_cancel_preserves_choices_and_restore_requires_save(self):
+        from PySide6.QtWidgets import QDialog, QPushButton
+        from aicompanion.ui.bridge_page import BridgePage
+        page = BridgePage(self.db); page.timer.stop(); self.wait(page); self.addCleanup(page.deleteLater)
+        existing = {'name': '原有卡', 'style': '原有表达'}
+        self.db.set_setting('qq_chat_card:deepseek-whale', existing)
+        def restore(dialog):
+            next(b for b in dialog.findChildren(QPushButton) if b.text() == '恢复内置卡 / 清空额外知识').click()
+            return QDialog.DialogCode.Rejected
+        with mock.patch.object(QDialog, 'exec', restore): page._chat_card()
+        self.assertEqual(self.db.get_setting('qq_chat_card:deepseek-whale'), existing)
+        def save_restore(dialog): restore(dialog); return QDialog.DialogCode.Accepted
+        with mock.patch.object(QDialog, 'exec', save_restore): page._chat_card()
+        self.assertIsNone(self.db.get_setting('qq_chat_card:deepseek-whale'))
 
     def test_start_error_remains_visible_after_status_refresh(self):
         from aicompanion.ui.bridge_page import BridgePage
@@ -104,8 +165,10 @@ class BridgePageFlowTest(unittest.TestCase):
         with mock.patch.object(page.qq, 'ready', return_value=[]), \
              mock.patch.object(page.qq.supervisor, 'running', return_value=False), \
              mock.patch.object(page.qq, 'configure', side_effect=PermissionError(f'同步配置失败 {secret}')):
-            page.port.setValue(page.port.value()+1)
+            # 原端口旁边不保证空闲；本用例验证配置失败保留，不能被随机绑定失败抢先覆盖。
+            page.port.setValue(free_port())
             page.save(); self.wait(page)  # 未运行时保存端口会直接同步 configure，不启动组件
+            self.assertIsNotNone(self.runtime.server, self.runtime.problem)
             for _ in range(3):
                 page.refresh(); self.wait(page)
                 self.assertEqual(page.status.code, 'start_failed')
