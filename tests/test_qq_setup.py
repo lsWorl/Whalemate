@@ -421,6 +421,15 @@ class ExistingInstanceTests(ManagerBase):
 
 
 class DiagnoseTests(ManagerBase):
+    def test_diagnostics_show_running_plugin_version_and_expired_heartbeat(self):
+        self.heartbeat = {'at': self.now, 'astrbot': 'plugin-0.5.1'}
+        self.assertIn('plugin-0.5.1（最近心跳', self.qq.diagnostics_text())
+        self.now += 120
+        self.assertIn('心跳已过期', self.qq.diagnostics_text())
+        self.heartbeat['astrbot'] = 'https://private.example/secret'
+        self.assertNotIn('private.example', self.qq.diagnostics_text())
+        self.assertIn('尚未收到有效版本心跳', self.qq.diagnostics_text())
+
     class WebUI:
         state = {'isLogin': False}
         def __init__(self, port, token): pass

@@ -25,6 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
+PLUGIN_VERSION = '0.5.1'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 QQ_ADAPTERS = {'aiocqhttp': 'qq', 'qq_official': 'qq', 'qq_official_webhook': 'qq'}
@@ -203,7 +204,7 @@ class AICompanionBridge(Star):
 
     async def heartbeat_once(self):
         onebot, groups = await self.onebot_state()
-        payload = {'astrbot': 'plugin-0.3', 'onebot': onebot, 'groups': groups}
+        payload = {'astrbot': f'plugin-{PLUGIN_VERSION}', 'onebot': onebot, 'groups': groups}
         async with await self.post('/v1/heartbeat', payload, 10) as response:
             if response.status == 200:
                 data = await response.json()

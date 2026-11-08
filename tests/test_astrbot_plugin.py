@@ -1,6 +1,8 @@
 """AstrBot 插件（integrations/astrbot_plugin_aicompanion）：用假的 astrbot 接口检查转发规则和离线行为。
 不需要安装 AstrBot；aiohttp 没装时也用假模块代替。"""
 import asyncio
+import base64
+import io
 import importlib.util
 from pathlib import Path
 import sys
@@ -143,6 +145,29 @@ class PluginTests(unittest.TestCase):
             self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '没能读取', 'silent': False})
             self.assertNotIn('images', plugin.sent); self.assertIn('未能读取', plugin.sent['text'])
 
+    def test_private_gif_and_webp_stickers_are_forwarded_as_actual_pixels(self):
+        try:
+            from PIL import Image
+        except ImportError: self.skipTest('压缩测试需要 AstrBot 自带的 Pillow')
+        with tempfile.TemporaryDirectory() as folder:
+            for extension in ('gif', 'webp'):
+                with self.subTest(extension=extension):
+                    path = Path(folder)/('sticker.'+extension)
+                    Image.new('RGB', (80, 80), 'blue').save(
+                        path, save_all=True, append_images=[Image.new('RGB', (80, 80), 'red')], duration=100, loop=0)
+                    class Segment:
+                        type = 'Image'
+                        async def convert_to_file_path(self): return str(path)
+                    plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+                    self.run_handler(plugin, Event('[动画表情]', images=[Segment()]), {'reply': '蓝色', 'silent': False})
+                    self.assertTrue(plugin.sent['has_image'])
+                    self.assertEqual(len(plugin.sent['images']), 1)
+                    with Image.open(io.BytesIO(base64.b64decode(plugin.sent['images'][0].split(',', 1)[1]))) as picture:
+                        red, green, blue = picture.getpixel((40, 40))
+                        self.assertGreater(blue, red+100)
+                        self.assertGreater(blue, green+100)  # 转发首帧图像，不能只转 [动画表情] 提示
+                    self.assertNotIn('未能读取', plugin.sent['text'])
+
     def test_group_passive_or_vision_disabled_does_not_open_image(self):
         class Segment:
             type = 'Image'
@@ -237,6 +262,9 @@ class HeartbeatTests(unittest.TestCase):
         plugin.post = post
         asyncio.run(plugin.heartbeat_once())
         self.assertEqual(sent['path'], '/v1/heartbeat')
+        self.assertEqual(sent['payload']['astrbot'], 'plugin-'+self.module.PLUGIN_VERSION)
+        metadata = PLUGIN.with_name('metadata.yaml').read_text(encoding='utf-8')
+        self.assertIn('version: v'+self.module.PLUGIN_VERSION+'\n', metadata)
         self.assertEqual(sent['payload']['onebot'], {'connected': True, 'self_id': '888'})
         self.assertEqual(sent['payload']['groups'], [{'id': '30003', 'name': '测试群'}])
         self.assertEqual(plugin.pet_groups, ['30003'])

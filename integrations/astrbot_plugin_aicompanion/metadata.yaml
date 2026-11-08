@@ -2,7 +2,7 @@ name: astrbot_plugin_aicompanion
 display_name: AICompanion 桌宠桥接
 desc: 把选定的 QQ 私聊和群交给本机的 AICompanion 桌宠回复，人格和记忆与桌面上是同一个她。
 short_desc: QQ 消息转给本机桌宠的大脑
-version: v0.5.0
+version: v0.5.1
 author: AICompanion
 repo: https://github.com/lsWorl/AICompanion
 support_platforms:
