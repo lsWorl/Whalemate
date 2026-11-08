@@ -17,37 +17,58 @@ def terms(text):
     words=re.findall(r'[a-z0-9_]+|[\u4e00-\u9fff]+',str(text).casefold())
     return {part for word in words for part in ([word]+[word[i:i+2] for i in range(len(word)-1)]) if part not in STOP_WORDS}
 
-# 常见情绪分组：候选按组铺开，保证她想表达自己的情绪时手边有图。只用于排序和覆盖，不触发发送。
-FEELINGS=('开心','得意','委屈','无语','疑惑','困','撒娇','生气','调侃','打招呼')
+# 候选分组：两类。
+# 1) 她想对对方做的事（安慰、祝贺、感谢、道晚安、道歉、打招呼）——按图的"用法"判断；
+# 2) 她自己的情绪（开心、得意、委屈、无语……）——按图的情绪判断。
+# Codex 审计（round6 连续对话）：对方难过时，固定的"情绪槽"会把"她自己哭 / 委屈"的图排上来，而不是"安慰"的图。
+# 所以先按用法归到"她要做的事"，再按情绪归类；对话线索也分开：对方难过 → 安慰，她被冤枉 → 委屈。
+# 只用于候选排序和覆盖，不决定发不发。
+REJECTED_SHAPES={'empty','placeholder','handle_out_of_range','asset_id_not_offered','other_code','free_text'}
+PURPOSES=('安慰','祝贺','感谢','晚安','道歉','打招呼')
+FEELINGS=PURPOSES+('开心','得意','委屈','无语','疑惑','困','撒娇','生气','调侃')
 FEELING_TAGS={
-    '开心':('开心','兴奋','庆祝','分享开心','期待','起哄'),
-    '得意':('得意','炫耀','赞同','认同','附和'),
-    '委屈':('哭','难过','委屈','求安慰','示弱','害怕'),
+    '安慰':('安慰','慰问','共情','陪伴','抱抱','拥抱','鼓励','支持','加油'),
+    '祝贺':('祝贺','祝福','恭喜','送祝福','赞赏','鼓掌'),
+    '感谢':('感谢','送心','送心意','回应投喂','谢谢'),
+    '晚安':('晚安','暂离','告别'),
+    '道歉':('道歉','歉意','不好意思','翻车自嘲','翻车','自嘲','尴尬'),
+    '打招呼':('打招呼','问候','探头问候','欢迎'),
+    '开心':('开心','兴奋','庆祝','分享开心','期待','起哄','大笑','表达开心'),
+    '得意':('得意','炫耀','赞同','认同','附和','小得意','认可自己'),
+    '委屈':('哭','难过','委屈','求安慰','示弱','害怕','伤心'),
     '无语':('无语','无奈','吐槽','拒绝','回绝'),
-    '疑惑':('疑惑','疑问','不理解','惊讶','追问'),
-    '困':('疲惫','表达疲惫','摸鱼','困'),
-    '撒娇':('卖萌','撒娇','害羞','引起注意'),
-    '生气':('生气','抗议'),
-    '调侃':('嘲讽','搞怪','调侃','玩笑'),
-    '打招呼':('打招呼','问候'),
+    '疑惑':('疑惑','疑问','不理解','惊讶','追问','震惊','吃惊'),
+    '困':('疲惫','表达疲惫','摸鱼','困','休息'),
+    '撒娇':('卖萌','撒娇','害羞','引起注意','贴贴','亲昵'),
+    '生气':('生气','抗议','表达不满','不服'),
+    '调侃':('嘲讽','搞怪','调侃','玩笑','打闹','坏笑','调侃熟人'),
 }
-# 对话里出现这些字眼时，相应情绪的图排前面（排序用的提示，不是"出现就发"的规则）
+# 对话线索：只把相应分组的图排前面，不是"出现就发"的规则。同一个字眼在不同语境指向不同分组的，按"谁的情绪"分开写。
 FEELING_CUES={
-    '开心':('哈哈','开心','好消息','中了','过了','成功','太好','放假','耶','奶茶','好玩','心情'),
-    '得意':('夸','不错','厉害','靠谱','牛','聪明','真棒','帮了','整理完','邀功','搞定'),
-    '委屈':('冤枉','怪我','是你','没理','不理','忘了','没抢到','难受','可惜','唉','凶','没给你留'),
-    '无语':('离谱','认真的','黑暗','什么鬼','服了','敷衍','又','咖啡','泡面'),
-    '疑惑':('为什么','如果','算不算','真的假的','怎么','？','?','到底','几点'),
-    '困':('困','睡','晚安','凌晨','熬夜','累','加班','哈欠','早睡'),
-    '撒娇':('理我','陪','想你','捶','抱','求关注','没顾上','撒娇'),
-    '生气':('喝完','抢','凭什么','不给','气','坏'),
-    '调侃':('胖','大肥鱼','笑死','逗','亲戚','冷笑话','笑话','刷手机','键盘'),
-    '打招呼':('在吗','早','嗨','回来','打招呼','好久'),
+    '安慰':('难过','难受','伤心','委屈死','没抢到','没过','失败','倒霉','可惜','唉','哭了','想哭','崩溃','郁闷','被骂','好累啊','安慰'),
+    '祝贺':('过了','成功','中了','拿下','录取','升职','入职','好消息','考上','赢了','恭喜'),
+    '感谢':('谢谢','分你','请你','给你买','送你','给你带','投喂'),
+    '晚安':('晚安','去睡','睡了','明天见','拜拜','下线'),
+    '道歉':('不对吧','错了','看看日历','通知上','到底','你说错','搞错'),
+    '打招呼':('在吗','早上好','嗨','回来啦','回来了','好久不见'),
+    '开心':('哈哈','开心','好玩','放假','耶','奶茶','心情好'),
+    '得意':('夸','不错','厉害','靠谱','牛','聪明','真棒','帮了','整理完','邀功','搞定','军师'),
+    '委屈':('冤枉','怪我','肯定是你','没理你','不理你','没顾上','没给你留','凶'),
+    '无语':('离谱','认真的','黑暗','什么鬼','服了','敷衍','咖啡','泡面','白准备'),
+    '疑惑':('为什么','如果','算不算','真的假的','怎么回事','？','?'),
+    '困':('困','凌晨','熬夜','加班','哈欠','早睡','刷手机'),
+    '撒娇':('理我','想你','捶','求关注','撒娇','闺女'),
+    '生气':('喝完','抢了','凭什么','不给你','气死'),
+    '调侃':('胖','大肥鱼','笑死','逗你','亲戚','冷笑话','笑话','键盘','红薯'),
 }
 
-def feeling_group(tags):
+def feeling_group(tags,intents=()):
+    """先看用法是不是"她要对对方做的事"，再按情绪归类。"""
+    tags=set(tags);intents=set(intents)
+    for group in PURPOSES:
+        if intents&set(FEELING_TAGS[group]):return group
     for group in FEELINGS:
-        if set(tags)&set(FEELING_TAGS[group]):return group
+        if tags&set(FEELING_TAGS[group]):return group
     return ''
 
 def feeling_cues(text):
@@ -88,6 +109,7 @@ class ExpressionService:
         # 刚发过的两张图 5 分钟内不再给（避免连发同一张），发送中的不重复给
         avoid={r['asset_id'] for r in used[:2] if self.clock()-r['updated_at']<300}
         avoid.update(r['asset_id'] for r in recent if r['status'] in ('pending','sending') and self.clock()-r['created_at']<120)
+        history_assets={r['asset_id'] for r in used}
         current=query+' '+context.proactive_reason
         wanted=terms(current)
         recent_words=terms(' '.join([getattr(h,'content','')[-250:] for h in history[-5:]]+list(context.community.entries)))
@@ -126,7 +148,7 @@ class ExpressionService:
             if self.catalog.resolve(row['asset_id'],row['revision']) is None:drop('file_unavailable');continue
             report['eligible']+=1
             semantic_words=terms(tags)
-            group=feeling_group(emotions+intents)
+            group=feeling_group(emotions+intents,intents)
             # 当前想表达的内容优先；长人设和旧话题不能压过这一轮的意图。
             score=(len(wanted&semantic_words)*8+min(3,len(recent_words&semantic_words)*.5)
                    +(2 if mood in emotions else 0)+cues.get(group,0)
@@ -147,7 +169,16 @@ class ExpressionService:
         for score,_,group,candidate in choices:
             if score<=0 or len(selected)>=3:break
             add(candidate);taken.add(group)
-        palette=sorted(FEELINGS,key=lambda g:(-cues.get(g,0),FEELINGS.index(g)))
+        # 她在这段对话里发过、历史里写成 <sticker sent="含义"/> 的图：仍然合格（审核 / 关系 / 去重都已在上面过滤）的，
+        # 留最多两个名额。Codex 连续对话审计：模型常照抄历史写法，图不在本轮候选就被当成无效丢掉；
+        # 放进候选以后，照抄的含义能对上本轮编号。不在候选里的旧图仍然不会发。
+        by_asset={item[3].asset_id:item for item in choices}
+        for row in used:
+            if sum(1 for c in selected if c.asset_id in history_assets)>=2:break
+            item=by_asset.get(row['asset_id'])
+            if item and item[3] not in selected:add(item[3]);taken.add(item[2])
+        # 先补对话线索指向的分组，再补她自己的各种情绪，最后才是没有线索的"对对方做的事"
+        palette=sorted(FEELINGS,key=lambda g:(-cues.get(g,0),g in PURPOSES,FEELINGS.index(g)))
         for wanted_group in palette:
             if wanted_group in taken:continue
             for score,_,group,candidate in choices:
@@ -233,6 +264,17 @@ class ExpressionService:
     def record_trace(self,turn_id,context,report,diagnostics=(),markers=0,selection=None,attachment=None,status='complete',delivered=False,rejected=()):
         stage=self.trace_outcome(report,diagnostics,markers,selection,attachment,status)
         if stage=='E_pending' and not delivered:stage='E_not_delivered'
+        delivery_status=None
+        if attachment is not None:
+            # 图在前时界面可能在生成结束前就已显示并回执（Codex 审计 P2）：以数据库里这条投递的当前状态为准，不让 pending 覆盖
+            try:
+                with self.db.transaction() as c:
+                    row=c.execute('SELECT status FROM expression_deliveries WHERE delivery_id=?',(attachment.delivery_id,)).fetchone()
+                delivery_status=row['status'] if row else None
+            except Exception:delivery_status=None
+            final={'displayed':'OK_displayed','accepted':'OK_accepted','failed':'F_display_failed','unknown':'F_send_unknown',
+                   'cancelled':'E_not_delivered'}.get(delivery_status)
+            if final:stage=final
         entry=dict(turn=turn_id[-12:],at=round(self.clock()),character=context.character_id,
                    channel=context.channel.split(':')[0]+(':group' if ':group:' in context.channel else ':user' if ':user:' in context.channel else ''),
                    trigger=context.trigger,enabled=report.get('enabled',False),reason=report.get('reason',''),
@@ -243,7 +285,8 @@ class ExpressionService:
                    meaning=(attachment.alt_text if attachment else None),
                    parsed=bool(selection),validated=attachment is not None,result=delivered,
                    delivery=(attachment.delivery_id if attachment else None),status=status,
-                   diagnostics=list(diagnostics)[:8],rejected=[str(x)[:40] for x in rejected][:3],stage=stage)
+                   diagnostics=list(diagnostics)[:8],rejected=[x for x in rejected if x in REJECTED_SHAPES][:3],stage=stage)
+        if delivery_status:entry['delivery_status']=delivery_status
         def write(c):
             ring=self.db.setting_in(c,self.TRACE_KEY,[]) or []
             ring=[e for e in ring if isinstance(e,dict)][-(self.TRACE_LIMIT-1):]+[entry]
@@ -289,7 +332,7 @@ class ExpressionService:
         if entry.get('markers'):parts.append(f"标记 {entry['markers']} 个")
         if entry.get('meaning'):parts.append(f"选了「{entry['meaning']}」{'在前' if entry.get('placement')=='before_text' else '在后'}")
         if entry.get('diagnostics'):parts.append('诊断 '+','.join(entry['diagnostics']))
-        if entry.get('rejected'):parts.append('无效编号 '+','.join(entry['rejected']))
+        if entry.get('rejected'):parts.append('无效编号形态 '+','.join(entry['rejected']))
         return ' · '.join(parts)
 
     @staticmethod

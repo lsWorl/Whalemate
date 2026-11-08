@@ -175,8 +175,8 @@ class StrayEmotionTagTests(unittest.TestCase):
         self.assertEqual(stream.feed('【委屈】')+stream.finish(), '【委屈】')
 
     def test_rejected_handle_recorded_for_observability(self):
-        _, stream = self.parse('好<sticker id="s12"/>')
-        self.assertEqual(stream.rejected, ['s12'])
+        _, stream = self.parse('好<sticker id="s12"/><sticker id="编号"/><sticker id="合成住院细节"/>')
+        self.assertEqual(stream.rejected, ['handle_out_of_range', 'placeholder', 'free_text'])
 
 
 class MeaningAsIdTests(unittest.TestCase):
@@ -187,4 +187,4 @@ class MeaningAsIdTests(unittest.TestCase):
         self.assertEqual(stream.selection, (ID, 'after_text')); self.assertIn('meaning_as_id', stream.diagnostics)
         stream = ExpressionStream([ID, other], {}, {'s1': ID, 's2': other}, {'开心到转圈': ID, '开心到跳': other})
         stream.feed('<sticker id="开心"/>'); stream.finish()
-        self.assertIsNone(stream.selection); self.assertEqual(stream.rejected, ['开心'])   # 对得上两张：不猜
+        self.assertIsNone(stream.selection); self.assertEqual(stream.rejected, ['free_text'])   # 对得上两张：不猜；只记形态

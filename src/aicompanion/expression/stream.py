@@ -23,6 +23,20 @@ STARTS = ('<sticker', '<meme', '<expression', '<task>')+HISTORY_ANNOTATIONS
 CUE = re.compile(r'【[^】\n]{1,12}】|<[^<>\n/]{1,12}>')
 
 
+PLACEHOLDERS = {'编号', '编号标记', '数字', '序号', 'id', 'sn', 'sx', 'n', 'x', 'number'}
+
+
+def rejected_shape(value):
+    """无效编号只归成几类形态，用于观测；任何原文都不保留。"""
+    value = (value or '').strip()
+    if not value: return 'empty'
+    if value.lower() in PLACEHOLDERS: return 'placeholder'
+    if re.fullmatch(r's\d+', value, re.I): return 'handle_out_of_range'
+    if ASSET_ID.fullmatch(value): return 'asset_id_not_offered'
+    if re.fullmatch(r'[A-Za-z0-9_-]{1,40}', value): return 'other_code'
+    return 'free_text'
+
+
 class ExpressionStream:
     def __init__(self, candidate_ids=(), legacy=None, handles=None, meanings=None, cue_words=None):
         self.allowed = frozenset(candidate_ids); self.legacy = dict(legacy or {})
@@ -101,8 +115,8 @@ class ExpressionStream:
         if not isinstance(asset, str) or asset not in self.allowed:
             self.diagnose('invalid_asset')
             value = attrs.get('id', attrs.get('asset_id', attrs.get('name', attrs.get('sent', ''))))
-            # 只记很短的值（编号 / 占位词），用来分析写错的原因；不记长文本
-            if value and len(value) <= 12 and '\n' not in value and len(self.rejected) < 3: self.rejected.append(value)
+            # 只记"写错的形态"，不记原值：模型可能把聊天内容写进标记（Codex 审计 P2）
+            if len(self.rejected) < 3: self.rejected.append(rejected_shape(value))
             return
         if self.reserved:
             self.diagnose('multiple_markers'); return

@@ -222,19 +222,36 @@ class MainWindow(QMainWindow):
         if not older: self.chat_list.clear(); self.first_history_id=None; self.history_epoch+=1
         rows=self.database.recent_messages(30,self.controller.character.id,self.first_history_id if older else None)
         if rows: self.first_history_id=rows[0]['id']
-        for index,row in enumerate(rows):
+        from aicompanion.expression.segments import split_segments
+        position=0   # 一条记录可能显示成几个气泡；加载更早记录时按实际气泡数往下排
+        for row in rows:
             sender='你' if row['role']=='user' else self.controller.character.name
             note={'cancelled':'（被打断）','failed':'（没说完）','interrupted':'（中断了）'}.get(row['status'],'' if row['status']=='complete' else f"（{row['status']}）")
-            content=strip_cues(row['content'],self.vocab)+(f"\n{note}" if note else '')
+            content=strip_cues(row['content'],self.vocab)
             if row['source']=='agent' and content.startswith('[干活]'): content='🛠 '+content[4:].lstrip()
-            handle=self.chat_list.append(sender,content,index if older else None)
-            if row['role']=='assistant' and row['turn_id']:
-                for attachment in self.controller.expression.history(row['turn_id'],self.controller.character.id):
-                    cid=self.controller.character.id; epoch=self.history_epoch
-                    worker=TaskWorker(lambda token,a=attachment:self.controller.expression.catalog.resolve(a['asset_id'],a['revision'],approved=False),self)
-                    self.tasks.add(worker)
-                    worker.succeeded.connect(lambda media,h=handle,a=attachment,cid=cid,epoch=epoch: h.setAttachment(*media,a['placement']) if media and cid==self.controller.character.id and epoch==self.history_epoch and not self.closing else None)
-                    worker.finished.connect(lambda w=worker:self._task_finished(w));worker.start()
+            attachments=self.controller.expression.history(row['turn_id'],self.controller.character.id) if row['role']=='assistant' and row['turn_id'] else []
+            parts=(split_segments(content) if row['role']=='assistant' and row['source']!='agent' else [content]) or ([''] if not attachments else [])
+            if note: parts=(parts[:-1]+[parts[-1]+'\n'+note]) if parts and parts[-1] else parts+[note]
+            slots=[]   # (handle, attachment)
+            for attachment in attachments[:1]:
+                if attachment['placement']=='before_text':
+                    handle=self.chat_list.append(sender,'',position if older else None);position+=1
+                    handle.row.setVisible(False);slots.append((handle,attachment))
+            for part in parts:
+                self.chat_list.append(sender,part,position if older else None);position+=1
+            for attachment in attachments[:1]:
+                if attachment['placement']!='before_text':
+                    handle=self.chat_list.append(sender,'',position if older else None);position+=1
+                    handle.row.setVisible(False);slots.append((handle,attachment))
+            for handle,attachment in slots:
+                cid=self.controller.character.id; epoch=self.history_epoch
+                worker=TaskWorker(lambda token,a=attachment:self.controller.expression.catalog.resolve(a['asset_id'],a['revision'],approved=False),self)
+                self.tasks.add(worker)
+                def show(media,h=handle,a=attachment,cid=cid,epoch=epoch):
+                    if media and cid==self.controller.character.id and epoch==self.history_epoch and not self.closing:
+                        h.row.setVisible(True);h.setAttachment(*media,a['placement'])
+                worker.succeeded.connect(show)
+                worker.finished.connect(lambda w=worker:self._task_finished(w));worker.start()
         if not older: self.chat_list.scrollToBottom()
 
     def _append_message(self,sender,content):
@@ -378,8 +395,7 @@ class MainWindow(QMainWindow):
         old=self.coordinator.active
         self.coordinator.cancel(clear_pending)
         for worker in self.workers: worker.cancellation.cancel()
-        if old in self.items and self.texts.get(old): self.items[old].setText(self.items[old].text()+'\n[已打断]')
-        elif old in self.items: self.items[old].setText(self.controller.character.name+': [已打断]')
+        if old in self.items: self.items[old].mark('[已打断]')
         if old:self.controller.expression.cancel(old,self.reply_characters.get(old,self.controller.character.id))
         self.speech.stop(); self.sentences=SentenceBuffer(); self.subtitle.clear(); self.subtitle.hide()
         self._pet_subtitle(''); self.pet.dispatch('interrupted')
@@ -408,7 +424,8 @@ class MainWindow(QMainWindow):
         self.delivered[generation]=''; self.reply_characters[generation]=self.controller.character.id
         self.reply_voice[generation]=self._full_voice(); self.reply_status[generation]='generating'
         self.reply_expressions[generation]=[]
-        self.items[generation]=self._append_message(self.controller.character.name,'正在想…')
+        # 多段回复显示成几个连续气泡、表情包单独一个气泡（见 SegmentedReply）
+        self.items[generation]=self.chat_list.reply(self.controller.character.name,'正在想…')
         worker=ChatWorker(self.controller,generation,self.controller.character,query,proactive,self)
         self.workers.add(worker)
         if key: self.proactive_keys[generation]=(self.controller.character.id,key)
@@ -437,8 +454,7 @@ class MainWindow(QMainWindow):
             self.controller.expression.receipt(attachment.delivery_id,'failed');return
         handle=self.items.get(generation)
         if handle is None:return
-        handle.setText(self.controller.character.name+': '+self.texts.get(generation,''))
-        if handle.setAttachment(*media,attachment.placement):
+        if handle.set_attachment(*media,attachment.placement):
             self.displayed_attachments.add(attachment.delivery_id)
             self.controller.expression.receipt(attachment.delivery_id,'displayed')
             if self.pet.isVisible() and self.database.get_setting('pet_bubble_enabled',True):
@@ -455,10 +471,12 @@ class MainWindow(QMainWindow):
         self._handle_cues(generation,cues)
         if not token: return
         self.texts[generation]+=token
-        self.items[generation].setText(self.controller.character.name+': '+self.texts[generation]); self.chat_list.scrollToBottom()
+        self.items[generation].set_text(self.texts[generation]); self.chat_list.scrollToBottom()
         for sentence in self.sentences.feed(token): self._enqueue_sentence(sentence,generation)
         if not self.reply_voice.get(generation):
-            self._pet_subtitle(self.texts[generation][-180:])
+            # 桌宠头顶的气泡跟着显示正在说的那一条
+            from aicompanion.expression.segments import split_segments
+            self._pet_subtitle((split_segments(self.texts[generation]) or [''])[-1][-180:])
 
     def _result(self,generation,state,error):
         expression,media=self.expression_results.pop(generation,(None,None))
@@ -476,7 +494,7 @@ class MainWindow(QMainWindow):
         if stream:
             rest,cues=stream.flush(); self._handle_cues(generation,cues)
             if rest and state=='complete':
-                self.texts[generation]+=rest; self.items[generation].setText(self.controller.character.name+': '+self.texts[generation])
+                self.texts[generation]+=rest; self.items[generation].set_text(self.texts[generation])
                 for sentence in self.sentences.feed(rest): self._enqueue_sentence(sentence,generation)
         if state=='complete' and expression and expression.status=='complete':
             for attachment in expression.attachments:self._display_attachment(generation,attachment,media)
@@ -507,8 +525,7 @@ class MainWindow(QMainWindow):
             self.pet.finish_reply(); self.pending_cues.pop(generation,None); self.pending_tasks.pop(generation,None)
             if state=='failed': self.pet.dispatch('reply_finished',ok=False,error=error or '回复失败')
             else: self.pet.dispatch('interrupted')
-            if self.texts[generation]: self.items[generation].setText(self.items[generation].text()+'\n[回复未完成]')
-            else: self.items[generation].setText(self.controller.character.name+': [未能完成回复]')
+            self.items[generation].mark('[回复未完成]' if self.texts[generation] else '[未能完成回复]')
             self._status(error or '已打断')
 
     def _offer_task(self,task):

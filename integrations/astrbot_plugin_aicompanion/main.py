@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.6.0'
+PLUGIN_VERSION = '0.7.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 QQ_ADAPTERS = {'aiocqhttp': 'qq', 'qq_official': 'qq', 'qq_official_webhook': 'qq'}
@@ -236,6 +236,30 @@ class AICompanionBridge(Star):
             if response.status!=200:return {}
             return await response.json()
 
+    @staticmethod
+    def segments_of(result) -> list:
+        """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。"""
+        reply=str(result.get('reply') or '').strip()
+        segments=result.get('segments')
+        if (isinstance(segments,list) and 1<len(segments)<=5 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
+            return [x.strip() for x in segments]
+        return [reply] if reply else []
+
+    async def pause(self,text):
+        """连发几条时像真人打字一样隔一小会儿（按下一条的长度，0.6～2.5 秒）。"""
+        await asyncio.sleep(min(2.5,0.6+len(text)*0.04))
+
+    async def send_texts(self,event,segments):
+        """按顺序一条一条发；某条发送失败就停下，不重发、不打乱顺序。"""
+        from astrbot.api.message_components import Plain
+        for index,text in enumerate(segments):
+            if index:await self.pause(text)
+            try:await asyncio.wait_for(event.send(event.chain_result([Plain(text)])),timeout=min(30,float(self.option('timeout'))))
+            except asyncio.CancelledError:raise
+            except Exception as error:
+                logger.warning(f'AICompanion 第 {index+1} 条消息发送失败：{type(error).__name__}');return False
+        return True
+
     async def send_expression(self,event,result):
         """平台 await send 成功才 ACK；超时结果未知，绝不自动重发。"""
         import hashlib
@@ -263,11 +287,14 @@ class AICompanionBridge(Star):
         status='unknown';cancelled=None
         try:
             from astrbot.api.message_components import Image,Plain
-            image=Image.fromBase64(match[1]);text=str(expression.get('text') or '')
-            chain=([image,Plain(text)] if placement=='before_text' else [Plain(text),image]) if text else [image]
-            # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。
-            await asyncio.wait_for(event.send(event.chain_result(chain)),timeout=min(30,float(self.option('timeout'))))
+            image=Image.fromBase64(match[1])
+            # 文字按段一条一条发，表情包单独一条：图在前就先发图，图在后就最后发图（像真人聊天）
+            segments=self.segments_of(dict(result,reply=str(expression.get('text') or result.get('reply') or '')))
+            if placement=='after_text' and segments:await self.send_texts(event,segments);await self.pause('')
+            # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
+            await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
             status='accepted'
+            if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments)
         except asyncio.CancelledError as error:cancelled=error
         except Exception as error:
             # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。
@@ -299,6 +326,8 @@ class AICompanionBridge(Star):
         reply = str(result.get('reply') or '').strip()
         if result.get('silent'): return
         if await self.send_expression(event,result):return
+        segments=self.segments_of(result)
+        if len(segments)>1:await self.send_texts(event,segments);return
         if reply:yield event.plain_result(reply)
 
     async def terminate(self):

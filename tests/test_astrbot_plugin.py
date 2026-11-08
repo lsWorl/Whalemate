@@ -201,6 +201,41 @@ class PluginTests(unittest.TestCase):
             event=Event('再发');self.run_handler(plugin,event,answer);self.assertEqual(event.sent_messages,[])
             self.assertEqual(self.run_handler(self.plugin(),Event('发表情'),{'reply':'好呀','silent':False,'images':['file:///private.png']}),[('plain','好呀')])
 
+    def test_multi_segment_reply_is_sent_as_separate_messages(self):
+        # 负责人要求：多段回复分几条消息发，不塞进一条
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        plugin=self.plugin();pauses=[]
+        async def pause(text):pauses.append(text)
+        plugin.pause=pause
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('好消息')
+            out=self.run_handler(plugin,event,{'reply':'哇！\n\n恭喜爹','silent':False,'segments':['哇！','恭喜爹']})
+            self.assertEqual(out,[]);self.assertEqual(event.sent_messages,[('chain',[('text','哇！')]),('chain',[('text','恭喜爹')])])
+            self.assertEqual(pauses,['恭喜爹'])
+            # 旧桌宠没有 segments：整段一条
+            self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False}),[('plain','在呢')])
+            # 不合法的 segments 不用：回退为整段
+            self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False,'segments':['在呢',3]}),[('plain','在呢')])
+
+    def test_sticker_is_its_own_message_before_or_after_the_segments(self):
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        async def control(path,payload):return {'allowed':True,'ok':True}
+        async def pause(text):pass
+        for placement,expected in (('before_text',[('image','YWJj'),('text','一'),('text','二')]),
+                                   ('after_text',[('text','一'),('text','二'),('image','YWJj')])):
+            plugin=self.plugin();plugin.expression_control=control;plugin.pause=pause
+            answer={'reply':'一\n\n二','segments':['一','二'],'silent':False,'expression_version':1,'expression':{'text':'一\n\n二','attachments':[
+                {'delivery_id':('a' if placement=='before_text' else 'b')*32,'asset_id':'st_test0000','revision':'x','placement':placement,
+                 'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+            with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+                event=Event('来');self.run_handler(plugin,event,answer)
+            self.assertEqual([m[1][0] for m in event.sent_messages],expected,placement)
+
     def test_avatar_only_downloads_after_desktop_permission_and_uses_sender(self):
         plugin = self.plugin(); calls = []
         async def permission(payload):

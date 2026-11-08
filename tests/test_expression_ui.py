@@ -35,6 +35,26 @@ class ExpressionUITests(unittest.TestCase):
         self.assertIsNotNone(pure.bubble.image.animation);self.assertEqual(pure.bubble.image.animation.frameCount(),2)
         self.assertFalse(pure.bubble.label.isVisible())
         view.close();view.deleteLater();self.app.processEvents()
+    def test_multi_segment_reply_becomes_separate_bubbles(self):
+        # 负责人要求：多段回复分成几条消息显示，不塞进一个气泡；表情包单独一个气泡
+        view=ChatView();view.show()
+        rows=lambda:[view.column.itemAt(i).widget() for i in range(1,view.column.count())]
+        visible=lambda:[r for r in rows() if r.isVisible()]
+        reply=view.reply('鲸娘','正在想…')
+        self.assertTrue(reply.set_attachment(GIF,'image/gif','before_text'))   # 还没说话：占位气泡变成图片气泡
+        reply.set_text('哇！\n\n真的假的\n一箱啊\n\n分我一半')
+        texts=[h.bubble.label.text() for h in reply.texts]
+        self.assertEqual(texts,['哇！','真的假的\n一箱啊','分我一半'])
+        self.assertEqual(len(visible()),4);self.assertIs(visible()[0],reply.image.row)   # 图在最前
+        reply.set_text('哇！')                                                          # 流式过程中段数变少：多余气泡隐藏
+        self.assertEqual(len(visible()),2)
+        reply.mark('[已打断]');self.assertEqual(reply.texts[0].bubble.label.text(),'哇！\n[已打断]')
+        after=view.reply('鲸娘','正在想…');after.set_text('说完了\n\n再发张图')
+        self.assertTrue(after.set_attachment(fixtures.png(),'image/png','after_text'))
+        self.assertIs(visible()[-1],after.image.row)                                   # 图在最后
+        empty=view.reply('鲸娘','正在想…');empty.mark('[未能完成回复]')
+        self.assertEqual(empty.texts[0].bubble.label.text(),'[未能完成回复]')
+        view.close();view.deleteLater();self.app.processEvents()
     def test_bad_image_keeps_text(self):
         view=ChatView();handle=view.append('鲸娘','正常文字')
         self.assertFalse(handle.setAttachment(b'bad','image/png'))

@@ -164,6 +164,59 @@ class DecisionTests(unittest.TestCase):
             self.assertNotIn(leak, dumped)
         self.assertEqual(ExpressionService.describe(trace).count('开心到笑出声'), 1)
 
+    def test_invalid_id_text_never_reaches_trace_or_debug_output(self):
+        # Codex 审计 P2：模型可能把聊天内容写进无效编号；观测和控制台只留形态
+        import io, contextlib
+        self.add('smile', semantic='开心到笑出声'); self.db.set_setting('expression_debug', True)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            _, trace = self.turn('好<sticker id="合成住院细节"/>')
+        self.assertEqual((trace['stage'], trace['rejected']), ('D_asset_invalid', ['free_text']))
+        self.assertNotIn('合成住院细节', str(self.db.get_setting('expression_traces')) + err.getvalue())
+        self.assertIn('无效编号形态 free_text', err.getvalue())
+
+    def test_early_display_receipt_is_not_overwritten_by_final_trace(self):
+        # Codex 审计 P2：图在前时界面在生成结束前就回执 displayed，最终观测不能写回 pending
+        self.add('smile', semantic='开心到笑出声')
+        def receipt_now(event):
+            self.events.append(event)
+            if event.kind == 'attachment_ready': self.controller.expression.receipt(event.attachment.delivery_id, 'displayed')
+        self.model.reply = '<sticker id="{h}"/>哈哈'
+        ctx = ExpressionContext('early', self.character.id, 'desktop:'+self.character.id, early_before=True, relationship=owner_relationship())
+        ''.join(self.controller.generate('early', self.character, CancellationToken(), '好耶', expression_context=ctx, on_expression_event=receipt_now))
+        self.assertTrue(any(e.kind == 'attachment_ready' for e in self.events))
+        self.assertEqual(self.controller.expression.traces(1)[-1]['stage'], 'OK_displayed')
+
+    def test_sticker_from_visible_history_is_offered_again(self):
+        # Codex 连续对话审计：她照抄历史里发过的图，图却不在本轮候选 → history_echo 被丢；现在合格的历史图留在候选里
+        for n in range(14):
+            self.add(f'h{n}', semantic=f'开心{n}号', intents=['分享开心'], emotions=['开心'])
+        self.add('special', semantic='抱着红薯傻乐', intents=['分享日常'], emotions=['开心'])
+        service = self.controller.expression
+        special = next(r['asset_id'] for r in self.cat.rows() if r['metadata'].get('semantic') == '抱着红薯傻乐')
+        # 先让她真的发过一次这张图
+        self.db.set_setting('qq_meme_cooldown', 0)
+        with self.db.transaction() as c:
+            c.execute("""INSERT INTO expression_deliveries(delivery_id,turn_id,character_id,scope,channel,asset_id,revision,placement,alt_text,status,created_at,updated_at)
+                         SELECT 'd'||hex(randomblob(15)),'old','deepseek-whale','desktop:deepseek-whale','desktop',asset_id,revision,'after_text','抱着红薯傻乐','displayed',?,?
+                         FROM expression_assets WHERE asset_id=?""", (self.now-3600, self.now-3600, special))
+        found = [c.asset_id for c in service.prepare(ExpressionContext('next', self.character.id, 'desktop:'+self.character.id,
+                                                                          relationship=owner_relationship()), self.character, '嗯嗯')]
+        self.assertIn(special, found)
+        self.now += 10
+        _, trace = self.turn('哈哈<sticker sent="抱着红薯傻乐"/>', turn='echo')
+        self.assertEqual(trace['stage'], 'E_pending'); self.assertIn('history_echo_matched', trace['diagnostics'])
+
+    def test_comforting_images_come_first_when_the_other_person_is_sad(self):
+        self.add('cry', semantic='战利品不满意抱着哭', intents=['委屈', '求安慰'], emotions=['哭'])
+        self.add('hug', semantic='含泪微笑陪着对方', intents=['慰问', '陪伴'], emotions=['安慰'])
+        found = ExpressionService(self.db).prepare(ExpressionContext('a', self.character.id, 'desktop:x', relationship=owner_relationship()),
+                                                   self.character, '唉，期待了好久的演唱会票没抢到，好难受')
+        self.assertEqual(found[0].summary, '含泪微笑陪着对方')
+        found = ExpressionService(self.db).prepare(ExpressionContext('b', self.character.id, 'desktop:x', relationship=owner_relationship()),
+                                                   self.character, '肯定是你，冤枉谁也不冤枉你')
+        self.assertEqual(found[0].summary, '战利品不满意抱着哭')
+
     def test_trace_ring_is_bounded(self):
         service = ExpressionService(self.db); ctx = ExpressionContext('x', self.character.id, 'desktop:x')
         for n in range(service.TRACE_LIMIT+5):

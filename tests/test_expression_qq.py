@@ -39,7 +39,8 @@ class QQExpressionTests(unittest.TestCase):
         async def ask(payload):return answer
         async def control(path,payload):
             return self.service.expression_claim(payload) if path=='claim' else self.service.expression_ack(payload)
-        plugin.avatar_permission=denied;plugin.ask_pet=ask;plugin.expression_control=control
+        async def no_pause(text):pass
+        plugin.avatar_permission=denied;plugin.ask_pet=ask;plugin.expression_control=control;plugin.pause=no_pause
         async def run():return [item async for item in plugin.on_message(event)]
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':self.components}):out=asyncio.run(run())
         return event,plugin,out
@@ -47,7 +48,8 @@ class QQExpressionTests(unittest.TestCase):
         for position,pure,expected in [('before_text',False,['image','text']),('after_text',False,['text','image']),('after_text',True,['image'])]:
             self.model.position=position;self.model.pure=pure
             result=self.ask();event,_,out=self.handler(result)
-            self.assertEqual(out,[]);self.assertEqual([p[0] for p in event.sent_messages[0][1]],expected)
+            # 表情包单独一条消息，文字另起（负责人要求多段 / 图文分条发）
+            self.assertEqual(out,[]);self.assertEqual([m[1][0][0] for m in event.sent_messages],expected)
             delivery=result['expression']['attachments'][0]['delivery_id']
             self.assertEqual(self.controller.expression.delivery(delivery)['status'],'accepted')
             self.assertTrue(self.service.expression_ack({'delivery_id':delivery,'status':'accepted'})['ok'])

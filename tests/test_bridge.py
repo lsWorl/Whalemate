@@ -353,6 +353,23 @@ class ConcurrencyTests(BridgeTests.__base__):
         self.assertEqual(result['reason'], 'closed'); self.assertEqual(self.client.calls, [])
 
 
+class SegmentReplyTests(unittest.TestCase):
+    """多段回复：响应里带 segments，插件分条发；单段不带（旧插件只看 reply）。"""
+    def test_segments_only_for_multi_part_replies(self):
+        case = BridgeTests('test_owner_private_chat_is_the_same_relationship_as_desktop'); case.setUp()
+        try:
+            class Two:
+                model = 'mock'
+                def generate_reply_stream(self_, history, prompt, cancellation=None): yield '哇！\n\n恭喜爹'
+            case.controller.llm_client = Two()
+            result = case.ask(OWNER, '我面试过了')
+            self.assertEqual((result['reply'], result.get('segments')), ('哇！\n\n恭喜爹', ['哇！', '恭喜爹']))
+            case.controller.llm_client = RecordingClient()
+            self.assertNotIn('segments', case.ask(OWNER, '在吗'))
+        finally:
+            case.tearDown()
+
+
 class GroupChimeTests(BridgeTests.__base__):
     """群里没叫她的消息：旁听（记进群聊记录），按活跃度插话；可以选择不说。"""
     setUp = BridgeTests.setUp; tearDown = BridgeTests.tearDown; ask = BridgeTests.ask
