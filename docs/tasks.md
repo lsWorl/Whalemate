@@ -4,6 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| T14-0 | 智能表达协议与接入设计冻结（仅文档） | Codex；Claude 复审 | 设计冻结 v1，待负责人审核（仅本地） | docs/tasks/T14-smart-expression-design.md；基于 PR #10，旧协议直接迁移；不改运行代码、不推送 |
 | T1 | 协作规则、`.gitattributes`、任务清单 | Claude | 已合入 | PR #1 |
 | T2 | MCP 服务改用官方 `mcp` 包（统一接口） | Codex | 待复审（PR #4） | `docs/tasks/T2-mcp-official-sdk.md`；工作区隔离与行尾断言已修复，Codex 真实 DeepSeek 六类 / 八任务全通过，246 项离线检查通过 |
 | T11 | 工具把关安全修复：命令只读误判、移动文件时目标目录的权限检查、停止任务时正在跑的命令要一起停 | Claude | 已合入 | PR #3，保留原任务绑定及完整进程树停止 |

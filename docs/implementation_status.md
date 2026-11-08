@@ -601,3 +601,12 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 用户另行授权本轮仅读取 `.env` API 字段，以合成图和临时库真实验证。五轮初测回复均无长篇分析，但合成图含义存在歧义；随后以仓库原创鲸娘庆祝 / 迷糊 / 犯困表情复测，视觉抓住情绪、三轮短句承接且配图，10.04 秒。没有读取真实聊天；内联脚本随执行结束消失，无遗留调用脚本，报告只保留无凭据测试摘要。
 - 完整 `tools/run_checks.bat`：387 项通过（跳过 4 项）；新风格真实 QQ 体验、长期自然度和新梗覆盖待用户重启桌宠后验收，不把样例当成每轮自然的保证。
 - 最终自检进程曾原生退出 `0xC0000005`，未得到 Python 异常；单独重跑桌宠自检通过（`passed: true`、`remaining_workers: 0`）。该次 Qt / WebEngine 崩溃原因未定位，已在任务说明保留记录。
+
+
+## 2026-11-08：T14-0 智能表达协议设计（Codex，仅文档待审核）
+
+- 核对并获取 PR #10 的远程 head 37ae7d2，从它创建独立 task/t14-smart-expression 分支，未合入 PR #11 / #12，也未修改 PR #10 原分支。读取原 output/T14-smart-expression-design.md，完整保留历史副本并新增 docs/tasks/T14-smart-expression-design.md。
+- 文档冻结 ExpressionResult / Attachment / Candidate / Decision / Stream 与 RelationshipSnapshot / CommunityContext，明确前后顺序、流式 / TTS / task / 取消边界、送达事实与唯一发送责任；关系默认未知中性，不引入 T15 / T16。用户追加要求已采用：直接迁移旧分类标签，不保留运行兼容；旧图库只建索引、不删原文件，qq_meme_root 保留。
+- 只读研究 AstrBot 表情包管理器、大肥鱼知识库与档案站的资料 / 许可，记录可复用思路和不采用的额外模型 / 随机配图机制。正式新增图片 0，未复制外部代码或数据集。
+- 本轮现有 CueStream / task 基线 9 项通过；后续 T14 测试矩阵只是计划，不记为已通过。文档与基线树一致性检查另见本轮 output 报告；未重复完整 UI 回归、真实模型或 QQ 测试。
+- 尚未实现任何新运行类型、解析器、图库索引、发送适配或 schema。T13 仍为外部依赖，最终协议待负责人审核；未推送、未创建 PR、未合并，完成后停止。
