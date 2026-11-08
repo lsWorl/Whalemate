@@ -149,14 +149,24 @@ class AssetCatalog:
     def _digest(path):
         with Path(path).open('rb') as file:data=file.read(MAX_BYTES+1)
         return hashlib.sha256(data).hexdigest() if 0<len(data)<=MAX_BYTES else None
+    PROVENANCE=('license','author','source','character_id')
     def _approve_original(self,asset_id,original):
-        """之前已按"无许可"登记成待审核的同一张原创图，补上原创元数据并通过；用户已拒绝 / 停用的不动。"""
-        with self.db.transaction() as c:
-            row=c.execute('SELECT metadata,review_status FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+        """之前按"无许可"登记成待审核的同一张原创图：只补来源 / 许可并通过审核。
+        Codex 审计（0a2b1d6）：来源许可和用户的选择要分开——
+        - 用户明确启用 / 停用过（user_enabled）就按用户的；没表过态才默认启用；
+        - 用户改过含义 / 情绪 / 用法（user_annotated）就保留用户写的，没改过才补内置说明；
+        - 已拒绝 / 已审核的都不碰。整个读改写在一个写事务里，和用户在图库页的操作串行。"""
+        def apply(c):
+            row=c.execute('SELECT metadata,review_status,enabled FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
             if not row or row['review_status']!='pending_review':return
-            metadata=json.loads(row['metadata']);metadata.update(original)
-            c.execute("UPDATE expression_assets SET metadata=?,review_status='approved',enabled=1 WHERE asset_id=?",
-                      (json.dumps(metadata,ensure_ascii=False),asset_id))
+            metadata=json.loads(row['metadata'])
+            metadata.update({k:original[k] for k in self.PROVENANCE if k in original})
+            if not metadata.get('user_annotated'):
+                metadata.update({k:v for k,v in original.items() if k not in self.PROVENANCE})
+            enabled=metadata['user_enabled'] if isinstance(metadata.get('user_enabled'),bool) else True
+            c.execute("UPDATE expression_assets SET metadata=?,review_status='approved',enabled=? WHERE asset_id=?",
+                      (json.dumps(metadata,ensure_ascii=False),int(enabled),asset_id))
+        self.db.locked(apply)
     def get(self,asset_id):
         with self.db.transaction() as c: row=c.execute('SELECT * FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
         if row is None: return None
@@ -176,17 +186,26 @@ class AssetCatalog:
             c.execute('UPDATE expression_assets SET metadata=?,review_status=?,enabled=? WHERE asset_id=?',
                       (json.dumps(metadata,ensure_ascii=False),'approved',int(enabled),asset_id))
     def annotate(self,asset_id,values):
-        row=self.get(asset_id)
-        if row is None:raise ValueError('素材不存在')
-        metadata=row['metadata']
-        for key in ('semantic','intents','emotions','character_id'):
-            if key in values:metadata[key]=values[key]
-        metadata=normalize_metadata(metadata)
-        with self.db.transaction() as c:c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
+        def apply(c):
+            row=c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if row is None:raise ValueError('素材不存在')
+            metadata=json.loads(row['metadata'])
+            for key in ('semantic','intents','emotions','character_id'):
+                if key in values:metadata[key]=values[key]
+            metadata['user_annotated']=True   # 用户自己写的说明：以后自动识别不覆盖
+            metadata=normalize_metadata(metadata)
+            c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
+        self.db.locked(apply)
 
     def enable(self,asset_id,enabled):
-        with self.db.transaction() as c:
+        """记下用户的明确选择（待审核的图也记，审核通过后按这个来）；只有已审核的图立即生效。"""
+        def apply(c):
+            row=c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if row is None:return
+            metadata=json.loads(row['metadata']);metadata['user_enabled']=bool(enabled)
+            c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
             c.execute("UPDATE expression_assets SET enabled=? WHERE asset_id=? AND review_status='approved'",(int(enabled),asset_id))
+        self.db.locked(apply)
     def resolve(self,asset_id,revision=None,approved=True):
         row=self.get(asset_id)
         if row is None or (approved and (not row['enabled'] or row['review_status']!='approved')): return None

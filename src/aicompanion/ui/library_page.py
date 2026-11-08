@@ -109,7 +109,9 @@ class LibraryPage(QWidget):
     def toggle(self):
         aid=self.selected();row=self.catalog.get(aid) if aid else None
         if row:
-            self.catalog.enable(aid,not row['enabled']);self.refresh()
-            self.status.setText('已更新；待审核图片不能启用')
+            # 待审核的图：切换的是"审核通过后要不要用"的选择（记下来，审核前不会发）
+            current=row['enabled'] if row['review_status']=='approved' else row['metadata'].get('user_enabled') is True
+            self.catalog.enable(aid,not current);self.refresh()
+            self.status.setText('已更新' if row['review_status']=='approved' else '已记下你的选择；待审核图片审核通过前不会发送')
     def clear_cache(self):
         self.catalog.clear_thumbnails();self.refresh();self.status.setText('仅清理索引内缩略图；原图和审核记录保留，刷新可重建')

@@ -45,7 +45,8 @@ FEELING_TAGS={
 }
 # 对话线索：只把相应分组的图排前面，不是"出现就发"的规则。同一个字眼在不同语境指向不同分组的，按"谁的情绪"分开写。
 FEELING_CUES={
-    '安慰':('难过','难受','伤心','委屈死','没抢到','没过','失败','倒霉','可惜','唉','哭了','想哭','崩溃','郁闷','被骂','好累啊','安慰'),
+    '安慰':('难过','难受','伤心','委屈','没抢到','没过','失败','倒霉','可惜','唉','哭了','想哭','崩溃','郁闷','被骂','好累啊','安慰',
+           '陪我','陪陪','陪着','别讲道理','听我说','抱抱我'),
     '祝贺':('过了','成功','中了','拿下','录取','升职','入职','好消息','考上','赢了','恭喜'),
     '感谢':('谢谢','分你','请你','给你买','送你','给你带','投喂'),
     '晚安':('晚安','去睡','睡了','明天见','拜拜','下线'),
@@ -53,7 +54,7 @@ FEELING_CUES={
     '打招呼':('在吗','早上好','嗨','回来啦','回来了','好久不见'),
     '开心':('哈哈','开心','好玩','放假','耶','奶茶','心情好'),
     '得意':('夸','不错','厉害','靠谱','牛','聪明','真棒','帮了','整理完','邀功','搞定','军师'),
-    '委屈':('冤枉','怪我','肯定是你','没理你','不理你','没顾上','没给你留','凶'),
+    '委屈':('冤枉','怪我','肯定是你','没理你','不理你','没顾上','没给你留','凶你'),
     '无语':('离谱','认真的','黑暗','什么鬼','服了','敷衍','咖啡','泡面','白准备'),
     '疑惑':('为什么','如果','算不算','真的假的','怎么回事','？','?'),
     '困':('困','凌晨','熬夜','加班','哈欠','早睡','刷手机'),
@@ -71,9 +72,33 @@ def feeling_group(tags,intents=()):
         if tags&set(FEELING_TAGS[group]):return group
     return ''
 
-def feeling_cues(text):
-    text=str(text)
-    return {group:6 for group,words in FEELING_CUES.items() if any(w in text for w in words)}
+NEGATION=re.compile(r'(?:不|没|别|不是|没有|并不|一点也不|一点都不)$')
+TURN=re.compile(r'不过|但是|可是|然而|其实|结果|算了')
+
+def _hits(text):
+    """一段文字里命中的分组；前面紧跟否定词的不算（"不难过""没失败"）。"""
+    found={}
+    for group,words in FEELING_CUES.items():
+        for word in words:
+            start=text.find(word)
+            while start>=0:
+                if not NEGATION.search(text[max(0,start-4):start]):found[group]=True;break
+                start=text.find(word,start+1)
+    return found
+
+def feeling_cues(text,earlier=()):
+    """这一轮的情绪线索 → 分组权重（只用来排候选）。
+    Codex 审计（726c401 实聊"陪我待会就好"发了睡觉图）：只看这一句会丢掉前面的语境，也会被否定和转折带偏。所以：
+    - 这一句里，转折词（不过 / 但是 / 其实 / 结果 / 算了）后面的部分算满分，前面的打对折；
+    - 前面几句对方说的话也算，越早权重越低——对方先说难过、再说"陪我待会"，安慰类仍排在前面；
+    - "不 / 没 / 别"紧跟的词不算。"""
+    text=str(text);weights={}
+    parts=TURN.split(text)
+    for index,part in enumerate(parts):
+        for group in _hits(part):weights[group]=max(weights.get(group,0),6 if index==len(parts)-1 else 3)
+    for age,previous in enumerate(reversed(list(earlier)[-3:])):
+        for group in _hits(str(previous)):weights[group]=max(weights.get(group,0),(4,3,2)[age])
+    return weights
 
 class ExpressionService:
     def __init__(self,database,clock=time.time):
@@ -114,7 +139,7 @@ class ExpressionService:
         wanted=terms(current)
         recent_words=terms(' '.join([getattr(h,'content','')[-250:] for h in history[-5:]]+list(context.community.entries)))
         # 这一轮可能用得上的情绪：只用来排候选，不决定发不发
-        cues=feeling_cues(current+' '+' '.join(getattr(h,'content','')[-120:] for h in history[-2:]))
+        cues=feeling_cues(current,[getattr(h,'content','')[-160:] for h in history[-6:] if getattr(h,'role','')=='user' and getattr(h,'content','')!=query])
         recent_intents=set()
         for recent_row in used[:3]:
             asset=self.catalog.get(recent_row['asset_id'])
@@ -172,18 +197,24 @@ class ExpressionService:
         # 她在这段对话里发过、历史里写成 <sticker sent="含义"/> 的图：仍然合格（审核 / 关系 / 去重都已在上面过滤）的，
         # 留最多两个名额。Codex 连续对话审计：模型常照抄历史写法，图不在本轮候选就被当成无效丢掉；
         # 放进候选以后，照抄的含义能对上本轮编号。不在候选里的旧图仍然不会发。
+        def fill(groups):
+            for wanted_group in groups:
+                if wanted_group in taken:continue
+                for score,_,group,candidate in choices:
+                    if group==wanted_group and candidate not in selected:
+                        add(candidate);taken.add(group);break
+        # 先补这一轮对话线索指向的分组（例如对方难过 → 安慰），再考虑她发过的旧图，
+        # 免得旧话题的图挤掉眼前需要的图（Codex 实聊：陪对方时候选里只有旧的睡觉图，没有陪伴图）
+        palette=sorted(FEELINGS,key=lambda g:(-cues.get(g,0),g in PURPOSES,FEELINGS.index(g)))
+        fill([g for g in palette if cues.get(g)])
+        # 她在这段对话发过、仍然合格的图最多留一个名额：照抄历史写法时能对上本轮编号；不在候选里的旧图仍不会发
         by_asset={item[3].asset_id:item for item in choices}
         for row in used:
-            if sum(1 for c in selected if c.asset_id in history_assets)>=2:break
+            if any(c.asset_id in history_assets for c in selected):break
             item=by_asset.get(row['asset_id'])
             if item and item[3] not in selected:add(item[3]);taken.add(item[2])
-        # 先补对话线索指向的分组，再补她自己的各种情绪，最后才是没有线索的"对对方做的事"
-        palette=sorted(FEELINGS,key=lambda g:(-cues.get(g,0),g in PURPOSES,FEELINGS.index(g)))
-        for wanted_group in palette:
-            if wanted_group in taken:continue
-            for score,_,group,candidate in choices:
-                if group==wanted_group and candidate not in selected:
-                    add(candidate);taken.add(group);break
+        # 再补她自己的各种情绪，最后才是没有线索的"对对方做的事"
+        fill(palette)
         # 剩下的名额给"还没覆盖到的情绪 / 用法"多的图，其次看相关度
         remaining=[item for item in choices if item[3] not in selected]
         while remaining and len(selected)<10:
@@ -264,17 +295,6 @@ class ExpressionService:
     def record_trace(self,turn_id,context,report,diagnostics=(),markers=0,selection=None,attachment=None,status='complete',delivered=False,rejected=()):
         stage=self.trace_outcome(report,diagnostics,markers,selection,attachment,status)
         if stage=='E_pending' and not delivered:stage='E_not_delivered'
-        delivery_status=None
-        if attachment is not None:
-            # 图在前时界面可能在生成结束前就已显示并回执（Codex 审计 P2）：以数据库里这条投递的当前状态为准，不让 pending 覆盖
-            try:
-                with self.db.transaction() as c:
-                    row=c.execute('SELECT status FROM expression_deliveries WHERE delivery_id=?',(attachment.delivery_id,)).fetchone()
-                delivery_status=row['status'] if row else None
-            except Exception:delivery_status=None
-            final={'displayed':'OK_displayed','accepted':'OK_accepted','failed':'F_display_failed','unknown':'F_send_unknown',
-                   'cancelled':'E_not_delivered'}.get(delivery_status)
-            if final:stage=final
         entry=dict(turn=turn_id[-12:],at=round(self.clock()),character=context.character_id,
                    channel=context.channel.split(':')[0]+(':group' if ':group:' in context.channel else ':user' if ':user:' in context.channel else ''),
                    trigger=context.trigger,enabled=report.get('enabled',False),reason=report.get('reason',''),
@@ -286,8 +306,16 @@ class ExpressionService:
                    parsed=bool(selection),validated=attachment is not None,result=delivered,
                    delivery=(attachment.delivery_id if attachment else None),status=status,
                    diagnostics=list(diagnostics)[:8],rejected=[x for x in rejected if x in REJECTED_SHAPES][:3],stage=stage)
-        if delivery_status:entry['delivery_status']=delivery_status
+        final_stage={'displayed':'OK_displayed','accepted':'OK_accepted','failed':'F_display_failed','unknown':'F_send_unknown',
+                     'cancelled':'E_not_delivered'}
         def write(c):
+            # 投递状态的查询、最终阶段和写入在同一个写事务里（Codex 审计 P2）：回执要么已落库、这里读得到，
+            # 要么在这之后才到、届时 _trace_delivery 能找到这条记录并推进，不存在两头都错过的窗口
+            if attachment is not None:
+                row=c.execute('SELECT status FROM expression_deliveries WHERE delivery_id=?',(attachment.delivery_id,)).fetchone()
+                if row:
+                    entry['delivery_status']=row['status']
+                    if row['status'] in final_stage:entry['stage']=final_stage[row['status']]
             ring=self.db.setting_in(c,self.TRACE_KEY,[]) or []
             ring=[e for e in ring if isinstance(e,dict)][-(self.TRACE_LIMIT-1):]+[entry]
             self.db.set_setting_in(c,self.TRACE_KEY,ring)
@@ -365,7 +393,8 @@ class ExpressionService:
             old=row['status']
             if old==status:return status!='sending'
             allowed={'pending':('sending','displayed','failed','cancelled'),
-                     'sending':('accepted','failed','unknown'),'unknown':('accepted','failed')}
+                     # sending → cancelled：插件领取后因前面的文字发送失败而没有尝试发图
+                     'sending':('accepted','failed','unknown','cancelled'),'unknown':('accepted','failed')}
             if status not in allowed.get(old,()):return False
             if old=='pending' and self.clock()-row['created_at']>120:status_='cancelled'
             else:status_=status

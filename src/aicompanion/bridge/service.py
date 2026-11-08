@@ -361,7 +361,8 @@ class BridgeService:
         if set(payload)!={'delivery_id','status'}:return {'ok':False}
         delivery=str(payload.get('delivery_id') or '');status=payload.get('status')
         with self.expression_lock:known=delivery in self.expression_bindings
-        if not known or status not in ('accepted','failed','unknown'):return {'ok':False}
+        # cancelled：插件因前面的文字发送失败而没有尝试发图（如实上报，不算已发送）
+        if not known or status not in ('accepted','failed','unknown','cancelled'):return {'ok':False}
         return {'ok':self.controller.expression.receipt(delivery,status)}
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------

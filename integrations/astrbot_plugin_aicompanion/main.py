@@ -284,21 +284,27 @@ class AICompanionBridge(Star):
         try:permission=await self.expression_control('claim',{'delivery_id':delivery})
         except Exception:return True
         if not permission.get('allowed'):return permission.get('reason')!='media_unavailable'
-        status='unknown';cancelled=None
+        # 图片状态：没尝试过 = cancelled（如实上报"没发"，不伪造 accepted / unknown）；发了以后才是 accepted / failed / unknown
+        status='cancelled';cancelled=None;attempted=False
         try:
             from astrbot.api.message_components import Image,Plain
             image=Image.fromBase64(match[1])
             # 文字按段一条一条发，表情包单独一条：图在前就先发图，图在后就最后发图（像真人聊天）
             segments=self.segments_of(dict(result,reply=str(expression.get('text') or result.get('reply') or '')))
-            if placement=='after_text' and segments:await self.send_texts(event,segments);await self.pause('')
-            # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
-            await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
-            status='accepted'
-            if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments)
+            if placement=='after_text' and segments:
+                # Codex 审计：前面的文字有一条失败 / 超时就整条停下，后面的图也不发（不乱序续发）
+                if not await self.send_texts(event,segments):segments=None
+                else:await self.pause('')
+            if segments is not None or placement=='before_text':
+                attempted=True;status='unknown'
+                # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
+                await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
+                status='accepted'
+                if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments)
         except asyncio.CancelledError as error:cancelled=error
         except Exception as error:
-            # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。
-            if type(error).__name__=='ActionFailed':status='failed'
+            # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。图没尝试过仍是 cancelled。
+            if attempted and status=='unknown' and type(error).__name__=='ActionFailed':status='failed'
         try:
             await asyncio.shield(self.expression_control('ack',{'delivery_id':delivery,'status':status}))
         except Exception:pass  # ACK 可幂等补报；不能据此重发图片。

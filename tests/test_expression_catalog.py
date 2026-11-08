@@ -158,6 +158,44 @@ class OriginalSpriteCopyTests(unittest.TestCase):
         self.assertEqual(original['metadata']['semantic'], '开心、庆祝、赞同')
         self.assertEqual(rows[self.path.relative_to(self.library).as_posix()]['review_status'], 'pending_review')
 
+    def copy_pending(self):
+        import shutil
+        (self.library/'happy').mkdir(exist_ok=True)
+        target = self.library/'happy'/'celebrate.png'; shutil.copyfile(self.cat.builtin_root/'celebrate.png', target)
+        aid, _ = self.cat.register(target, self.library, {'category': 'happy'})     # 旧版扫描：无许可 → 待审核
+        return aid
+
+    def test_explicit_disable_and_custom_meaning_survive_recognition(self):
+        # Codex 审计（0a2b1d6）：识别出原创图时只补来源 / 许可，不覆盖用户的停用选择和自定义说明
+        aid = self.copy_pending()
+        self.cat.annotate(aid, {'semantic': '仅作纪念，不要发送', 'intents': ['纪念'], 'emotions': ['平静']})
+        self.cat.enable(aid, True); self.cat.enable(aid, False)
+        self.cat.scan(); row = self.cat.get(aid)
+        self.assertEqual((row['review_status'], row['enabled']), ('approved', 0))
+        self.assertEqual(row['metadata']['semantic'], '仅作纪念，不要发送'); self.assertEqual(row['metadata']['intents'], ['纪念'])
+        self.assertEqual(row['metadata']['license'], 'project-original')
+
+    def test_explicit_enable_before_recognition_is_kept(self):
+        aid = self.copy_pending(); self.cat.enable(aid, True)
+        self.cat.scan(); self.assertEqual(self.cat.get(aid)['enabled'], 1)
+
+    def test_default_install_and_old_pending_without_choices_are_enabled(self):
+        aid = self.copy_pending(); self.cat.scan(); row = self.cat.get(aid)
+        self.assertEqual((row['review_status'], row['enabled'], row['metadata']['semantic']), ('approved', 1, '开心、庆祝、赞同'))
+
+    def test_user_change_during_scan_is_serialised(self):
+        # 扫描线程和用户在图库页停用同时发生：两者在写事务里串行，停用不会被识别覆盖
+        import threading
+        aid = self.copy_pending(); barrier = threading.Barrier(2)
+        original_apply = self.cat._approve_original
+        def slow(asset_id, original):
+            barrier.wait(); original_apply(asset_id, original)
+        self.cat._approve_original = slow
+        worker = threading.Thread(target=self.cat.scan); worker.start()
+        barrier.wait(); self.cat.enable(aid, False); worker.join(5)
+        row = self.cat.get(aid)
+        self.assertEqual(row['review_status'], 'approved'); self.assertEqual(row['enabled'], 0)
+
     def test_previously_pending_copy_is_upgraded_but_rejected_is_kept(self):
         import shutil
         (self.library/'happy').mkdir(exist_ok=True)
