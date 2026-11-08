@@ -155,6 +155,14 @@ def schedule_pet_smoke_check(window, database, output):
         state['voice_hint'] = window._call_hint()
     later(21000, voice)
 
+    def storage_locations():
+        from aicompanion.ui.storage_page import StoragePage
+        page = StoragePage(database, window.settings)
+        state['storage_locations_ready'] = (page.memory.text() == str(database.database_path.resolve().parent)
+                                             and bool(page.memes.text()))
+        page.deleteLater()
+    later(21500, storage_locations)
+
     def agent():
         # P5/P6：干活交给 DeepSeek Harness（需要联网和真实模型，自检只检查是否已安装、会话对象是否就绪）
         from aicompanion.agent.dsh_backend import problem
@@ -233,6 +241,7 @@ def schedule_pet_smoke_check(window, database, output):
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
+        required.append('storage_locations_ready')
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')

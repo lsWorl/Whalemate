@@ -84,8 +84,15 @@ def main() -> int:
     # Database 每次操作都会创建短生命周期连接，避免在 UI 线程和工作线程之间
     # 共享同一个 sqlite3.Connection。
     try:
+        if not smoke_directory:
+            from aicompanion.storage.locations import prepare
+            prepare(settings)
         database = Database(settings.database_path)
         database.initialize()
+        if not smoke_directory:
+            # 聊天平台的局部保存按钮也可选图库：已有选择优先，不用旧路径记录倒灌。
+            if not database.get_setting('qq_meme_root', ''):
+                database.set_setting('qq_meme_root', str(settings.meme_directory))
         if '--emilia-smoke-test' in sys.argv:
             database.set_setting('avatar_mode:emilia','animated-illustration')
         memory_service = MemoryService(database)
