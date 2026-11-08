@@ -14,7 +14,18 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertTrue({'情绪表达', '社交表达', '主动表达', '不适合发表情'} <= groups)
         self.assertEqual(len({s['id'] for s in scenarios}), len(scenarios))
         self.assertTrue(all(s['expect'] in ('expressive', 'either', 'text') for s in scenarios))
-        self.assertTrue(all(s.get('query') or s.get('proactive') for s in scenarios))
+        steps = [step for s in scenarios for step in (s.get('chain') or [s])]
+        self.assertTrue(all(step.get('query') or step.get('proactive') for step in steps))
+        self.assertTrue(all(step['expect'] in ('expressive', 'either', 'text') for step in steps))
+
+    def test_chain_runs_in_one_conversation(self):
+        with tempfile.TemporaryDirectory() as out:
+            client = expression_eval.ScriptedClient()
+            args = expression_eval.argparse.Namespace(pack=None, scenarios=str(ROOT/'tools'/'expression_scenarios.json'),
+                                                      rounds=1, only='chain-evening', out=out)
+            report = expression_eval.run(args, client)
+            self.assertEqual([r['id'] for r in report['rows']], [f'chain-evening#{n}' for n in range(1, 6)])
+            self.assertEqual(client.calls, 5)
 
     def test_offline_run_uses_one_request_per_scenario_and_writes_report(self):
         with tempfile.TemporaryDirectory() as out:

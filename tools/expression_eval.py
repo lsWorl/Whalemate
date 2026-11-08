@@ -109,39 +109,42 @@ def run(args, client=None):
             channel = 'qq:group:900001' if group else 'desktop'
             for role, text in scenario.get('history', []):
                 db.add_message(role, text, WHALE, source='qq' if group else 'text', channel=channel)
-            query = scenario.get('query', ''); proactive = scenario.get('proactive', '')
-            if query:
-                if group: db.add_message('user', query, WHALE, source='qq', channel=channel)
-                else: controller.record_user_message(query)
-            if hasattr(client, 'expect'): client.expect = scenario['expect']
-            turn = f"eval-{scenario['id']}-{round_no}"
-            context = ExpressionContext(turn, WHALE, 'qq:90009:group:900001' if group else 'desktop:'+WHALE,
-                                        channel, 'qq' if group else 'pet', 'proactive' if proactive else 'user_reply', proactive,
-                                        relationship=RelationshipSnapshot() if group else owner_relationship())
-            situation = ('【场合】你在QQ群聊里，有人在叫你，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号。'
-                         '像群友一样回一两句，随意点，不用动作描写。') if group else ''
-            events = []; started = time.monotonic(); error = ''
-            try:
-                text = ''.join(controller.generate(turn, character, CancellationToken(), query, proactive, channel=channel,
-                                                   scene='qq' if group else 'pet', situation=situation,
-                                                   offer_tasks=False, expression_context=context, on_expression_event=events.append))
-            except Exception as exc:   # 记录失败继续下一个场景
-                text = ''; error = type(exc).__name__+': '+str(exc)[:120]
-            result = events[-1].result if events and events[-1].result else None
-            attachment = result.attachments[0] if result and result.attachments else None
-            # 模拟界面显示成功（这里不经过 Qt 界面），阶段记为已显示
-            if attachment: controller.expression.receipt(attachment.delivery_id, 'displayed')
-            trace = controller.expression.traces(1)[-1] if controller.expression.traces(1) else {}
-            from aicompanion.pet.script import strip_cues
-            rows.append(dict(id=scenario['id'], round=round_no, group=scenario['group'], expect=scenario['expect'],
-                             input=query or ('（主动）'+proactive), reply=strip_cues(text, controller.vocabs.get(WHALE) or Vocab()),
-                             sticker=bool(attachment), meaning=attachment.alt_text if attachment else None,
-                             asset_id=attachment.asset_id if attachment else None,
-                             placement=attachment.placement if attachment else None,
-                             action=result.decision.action if result else 'error', candidates=trace.get('candidates'),
-                             stage=trace.get('stage'), diagnostics=trace.get('diagnostics'), error=error,
-                             seconds=round(time.monotonic()-started, 2), offered=list(recorder.candidates), human_verdict=''))
-            print(f"{scenario['id']:<22} r{round_no} {'图' if attachment else '字'} {rows[-1]['meaning'] or ''}", flush=True)
+            # chain：同一段对话连续几轮（真实聊天里她发过的图会写回历史），用来看多轮下的表达习惯
+            chain = scenario.get('chain'); steps = chain or [scenario]
+            for n, step in enumerate(steps, 1):
+                query = step.get('query', ''); proactive = step.get('proactive', '')
+                if query:
+                    if group: db.add_message('user', query, WHALE, source='qq', channel=channel)
+                    else: controller.record_user_message(query)
+                if hasattr(client, 'expect'): client.expect = step['expect']
+                turn = f"eval-{scenario['id']}-{round_no}-{n}"
+                context = ExpressionContext(turn, WHALE, 'qq:90009:group:900001' if group else 'desktop:'+WHALE,
+                                            channel, 'qq' if group else 'pet', 'proactive' if proactive else 'user_reply', proactive,
+                                            relationship=RelationshipSnapshot() if group else owner_relationship())
+                situation = ('【场合】你在QQ群聊里，有人在叫你，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号。'
+                             '像群友一样回一两句，随意点，不用动作描写。') if group else ''
+                events = []; started = time.monotonic(); error = ''
+                try:
+                    text = ''.join(controller.generate(turn, character, CancellationToken(), query, proactive, channel=channel,
+                                                       scene='qq' if group else 'pet', situation=situation,
+                                                       offer_tasks=False, expression_context=context, on_expression_event=events.append))
+                except Exception as exc:   # 记录失败继续下一个场景
+                    text = ''; error = type(exc).__name__+': '+str(exc)[:120]
+                result = events[-1].result if events and events[-1].result else None
+                attachment = result.attachments[0] if result and result.attachments else None
+                # 模拟界面显示成功（这里不经过 Qt 界面），阶段记为已显示
+                if attachment: controller.expression.receipt(attachment.delivery_id, 'displayed')
+                trace = controller.expression.traces(1)[-1] if controller.expression.traces(1) else {}
+                from aicompanion.pet.script import strip_cues
+                rows.append(dict(id=scenario['id']+(f'#{n}' if chain else ''), round=round_no, group=scenario['group'], expect=step['expect'],
+                                 input=query or ('（主动）'+proactive), reply=strip_cues(text, controller.vocabs.get(WHALE) or Vocab()),
+                                 sticker=bool(attachment), meaning=attachment.alt_text if attachment else None,
+                                 asset_id=attachment.asset_id if attachment else None,
+                                 placement=attachment.placement if attachment else None,
+                                 action=result.decision.action if result else 'error', candidates=trace.get('candidates'),
+                                 stage=trace.get('stage'), diagnostics=trace.get('diagnostics'), error=error,
+                                 seconds=round(time.monotonic()-started, 2), offered=list(recorder.candidates), human_verdict=''))
+                print(f"{rows[-1]['id']:<22} r{round_no} {'图' if attachment else '字'} {rows[-1]['meaning'] or ''}", flush=True)
             db = None
     summary = summarize(rows)
     report = dict(kind='t14_expression_eval', date=time.strftime('%Y-%m-%d %H:%M'), real_model=not hasattr(client, 'expect'),
