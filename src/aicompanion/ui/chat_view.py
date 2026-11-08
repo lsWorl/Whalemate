@@ -138,8 +138,10 @@ class SegmentedReply:
 
     def mark(self, note: str):
         """打断 / 失败时在最后一个文字气泡后面注明。"""
-        if self.texts and self.content.strip():
-            last = [h for h in self.texts if h.row.isVisible()][-1]
+        # 用 isHidden 而不是 isVisible：聊天面板关着时所有行都"不可见"（桌宠 Smoke 在面板隐藏时切换角色触发过越界）
+        shown = [h for h in self.texts if not h.row.isHidden()]
+        if shown and self.content.strip():
+            last = shown[-1]
             last.setText(last.bubble.label.text()+'\n'+note)
         else:
             if not self.texts: self.texts.append(self._new())

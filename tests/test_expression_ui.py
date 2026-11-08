@@ -52,6 +52,9 @@ class ExpressionUITests(unittest.TestCase):
         after=view.reply('鲸娘','正在想…');after.set_text('说完了\n\n再发张图')
         self.assertTrue(after.set_attachment(fixtures.png(),'image/png','after_text'))
         self.assertIs(visible()[-1],after.image.row)                                   # 图在最后
+        hidden=view.reply('鲸娘','正在想…');hidden.set_text('一\n\n二');view.hide()
+        hidden.mark('[已打断]');self.assertEqual(hidden.texts[1].bubble.label.text(),'二\n[已打断]')   # 面板关着时也能标记
+        view.show()
         empty=view.reply('鲸娘','正在想…');empty.mark('[未能完成回复]')
         self.assertEqual(empty.texts[0].bubble.label.text(),'[未能完成回复]')
         view.close();view.deleteLater();self.app.processEvents()
