@@ -1,5 +1,6 @@
 """候选由本地筛选；最终发不发、发哪张仍由原聊天大脑同次生成决定。"""
 from __future__ import annotations
+import hashlib
 import json
 import re
 import threading
@@ -15,6 +16,43 @@ STOP_WORDS=frozenset(('对方','自己','时候','可以','一个','什么','这
 def terms(text):
     words=re.findall(r'[a-z0-9_]+|[\u4e00-\u9fff]+',str(text).casefold())
     return {part for word in words for part in ([word]+[word[i:i+2] for i in range(len(word)-1)]) if part not in STOP_WORDS}
+
+# 常见情绪分组：候选按组铺开，保证她想表达自己的情绪时手边有图。只用于排序和覆盖，不触发发送。
+FEELINGS=('开心','得意','委屈','无语','疑惑','困','撒娇','生气','调侃','打招呼')
+FEELING_TAGS={
+    '开心':('开心','兴奋','庆祝','分享开心','期待','起哄'),
+    '得意':('得意','炫耀','赞同','认同','附和'),
+    '委屈':('哭','难过','委屈','求安慰','示弱','害怕'),
+    '无语':('无语','无奈','吐槽','拒绝','回绝'),
+    '疑惑':('疑惑','疑问','不理解','惊讶','追问'),
+    '困':('疲惫','表达疲惫','摸鱼','困'),
+    '撒娇':('卖萌','撒娇','害羞','引起注意'),
+    '生气':('生气','抗议'),
+    '调侃':('嘲讽','搞怪','调侃','玩笑'),
+    '打招呼':('打招呼','问候'),
+}
+# 对话里出现这些字眼时，相应情绪的图排前面（排序用的提示，不是"出现就发"的规则）
+FEELING_CUES={
+    '开心':('哈哈','开心','好消息','中了','过了','成功','太好','放假','耶','奶茶','好玩','心情'),
+    '得意':('夸','不错','厉害','靠谱','牛','聪明','真棒','帮了','整理完','邀功','搞定'),
+    '委屈':('冤枉','怪我','是你','没理','不理','忘了','没抢到','难受','可惜','唉','凶','没给你留'),
+    '无语':('离谱','认真的','黑暗','什么鬼','服了','敷衍','又','咖啡','泡面'),
+    '疑惑':('为什么','如果','算不算','真的假的','怎么','？','?','到底','几点'),
+    '困':('困','睡','晚安','凌晨','熬夜','累','加班','哈欠','早睡'),
+    '撒娇':('理我','陪','想你','捶','抱','求关注','没顾上','撒娇'),
+    '生气':('喝完','抢','凭什么','不给','气','坏'),
+    '调侃':('胖','大肥鱼','笑死','逗','亲戚','冷笑话','笑话','刷手机','键盘'),
+    '打招呼':('在吗','早','嗨','回来','打招呼','好久'),
+}
+
+def feeling_group(tags):
+    for group in FEELINGS:
+        if set(tags)&set(FEELING_TAGS[group]):return group
+    return ''
+
+def feeling_cues(text):
+    text=str(text)
+    return {group:6 for group,words in FEELING_CUES.items() if any(w in text for w in words)}
 
 class ExpressionService:
     def __init__(self,database,clock=time.time):
@@ -53,7 +91,8 @@ class ExpressionService:
         current=query+' '+context.proactive_reason
         wanted=terms(current)
         recent_words=terms(' '.join([getattr(h,'content','')[-250:] for h in history[-5:]]+list(context.community.entries)))
-        persona_words=terms(character.speaking_style+' '+character.description)
+        # 这一轮可能用得上的情绪：只用来排候选，不决定发不发
+        cues=feeling_cues(current+' '+' '.join(getattr(h,'content','')[-120:] for h in history[-2:]))
         recent_intents=set()
         for recent_row in used[:3]:
             asset=self.catalog.get(recent_row['asset_id'])
@@ -87,31 +126,39 @@ class ExpressionService:
             if self.catalog.resolve(row['asset_id'],row['revision']) is None:drop('file_unavailable');continue
             report['eligible']+=1
             semantic_words=terms(tags)
+            group=feeling_group(emotions+intents)
             # 当前想表达的内容优先；长人设和旧话题不能压过这一轮的意图。
             score=(len(wanted&semantic_words)*8+min(3,len(recent_words&semantic_words)*.5)
-                   +min(1,len(persona_words&semantic_words)*.25)+(2 if mood in emotions else 0)
+                   +(2 if mood in emotions else 0)+cues.get(group,0)
                    -len(recent_intents&terms(' '.join(intents)))*3)
             candidate=ExpressionCandidate(row['asset_id'],row['revision'],semantic,emotions,intents,
                        str(m.get('image_text',''))[:80],str(m.get('category',''))[:64],max(0,min(3,int(m.get('tone_strength',1)))))
-            choices.append((score,candidate))
-        choices.sort(key=lambda item:(-item[0],item[1].asset_id))
-        # 五张检索相关图 + 按情绪 / 用法补齐的多样候选：她自己想表达的情绪（得意、心虚、困了……）
-        # 不一定和对方这句话字面相关，候选要覆盖得开，而不是全是"字面最像"的同一类。
-        selected=[];groups={}
+            # 同分时按"这一轮"打散（不是发送概率：只决定同一情绪里给她看哪一张），避免每轮都是 asset_id 最小的那几张
+            spread=hashlib.sha256((context.generation_id+row['asset_id']).encode()).hexdigest()
+            choices.append((score,spread,group,candidate))
+        choices.sort(key=lambda item:(-item[0],item[1]))
+        # 候选 = 和这一轮最相关的几张 + 每种常见情绪各一张。
+        # 第一轮真实验收发现：词面相关度几乎总是 0，十个候选每轮都是同一批，困了 / 生气 / 得意时手边根本没有对应的图，
+        # 她只能选纯文字。她自己想表达的情绪（得意、心虚、困了……）也不一定和对方这句话字面相关，所以按情绪铺开。
+        selected=[];taken=set()
         def add(candidate):
-            group=candidate.intents[:1] or (candidate.category,)
-            if candidate in selected or groups.get(group,0)>=2:return False
-            selected.append(candidate);groups[group]=groups.get(group,0)+1
-            return True
-        for score,candidate in choices:
-            if score<=0 and len(selected)>=3:break
-            add(candidate)
-            if len(selected)==5:break
-        remaining=[item for item in choices if item[1] not in selected]
+            if candidate in selected or len(selected)>=10:return
+            selected.append(candidate)
+        for score,_,group,candidate in choices:
+            if score<=0 or len(selected)>=3:break
+            add(candidate);taken.add(group)
+        palette=sorted(FEELINGS,key=lambda g:(-cues.get(g,0),FEELINGS.index(g)))
+        for wanted_group in palette:
+            if wanted_group in taken:continue
+            for score,_,group,candidate in choices:
+                if group==wanted_group and candidate not in selected:
+                    add(candidate);taken.add(group);break
+        # 剩下的名额给"还没覆盖到的情绪 / 用法"多的图，其次看相关度
+        remaining=[item for item in choices if item[3] not in selected]
         while remaining and len(selected)<10:
-            covered={tag for item in selected for tag in item.emotions+item.intents}
-            remaining.sort(key=lambda item:(-len(set(item[1].emotions+item[1].intents)-covered),-item[0],item[1].asset_id))
-            _,candidate=remaining.pop(0);add(candidate)
+            covered={tag for c in selected for tag in c.emotions+c.intents}
+            remaining.sort(key=lambda item:(-len(set(item[3].emotions+item[3].intents)-covered),-item[0],item[1]))
+            add(remaining.pop(0)[3])
         from dataclasses import replace
         selected=tuple(replace(c,handle=f's{n}') for n,c in enumerate(selected,1))
         report['filtered']=filtered;report['candidates']=len(selected)
@@ -176,7 +223,7 @@ class ExpressionService:
             if any(code in diagnostics for code in ('invalid_marker','unfinished_marker')):return 'C_marker_unparsed'
         return 'B_model_chose_text'
 
-    def record_trace(self,turn_id,context,report,diagnostics=(),markers=0,selection=None,attachment=None,status='complete',delivered=False):
+    def record_trace(self,turn_id,context,report,diagnostics=(),markers=0,selection=None,attachment=None,status='complete',delivered=False,rejected=()):
         stage=self.trace_outcome(report,diagnostics,markers,selection,attachment,status)
         if stage=='E_pending' and not delivered:stage='E_not_delivered'
         entry=dict(turn=turn_id[-12:],at=round(self.clock()),character=context.character_id,
@@ -189,7 +236,7 @@ class ExpressionService:
                    meaning=(attachment.alt_text if attachment else None),
                    parsed=bool(selection),validated=attachment is not None,result=delivered,
                    delivery=(attachment.delivery_id if attachment else None),status=status,
-                   diagnostics=list(diagnostics)[:8],stage=stage)
+                   diagnostics=list(diagnostics)[:8],rejected=[str(x)[:40] for x in rejected][:3],stage=stage)
         def write(c):
             ring=self.db.setting_in(c,self.TRACE_KEY,[]) or []
             ring=[e for e in ring if isinstance(e,dict)][-(self.TRACE_LIMIT-1):]+[entry]
@@ -235,6 +282,7 @@ class ExpressionService:
         if entry.get('markers'):parts.append(f"标记 {entry['markers']} 个")
         if entry.get('meaning'):parts.append(f"选了「{entry['meaning']}」{'在前' if entry.get('placement')=='before_text' else '在后'}")
         if entry.get('diagnostics'):parts.append('诊断 '+','.join(entry['diagnostics']))
+        if entry.get('rejected'):parts.append('无效编号 '+','.join(entry['rejected']))
         return ' · '.join(parts)
 
     @staticmethod

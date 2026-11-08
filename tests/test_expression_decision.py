@@ -76,8 +76,29 @@ class DecisionTests(unittest.TestCase):
         found = ExpressionService(self.db).prepare(ExpressionContext('a', self.character.id, 'desktop:x'), self.character, '今天开心庆祝')
         intents = {c.intents[0] for c in found}
         self.assertTrue({'炫耀', '心虚', '晚安', '吐槽'} <= intents)    # 她自己想表达的情绪也有图可选
-        self.assertLessEqual(sum(1 for c in found if c.intents[0] == '庆祝'), 2)
+        self.assertLessEqual(sum(1 for c in found if c.intents[0] == '庆祝'), 3)   # 最相关的最多 3 张，其余名额按情绪铺开
         self.assertEqual([c.handle for c in found], [f's{n}' for n in range(1, len(found)+1)])
+
+    def test_each_feeling_group_gets_an_image_even_without_word_overlap(self):
+        # 第一轮真实验收：词面相关度总是 0，候选每轮都是同一批；"都凌晨一点了，你困不困"时手边没有困的图
+        for n in range(8):
+            self.add(f'h{n}', semantic=f'开心{n}', intents=['分享开心'], emotions=['开心'])
+        self.add('sleep', semantic='困到闭眼却还在机械工作时', intents=['表达疲惫'], emotions=['疲惫'])
+        self.add('angry', semantic='被惹恼时用头槌抗议', intents=['抗议'], emotions=['生气'])
+        self.add('smug', semantic='得意地反击', intents=['炫耀'], emotions=['得意'])
+        service = ExpressionService(self.db)
+        found = service.prepare(ExpressionContext('a', self.character.id, 'desktop:x'), self.character, '都凌晨一点了，你困不困')
+        meanings = [c.summary for c in found]
+        self.assertEqual(meanings[0], '困到闭眼却还在机械工作时')              # 对话里的情绪线索排在最前
+        self.assertTrue({'被惹恼时用头槌抗议', '得意地反击'} <= set(meanings))  # 其他情绪也各有一张
+
+    def test_same_feeling_rotates_between_turns(self):
+        for n in range(6):
+            self.add(f'h{n}', semantic=f'开心{n}', intents=['分享开心'], emotions=['开心'])
+        service = ExpressionService(self.db)
+        firsts = {service.prepare(ExpressionContext(f'turn{k}', self.character.id, 'desktop:x'), self.character, '嗯')[0].summary
+                  for k in range(12)}
+        self.assertGreater(len(firsts), 1)
 
     def test_prompt_presents_meaning_and_use_and_does_not_demand_a_text_only_marker(self):
         self.add('smile', semantic='开心到笑出声', intents=['分享开心'], emotions=['开心'])
@@ -126,6 +147,12 @@ class DecisionTests(unittest.TestCase):
         _, trace = self.turn('<sticker id="{h}"/>', turn='g2')
         self.controller.expression.receipt(self.events[-1].result.attachments[0].delivery_id, 'failed')
         self.assertEqual(self.controller.expression.traces(1)[-1]['stage'], 'F_display_failed')
+
+    def test_blank_lines_after_leading_sticker_are_trimmed(self):
+        self.add('smile', semantic='开心到笑出声')
+        text, _ = self.turn('<sticker id="{h}"/>\n\n哈哈\n\n\n\n真的')
+        self.assertTrue(text.startswith('哈哈'))
+        self.assertEqual(self.events[-1].result.text, '哈哈\n\n真的')
 
     def test_trace_has_no_chat_text_or_paths(self):
         self.add('smile', semantic='开心到笑出声')

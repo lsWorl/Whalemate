@@ -24,7 +24,7 @@ CUE = re.compile(r'【[^】\n]{1,12}】|<[^<>\n/]{1,12}>')
 
 
 class ExpressionStream:
-    def __init__(self, candidate_ids=(), legacy=None, handles=None, meanings=None):
+    def __init__(self, candidate_ids=(), legacy=None, handles=None, meanings=None, cue_words=None):
         self.allowed = frozenset(candidate_ids); self.legacy = dict(legacy or {})
         self.handles = dict(handles or {})       # 's3' -> asset_id
         self.meanings = dict(meanings or {})     # 含义 -> asset_id（历史写法照抄时用）
@@ -34,6 +34,10 @@ class ExpressionStream:
         self.quote_line = False; self.json_depth = 0; self.json_string = False; self.escape = False
         self.task = ''; self.drop_line = False; self.drop_annotation = False
         self.after_text_seen = False
+        # 角色动画词表：传入时，词表外的短情绪方括号（【委屈】【心虚】…）不会被动画执行、只会原样露在正文里，
+        # 这里直接隐藏并记诊断（第一轮真实验收里她常这样写，而那正是该发表情包的时候）。【不说】是群里的静默标记，保留。
+        self.cue_words = frozenset(cue_words or ()) | {'不说'} if cue_words else None
+        self.bracket = ''; self.rejected = []
 
     def diagnose(self, code):
         if code not in self.diagnostics and len(self.diagnostics) < 16: self.diagnostics.append(code)
@@ -91,7 +95,10 @@ class ExpressionStream:
             asset = self._resolve(value)
             position = attrs.get('position')
         if not isinstance(asset, str) or asset not in self.allowed:
-            self.diagnose('invalid_asset'); return
+            self.diagnose('invalid_asset')
+            value = attrs.get('id', attrs.get('asset_id', attrs.get('name', '')))
+            if re.fullmatch(r'[A-Za-z0-9_-]{1,40}', value or '') and len(self.rejected) < 3: self.rejected.append(value)
+            return
         if self.reserved:
             self.diagnose('multiple_markers'); return
         self.has_text = self._visible_text()
@@ -119,6 +126,15 @@ class ExpressionStream:
             elif len(self.task) > 1530:
                 safe = re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task)
                 self._emit(safe, out); self.task = ''
+            return
+        if self.bracket:
+            self.bracket += ch
+            if ch == '】' or ch == '\n' or len(self.bracket) > 10:
+                raw = self.bracket; self.bracket = ''
+                word = raw[1:-1] if ch == '】' else None
+                if word is not None and word not in self.cue_words and re.fullmatch(r'[\u4e00-\u9fff]{1,4}', word):
+                    self.diagnose('stray_emotion_tag')
+                else: self._emit(raw, out)
             return
         if self.pending:
             self.pending += ch
@@ -171,6 +187,7 @@ class ExpressionStream:
         if ch == '>' and self.line_start: self.quote_line = True
         if ch == '{': self.json_depth = 1
         if ch in '<[': self.pending = ch
+        elif ch == '【' and self.cue_words is not None: self.bracket = ch
         else: self._emit(ch, out)
 
     def feed(self, chunk):
@@ -189,12 +206,13 @@ class ExpressionStream:
         if self.task:
             self._emit(re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task), out)
         if self.ticks: self._emit(self.ticks, out)
+        if self.bracket: self._emit(self.bracket, out)
         if self.selection and self.after_text_seen: self.diagnose('mid_text_marker')
-        self.pending = self.task = self.ticks = ''; self.finished = True
+        self.pending = self.task = self.ticks = self.bracket = ''; self.finished = True
         return ''.join(out)
 
     def cancel(self):
-        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = ''
+        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = self.bracket = ''
 
 
 def clean_expression_history(text):

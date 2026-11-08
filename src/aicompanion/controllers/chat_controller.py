@@ -57,7 +57,8 @@ class ChatController:
             if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
             parser=ExpressionStream([c.asset_id for c in candidates],self.expression.legacy_map(candidates),
                                     {c.handle:c.asset_id for c in candidates if c.handle},
-                                    {c.summary:c.asset_id for c in candidates if c.summary})
+                                    {c.summary:c.asset_id for c in candidates if c.summary},
+                                    set(vocab.expressions)|set(vocab.motions) if vocab else None)
             choices={c.asset_id:c for c in candidates}
             from aicompanion.usage.meter import using
             with using(purpose,character.id,turn_id):
@@ -69,6 +70,7 @@ class ChatController:
                         cancellation.check()
                         if attachment:on_expression_event(ExpressionEvent('attachment_ready',turn_id,attachment))
                         cancellation.check()
+                    if clean and not ''.join(parts).strip():clean=clean.lstrip()   # 图在前时正文开头的空行去掉
                     if clean:parts.append(clean);yield clean
             cancellation.check()
             tail=parser.finish()
@@ -91,7 +93,8 @@ class ChatController:
             status,error='failed',str(exc)
             raise
         finally:
-            content=strip_cues(''.join(parts),self.vocabs.get(character.id) or Vocab())
+            import re as _re
+            content=_re.sub(r'\n{3,}','\n\n',strip_cues(''.join(parts),self.vocabs.get(character.id) or Vocab())).rstrip()
             if reply_filter is not None:
                 try:
                     filtered=reply_filter(content,status)
@@ -106,7 +109,7 @@ class ChatController:
             self.expression.record_trace(turn_id,context,report,parser.diagnostics if parser else (),
                                          parser.markers if parser else 0,parser.selection if parser else None,
                                          result.attachments[0] if result.attachments else None,status,
-                                         delivered=on_expression_event is not None)
+                                         delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:on_expression_event(ExpressionEvent('final',turn_id,result=result))
 
     def stream_user_message(self,content):

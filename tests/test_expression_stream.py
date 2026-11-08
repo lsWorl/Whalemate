@@ -151,3 +151,29 @@ class ShortHandleProtocolTests(unittest.TestCase):
         self.assertEqual(self.parse('好<sticker id="s9"/>')[1].markers,1)
         self.assertEqual(self.parse('好<sticker id="s1"/><sticker id="s1"/>')[1].markers,2)
 
+
+
+class StrayEmotionTagTests(unittest.TestCase):
+    """词表外的短情绪方括号不会触发动画、只会露在正文里：传入词表时隐藏它们；词表内的、【不说】、长内容保留。"""
+    def parse(self, raw, chunks=None):
+        stream = ExpressionStream([ID], {}, {'s1': ID}, {}, {'开心', '挥手'})
+        text = ''.join(stream.feed(c) for c in (chunks if chunks is not None else [raw]))+stream.finish()
+        return text, stream
+
+    def test_stray_tags_hidden_at_every_split(self):
+        raw = '冤枉啊【委屈】我没动'
+        for n in range(len(raw)+1):
+            text, stream = self.parse(raw, [raw[:n], raw[n:]])
+            self.assertEqual(text, '冤枉啊我没动'); self.assertIn('stray_emotion_tag', stream.diagnostics)
+
+    def test_vocab_silence_long_and_code_are_kept(self):
+        for raw in ('【开心】好耶', '【不说】', '【注意：这是一段很长的说明】', '`【委屈】`', '```\n【委屈】\n```', '【开心'):
+            self.assertEqual(self.parse(raw)[0], raw, raw)
+
+    def test_without_vocab_nothing_changes(self):
+        stream = ExpressionStream([ID])
+        self.assertEqual(stream.feed('【委屈】')+stream.finish(), '【委屈】')
+
+    def test_rejected_handle_recorded_for_observability(self):
+        _, stream = self.parse('好<sticker id="s12"/>')
+        self.assertEqual(stream.rejected, ['s12'])
