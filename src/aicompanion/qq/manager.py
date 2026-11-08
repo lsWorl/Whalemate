@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+import re
 import secrets
 import socket
 import subprocess
@@ -341,6 +342,13 @@ class QQManager:
         for name, entry in (manifest.get('components') or {}).items():
             lines.append(f'{name}：{entry.get("version")} sha256={str(entry.get("sha256") or entry.get("wheel_sha256") or "")[:12]}…')
         lines.append(f'端口：{self.db.get_setting("qq_ports", {})}')
+        beat = self.heartbeat() or {}
+        version = str(beat.get('astrbot') or '')
+        if re.fullmatch(r'plugin-[0-9]+(?:\.[0-9]+){1,3}', version):
+            freshness = '最近心跳' if self.clock()-beat.get('at', 0) < HEARTBEAT_STALE else '心跳已过期'
+            lines.append(f'AstrBot 桥接插件：{version}（{freshness}；不是磁盘文件版本）')
+        else:
+            lines.append('AstrBot 桥接插件：尚未收到有效版本心跳')
         if status.detail: lines += ['细节：', status.detail]
         text = '\n'.join(lines)
         for secret in self.known_secrets(): text = text.replace(secret, '***')
