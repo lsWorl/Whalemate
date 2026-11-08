@@ -42,6 +42,16 @@ class ScriptedClient:
         yield (f'<sticker id="{handles[0]}"/>好耶' if handles and self.expect != 'text' else '好的，我认真说一下。')
 
 
+class Recording:
+    """包一层，记下这一轮模型看到的候选行（含义和用法），方便判断"没发图"是没合适的图还是模型没选。不记提示里的其他内容。"""
+    def __init__(self, client): self.client = client; self.candidates = []
+    def __getattr__(self, name): return getattr(self.client, name)
+    def generate_reply_stream(self, history, prompt, cancellation):
+        import re
+        self.candidates = re.findall(r'^s\d+｜[^\n]*', prompt, re.M)
+        yield from self.client.generate_reply_stream(history, prompt, cancellation)
+
+
 def load_scenarios(path):
     data = json.loads(Path(path).read_text(encoding='utf-8'))
     if data.get('version') != 1: raise ValueError('场景文件版本不支持')
@@ -82,6 +92,7 @@ def run(args, client=None):
     work = Path(args.out or ROOT/'output'/time.strftime('t14-eval-%Y%m%d-%H%M%S')).resolve()
     work.mkdir(parents=True, exist_ok=True)
     template, counts, registry = prepare_library(work, args.pack, settings)
+    recorder = Recording(client)
     scenarios = load_scenarios(args.scenarios)
     if args.only: scenarios = [s for s in scenarios if s['id'] in set(args.only.split(','))]
     rows = []
@@ -89,7 +100,7 @@ def run(args, client=None):
         for scenario in scenarios:
             path = work/f"{scenario['id']}-r{round_no}.sqlite3"; shutil.copyfile(template, path)
             db = Database(path); db.initialize()
-            controller = ChatController(db, MemoryService(db), client)
+            controller = ChatController(db, MemoryService(db), recorder); recorder.candidates = []
             registry_ = CharacterRegistry(db, settings, registry.packs.values(), environ={})
             character = next(c for c in db.characters() if c.id == WHALE); controller.character = character
             pack = registry_.pack(WHALE)
@@ -129,7 +140,7 @@ def run(args, client=None):
                              placement=attachment.placement if attachment else None,
                              action=result.decision.action if result else 'error', candidates=trace.get('candidates'),
                              stage=trace.get('stage'), diagnostics=trace.get('diagnostics'), error=error,
-                             seconds=round(time.monotonic()-started, 2), human_verdict=''))
+                             seconds=round(time.monotonic()-started, 2), offered=list(recorder.candidates), human_verdict=''))
             print(f"{scenario['id']:<22} r{round_no} {'图' if attachment else '字'} {rows[-1]['meaning'] or ''}", flush=True)
             db = None
     summary = summarize(rows)
@@ -160,17 +171,22 @@ def summarize(rows):
 
 def markdown(report):
     s = report['summary']
+    cell = lambda v: str(v or '').replace('|', '／').replace('\n', ' ⏎ ')
     lines = ['# T14 自然表达验收记录', '',
              f"- 时间：{report['date']}；真实模型：{report['real_model']}（{report['model']}）；图库：{report['library']}",
              f"- 适合发表情的场景：{s['expressive']['sticker']}/{s['expressive']['total']} 发了图；"
              f"两可：{s['either']['sticker']}/{s['either']['total']}；应纯文字：{s['text']['sticker']}/{s['text']['total']} 发了图",
              f"- 纯图回复 {s['pure_sticker']} 次；用到 {s['distinct_images']} 张不同的图，重复 {s['repeated_images']} 次；出错 {s['errors']} 次",
              '- 人工评估列请填：合适 / 图文不符 / 情绪不对 / 该发没发 / 不该发 / 人设不符', '',
-             '| 场景 | 期望 | 输入 | 回复 | 表情（位置） | 阶段 | 人工评估 |', '|---|---|---|---|---|---|---|']
+             '| 场景 | 期望 | 输入 | 回复（⏎ 为换行） | 表情（位置） | 阶段 | 人工评估 |', '|---|---|---|---|---|---|---|']
     for r in report['rows']:
         image = f"{r['meaning']}（{'前' if r['placement'] == 'before_text' else '后'}）" if r['sticker'] else '—'
-        cell = lambda v: str(v or '').replace('|', '／').replace('\n', ' ')
         lines.append(f"| {r['id']} r{r['round']} | {r['expect']} | {cell(r['input'])} | {cell(r['reply'] or r['error'])} | {cell(image)} | {r['stage']} | |")
+    lines += ['', '<details><summary>每个场景模型看到的候选（判断"没发"是没合适的图还是没选）</summary>', '']
+    for r in report['rows']:
+        offered = '；'.join(x.split('｜')[1] for x in r.get('offered') or [] if '｜' in x)
+        lines.append(f"- {r['id']} r{r['round']}：{offered or '（无候选）'}")
+    lines += ['', '</details>']
     return '\n'.join(lines)+'\n'
 
 

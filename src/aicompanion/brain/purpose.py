@@ -117,7 +117,7 @@ class PurposeEngine:
         """交给对话生成的主动意图。"""
         hint = f'可以参考这样开口：{row["opener"]}。' if row['opener'] else ''
         return (f'你心里一直惦记着一件事（{KINDS.get(row["kind"], "想聊")}）：{row["content"]}。'
-                f'现在自然地主动提起，一两句话即可。{hint}不要说是系统或提醒让你来的，也不要编造记忆里没有的细节。')
+                f'现在自然地主动提起，像发消息那样说一句或连着几句都行。{hint}不要说是系统或提醒让你来的，也不要编造记忆里没有的细节。')
 
     def delivered(self, purpose_id: int) -> None:
         self.database.update_purpose(purpose_id, 'delivered', self.clock().isoformat(timespec='seconds'))

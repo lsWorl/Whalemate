@@ -208,7 +208,7 @@ class BridgeService:
                 # 爹：和桌面同一段相处，正常更新心情、提取记忆
                 message_id = controller.record_user_message(text, source=platform, channel='desktop')
                 situation = (f'【场合】你爹现在不在电脑前，正在{mode["where"]}私聊里跟你说话。'
-                             '像在 QQ 上回爹的消息，一两句，随意点，不用动作描写。')
+                             '像在 QQ 上回爹的消息，随意点；长短看心情，可以一句，也可以连发几句（换行分开），不用动作描写。')
             else:
                 # 公开场合：只记在这个群 / 这个人自己的频道，不改心情、不套"我叫…"之类的规则提取记忆（另由后台整理）；记下稳定 ID，群里按"昵称#编号"区分人
                 tag = alias(self.database, stable)
@@ -217,7 +217,7 @@ class BridgeService:
                 who = '你爹' if mode['owner'] else f'{name}{tag}'
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在叫你'
                              + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号（#数字，同一个人编号不变），标着【爹】的是你爹' if mode['group'] else '') + '。'
-                             '像群友一样回一两句，随意点，不用动作描写；不要提桌面上发生的事。')
+                             '像群友一样回，随意点；通常一两句，聊得起劲也可以多说几句（换行分开），不用动作描写；不要提桌面上发生的事。')
             self.social.cid = character.id
             self.social.observe(mode['channel'], stable, original_text, bool(images) or bool(payload.get('has_image')))
             situation += avatar_info

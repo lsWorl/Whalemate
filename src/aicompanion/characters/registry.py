@@ -50,8 +50,10 @@ class CharacterRegistry:
         if int(self.database.get_setting(key, 1) or 1) >= version: return
         current = next((c for c in self.database.characters() if c.id == pack.id), None)
         if current is None: return
-        old = (pack.persona.get('previous_description'), pack.persona.get('previous_speaking_style'))
-        if (current.description, current.speaking_style) == old:
+        # 上一版和更早的原文都认（用户可能跳过了某一版）；用户自己改过的人设不在其中，保持不动
+        known = [(pack.persona.get('previous_description'), pack.persona.get('previous_speaking_style'))]
+        known += [(o.get('description'), o.get('speaking_style')) for o in pack.persona.get('older') or [] if isinstance(o, dict)]
+        if (current.description, current.speaking_style) in known:
             self.database.set_setting(f'persona_backup:{pack.id}', {'description': current.description, 'speaking_style': current.speaking_style})
             from dataclasses import replace
             self.database.update_character(replace(current, description=pack.persona['description'], speaking_style=pack.persona['speaking_style']))
