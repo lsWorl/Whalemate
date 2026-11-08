@@ -68,6 +68,10 @@ class ExpressionStream:
         value = (value or '').strip()
         if HANDLE.fullmatch(value.lower()): return self.handles.get(value.lower())
         if ASSET_ID.fullmatch(value) and value in self.allowed: return value
+        # 模型偶尔把图的含义当编号写（id="困到闭眼"）：和本轮恰好一张候选的含义对得上才算
+        if len(value) >= 2:
+            hits = {asset for meaning, asset in self.meanings.items() if value in meaning}
+            if len(hits) == 1: self.diagnose('meaning_as_id'); return hits.pop()
         return None
 
     def _marker(self, raw):
@@ -96,8 +100,9 @@ class ExpressionStream:
             position = attrs.get('position')
         if not isinstance(asset, str) or asset not in self.allowed:
             self.diagnose('invalid_asset')
-            value = attrs.get('id', attrs.get('asset_id', attrs.get('name', '')))
-            if re.fullmatch(r'[A-Za-z0-9_-]{1,40}', value or '') and len(self.rejected) < 3: self.rejected.append(value)
+            value = attrs.get('id', attrs.get('asset_id', attrs.get('name', attrs.get('sent', ''))))
+            # 只记很短的值（编号 / 占位词），用来分析写错的原因；不记长文本
+            if value and len(value) <= 12 and '\n' not in value and len(self.rejected) < 3: self.rejected.append(value)
             return
         if self.reserved:
             self.diagnose('multiple_markers'); return

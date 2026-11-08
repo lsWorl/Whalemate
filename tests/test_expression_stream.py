@@ -177,3 +177,14 @@ class StrayEmotionTagTests(unittest.TestCase):
     def test_rejected_handle_recorded_for_observability(self):
         _, stream = self.parse('好<sticker id="s12"/>')
         self.assertEqual(stream.rejected, ['s12'])
+
+
+class MeaningAsIdTests(unittest.TestCase):
+    def test_meaning_written_as_id_resolves_only_when_unique(self):
+        other = 'st_fedcba9876543210'
+        stream = ExpressionStream([ID, other], {}, {'s1': ID, 's2': other}, {'困到闭眼却还在工作': ID, '开心到转圈': other})
+        self.assertEqual(stream.feed('晚安<sticker id="困到闭眼"/>')+stream.finish(), '晚安')
+        self.assertEqual(stream.selection, (ID, 'after_text')); self.assertIn('meaning_as_id', stream.diagnostics)
+        stream = ExpressionStream([ID, other], {}, {'s1': ID, 's2': other}, {'开心到转圈': ID, '开心到跳': other})
+        stream.feed('<sticker id="开心"/>'); stream.finish()
+        self.assertIsNone(stream.selection); self.assertEqual(stream.rejected, ['开心'])   # 对得上两张：不猜

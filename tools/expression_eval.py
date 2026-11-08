@@ -142,7 +142,7 @@ def run(args, client=None):
                                  asset_id=attachment.asset_id if attachment else None,
                                  placement=attachment.placement if attachment else None,
                                  action=result.decision.action if result else 'error', candidates=trace.get('candidates'),
-                                 stage=trace.get('stage'), diagnostics=trace.get('diagnostics'), error=error,
+                                 stage=trace.get('stage'), diagnostics=trace.get('diagnostics'), rejected=trace.get('rejected'), error=error,
                                  seconds=round(time.monotonic()-started, 2), offered=list(recorder.candidates), human_verdict=''))
                 print(f"{rows[-1]['id']:<22} r{round_no} {'图' if attachment else '字'} {rows[-1]['meaning'] or ''}", flush=True)
             db = None
