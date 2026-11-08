@@ -43,8 +43,11 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(text,'');self.assertEqual(result.decision.action,'sticker_only')
         self.assertEqual(len(self.db.recent_messages(5,self.char.id)),1)
         self.controller.expression.receipt(result.attachments[0].delivery_id,'displayed')
-        history,_=self.controller.context.build(self.char)
-        self.assertIn('角色已发送表情',history[-1].content)
+        history,prompt=self.controller.context.build(self.char)
+        self.assertFalse(history)
+        self.assertIn('历史附件回执',prompt)
+        self.assertIn(result.attachments[0].alt_text,prompt)
+        self.assertNotIn('[角色已发送表情',prompt)
         self.db.set_delivered_reply('g',self.char.id,'','cancelled')
         self.assertTrue(self.controller.expression.history('g',self.char.id))
     def test_proactive_same_request_and_candidates(self):
@@ -79,3 +82,52 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):self.run_turn()
         self.assertEqual(self.events[-1].result.status,'failed')
         self.assertFalse(self.events[-1].result.attachments)
+
+    def test_old_annotation_is_not_repeated_as_assistant_dialogue(self):
+        old='好耶！\n[角色已发送表情：庆祝完成]'
+        self.db.add_message('assistant',old,self.char.id)
+        history,_=self.controller.context.build(self.char)
+        self.assertEqual(history[-1].content,'好耶！\n')
+        self.assertEqual(self.db.recent_messages(1,self.char.id)[0]['content'],old)
+
+    def test_echo_annotation_is_not_a_delivery_or_visible_text(self):
+        self.model.generate_reply_stream=lambda *args:iter('笑死\n[角色已发送表情：开心]')
+        text,result=self.run_turn()
+        self.assertEqual(text,'笑死\n');self.assertFalse(result.attachments)
+        self.assertIn('internal_annotation_echo',result.diagnostics)
+        self.assertNotIn('角色已发送表情',self.db.recent_messages(1,self.char.id)[0]['content'])
+
+    def test_receipt_context_obeys_channel_and_deletion_watermark(self):
+        self.model.mode='pure';_,result=self.run_turn()
+        self.controller.expression.receipt(result.attachments[0].delivery_id,'displayed')
+        _,prompt=self.controller.context.build(self.char,channel='qq:group:other')
+        self.assertNotIn('历史附件回执',prompt)
+        last=self.db.recent_messages(1,self.char.id)[0]['id']
+        self.db.set_setting('context_after:'+self.char.id,last)
+        history,prompt=self.controller.context.build(self.char)
+        self.assertFalse(history);self.assertNotIn('历史附件回执',prompt)
+
+    def test_explicit_text_choice_is_one_request_and_never_in_history(self):
+        def model(history,prompt,cancellation):
+            self.model.calls+=1
+            yield '<expression mode="text_only"/>认真听你说。'
+        self.model.generate_reply_stream=model
+        text,result=self.run_turn()
+        self.assertEqual(text,'认真听你说。');self.assertEqual(self.model.calls,1)
+        self.assertFalse(result.attachments)
+        self.assertNotIn('<expression',self.db.recent_messages(1,self.char.id)[0]['content'])
+
+    def test_format_examples_are_ephemeral_and_real_context_is_preserved(self):
+        self.controller.record_user_message('今天聊点轻松的')
+        captured=[]
+        def model(history,prompt,cancellation):
+            self.model.calls+=1;captured.extend(history)
+            yield '<expression mode="text_only"/>聊呀。'
+        self.model.generate_reply_stream=model
+        self.run_turn()
+        self.assertIn('虚构表达格式示例',captured[0].content)
+        self.assertEqual(captured[-1].content,'今天聊点轻松的')
+        self.assertEqual(self.model.calls,1)
+        stored=self.db.recent_messages(30,self.char.id)
+        self.assertEqual(len(stored),2)
+        self.assertFalse(any('虚构表达格式示例' in r['content'] for r in stored))

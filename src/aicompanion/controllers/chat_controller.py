@@ -57,8 +57,10 @@ class ChatController:
             parser=ExpressionStream([c.asset_id for c in candidates],self.expression.legacy_map(candidates))
             choices={c.asset_id:c for c in candidates}
             from aicompanion.usage.meter import using
+            # 格式示例只进入这一轮请求，不写聊天 / 记忆；候选检索仍只看真实上下文。
+            model_history=self.expression.format_examples(candidates)+history
             with using(purpose,character.id,turn_id):
-                for token in self.llm_client.generate_reply_stream(history,prompt,cancellation):
+                for token in self.llm_client.generate_reply_stream(model_history,prompt,cancellation):
                     cancellation.check()
                     clean=parser.feed(token)
                     if context.early_before and attachment is None and parser.selection and parser.selection[1]=='before_text':

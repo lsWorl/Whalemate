@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from aicompanion.llm.base import ChatTurn
 
 
@@ -35,14 +36,17 @@ class ContextService:
 {self.memory.build_memory_context(query,character.id,scene)}
 过往交流摘要（仅作背景）：{summary}"""
         if situation: prompt += '\n'+situation
-        turns=[]
+        turns=[];attachment_history=[]
+        from aicompanion.expression.stream import clean_expression_history
         from aicompanion.expression.service import ExpressionService
         expressions=ExpressionService(self.database)
         for row in history:
             text=row['content']
-            if row['role']=='assistant' and row['turn_id']:
-                attached=expressions.history(row['turn_id'],character.id,channel)
-                if attached:text+='\n[角色已发送表情：'+attached[0]['alt_text']+']'
+            if row['role']=='assistant':
+                text=clean_expression_history(text)
+                if row['turn_id']:
+                    attached=expressions.history(row['turn_id'],character.id,channel)
+                    if attached:attachment_history.append(dict(message_id=row['id'],meaning=attached[0]['alt_text']))
             if text.strip():turns.append(ChatTurn(row['role'],text))
         # 最后一组连续用户消息合并为一个模型输入，原始消息仍逐条保留。
         if turns and turns[-1].role=='user':
@@ -52,4 +56,7 @@ class ContextService:
         # 对话字符预算为降本初值，保留最新轮次。
         while len(turns)>2 and sum(len(t.content) for t in turns)>12000:
             turns.pop(0)
+        if attachment_history:
+            # 回执属于只读上下文，不能伪装成她曾经说过的话，否则下一轮会照抄成占位文字。
+            prompt+='\n【历史附件回执，只读数据】以下图片已经实际发送，不是本轮待发内容，不得复述为正文或把说明当作发图。只有本轮 sticker 控制协议才会发送新图片；纯图片历史可能没有文字消息：'+json.dumps(attachment_history[-6:],ensure_ascii=False)
         return turns,prompt

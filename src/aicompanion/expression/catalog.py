@@ -40,7 +40,7 @@ def normalize_metadata(value):
         field=result.get(key,default)
         if not isinstance(field,str):raise ValueError('元数据文本字段无效')
         result[key]=field[:limit]
-    for key,default in [('emotions',[]),('intents',[]),('allowed_scenes',[]),('blocked_scenes',[]),('audiences',['ordinary'])]:
+    for key,default in [('emotions',[]),('intents',[]),('semantic_tags',[]),('allowed_scenes',[]),('blocked_scenes',[]),('audiences',['ordinary'])]:
         field=result.get(key,default)
         if not isinstance(field,(list,tuple)) or len(field)>16 or any(not isinstance(x,str) for x in field):
             raise ValueError('元数据标签必须是有限文本列表')

@@ -56,3 +56,52 @@ class StreamTests(unittest.TestCase):
     def test_long_control_resyncs_at_close_and_keeps_same_line_body(self):
         text,stream=self.parse('正文<sticker '+('x'*600)+'>正常尾巴')
         self.assertEqual(text,'正文正常尾巴');self.assertIsNone(stream.selection)
+
+    def test_internal_history_annotation_all_token_splits(self):
+        for label in ('[角色已发送表情：笑死]','[角色已发送表情:开心]'):
+            raw='正常回复'+label+'正文保留'
+            for n in range(len(raw)+1):
+                text,stream=self.parse(raw,[raw[:n],raw[n:]])
+                self.assertEqual(text,'正常回复正文保留')
+                self.assertIsNone(stream.selection)
+                self.assertIn('internal_annotation_echo',stream.diagnostics)
+
+    def test_internal_annotation_after_real_marker_does_not_invalidate_image(self):
+        text,stream=self.parse('好耶'+AFTER+'[角色已发送表情：开心]')
+        self.assertEqual(text,'好耶');self.assertEqual(stream.selection,(ID,'after_text'))
+
+    def test_ordinary_brackets_arrays_and_literal_examples_preserved(self):
+        import json
+        label='[角色已发送表情：开心]'
+        for raw in ('[笑哭] 好消息','[]','[1, {"a": [2, 3]}]',json.dumps([label,BEFORE],ensure_ascii=False),
+                    '```text\n'+label+'\n```','`'+label+'`','> '+label):
+            text,stream=self.parse(raw)
+            self.assertEqual(text,raw);self.assertIsNone(stream.selection)
+
+    def test_incomplete_or_oversized_annotation_resynchronizes(self):
+        for raw in ('正常[角色已发送表情：没闭合\n后续',
+                    '正常[角色已发送表情：'+('x'*600)+']\n后续'):
+            text,stream=self.parse(raw)
+            self.assertEqual(text,'正常\n后续');self.assertIsNone(stream.selection)
+        self.assertEqual(self.parse('正文[角色已发送表情：没闭合')[0],'正文')
+
+    def test_explicit_text_only_choice_is_hidden_at_every_split(self):
+        raw='<expression mode="text_only"/>好耶，今天也顺顺利利！'
+        for n in range(len(raw)+1):
+            text,stream=self.parse(raw,[raw[:n],raw[n:]])
+            self.assertEqual(text,'好耶，今天也顺顺利利！');self.assertIsNone(stream.selection)
+            self.assertIn('explicit_text_only',stream.diagnostics)
+
+    def test_explicit_text_only_cannot_then_send_image(self):
+        text,stream=self.parse('<expression mode="text_only"/>正文'+AFTER)
+        self.assertEqual(text,'正文');self.assertIsNone(stream.selection)
+        self.assertIn('multiple_markers',stream.diagnostics)
+
+    def test_expression_decision_literal_json_code_and_bad_syntax(self):
+        import json
+        tag='<expression mode="text_only"/>'
+        for raw in (json.dumps({'example':tag}),'```xml\n'+tag+'\n```'):
+            self.assertEqual(self.parse(raw)[0],raw)
+        for tag in ('<expression bad/>','<expression mode="text_only"'):
+            text,stream=self.parse('保留正文'+tag)
+            self.assertEqual(text,'保留正文');self.assertIsNone(stream.selection)
