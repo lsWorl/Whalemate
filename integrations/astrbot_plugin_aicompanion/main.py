@@ -372,7 +372,7 @@ class AICompanionBridge(Star):
 
     async def ask_pet(self, payload: dict) -> dict:
         # 识图先调用视觉接口再由原大脑回复，给额外一步留出时间。
-        timeout = float(self.option('timeout')) + 45*int(bool(payload.get('images'))) + 45*int(bool(payload.get('avatar')))
+        timeout = float(self.option('timeout')) + 45*int(bool(payload.get('images'))) + 45*int(bool(payload.get('avatar'))) + 10*int(bool(payload.get('debounce')))
         async with await self.post('/v1/chat', payload, timeout) as response:
             if response.status == 401:
                 logger.error('AICompanion 拒绝了请求：令牌不对，请把桌宠"设置 → 聊天平台"里的令牌填进插件配置。')
@@ -500,6 +500,8 @@ class AICompanionBridge(Star):
         self.swallow(event)
         payload['expression_version']=1
         payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
+        # 0.9.3：允许桌宠把同一个人连发的几条合在一起回一次（前面的请求会静默返回 merged）
+        payload['debounce']=True
         try:
             await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)

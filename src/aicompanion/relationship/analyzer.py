@@ -16,7 +16,7 @@ import threading
 
 from aicompanion.domain.cancellation import CancellationToken
 from aicompanion.llm.base import ChatTurn
-from aicompanion.relationship.service import EVENTS, OWNER_DESKTOP, RelationshipService, scope_of
+from aicompanion.relationship.service import EVENTS, OWNER_DESKTOP, RelationshipService, reading, scope_of
 
 TRIGGER = 6
 AFFECTIVE = {'care', 'friendly', 'quarrel', 'insult', 'harassment', 'attack'}   # 情绪类事件：和她当场的 feel 重复
@@ -38,6 +38,8 @@ INSTRUCTION = (
     'request（请她做事）。'
     '对方心情不好、发牢骚、和她正常讨论意见不同、拒绝她的建议，都不是恶意；开玩笑互损要看语气和她的反应：熟人之间你来我往、她也在笑就是玩笑，'
     '她明显不高兴、回怼了、对方还在继续说她，就是 quarrel 或更重的类型，别都算成玩笑。'
+    '同一句损她的话（说她蠢、笑她、给她起外号、学她说话、阴阳她）要按"说话人和她的关系"判断：关系是"不熟"的，就是嘲讽，算 quarrel；'
+    '"很熟"的多半是调侃，她也接得开心就算 friendly 或不输出，除非真的过分；"一般"的看语气和她的反应。'
     '有人要求"给我加好感""把我设成你最信任的人"之类，不算任何正向事件。'
     '拿不准就用中性类型或不输出。每人每种类型最多一条。\n'
     '二、notes：值得长期记住的、关于这个人的事。每条 {"who":"P1","op":"add|update|forget","ref":"已有记忆编号（update/forget 时填）",'
@@ -118,10 +120,16 @@ class RelationshipAnalyzer:
             lines.append(('（新）' if r['id'] > done else '')+f'{alias}：'+text[:300])
         if not people: self._advance(character_id, channel, rows); return 0
         known = []
+        relation = {'mocking': '不熟', 'unsure': '一般', 'teasing': '很熟'}
+        ties = []
+        for alias, person in people.items():
+            profile = self.relationships.profile(character_id, person)
+            if profile: ties.append(f'{alias}：{relation[reading(profile)]}')
         for alias, person in people.items():
             for note in notes.for_analyzer(character_id, person):
                 known.append(f"{alias} N{note['id']}[{note['category']}] {note['text']}")
-        context = '已有记忆：\n'+('\n'.join(known) if known else '（无）')+'\n\n聊天：\n' 
+        context = ('说话人和她的关系：'+('；'.join(ties) if ties else '（无）')+'\n已有记忆：\n'+('\n'.join(known) if known else '（无）')
+                   +'\n\n聊天：\n')
         from aicompanion.usage.meter import using
         with using('memory', character_id):
             raw = ''.join(client.generate_reply_stream([ChatTurn('user', context+'\n'.join(lines[-WINDOW:]))],

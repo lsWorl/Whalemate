@@ -42,7 +42,7 @@ class SegmentTests(unittest.TestCase):
     def test_burst_reads_context(self):
         calm = chat_burst('嗯 好的', peer_burst=1, closeness=0.3)
         self.assertGreater(chat_burst('哈哈哈哈 笑死！！', peer_burst=1, closeness=0.3), calm)  # 情绪
-        self.assertGreater(chat_burst('嗯 好的', peer_burst=4, closeness=0.3), calm)            # 对方连发了好几条
+        self.assertEqual(chat_burst('嗯 好的', peer_burst=4, closeness=0.3), calm)             # 对方连发不再让她跟着多拆（实测越聊越刷屏）
         self.assertGreater(chat_burst('嗯 好的', peer_burst=1, closeness=0.9), calm)            # 关系亲近
         for value in (calm, chat_burst('啊啊啊！'*20, peer_burst=9, closeness=1)): self.assertTrue(0.1 <= value <= 0.9)
 
@@ -69,6 +69,7 @@ class BridgeMessageTests(BridgeFixture):
         self.assertEqual(len(result['segment_delays']), 2); self.assertGreaterEqual(result['segment_delays'][1], 1.0)
         prompt = self.model.prompts[-1]
         self.assertIn('发几条没有固定数', prompt); self.assertIn('别用空格', prompt); self.assertNotIn('一句一行', prompt)
+        self.assertNotIn('停顿空一格', prompt)                                                # 基础提示原来教她用空格停顿（实测'哟 逆天'的来源）
         self.service.chance = ALWAYS
         self.model.replies.append('哟 逆天这次都用上了')
         result = self.ask('10001', '再看看')
@@ -88,6 +89,40 @@ class BridgeMessageTests(BridgeFixture):
         self.model.replies.append('哈哈哈 绝了')                                              # 有文字：照常接文字，不提看不到
         result = self.ask('10001', '今天抽卡出金了！\n[图片]')
         self.assertFalse(result['silent']); self.assertIn('别说自己看不到', self.model.prompts[-1])
+
+    def test_rapid_messages_are_answered_once_together(self):
+        """实测：对方把一句话拆成几条连发，她每条都回，8 秒刷出 7 条。0.9.3 插件带 debounce：等他停下再一起回一次。"""
+        import threading, time as _time
+        self.db.set_setting('bridge_debounce', 0.4)
+        self.model.replies.append('就 hev 啊，你直说嘛')
+        results = {}
+        def send(n, text):
+            results[n] = self.service.handle(dict(platform='qq', sender_id='20002', sender_name='tangle', group_id='', text=text,
+                                                  called=True, expression_version=1, bot_account_id='90000', debounce=True))
+        self.db.set_setting('bridge_strangers', True)
+        threads = []
+        for n, text in enumerate(('就是hev', '的', '意思')):
+            t = threading.Thread(target=send, args=(n, text)); t.start(); threads.append(t); _time.sleep(0.1)
+        for t in threads: t.join(10)
+        self.assertEqual(len(self.model.prompts), 1)                                          # 只回一次
+        self.assertEqual([results[n]['reason'] for n in (0, 1)], ['merged', 'merged'])
+        self.assertEqual(results[2]['reply'], '就 hev 啊，你直说嘛')
+        self.assertIn('连着发了 3 条', self.model.prompts[-1])
+        stored = [r['content'] for r in self.db.recent_messages(5, CID, channel='qq:user:20002')]
+        self.assertIn('就是hev\n的\n意思', stored)                                            # 按顺序合成一条
+        # 没带 debounce 的旧插件：照旧逐条回
+        self.model.replies.append('嗯')
+        self.ask('20002', '在吗'); self.assertEqual(len(self.model.prompts), 2)
+
+    def test_angry_she_may_ignore_him(self):
+        guy = self.rel.resolve(PersonRef('qq', '90000', '20002', 'tangle'), CID)
+        self.db.set_setting('bridge_strangers', True)
+        self.model.replies.append('<mind feel="生气" toward="-3"/>你有完没完')
+        self.ask('20002', '笑你蠢啊')
+        self.model.replies.append(SILENCE)
+        result = self.ask('20002', '哈哈哈 急了')
+        self.assertIn('气头上', self.model.prompts[-1]); self.assertTrue(result['silent'])   # 气头上可以不理他
+        self.assertIn('别一两句就自嘲或让步收场', self.model.prompts[-1])
 
     def test_chime_chance_follows_relationship_with_speaker(self):
         channel = 'qq:group:30003'

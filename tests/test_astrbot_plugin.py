@@ -224,6 +224,7 @@ class PluginTests(unittest.TestCase):
         event = AtEvent('', group='30003', called=True)
         self.run_handler(plugin, event, {'reply': '咋了', 'silent': False})
         self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        self.assertIs(plugin.sent['debounce'], True)                                 # 0.9.3：允许桌宠合并连发
         # AstrBot 没打唤醒标记、但原始消息里 @ 的是她自己：也算叫她
         event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '2776148574'}}, {'type': 'text', 'data': {'text': '  '}}])
         self.run_handler(plugin, event, {'reply': '在呢', 'silent': False})

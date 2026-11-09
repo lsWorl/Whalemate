@@ -28,7 +28,7 @@ MAX_TEXT = 1500
 # 群里没人叫她时插话：off = 只在被叫（@、唤醒词、提到名字）时说话；sometimes = 偶尔；often = 爱聊天（用户 2026-11-07 选的默认）
 CHIME = {'off': None, 'sometimes': {'chance': 0.12, 'cooldown': 300, 'after': 4}, 'often': {'chance': 0.3, 'cooldown': 90, 'after': 2}}
 SILENCE = '【不说】'
-DEFAULTS = {'bridge_chime': 'often', 'bridge_chime_daily': 80, 'bridge_memory_every': 20, 'bridge_enabled': False, 'bridge_port': 18765, 'bridge_token': '', 'bridge_owner:qq': '',
+DEFAULTS = {'bridge_debounce': 2.5, 'bridge_chime': 'often', 'bridge_chime_daily': 80, 'bridge_memory_every': 20, 'bridge_enabled': False, 'bridge_port': 18765, 'bridge_token': '', 'bridge_owner:qq': '',
             'bridge_groups': [], 'bridge_strangers': False, 'bridge_public_daily': 100}
 
 
@@ -42,6 +42,21 @@ def neutral_images(text: str) -> str:
 def unseen_image(text: str) -> bool:
     """消息里有没看到内容的图（有 [图片] 标记、后面没有视觉描述）。"""
     return '[图片]' in text and '[图片描述' not in text
+
+
+def merge_burst(items: list) -> dict:
+    """把同一个人连发的几条请求合成一条：文字按顺序换行拼起来，图片 / 表情包合在一起（各最多 3 个），其余字段用最后一条的。"""
+    if len(items) == 1: return items[0]
+    merged = dict(items[-1])
+    texts = [neutral_images(str(i.get('text') or '').strip()) for i in items]
+    merged['text'] = '\n'.join(t for t in texts if t)
+    merged['images'] = [img for i in items for img in (i.get('images') or [])][:3]
+    merged.pop('image_parts', None)   # 合并后对不上原来的图片段编号，全部照常识图
+    merged['stickers'] = [st for i in items for st in (i.get('stickers') or [])][:3]
+    merged['has_image'] = any(i.get('has_image') for i in items)
+    merged['called'] = any(i.get('called', True) for i in items)
+    merged['burst_count'] = len(items)
+    return merged
 
 
 def setting(database, key):
@@ -69,7 +84,8 @@ MAX_STICKERS = 3
 # 想到哪说到哪：随口应一句就一条，激动、好笑、吐槽、一下子想到好几件事会连着发好几条短的。
 MESSAGES = ('发几条没有固定数，像真人一样看情况：随口应一句、回个"嗯"、接个梗，一条就够；'
             '激动、笑疯了、吐槽、一下子想到好几件事、要把一件事讲清楚，就连着发好几条短的（换行就是另一条消息，每条一个意思）；'
-            '对方连发了好几条、聊得正热，你也可以多说几句；对方很冷淡或你没兴趣，就一两个字。别为了凑条数硬拆，也别把几件事硬塞进一条。'
+            '对方一下子连发好几条，就像真人那样一起回一次，挑想接的接，不用每条都回；对方很冷淡或你没兴趣，就一两个字。'
+            '别为了凑条数硬拆，也别把几件事硬塞进一条。'
             '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就用逗号，或者干脆拆成两条。')
 # 负责人 2026-11-09 18:27：说"无法识别图片"正常人一看就知道是 AI。没看到的图只有中性标记 [图片]，处理方式交给她按上下文定
 # 插件 0.9.3：群里只 @ 她、不带字（原来会落到 AstrBot 自己没配模型的流程，回"LLM 请求失败"）
@@ -79,7 +95,10 @@ AT_ONLY_RULE = ('\n对方只是 @ 了你一下，没说别的：像真人那样�
 UNSEEN_RULE = ('\n这条消息里的图片你没看到内容（只知道对方发了图）。别说自己看不到、识别不了、加载不出来、看不清图片，'
                '也别问"发的啥""啥图"——正常人不会这么说。能从上下文猜到大概，就顺着含糊接一句（比如跟着情绪笑一下、接前面的话）；'
                '猜不到又没别的话要接，就只回复'+SILENCE+'。')
-HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；'+MESSAGES+'不列点、不总结、不解释每个梗，'
+HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；'+MESSAGES+
+               # 2026-11-09 实测：一晚上说了四遍"一句话拆三段发"
+               '同一个梗、同一句吐槽说过就别再反复说，换个角度或者不提；'
+               '不列点、不总结、不解释每个梗，'
                '不说"好的""当然可以""作为…""希望对你有帮助"这类话。别提自己是 AI / 模型 / 程序 / 桌宠，'
                '也别提词元、token、上下文、提示词、训练这些词；不熟的就说不太懂，别一本正经长篇大论。'
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
@@ -125,6 +144,7 @@ class BridgeService:
         self.expression_bindings={}; self.expression_lock=threading.Lock()
         self.outbox=[]; self.outbox_waiting={}   # 主动发到 QQ 私聊的消息：等插件心跳取走（见 proactive_qq）
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
+        self.bursts = {}; self.burst_lock = threading.Lock(); self.sleep = time.sleep   # 连发合并（见 _gather）
 
     def close(self) -> None:
         """Runtime 关闭 / 重启时调用：之后排队的回复拿到锁直接放弃，旁听的消息也不再落库（等正在写的那条写完）。"""
@@ -162,6 +182,31 @@ class BridgeService:
         """群里没 @ 她，但提到了她的名字 / 外号：当作在叫她。"""
         names = {self.controller.character.name, '鲸娘', '大肥鱼'}
         return any(n and n in text for n in names)
+
+    # ---- 连发合并（负责人 2026-11-09 20:05 同意：对方连着发好几条时，等他停下再一起回一次） --------------------------
+    # 参考 MaiBot 的 debounce。实测：对方把一句话拆成三条发、或者连发 666 / 你是不是ai / 这么🍬，她每条都单独回 1～3 条，
+    # 8 秒内刷出 7 条，还前后错位。现在同一个人在同一个会话里连发时，等他安静 bridge_debounce 秒（默认 2.5，最多等 8 秒），
+    # 由最后一条请求把这几条合在一起回一次；前面的请求返回静默 merged。只对声明支持的插件（0.9.3 起带 debounce）生效。
+    DEBOUNCE_MAX = 8.0
+
+    def _gather(self, key, payload):
+        try: quiet = max(0.0, min(6.0, float(setting(self.database, 'bridge_debounce'))))
+        except (TypeError, ValueError): quiet = 2.5
+        if quiet <= 0: return payload
+        now = time.monotonic()
+        with self.burst_lock:
+            entry = self.bursts.get(key)
+            if entry is None: entry = self.bursts[key] = {'seq': 0, 'items': [], 'first': now}
+            entry['seq'] += 1; seq = entry['seq']; entry['items'].append(payload); entry['last'] = now
+        while True:
+            self.sleep(0.2)
+            with self.burst_lock:
+                entry = self.bursts.get(key)
+                if entry is None or entry['seq'] != seq: return None      # 后面又来了一条：由它一起回
+                now = time.monotonic()
+                if self.closed or now-entry['last'] >= quiet or now-entry['first'] >= self.DEBOUNCE_MAX:
+                    del self.bursts[key]
+                    return merge_burst(entry['items'])
 
     def vision_ready(self) -> bool:
         """现在接的模型能不能看图（插件心跳时取，决定要不要下载图片）。"""
@@ -374,6 +419,10 @@ class BridgeService:
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         if mode['group'] and payload.get('called', True) is False and not self.called_by_name(text):
             return self._overhear(mode, platform, sender_id, group_id, name, text, payload)
+        if payload.get('debounce') is True:
+            merged = self._gather((platform, group_id, sender_id), payload)
+            if merged is None: return {'reply': '', 'silent': True, 'reason': 'merged'}
+            payload = merged; text = neutral_images(str(payload.get('text') or '').strip()[:MAX_TEXT]); images = payload.get('images') or []
         with self.lock:
             # 拿到锁以后、读任何上下文之前，按此刻的设置重新判断身份：排队期间爹解绑 / 群被移出 / 服务被关，旧请求都作废
             if self.closed: return {'reply': '', 'silent': True, 'reason': 'closed'}
@@ -439,13 +488,20 @@ class BridgeService:
             situation += avatar_info
             if unseen_image(text): situation += UNSEEN_RULE
             if AT_ONLY in original_text: situation += AT_ONLY_RULE
+            burst = int(payload.get('burst_count') or 1)
+            if burst > 1:
+                situation += f'\n对方刚才连着发了 {burst} 条（按顺序合在一起给你）：像真人那样一起回一次，挑想接的接，不用每条都回。'
+            angry = controller.relationships.upset(character.id, person)
+            if angry:
+                # 负责人 2026-11-09：吵架时别一两句就让步。气头上可以冷着他、干脆不回（他会看到你没理他）
+                situation += f'\n你现在还在气头上：可以冷淡、回得很短，不想理他就只回复{SILENCE}。'
             if sticker_only:
                 # 用户 2026-11-09：表情包发出来她能看懂，但不是每张都要回
                 situation += ('\n对方这条只发了图（多半是表情包）：把它当成对方的语气，回一张图或一句短话就行，也可以觉得不用接话就只回复'
                               +SILENCE+'（表示看到了，不发消息）；别描述、点评或追问这张图。')
             if '头像' in original_text and not avatar_info:
                 situation += '\n他问到头像，但你这次没看清他的头像：别说看不到、读取不了头像，也别编头像内容；顺着话含糊带过，或者把话题岔开。'
-            result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only, person=person)
+            result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only or angry, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']
             return result

@@ -56,6 +56,30 @@ EVENTS = {
 NEGATIVE = {k for k, v in EVENTS.items() if v[0] < 0 or v[2] < 0}
 
 
+# ---- 是调侃还是嘲讽（负责人 2026-11-09 20:07："要根据好感、熟悉、信任来判断：比较低说明在嘲讽你，比较高说明在调侃"）----
+# 同一句"笑你蠢啊""小糖人""还有人自称本鲸的"，从不熟、不喜欢、不信任的人嘴里说出来是嘲讽，从很熟、很喜欢、信得过的人嘴里是逗你玩。
+MOCKING_BELOW = 40.0
+TEASING_FROM = 65.0
+
+
+def rapport(profile) -> float:
+    """相处的底子（0～100）：好感占 0.4、熟悉 0.35、信任 0.25。陌生人约 17，主人初始约 77。"""
+    return round(0.4*profile['affinity']+0.35*profile['familiarity']+0.25*profile['trust'], 1)
+
+
+def reading(profile) -> str:
+    """他损你、笑你、给你起外号时该怎么理解：mocking（嘲讽）/ unsure（看语气）/ teasing（调侃）。"""
+    value = rapport(profile)
+    return 'mocking' if value < MOCKING_BELOW else 'teasing' if value >= TEASING_FROM else 'unsure'
+
+
+READING_TEXT = {
+    'mocking': '你和他没那么熟、也说不上信任：他说你蠢、笑你、给你起外号、学你说话、阴阳你，就是在嘲讽你，不是开玩笑——该不爽就不爽，不用陪笑、不用自嘲接梗。',
+    'unsure': '你们算认识但还没到很铁：他损你、笑你是玩笑还是嘲讽要看语气和他的反应，拿不准就先半开玩笑地怼回去，他还继续说你就当真。',
+    'teasing': '你们很熟、你也信得过他：他损你、笑你、给你起外号多半是在逗你玩，可以笑着怼回去，不用当真生气；除非他真的过分，或者你说了不喜欢他还继续。',
+}
+
+
 def clean_impact(impact) -> dict:
     """模型给的影响：每个维度 -3～3，非数字丢掉。全 0 / 没给返回空，由调用方用常见影响。"""
     if not isinstance(impact, dict): return {}
@@ -252,6 +276,16 @@ class RelationshipService:
                             (character_id, person_id, self.clock()-days*86400)).fetchone()
         return float(row[0])
 
+    def upset(self, character_id: str, person_id: int | None, hours=6) -> bool:
+        """她现在还在生他的气吗：最近几小时里他让她不爽过（有扣分的事件），而且到现在净变化还是负的（道歉、哄好了就不算）。
+        不按"扣了几分"判断：分数越低越难再扣，陌生人被狠狠嘲讽一次也只掉一两分，但她当下确实是生气的。"""
+        if not person_id: return False
+        with self.db.transaction() as c:
+            row = c.execute('SELECT COALESCE(SUM(d_affinity+d_trust),0), COALESCE(SUM(CASE WHEN d_affinity<0 OR d_trust<0 THEN 1 ELSE 0 END),0) '
+                            'FROM relationship_events WHERE character_id=? AND person_id=? AND applied=1 AND created_at>=?',
+                            (character_id, person_id, self.clock()-hours*3600)).fetchone()
+        return row[1] > 0 and row[0] <= -1.0
+
     def recent_requests(self, character_id: str, person_id: int, hours=24) -> int:
         with self.db.transaction() as c:
             return c.execute("SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND kind='request' AND created_at>=?",
@@ -398,10 +432,11 @@ class RelationshipService:
             lines.append(f"你对他：{level(p['affinity'], AFFINITY_WORDS)}；{level(p['trust'], TRUST_WORDS)}。")
         recent = self.trend(character_id, person_id, days=0.25)   # 最近 6 小时
         trend = self.trend(character_id, person_id)
-        if recent <= -2: lines.append('你们刚才闹得不太愉快，你现在还有点气：不用马上装没事，他好好道歉或者过一阵你可以慢慢消气。')
+        if self.upset(character_id, person_id): lines.append('你们刚才闹得不太愉快，你现在还有点气：不用马上装没事，他好好道歉或者过一阵你可以慢慢消气。')
         elif recent >= 2: lines.append('刚才和他聊得挺开心。')
         elif trend >= 3: lines.append('最近对他的印象在变好。')
         elif trend <= -3: lines.append('最近他让你有点不舒服。')
+        lines.append(READING_TEXT[reading(p)])
         known = self.notes.prompt(character_id, person_id)
         if known: lines.append(known)
         requests = self.recent_requests(character_id, person_id)
@@ -423,8 +458,12 @@ AUTONOMY = ('\n【你自己的意愿】你不是有求必应的工具。对方�
             # 负责人 2026-11-09 19:24："AI 应该要有自己的脾气，会和人进行争吵"
             '\n【你的脾气】你有自己的脾气，不是谁说什么都笑着接。被冒犯、被嘲讽、被无理指责、被当成工具使唤、对方一直阴阳你或说话很冲时，'
             '可以不高兴、直接怼回去、跟他争、坚持自己的看法，不用急着让步、道歉或讨好；关系越差越没耐心，关系好的人开玩笑你也分得清是不是玩笑。'
+            # 2026-11-09 实测：被说"笑你蠢啊"还回"蠢就蠢呗""行吧让你笑到了"，一两句就让步收场
+            '对方明知你不高兴还继续嘲讽、说你蠢时，别一两句就自嘲或让步收场（像"行吧让你笑到了""蠢就蠢呗"），'
+            '可以越来越不耐烦、更冷淡、回得更短，或者干脆不理他几句。'
             '吵归吵：不说脏话、不人身攻击、不拿隐私或现实威胁人；对方好好道歉、或者过一阵聊点别的，你可以慢慢消气，但不用马上装作没事。'
             '\n回复最开头可以写一个对方看不到的 <mind …/>，用不上就不写：对方在请你做事时写 intent="你的态度" willing="0到1"'
             '（intent 用几个字，例如 乐意、勉强、推回去、不想、晚点、来兴趣了）；对方这条让你明显高兴或明显不爽时写 feel="此刻的感觉" toward="-3到3"'
-            '（这件事让你对他的感觉变好还是变差：被骂、被嘲讽 -2～-3，说话冲、不尊重你 -1～-2，真心夸你、关心你、哄好你 +1～+2；普通聊天不写）。'
+            '（这件事让你对他的感觉变好还是变差：被骂、被嘲讽 -2～-3，说话冲、不尊重你 -1～-2，真心夸你、关心你、哄好你 +1～+2；普通聊天不写。'
+            '同样一句损你的话，按上面说的你们的关系来判断是嘲讽还是调侃：熟人的调侃逗得你开心可以写正的，不熟的人嘲讽你就写负的）。'
             '两种可以写在同一个标签里，例如 <mind feel="生气" toward="-2"/>，然后照常说话。')

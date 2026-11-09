@@ -120,6 +120,37 @@ class ScoringTests(Base):
         parser = ExpressionStream(); ''.join(parser.feed(ch) for ch in '<mind toward="-99"/>x'); parser.finish()
         self.assertEqual(parser.mind['toward'], -3.0)
 
+    def test_same_jab_reads_as_mocking_or_teasing_by_relationship(self):
+        """负责人 2026-11-09 20:07：好感、熟悉、信任低就是在嘲讽，高就是在调侃。"""
+        from aicompanion.relationship.service import READING_TEXT, reading
+        stranger = self.person('111'); friend = self.person('222'); middle = self.person('333')
+        self.rel.adjust(CID, friend, affinity=85, familiarity=80, trust=70)
+        self.rel.adjust(CID, middle, affinity=60, familiarity=45, trust=50)
+        owner = self.rel.resolve(OWNER_DESKTOP, CID)
+        got = {pid: reading(self.rel.profile(CID, pid)) for pid in (stranger, friend, middle, owner)}
+        self.assertEqual(got, {stranger: 'mocking', friend: 'teasing', middle: 'unsure', owner: 'teasing'})
+        self.assertIn('就是在嘲讽你', self.rel.prompt(CID, stranger, 'qq_private'))
+        self.assertIn('在逗你玩', self.rel.prompt(CID, friend, 'qq_private'))
+        self.assertIn('要看语气', self.rel.prompt(CID, middle, 'qq_private'))
+        self.assertIn('熟人的调侃', READING_TEXT['teasing']+self.rel.prompt(CID, friend, 'qq_private'))
+
+    def test_analyzer_is_told_how_close_each_speaker_is(self):
+        stranger = self.person('111'); friend = self.person('222')
+        self.rel.adjust(CID, friend, affinity=85, familiarity=80, trust=70)
+        remember_sender(self.db, CID, 'qq:111', stranger); remember_sender(self.db, CID, 'qq:222', friend)
+        for n in range(3):
+            self.db.add_message('user', f'路人#1：笑你蠢啊{n}', CID, channel='qq:group:30003', sender='qq:111')
+            self.db.add_message('user', f'老友#2：小笨鲸{n}', CID, channel='qq:group:30003', sender='qq:222')
+        seen = []
+        class Model:
+            model = 'mock'
+            def generate_reply_stream(self, history, prompt, cancellation=None):
+                seen.append((history[-1].content, prompt)); yield '{"events":[]}'
+        RelationshipAnalyzer(self.db, self.rel).maybe_run(CID, 'qq:group:30003', Model(), background=False)
+        text, instruction = seen[0]
+        self.assertIn('P1：不熟', text); self.assertIn('P2：很熟', text)
+        self.assertIn('按"说话人和她的关系"判断', instruction)
+
     def test_8_no_daily_cap_but_diminishing_and_elastic(self):
         p = self.person(); start = self.score(p)[0]; gains = []
         for n in range(8):
