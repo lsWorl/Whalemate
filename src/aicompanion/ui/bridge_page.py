@@ -72,7 +72,10 @@ class BridgePage(QWidget):
         self.chime.setCurrentIndex(max(0, self.chime.findData(setting(database, 'bridge_chime'))))
         self.chime.setToolTip('群里的消息她都"听得到"。没人叫她时按这里决定要不要插话；她也可能觉得没什么好说而不说。')
         pl.addRow('你的 QQ 号（她管你叫爹）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
-        pl.addRow('群里活跃度', self.chime); pl.addRow('', self.strangers)
+        # 用户 2026-11-09：主动问候 / 心事随机发到桌面或 QQ 私聊（不在电脑前时更常发 QQ）
+        self.proactive_qq = QCheckBox('她主动找你说话时，也会发到 QQ 私聊（不在电脑前时更常发 QQ）')
+        self.proactive_qq.setChecked(bool(database.get_setting('proactive_qq_enabled', True)))
+        pl.addRow('群里活跃度', self.chime); pl.addRow('', self.strangers); pl.addRow('', self.proactive_qq)
 
         self.vision_enabled = QCheckBox('看懂收到的图片（DeepSeek 官方接口）')
         self.vision_enabled.setChecked(bool(database.get_setting('qq_vision_enabled', True)))
@@ -395,6 +398,7 @@ class BridgePage(QWidget):
         db.set_setting('bridge_chime', self.chime.currentData())
 
         db.set_setting('qq_vision_enabled', self.vision_enabled.isChecked())
+        db.set_setting('proactive_qq_enabled', self.proactive_qq.isChecked())
         db.set_setting('qq_memes_enabled', self.memes_enabled.isChecked())
         db.set_setting('qq_meme_root', self.meme_root.text().strip())
         db.set_setting('qq_vision_model', self.vision_model.text().strip() or 'deepseek-flash')

@@ -72,6 +72,17 @@ class LibraryPage(QWidget):
         collector=StickerCollector(self.catalog.db,self.catalog);c=collector.stats()
         self.collect_status.setText('还没选表情包目录（"聊天平台"页），收集功能暂不工作。' if collector.root() is None else
             f"收集来的表情：{c['collected']} 张（可用 {c['ready']}，等分析 {c['pending']}，不适合或已停用 {c['unsuitable']}，分析失败 {c['failed']}）；今天已分析 {c['analyzed_today']} 张")
+        # 最近收到的表情包怎么处理的（排查"收不到"）：没有记录 = 插件根本没把表情包传过来（多半是没认出是表情）
+        import time
+        names={'collected':'新收','known':'已有','no_library':'没选图库','disabled':'收集已关','full':'已满','daily_limit':'今天收满',
+               'invalid':'图片无效','bad_image':'图片无效','unknown_hash':'插件记得但图库里没有','not_allowed':'不在允许范围','error':'出错'}
+        intake=[e for e in (self.catalog.db.get_setting('sticker_intake',[]) or []) if isinstance(e,dict)][-5:]
+        if intake:
+            lines=[time.strftime('%H:%M',time.localtime(e.get('at',0)))+(' 群 ' if e.get('kind')=='group' else ' 私聊 ')
+                   +'、'.join(names.get(x,x or '?') for x in e.get('status',[])) for e in reversed(intake)]
+            self.collect_status.setText(self.collect_status.text()+'\n最近收到的表情：'+'；'.join(lines))
+        else:
+            self.collect_status.setText(self.collect_status.text()+'\n最近还没收到插件传来的表情包。')
         self.table.resizeColumnsToContents()
     def show_traces(self):
         from aicompanion.expression.service import ExpressionService
