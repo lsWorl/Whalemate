@@ -3,7 +3,7 @@ import json
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon,QPixmap
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QPushButton,QCheckBox,
- QTableWidget,QTableWidgetItem,QLineEdit,QComboBox,QPlainTextEdit,QFileDialog,QMessageBox,QApplication)
+ QTableWidget,QTableWidgetItem,QLineEdit,QComboBox,QPlainTextEdit,QFileDialog,QMessageBox,QApplication,QSpinBox)
 from aicompanion.expression.catalog import AssetCatalog,LICENSES
 from aicompanion.ui.chat_worker import TaskWorker
 
@@ -14,6 +14,18 @@ class LibraryPage(QWidget):
         hint=QLabel('沿用“聊天平台”的表情包目录。导入不会覆盖原图；未知许可先隔离。作者和来源应填写实际授权证据。')
         hint.setWordWrap(True);layout.addWidget(hint)
         self.summary=QLabel();self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        # 收集 QQ 里别人发的表情包（用户 2026-11-09）：存进图库"收集的表情"目录，识图分析含义后直接可用
+        collect=QHBoxLayout()
+        self.collect=QCheckBox('收集 QQ 私聊和群里别人发的表情包（分析含义后她也能用）')
+        self.collect.setChecked(bool(database.get_setting('sticker_collect_enabled',True)))
+        self.collect.toggled.connect(lambda on:database.set_setting('sticker_collect_enabled',bool(on)));collect.addWidget(self.collect)
+        collect.addWidget(QLabel('每天最多分析'))
+        self.analysis_daily=QSpinBox();self.analysis_daily.setRange(0,1000);self.analysis_daily.setSuffix(' 张')
+        from aicompanion.expression.collect import ANALYSIS_DAILY
+        self.analysis_daily.setValue(int(database.get_setting('sticker_analysis_daily',ANALYSIS_DAILY) or 0))
+        self.analysis_daily.valueChanged.connect(lambda value:database.set_setting('sticker_analysis_daily',int(value)))
+        collect.addWidget(self.analysis_daily);collect.addStretch(1);layout.addLayout(collect)
+        self.collect_status=QLabel();self.collect_status.setWordWrap(True);layout.addWidget(self.collect_status)
         row=QHBoxLayout()
         for label,fn in [('刷新图库索引',self.scan),('导入图片',self.pick_import),('导入素材清单',self.pick_pack),('启用 / 禁用',self.toggle),('清理缩略图缓存',self.clear_cache)]:
             button=QPushButton(label);button.clicked.connect(fn);row.addWidget(button)
@@ -56,6 +68,10 @@ class LibraryPage(QWidget):
         self.show_traces()
         stats=self.catalog.stats()
         self.summary.setText(f"图库：{self.catalog.root}\n共 {stats['total']} 张，已审核 {stats['approved']}，待审核 {stats['pending']}；缩略图缓存 {stats['thumbnail_bytes']//1024} KiB")
+        from aicompanion.expression.collect import StickerCollector
+        collector=StickerCollector(self.catalog.db,self.catalog);c=collector.stats()
+        self.collect_status.setText('还没选表情包目录（"聊天平台"页），收集功能暂不工作。' if collector.root() is None else
+            f"收集来的表情：{c['collected']} 张（可用 {c['ready']}，等分析 {c['pending']}，不适合或已停用 {c['unsuitable']}，分析失败 {c['failed']}）；今天已分析 {c['analyzed_today']} 张")
         self.table.resizeColumnsToContents()
     def show_traces(self):
         from aicompanion.expression.service import ExpressionService

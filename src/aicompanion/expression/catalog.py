@@ -6,7 +6,8 @@ import os
 import tempfile
 from pathlib import Path
 import time
-LICENSES = ('project-original','user-owned','CC0-1.0','CC-BY-4.0','CC-BY-SA-4.0','CC-BY-NC-4.0','kiriyuki-noncommercial-attribution')
+# qq-collected：从 QQ 聊天里收集的表情包（用户 2026-11-09 决定收集来的图分析后可直接使用，仅本机个人使用，见 expression/collect.py）
+LICENSES = ('project-original','user-owned','CC0-1.0','CC-BY-4.0','CC-BY-SA-4.0','CC-BY-NC-4.0','kiriyuki-noncommercial-attribution','qq-collected')
 SUFFIXES = {'.png','.jpg','.jpeg','.gif','.webp'}
 MAX_BYTES = 1024*1024
 

@@ -84,6 +84,11 @@ class ExpressionUITests(unittest.TestCase):
             page.author.setText('合成作者');page.source.setText('synthetic:test');page.license.setCurrentText('user-owned')
             page.approve();self.assertEqual(page.catalog.get(aid)['enabled'],0)
             page.clear_cache();self.assertEqual(page.catalog.stats()['thumbnail_bytes'],0)
+            # 收集别人发的表情包：开关和每日分析上限直接保存（用户 2026-11-09）
+            self.assertTrue(page.collect.isChecked());page.collect.setChecked(False)
+            self.assertFalse(db.get_setting('sticker_collect_enabled'))
+            page.analysis_daily.setValue(30);self.assertEqual(db.get_setting('sticker_analysis_daily'),30)
+            self.assertIn('收集来的表情',page.collect_status.text())
             page.deleteLater();self.app.processEvents()
     def test_worker_orders_attachment_before_text_and_final_without_tts_tags(self):
         with tempfile.TemporaryDirectory() as temp:

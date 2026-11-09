@@ -4,7 +4,8 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 进行中（Claude，PR #13）：八轮真实验收，171 张素材包下适合场景发图 72～81%，应纯文字 1/14（第八轮周会配图负责人已接受）；多段回复已分条（桌面多气泡、QQ 逐条发）；已同步 T13 合入后的基线；待 Codex 复审、负责人人工评估与真机验收 | docs/tasks/T14-smart-expression-design.md；docs/tasks/T14-claude-handoff.md；后续自然度 / 主动发言 / QQ 实测 / 图库交付 / 崩溃定位由 Claude 负责 |
+| T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 已合入（PR #13）；负责人真机试用中 | docs/tasks/T14-smart-expression-design.md |
+| T17 | 收集别人发的表情包、向群友学发图习惯、聊天短句分条 | Claude 实现；Codex 审计 | 进行中（Claude，`task/t17-sticker-learning`） | docs/tasks/T17-sticker-learning.md；负责人 2026-11-09 选择：从所在 QQ 群和私聊学；收集图分析后任何地方可用；每天最多分析 100 张；桌面和 QQ 都不用逗号句号、一句一条 |
 | T14-导入修复 | 素材清单导入无反馈：线程清理与结果提示 | Codex | 修复已验证，负责人授权追加至 PR #13，待 Claude 复核与用户重启验收：专项 38；全量 560（553 通过 / 7 跳过）；Smoke 通过；171 张两次实导入通过 | 仅图库界面、合成测试和 Smoke；不改用户库、主窗口和表结构 |
 | T14-QQ诊断 | AstrBot 被 Windows 应用控制拦截及旧日志混入 | Codex | 诊断已修复并验证；真实 QQ 仍阻塞：系统应用控制拦截未签名解释器；不改变系统策略 | 运行时受信任发布仍需解决，不能标记 QQ 恢复 |
 | T14-0 | 智能表达协议与接入设计冻结（历史） | Codex；Claude 复审 | 负责人已授权进入 T14 正式开发 | docs/tasks/T14-smart-expression-design.md 已同步实际实现；最新正式指令要求旧标签统一适配，取代 v1 的直接移除策略；原设计保留 |
@@ -19,7 +20,7 @@
 | T8 | P4 外放场景验收、连续 10 分钟对话 | 用户 + 待定 | 待开始 | |
 | T9 | P7 QQ / B站 | Claude 实现，Codex 方案与代码审查 | 第一版（PR #6）、一键接入（PR #7）已合入；QQ 回复已真机可用；人设 v3 与群里主动聊天进行中（`task/t9-persona-group`） | `docs/tasks/T9-astrbot-bridge.md`；QQ 采用 AstrBot + NapCat + 桌宠大脑桥接；绑定用户（她叫爹）、全链路场景隔离、离线不切第二人格 |
 | T9-诊断 | QQ 点击启动后仍显示 stopped 的真机排查 | Codex | 已合入（PR #8）；用户确认 BOM 修复后恢复已连接 | 重试、保存配置和准备组件错误持续保留并脱敏 |
-| T9-应用控制 | QQ 组件被 Windows 智能应用控制拦截（4551） | Claude 实现，Codex 审查 | 进行中（Claude，`task/t9-qq-app-control`） | AstrBot 改由基础解释器启动；Windows 临时目录实测可完整启动、0 拦截；真实 QQ 登录与全新安装流程待验证 |
+| T9-应用控制 | QQ 组件被 Windows 智能应用控制拦截（4551） | Claude 实现，Codex 审查 | 已合入（PR #15） | AstrBot 改由基础解释器启动；Windows 临时目录实测可完整启动、0 拦截；真实 QQ 登录与全新安装流程待验证 |
 | T10 | 开发日志与项目页 | — | 项目完结后 | 草稿已在 MyBlog `_drafts` |
 | T13 | 可选择记忆和表情包存放磁盘 | Codex | 已合入（PR #11，合并提交 `d2ff507`） | 默认空图库中文分类 / 用户自建分类集成回归；21 存储专项，全量 408（401 通过 / 7 跳过）及 Smoke 通过；P3 决定见任务；T13 先合入、T14 后同步，不改 T14 分支 |
 | P0-ARCH | 五项长期架构约束入库 | Codex | 已合入（PR #12） | docs/tasks/P0-architecture-constraints.md |

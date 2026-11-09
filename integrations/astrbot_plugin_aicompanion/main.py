@@ -25,9 +25,13 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.7.0'
+PLUGIN_VERSION = '0.8.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
+MAX_STICKERS = 3
+# 商城表情（mface）的图片只从 QQ 自己的固定主机下载
+MARKET_HOSTS = {'gxh.vip.qq.com', 'i.gtimg.cn'}
+MAGIC = ((b'GIF87a', 'gif'), (b'GIF89a', 'gif'), (b'\x89PNG\r\n\x1a\n', 'png'), (b'\xff\xd8\xff', 'jpeg'))
 QQ_ADAPTERS = {'aiocqhttp': 'qq', 'qq_official': 'qq', 'qq_official_webhook': 'qq'}
 DEFAULTS = {'pet_url': 'http://127.0.0.1:18765', 'token': '', 'groups': [], 'group_only_when_called': False,
             'offline_reply': '她现在不在电脑旁，晚点再来找她吧～', 'timeout': 60, 'skip_prefixes': ['/']}
@@ -40,6 +44,8 @@ class AICompanionBridge(Star):
         self.session: aiohttp.ClientSession | None = None
         self.pet_groups: list | None = None   # 桌宠心跳回来的允许群；None = 还没拿到，用插件配置里的
         self.pet_vision = True
+        self.pet_collect = True        # 桌宠心跳告诉我们要不要收集别人发的表情包
+        self.known_stickers = set()    # 桌宠已经收过的表情包（内容哈希）：再看到只传哈希，不重复传图
         self.pet_name = '鲸娘'
         self.avatar_backoff = {}
         self.expression_attempts = set()
@@ -58,7 +64,7 @@ class AICompanionBridge(Star):
         platform = QQ_ADAPTERS.get(str(event.get_platform_name() or '').lower())
         if not platform: return None
         text = (event.message_str or '').strip()
-        has_images = bool(self.image_parts(event))
+        has_images = bool(self.image_parts(event)) or bool(self.sticker_parts(event)[1])
         if (not text and not has_images) or any(text.startswith(p) for p in self.option('skip_prefixes') if p): return None
         group_id = str(event.get_group_id() or '')
         if group_id:
@@ -69,6 +75,91 @@ class AICompanionBridge(Star):
         else: called = True
         return {'platform': platform, 'sender_id': str(event.get_sender_id()), 'sender_name': event.get_sender_name() or '',
                 'group_id': group_id, 'text': text or '[收到图片]', 'called': called}
+
+    # ---- 表情包（用户 2026-11-09：收集别人发的表情包，学大家的发图习惯） ----------------------------
+    @staticmethod
+    def raw_segments(event):
+        """OneBot 原始消息段（AstrBot 把商城表情 mface 丢掉了，表情包的 sub_type 也只在原始段里稳定存在）。"""
+        raw = getattr(getattr(event, 'message_obj', None), 'raw_message', None)
+        message = raw.get('message') if hasattr(raw, 'get') else None
+        return [seg for seg in message if isinstance(seg, dict)] if isinstance(message, list) else []
+
+    @staticmethod
+    def is_sticker(data) -> bool:
+        """NapCat：图片段 sub_type=1 是表情包（收藏 / 动画表情）；summary 写着"[动画表情]"之类的也算。"""
+        return str(data.get('sub_type', '')) == '1' or '表情' in str(data.get('summary') or '')
+
+    @staticmethod
+    def market_url_ok(url) -> bool:
+        from urllib.parse import urlsplit
+        parts = urlsplit(str(url or ''))
+        return parts.scheme == 'https' and parts.hostname in MARKET_HOSTS and len(url) <= 500
+
+    def sticker_parts(self, event):
+        """返回 (图片组件里的表情包, 商城表情的图片地址)。普通照片 / 截图不算。"""
+        raw = self.raw_segments(event)
+        files = {str((seg.get('data') or {}).get('file') or '') for seg in raw
+                 if seg.get('type') == 'image' and isinstance(seg.get('data'), dict) and self.is_sticker(seg['data'])}
+        files.discard('')
+        parts = [part for part in self.image_parts(event)
+                 if self.is_sticker({'sub_type': getattr(part, 'sub_type', ''), 'summary': getattr(part, 'summary', '')})
+                 or str(getattr(part, 'file', '') or '') in files]
+        markets = [str((seg.get('data') or {}).get('url') or '') for seg in raw if seg.get('type') == 'mface' and isinstance(seg.get('data'), dict)]
+        return parts, [url for url in markets if self.market_url_ok(url)]
+
+    @staticmethod
+    def sticker_uri(data: bytes) -> str:
+        """原图（保留 GIF 动画）：只认 GIF / PNG / JPEG / WebP 文件头，1 MiB 以内。"""
+        kind = next((name for head, name in MAGIC if data.startswith(head)), None)
+        if kind is None and data[:4] == b'RIFF' and data[8:12] == b'WEBP': kind = 'webp'
+        if not kind or not data or len(data) > MAX_IMAGE_BYTES: raise ValueError('不是可收集的表情包')
+        return f'data:image/{kind};base64,'+base64.b64encode(data).decode('ascii')
+
+    @staticmethod
+    def read_sticker(path: str, temp_root: str) -> bytes:
+        file = Path(path).resolve(); root = Path(temp_root).resolve()
+        if not file.is_relative_to(root) or not file.is_file() or file.stat().st_size > MAX_IMAGE_BYTES:
+            raise ValueError('表情包不在受管理的临时目录或体积过大')
+        return file.read_bytes()
+
+    async def fetch_market(self, url):
+        if not self.market_url_ok(url): return None
+        if self.session is None or self.session.closed: self.session = aiohttp.ClientSession()
+        async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=False) as response:
+            if response.status != 200: return None
+            data = bytearray()
+            async for chunk in response.content.iter_chunked(16384):
+                data.extend(chunk)
+                if len(data) > MAX_IMAGE_BYTES: return None
+        return bytes(data)
+
+    async def attach_stickers(self, event, payload):
+        """别人发的表情包（被叫到或旁听都收）：已知的只传内容哈希，新的传原图；读不到的跳过，不影响这条消息。"""
+        import hashlib
+        if not self.pet_collect: return
+        parts, markets = self.sticker_parts(event)
+        items = []
+        for source in [('part', p) for p in parts]+[('market', u) for u in markets]:
+            if len(items) >= MAX_STICKERS: break
+            try:
+                if source[0] == 'part':
+                    path = await asyncio.wait_for(source[1].convert_to_file_path(), timeout=10)
+                    data = await asyncio.to_thread(self.read_sticker, path, self.managed_temp_root())
+                else:
+                    data = await self.fetch_market(source[1])
+                    if not data: continue
+                digest = hashlib.sha256(data).hexdigest()
+                items.append({'sha256': digest} if digest in self.known_stickers else self.sticker_uri(data))
+            except Exception:
+                continue   # 不把下载地址、路径或图片内容打进日志
+        if items: payload['stickers'] = items
+
+    def remember_stickers(self, result):
+        known = result.get('stickers_known') if isinstance(result, dict) else None
+        if isinstance(known, list):
+            for digest in known[:MAX_STICKERS]:
+                if isinstance(digest, str) and re.fullmatch(r'[a-f0-9]{64}', digest): self.known_stickers.add(digest)
+            if len(self.known_stickers) > 4096: self.known_stickers = set(list(self.known_stickers)[-2048:])
 
     @staticmethod
     def image_parts(event):
@@ -212,6 +303,7 @@ class AICompanionBridge(Star):
                 if isinstance(data.get('groups'), list): self.pet_groups = [str(g) for g in data['groups']]
                 media = data.get('media') or {}
                 self.pet_vision = bool(media.get('vision', True)); self.pet_name = str(media.get('name') or '鲸娘')
+                self.pet_collect = bool(media.get('collect', True))
 
     async def heartbeat_loop(self):
         while True:
@@ -241,7 +333,7 @@ class AICompanionBridge(Star):
         """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。"""
         reply=str(result.get('reply') or '').strip()
         segments=result.get('segments')
-        if (isinstance(segments,list) and 1<len(segments)<=5 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
+        if (isinstance(segments,list) and 1<=len(segments)<=6 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
             return [x.strip() for x in segments]
         return [reply] if reply else []
 
@@ -322,7 +414,9 @@ class AICompanionBridge(Star):
         try:
             await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)
+            await self.attach_stickers(event, payload)
             result = await self.ask_pet(payload)
+            self.remember_stickers(result)
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
             logger.warning(f'AICompanion 不在线或没有回应：{error}')
             if not payload['called']: return

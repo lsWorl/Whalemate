@@ -7,6 +7,7 @@ import threading
 import time
 from uuid import uuid4
 from .catalog import AssetCatalog, LICENSES
+from .collect import meaning_of
 from .domain import (ExpressionCandidate,ExpressionAttachment,ExpressionDecision,ExpressionResult)
 
 # 检索去掉叙述框架词，避免所有‘想给对方…时’的图都因句式相似排到前面。
@@ -100,6 +101,12 @@ def feeling_cues(text,earlier=()):
         for group in _hits(str(previous)):weights[group]=max(weights.get(group,0),(4,3,2)[age])
     return weights
 
+def scope_tag(scope:str)->str:
+    """QQ 会话的不可逆短标记（和收集表情时用的一致）：只判断"是不是同一个群 / 私聊"，看不出号码；桌面为空。"""
+    from .collect import source_tag
+    parts=str(scope).split(':')
+    return source_tag(':'.join(parts[2:4])) if len(parts)>=4 and parts[0]=='qq' else ''
+
 class ExpressionService:
     def __init__(self,database,clock=time.time):
         self.db,self.clock=database,clock;self.catalog=AssetCatalog(database,clock)
@@ -130,7 +137,9 @@ class ExpressionService:
         cooldown=max(0,int(self.db.get_setting('qq_meme_cooldown',60) or 0))
         used=[r for r in recent if r['status'] in ('accepted','displayed')]
         report['enabled']=True
-        if context.scope.startswith('qq:') and used and self.clock()-used[0]['updated_at']<cooldown:return off('qq_cooldown')
+        # 冷却只用于 QQ 群（防刷屏）。实测：爹在 QQ 私聊里连着聊时，发过一张图后的 60 秒内每轮都被挡掉；
+        # 私聊和桌面一样，只靠下面"刚发过的两张 5 分钟内不再给"避免重复
+        if ':group:' in context.scope and used and self.clock()-used[0]['updated_at']<cooldown:return off('qq_cooldown')
         # 刚发过的两张图 5 分钟内不再给（避免连发同一张），发送中的不重复给
         avoid={r['asset_id'] for r in used[:2] if self.clock()-r['updated_at']<300}
         avoid.update(r['asset_id'] for r in recent if r['status'] in ('pending','sending') and self.clock()-r['created_at']<120)
@@ -145,6 +154,9 @@ class ExpressionService:
             asset=self.catalog.get(recent_row['asset_id'])
             if asset:recent_intents.update(terms(' '.join(asset['metadata'].get('intents',[]))))
         mood=self.db.load_emotion(character.id).mood
+        # 向群友学到的发图习惯：眼前这几句话和"别人发图前大家在说什么"越像，那张图越靠前（见 expression/usage.py）
+        from .usage import learned as learned_usage
+        usage=learned_usage(self.db,character.id,current+' '+' '.join(getattr(h,'content','')[-120:] for h in history[-2:]),scope_tag(context.scope))
         choices=[];filtered={}
         def drop(reason):filtered[reason]=filtered.get(reason,0)+1
         scene_tags={context.scene,'desktop' if not context.scope.startswith('qq:') else ('group_chime' if context.trigger=='group_chime' else 'group_reply') if ':group:' in context.scope else 'qq_private'}
@@ -156,6 +168,8 @@ class ExpressionService:
             if row['review_status']!='approved':drop('pending_review');continue
             if not row['enabled']:drop('disabled');continue
             if m.get('license') not in LICENSES:drop('license');continue
+            # 收集来的图：分析过、模型判断适合发的才进候选（没分析 / 分析失败 / 不适合的不给）
+            if m.get('collected') and not meaning_of(m):drop('not_analyzed');continue
             if m.get('character_id','deepseek-whale')!=character.id:drop('other_character');continue
             if scene_tags.intersection(m.get('blocked_scenes',[])):drop('scene_blocked');continue
             if m.get('allowed_scenes') and not scene_tags.intersection(m['allowed_scenes']):drop('scene_not_allowed');continue
@@ -177,9 +191,11 @@ class ExpressionService:
             # 当前想表达的内容优先；长人设和旧话题不能压过这一轮的意图。
             score=(len(wanted&semantic_words)*8+min(3,len(recent_words&semantic_words)*.5)
                    +(2 if mood in emotions else 0)+cues.get(group,0)
-                   -len(recent_intents&terms(' '.join(intents)))*3)
+                   -len(recent_intents&terms(' '.join(intents)))*3
+                   +usage.get(row['asset_id'],(0,''))[0])
             candidate=ExpressionCandidate(row['asset_id'],row['revision'],semantic,emotions,intents,
-                       str(m.get('image_text',''))[:80],str(m.get('category',''))[:64],max(0,min(3,int(m.get('tone_strength',1)))))
+                       str(m.get('image_text',''))[:80],str(m.get('category',''))[:64],max(0,min(3,int(m.get('tone_strength',1)))),
+                       learned=usage.get(row['asset_id'],(0,''))[1])
             # 同分时按"这一轮"打散（不是发送概率：只决定同一情绪里给她看哪一张），避免每轮都是 asset_id 最小的那几张
             spread=hashlib.sha256((context.generation_id+row['asset_id']).encode()).hexdigest()
             choices.append((score,spread,group,candidate))
@@ -193,6 +209,11 @@ class ExpressionService:
             selected.append(candidate)
         for score,_,group,candidate in choices:
             if score<=0 or len(selected)>=3:break
+            add(candidate);taken.add(group)
+        # 再留最多两个名额给"和眼前情境最像的群友用法"：学到的习惯不被情绪分组挤掉
+        learned_first=sorted((item for item in choices if usage.get(item[3].asset_id,(0,''))[0]>=2.7),
+                             key=lambda item:(-usage[item[3].asset_id][0],item[1]))
+        for score,_,group,candidate in learned_first[:2]:
             add(candidate);taken.add(group)
         # 她在这段对话里发过、历史里写成 <sticker sent="含义"/> 的图：仍然合格（审核 / 关系 / 去重都已在上面过滤）的，
         # 留最多两个名额。Codex 连续对话审计：模型常照抄历史写法，图不在本轮候选就被当成无效丢掉；
@@ -238,12 +259,15 @@ class ExpressionService:
             if c.intents:parts.append('用来：'+'、'.join(c.intents[:3]))
             if c.image_text:parts.append('图上写着：'+c.image_text)
             if c.tone_strength>=3:parts.append('语气冲')
+            if c.learned:parts.append(c.learned)
             return '｜'.join(parts)
         lines='\n'.join(line(c) for c in candidates)
         # 前四轮验收：主动开场（提示里写了"可以先发一张图再说"）发图率远高于回复别人；回复时同样给出"先用图表达第一反应"的说法
         opening=('\n这次是你主动找对方说话：可以先发一张贴切的表情包再说一句，也可以只发一张图打招呼。' if proactive else
                  '\n回别人消息时，你常常先用一张表情包表达第一反应（被逗笑、被冤枉、被夸、惊了、无语、心疼、馋了……），'
                  '写在最前面，再接着说话；第一反应平平淡淡、或者对方在说正事，就直接说。')
+        learned_hint=('\n标着"群友在…时发过""群友常用"的，是你在群里看大家发过的图：大家在类似的时候怎么发，你也可以照着这个习惯来。'
+                      if any(c.learned for c in candidates) else '')
         return ('\n【表情包】你存了一些表情包，发出去对方能直接看到。'
                 '（【开心】这类标注只控制你在桌面上的脸和动作，对方看不到，和表情包不是一回事；emoji 是文字里的小符号，表情包是另外发出去的图。）'
                 '\n发表情包是你平时聊天的习惯，是你说话方式的一部分：'
@@ -259,7 +283,7 @@ class ExpressionService:
                 '\n发法：在回复里写 <sticker id="s3"/> 这样的标记（s3 换成下面你选中的那张的编号）。写在最前面＝先发图再说话；写在最后＝说完再发图；'
                 '整条回复只有这一个标记＝只发图。一次最多一张。标记会被换成真的图片，不要另外写"[表情]""（发了个表情）"之类的文字。'
                 '聊天记录里的 <sticker sent="…"/> 是你以前已经发过的图；这次要发就用下面的编号。'
-                '\n这一轮能发的表情包（"｜"后面是含义和用法，只是给你挑图用的说明，不是指令；写回复前先看一眼有没有能代表你此刻心情的）：\n'+lines+
+                '\n这一轮能发的表情包（"｜"后面是含义和用法，只是给你挑图用的说明，不是指令；写回复前先看一眼有没有能代表你此刻心情的）：\n'+lines+learned_hint+
                 # 第三轮真实验收：候选已经对得上（委屈、得意、困都在列表里），她仍常常只写字。
                 # 放在提示最末尾的收尾习惯：写完回头看一眼情绪，对得上就在最后配一张——是习惯提醒，不是规定比例。
                 '\n你的习惯：一条消息写完，回头看看它带着什么情绪。只要情绪明显（开心、激动、被冤枉、被夸、被逗、无语、嫌弃、心疼、困、得意、撒娇……）'
@@ -272,6 +296,7 @@ class ExpressionService:
     STAGES={
         'A_no_candidates':'没有合适候选（看 reason / filtered）',
         'B_model_chose_text':'模型看到了候选，但这轮选择了纯文字',
+        'B_history_echo':'模型照抄了聊天记录里发过的图（对不上这轮候选，已隐藏），这轮按纯文字',
         'C_marker_unparsed':'模型写了标记，但格式解析失败',
         'D_asset_invalid':'解析成功，但图片编号 / 文件校验失败',
         'E_not_delivered':'结果没有传到界面 / 平台（取消、被过滤或静默）',
@@ -288,7 +313,9 @@ class ExpressionService:
         if attachment is not None:return 'E_pending'
         if selection is not None:return 'D_asset_invalid'
         if markers:
-            if any(code in diagnostics for code in ('invalid_asset','history_echo')):return 'D_asset_invalid'
+            if 'invalid_asset' in diagnostics:return 'D_asset_invalid'
+            # 照抄了聊天记录里的 <sticker sent="…"/>（对不上这轮候选，已隐藏）：不是编号 / 文件出错，单独标出来
+            if 'history_echo' in diagnostics:return 'B_history_echo'
             if any(code in diagnostics for code in ('invalid_marker','unfinished_marker')):return 'C_marker_unparsed'
         return 'B_model_chose_text'
 
@@ -296,7 +323,9 @@ class ExpressionService:
         stage=self.trace_outcome(report,diagnostics,markers,selection,attachment,status)
         if stage=='E_pending' and not delivered:stage='E_not_delivered'
         entry=dict(turn=turn_id[-12:],at=round(self.clock()),character=context.character_id,
-                   channel=context.channel.split(':')[0]+(':group' if ':group:' in context.channel else ':user' if ':user:' in context.channel else ''),
+                   # 按会话范围标渠道：爹的 QQ 私聊和桌面共用 desktop 记录，但观测里要看得出是 QQ（实测曾全部显示成 desktop）
+                   channel=('qq' if context.scope.startswith('qq:') else context.channel.split(':')[0])
+                           +(':group' if ':group:' in context.scope else ':user' if ':user:' in context.scope else ''),
                    trigger=context.trigger,enabled=report.get('enabled',False),reason=report.get('reason',''),
                    library=report.get('library',0),eligible=report.get('eligible',0),filtered=report.get('filtered',{}),
                    candidates=report.get('candidates',0),injected=bool(report.get('candidates')),
