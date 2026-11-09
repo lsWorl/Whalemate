@@ -55,7 +55,7 @@ class ExpressionStream:
         # 角色动画词表：传入时，词表外的短情绪方括号（【委屈】【心虚】…）不会被动画执行、只会原样露在正文里，
         # 这里直接隐藏并记诊断（第一轮真实验收里她常这样写，而那正是该发表情包的时候）。【不说】是群里的静默标记，保留。
         self.cue_words = frozenset(cue_words or ()) | {'不说'} if cue_words else None
-        self.bracket = ''; self.rejected = []; self.img = ''; self.img_quote = ''
+        self.bracket = ''; self.rejected = []; self.img = 0; self.img_quote = ''; self.img_quoted = 0
 
     def diagnose(self, code):
         if code not in self.diagnostics and len(self.diagnostics) < 16: self.diagnostics.append(code)
@@ -151,15 +151,19 @@ class ExpressionStream:
                 self._emit(safe, out); self.task = ''
             return
         if self.img:
-            # <img 标签内部：跨行累积到 >；引号里的 > 不算结束
-            self.img += ch
+            # <img 标签内部：一旦认出是 img 标签就只丢弃、不再还回正文（Codex 审计 e28c1ac：超长 src 曾整段回吐到正文 / TTS / 历史）。
+            # 只计数不存内容，内存有界；跨行一直丢到引号外的 >。引号里的 > 不算结束，但一对引号超过 IMG_LIMIT 还没闭合
+            # 就不再认这个引号，遇到下一个 > 即结束，避免一个落单的引号吞掉后面所有正常文字。
+            self.img += 1
             if self.img_quote:
-                if ch == self.img_quote: self.img_quote = ''
-            elif ch in '"\'': self.img_quote = ch
+                self.img_quoted += 1
+                if ch == self.img_quote: self.img_quote = ''; return
+                if self.img_quoted <= IMG_LIMIT: return
+                # 这个标签里之后的引号都不再认（否则超长值自己的收尾引号会重新开一对引号，把后文吞掉）
+                self.img_quote = ''; self.img_quoted = -1; self.diagnose('html_img_overlong')
+            if ch in '"\'' and self.img_quoted >= 0: self.img_quote = ch; self.img_quoted = 0
             elif ch == '>':
-                self.img = ''; self.markers += 1; self.diagnose('html_img_tag')
-            elif len(self.img) > IMG_LIMIT:
-                raw = self.img; self.img = ''; self.img_quote = ''; self._emit(raw, out)   # 太长不像标签：原样还回去
+                self.img = 0; self.markers += 1; self.diagnose('html_img_tag')
             return
         if self.bracket:
             self.bracket += ch
@@ -184,7 +188,7 @@ class ExpressionStream:
                 if ch.isspace() or ch in '/>':
                     self.pending = ''
                     if ch == '>': self.markers += 1; self.diagnose('html_img_tag')
-                    else: self.img = '<img'+ch
+                    else: self.img = 5; self.img_quote = ''; self.img_quoted = 0
                     return
             reserved = low.startswith(RESERVED)
             if self.pending == '<task>':
@@ -249,11 +253,11 @@ class ExpressionStream:
         if self.bracket: self._emit(self.bracket, out)
         if self.img: self.markers += 1; self.diagnose('html_img_tag')   # 没闭合的 <img 标签：整段不显示
         if self.selection and self.after_text_seen: self.diagnose('mid_text_marker')
-        self.pending = self.task = self.ticks = self.bracket = self.img = ''; self.finished = True
+        self.pending = self.task = self.ticks = self.bracket = ''; self.img = 0; self.img_quote = ''; self.finished = True
         return ''.join(out)
 
     def cancel(self):
-        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = self.bracket = self.img = ''
+        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = self.bracket = ''; self.img = 0; self.img_quote = ''
 
 
 def clean_expression_history(text):

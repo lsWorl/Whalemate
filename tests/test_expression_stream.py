@@ -214,6 +214,28 @@ class HtmlImgTagTests(unittest.TestCase):
         text, stream = self.parse('你好<img\nsrc="没闭合')
         self.assertEqual(text, '你好'); self.assertIn('html_img_tag', stream.diagnostics)
 
+    def test_overlong_img_is_dropped_never_echoed(self):
+        # Codex 审计（e28c1ac）：认出 <img 后超长也只丢弃，不能把标签前缀或 src 还回正文
+        from aicompanion.expression.stream import IMG_LIMIT
+        cases = []
+        for n in (IMG_LIMIT-10, IMG_LIMIT, IMG_LIMIT+1, IMG_LIMIT+100):
+            cases += ['你好<img src='+'x'*n+'>晚安', '你好<img src="'+'x'*n+'">晚安', "你好<img\r\nalt='"+'y'*n+"'\nsrc=z>晚安"]
+        for raw in cases:
+            text, stream = self.parse(raw)
+            self.assertEqual(text, '你好晚安', len(raw)); self.assertIn('html_img_tag', stream.diagnostics)
+        raw = '你好<img src="'+'x'*(IMG_LIMIT+50)+'">晚安'
+        for n in (0, 3, 5, 8, 200, IMG_LIMIT, IMG_LIMIT+40, len(raw)-4, len(raw)-2, len(raw)):
+            self.assertEqual(self.parse(raw, [raw[:n], raw[n:]])[0], '你好晚安', n)
+        chunks = [raw[i:i+7] for i in range(0, len(raw), 7)]
+        self.assertEqual(self.parse(raw, chunks)[0], '你好晚安')
+
+    def test_unclosed_quote_in_img_does_not_swallow_everything(self):
+        # 落单的引号：超过上限后不再认这个引号，遇到下一个 > 就结束，后面的正常文字保留
+        from aicompanion.expression.stream import IMG_LIMIT
+        raw = '你好<img src="'+'x'*(IMG_LIMIT+20)+'>晚安'
+        text, stream = self.parse(raw)
+        self.assertEqual(text, '你好晚安'); self.assertIn('html_img_overlong', stream.diagnostics)
+
     def test_code_and_ordinary_angle_text_kept(self):
         for raw in ('`<img src="a.png">`', '```html\n<img src="a.png">\n```', '```\n<img\tsrc="a">\n```', '<input> 和 <imgs> 都是普通文字', '1<img', 'a<i',
                     '{"html": "<img src=1>"}'):

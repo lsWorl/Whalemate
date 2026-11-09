@@ -119,7 +119,10 @@ class AssetCatalog:
                 for path in sorted(category.iterdir())[:512]:
                     if path.suffix.lower() not in SUFFIXES: continue
                     meta=dict(conf.get('asset_defaults') or {}); meta.update(raw.get('asset_metadata') or {})
-                    meta.update(category=category.name,semantic=raw.get('description',category.name))
+                    if 'description' in raw:meta['semantic']=raw['description']
+                    # 记下哪些说明字段是扫描时补的默认值（清单没写）：之后识别出原创图时只替换这些，清单写明的一律保留
+                    meta[self.DEFAULTS_KEY]=[k for k in self.ANNOTATION_FIELDS if k not in meta]
+                    meta.setdefault('semantic',category.name); meta['category']=category.name
                     entries.append((path,meta))
         originals=self.original_sprites() if root!=self.builtin_root.resolve() else {}
         for path,metadata in entries[:2048]:
@@ -128,7 +131,7 @@ class AssetCatalog:
                 # 用户图库里和仓库自带姿态图内容完全相同的文件（例如 T13 新建图库时补入的 6 张）：按原创素材归档。
                 # 只认内容哈希，不认目录名或 manifest，用户之后放进同一目录的其他图不会被误标。
                 original=originals.get(self._digest(path)) if originals else None
-                if original:metadata=dict(metadata,**original)
+                if original:metadata=self._with_original(metadata,original)
                 aid,reused=self.register(path,root,metadata)
                 if original:self._approve_original(aid,original)
                 counts['reused' if reused else 'imported']+=1
@@ -161,11 +164,7 @@ class AssetCatalog:
             if not row or row['review_status']!='pending_review':return
             metadata=json.loads(row['metadata'])
             metadata.update({k:original[k] for k in self.PROVENANCE if k in original})
-            if not metadata.get('user_annotated'):
-                # Codex 审计（ee541d0）：0a2b1d6 及更早版本里用户改过的说明没有 user_annotated 标记。
-                # 只有字段还是扫描默认值（含义为空或等于目录名、情绪 / 用法为空）时才补内置说明，否则按旧版用户标注保留。
-                legacy=self._legacy_annotations(metadata)
-                metadata.update({k:v for k,v in original.items() if k not in self.PROVENANCE and k not in legacy})
+            metadata=self._with_original(metadata,original)
             enabled=self._chosen_enabled(metadata,row)
             c.execute("UPDATE expression_assets SET metadata=?,review_status='approved',enabled=? WHERE asset_id=?",
                       (json.dumps(metadata,ensure_ascii=False),int(enabled),asset_id))
@@ -179,15 +178,24 @@ class AssetCatalog:
             rows=c.execute('SELECT * FROM expression_assets WHERE root=? ORDER BY asset_id',(str(Path(root or self.root).resolve()),)).fetchall()
         return [dict(r,metadata=json.loads(r['metadata'])) for r in rows]
     ANNOTATION_FIELDS=('semantic','intents','emotions')
+    DEFAULTS_KEY='annotation_defaults'
     @classmethod
-    def _legacy_annotations(cls,metadata):
-        """旧记录里看起来是用户手写（不是扫描默认值）的说明字段。"""
-        kept=set()
-        semantic=str(metadata.get('semantic') or '').strip()
-        if semantic and semantic!=str(metadata.get('category') or '').strip():kept.add('semantic')
-        for key in ('intents','emotions'):
-            if metadata.get(key):kept.add(key)
-        return kept
+    def _replaceable(cls,metadata):
+        """识别出原创图时，哪些说明字段可以换成内置说明。来源 / 许可和表达标注分开处理（Codex 审计 e28c1ac）：
+        - 用户在图库页改过（user_annotated）：一个都不换；
+        - 新版扫描记下了哪些是默认值（annotation_defaults）：只换这些，清单写明的保留；
+        - 旧记录没有这个标记，无法证明没被用户改过：只补空字段，非空的一律保留（哪怕和目录名相同），用户可在图库页自行改。"""
+        if metadata.get('user_annotated'):return set()
+        defaults=metadata.get(cls.DEFAULTS_KEY)
+        if isinstance(defaults,list):return {k for k in defaults if k in cls.ANNOTATION_FIELDS}
+        return {k for k in cls.ANNOTATION_FIELDS if not metadata.get(k)}
+    def _with_original(self,metadata,original):
+        metadata=dict(metadata); replace=self._replaceable(metadata)
+        metadata.update({k:original[k] for k in self.PROVENANCE if k in original})
+        metadata.update({k:original[k] for k in replace if k in original})
+        if isinstance(metadata.get(self.DEFAULTS_KEY),list):
+            metadata[self.DEFAULTS_KEY]=[k for k in metadata[self.DEFAULTS_KEY] if k not in replace]
+        return metadata
     @staticmethod
     def _chosen_enabled(metadata,row):
         """启用状态：用户明确选过就按用户的；已审核的图保持现状；没审核过、也没表过态才默认启用。"""
@@ -218,6 +226,7 @@ class AssetCatalog:
             for key in ('semantic','intents','emotions','character_id'):
                 if key in values:metadata[key]=values[key]
             metadata['user_annotated']=True   # 用户自己写的说明：以后自动识别不覆盖
+            metadata.pop(self.DEFAULTS_KEY,None)
             metadata=normalize_metadata(metadata)
             c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
         self.db.locked(apply)

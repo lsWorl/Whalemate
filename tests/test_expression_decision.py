@@ -159,10 +159,13 @@ class DecisionTests(unittest.TestCase):
     def test_img_tag_variants_never_reach_yield_or_storage(self):
         # Codex 审计：经原 ChatController，yield 的正文（也是 TTS 的输入）和存库正文都不能带 <img 变体
         self.add('smile', semantic='开心到笑出声')
-        for n, reply in enumerate(('你好<img\tsrc="合成地址">晚安', '你好<img\nsrc="合成地址">晚安', '你好<img\r\nsrc="合成地址">晚安')):
+        long_src = '你好<img src=' + 'x'*1100 + '>晚安'          # Codex 审计（e28c1ac）的复现：超长 src
+        for n, reply in enumerate(('你好<img\tsrc="合成地址">晚安', '你好<img\nsrc="合成地址">晚安', '你好<img\r\nsrc="合成地址">晚安', long_src)):
             text, _ = self.turn(reply, turn=f'img{n}')
             self.assertEqual(text, '你好晚安')
             self.assertEqual(self.db.recent_messages(1, self.character.id)[0]['content'], '你好晚安')
+            final = [e for e in self.events if getattr(e, 'kind', '') == 'final'][-1]
+            self.assertEqual(final.result.text, '你好晚安'); self.assertEqual(final.result.status, 'complete')
 
     def test_trace_has_no_chat_text_or_paths(self):
         self.add('smile', semantic='开心到笑出声')

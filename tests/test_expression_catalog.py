@@ -233,10 +233,42 @@ class OriginalSpriteCopyTests(unittest.TestCase):
         self.assertEqual((row['metadata']['semantic'], row['metadata']['intents'], row['metadata']['emotions']),
                          ('旧版用户标注：只留作纪念', ['纪念'], ['平静']))
 
-    def test_legacy_partial_annotation_fills_only_default_fields(self):
-        aid = self.legacy_pending(semantic='happy', intents=['纪念'])          # 含义还是目录名（默认值），用法是用户写的
+    def test_legacy_meaning_equal_to_folder_name_is_kept(self):
+        # Codex 审计（e28c1ac）：和目录名相同不能证明用户没改过。重放 0a2b1d6 的旧 annotate（不写 user_annotated）：
+        # 用户把含义改成和自定义目录同名的"仅作纪念"，识别后仍保留；空字段才补内置说明
+        import shutil
+        folder = self.library/'仅作纪念'; folder.mkdir()
+        target = folder/'celebrate.png'; shutil.copyfile(self.cat.builtin_root/'celebrate.png', target)
+        aid, _ = self.cat.register(target, self.library, {'category': '仅作纪念'})      # 旧版扫描：无许可、无默认值标记
+        with self.db.transaction() as c:                                                   # 旧版 annotate：只改字段
+            meta = json.loads(c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?', (aid,)).fetchone()[0])
+            meta['semantic'] = '仅作纪念'
+            c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?', (json.dumps(meta, ensure_ascii=False), aid))
         self.cat.scan(); meta = self.cat.get(aid)['metadata']
-        self.assertEqual(meta['semantic'], '开心、庆祝、赞同'); self.assertEqual(meta['intents'], ['纪念'])
+        self.assertEqual(self.cat.get(aid)['review_status'], 'approved'); self.assertEqual(meta['license'], 'project-original')
+        self.assertEqual(meta['semantic'], '仅作纪念'); self.assertEqual(meta['intents'], ['开心', '庆祝', '赞同'])
+
+    def test_first_scan_keeps_manifest_annotations_of_original_copy(self):
+        # Codex 审计（e28c1ac）：首次扫描时清单写明的说明 / 用法 / 情绪不能被内置说明覆盖，只补来源和许可
+        import shutil
+        folder = self.library/'自定义收藏'; folder.mkdir()
+        shutil.copyfile(self.cat.builtin_root/'celebrate.png', folder/'celebrate.png')
+        (self.library/'manifest.json').write_text(json.dumps({'categories': {'自定义收藏': {
+            'description': '仅作纪念，不要发送', 'asset_metadata': {'intents': ['纪念'], 'emotions': ['平静']}}}}, ensure_ascii=False), encoding='utf-8')
+        self.cat.scan()
+        row = next(r for r in self.cat.rows() if r['relative_path'] == '自定义收藏/celebrate.png'); meta = row['metadata']
+        self.assertEqual((meta['semantic'], meta['intents'], meta['emotions']), ('仅作纪念，不要发送', ['纪念'], ['平静']))
+        self.assertEqual((row['review_status'], meta['license'], meta['category']), ('approved', 'project-original', '自定义收藏'))
+
+    def test_first_scan_partial_manifest_fills_only_unwritten_fields(self):
+        import shutil
+        folder = self.library/'开心庆祝'; folder.mkdir()
+        shutil.copyfile(self.cat.builtin_root/'celebrate.png', folder/'celebrate.png')
+        (self.library/'manifest.json').write_text(json.dumps({'categories': {'开心庆祝': {'asset_metadata': {'intents': ['纪念']}}}},
+                                                             ensure_ascii=False), encoding='utf-8')
+        self.cat.scan()
+        meta = next(r for r in self.cat.rows() if r['relative_path'] == '开心庆祝/celebrate.png')['metadata']
+        self.assertEqual((meta['semantic'], meta['intents'], meta['emotions']), ('开心、庆祝、赞同', ['纪念'], ['happy']))
 
     def test_previously_pending_copy_is_upgraded_but_rejected_is_kept(self):
         import shutil
