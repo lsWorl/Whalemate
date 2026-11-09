@@ -25,10 +25,13 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.1'
+PLUGIN_VERSION = '0.9.4'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
+# 和桌宠 expression/segments.py 的 QQ_FLOOD_LIMIT 保持一致（Codex 审查 17012ca P2：两边不一致时 7～8 段会退回整段或主动消息整条丢失）
+MAX_SEGMENTS = 8
+AT_ONLY = '[@了你一下，没说别的]'
 # 商城表情（mface）的图片只从 QQ 自己的固定主机下载
 MARKET_HOSTS = {'gxh.vip.qq.com', 'i.gtimg.cn'}
 MAGIC = ((b'GIF87a', 'gif'), (b'GIF89a', 'gif'), (b'\x89PNG\r\n\x1a\n', 'png'), (b'\xff\xd8\xff', 'jpeg'))
@@ -73,16 +76,46 @@ class AICompanionBridge(Star):
         if not platform: return None
         text = (event.message_str or '').strip()
         has_images = bool(self.image_parts(event)) or bool(self.sticker_parts(event)[1])
-        if (not text and not has_images) or any(text.startswith(p) for p in self.option('skip_prefixes') if p): return None
+        if any(text.startswith(p) for p in self.option('skip_prefixes') if p): return None
         group_id = str(event.get_group_id() or '')
         if group_id:
             allowed = self.pet_groups if self.pet_groups is not None else self.option('groups')
             if group_id not in [str(g).strip() for g in allowed]: return None
-            called = bool(getattr(event, 'is_at_or_wake_command', False))
+            called = self.called(event)
             if self.option('group_only_when_called') and not called: return None
         else: called = True
+        if not text and not has_images:
+            # 2026-11-09 实测：群里只 @ 她、不带字时，插件不接，AstrBot 自己（没配模型）就在群里回"LLM 请求失败"。
+            # 只 @ 了一下也是在叫她：交给她，像真人那样回一句（"咋了""在呢"）
+            if not (group_id and called): return None
+            text = AT_ONLY
         return {'platform': platform, 'sender_id': str(event.get_sender_id()), 'sender_name': event.get_sender_name() or '',
-                'group_id': group_id, 'text': text or '[收到图片]', 'called': called}
+                'group_id': group_id, 'text': text or '[图片]', 'called': called}
+
+    def called(self, event) -> bool:
+        """群里是不是在叫她：AstrBot 的唤醒标记，或者原始消息里有 @ 她自己的账号（只 @ 不带字时不依赖 AstrBot 的标记）。"""
+        if bool(getattr(event, 'is_at_or_wake_command', False)): return True
+        me = str(getattr(event, 'get_self_id', lambda: '')() or '')
+        if not me: return False
+        for seg in self.raw_segments(event):
+            if seg.get('type') == 'at' and str((seg.get('data') or {}).get('qq') or '') == me: return True
+        for part in (getattr(event, 'get_messages', lambda: [])() or []):
+            if type(part).__name__ == 'At' and str(getattr(part, 'qq', '') or '') == me: return True
+        return False
+
+    def mentions_anyone(self, event) -> bool:
+        if any(seg.get('type') == 'at' for seg in self.raw_segments(event)): return True
+        return any(type(part).__name__ == 'At' for part in (getattr(event, 'get_messages', lambda: [])() or []))
+
+    @staticmethod
+    def swallow(event):
+        """这条消息归桌宠管：终止传播，并明确告诉 AstrBot 不要走它自己的默认模型。
+        只 stop_event 不够——AstrBot 4.29.3 在没有结果、也没发过消息时（只 @、她选择不回）仍会走默认模型，回"LLM 请求失败"。"""
+        event.stop_event()
+        should = getattr(event, 'should_call_llm', None)
+        if callable(should):
+            try: should(True)
+            except Exception: pass
 
     # ---- 表情包（用户 2026-11-09：收集别人发的表情包，学大家的发图习惯） ----------------------------
     @staticmethod
@@ -210,11 +243,9 @@ class AICompanionBridge(Star):
         if not parts: return
         payload['has_image'] = True
         called = payload['called'] or any(n and n in payload['text'] for n in (self.pet_name, '鲸娘', '大肥鱼'))
-        if not self.pet_vision:
-            payload['text'] += '\n[图片未识别：识图已关闭，不能猜测图片内容。]'
-            return
-        if payload['group_id'] and not called:
-            payload['text'] += '\n[收到图片，旁听不自动识图，不能猜测图片内容。]'
+        # 负责人 2026-11-09：说"无法识别图片"一看就是 AI。没识别的图只留中性的 [图片]，原因不写进消息，怎么接交给桌宠按上下文定
+        if not self.pet_vision or (payload['group_id'] and not called):
+            self.mark_unseen(payload)
             return
         images, sources = [], []
         failed = len(parts) > MAX_IMAGES
@@ -227,7 +258,12 @@ class AICompanionBridge(Star):
         if images:
             # image_parts[i]：第 i 张图片来自第几个图片段。桌宠据此只跳过"已经看懂的那张表情包"，同条消息里的普通照片照常识图
             payload['images'] = images; payload['image_parts'] = sources
-        if failed: payload['text'] += '\n[部分图片未能读取或超过 3 张，不能猜测这些图片的内容。]'
+        if failed: self.mark_unseen(payload)
+
+    @staticmethod
+    def mark_unseen(payload):
+        """没送去识别的图片：消息里只留一个中性的 [图片]（只发了图时文字本来就是它，不重复加）。"""
+        if '[图片]' not in payload['text']: payload['text'] = (payload['text']+'\n[图片]').strip()
 
     @staticmethod
     def managed_temp_root():
@@ -340,7 +376,7 @@ class AICompanionBridge(Star):
 
     async def ask_pet(self, payload: dict) -> dict:
         # 识图先调用视觉接口再由原大脑回复，给额外一步留出时间。
-        timeout = float(self.option('timeout')) + 45*int(bool(payload.get('images'))) + 45*int(bool(payload.get('avatar')))
+        timeout = float(self.option('timeout')) + 45*int(bool(payload.get('images'))) + 45*int(bool(payload.get('avatar'))) + 10*int(bool(payload.get('debounce')))
         async with await self.post('/v1/chat', payload, timeout) as response:
             if response.status == 401:
                 logger.error('AICompanion 拒绝了请求：令牌不对，请把桌宠"设置 → 聊天平台"里的令牌填进插件配置。')
@@ -355,23 +391,47 @@ class AICompanionBridge(Star):
 
     @staticmethod
     def segments_of(result) -> list:
-        """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。"""
+        """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。
+        防刷屏：超过 MAX_SEGMENTS 段时，多出来的并进最后一条（不丢内容，主动消息也照常发出）。"""
         reply=str(result.get('reply') or '').strip()
         segments=result.get('segments')
-        if (isinstance(segments,list) and 1<=len(segments)<=6 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
-            return [x.strip() for x in segments]
+        if (isinstance(segments,list) and 1<=len(segments)<=64 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
+            segments=[x.strip() for x in segments]
+            if len(segments)>MAX_SEGMENTS:segments=segments[:MAX_SEGMENTS-1]+['，'.join(segments[MAX_SEGMENTS-1:])]
+            return segments
         return [reply] if reply else []
 
-    async def pause(self,text):
-        """连发几条时像真人打字一样隔一小会儿（按下一条的长度，0.6～2.5 秒）。"""
-        await asyncio.sleep(min(2.5,0.6+len(text)*0.04))
+    @staticmethod
+    def delays_of(result,count) -> list:
+        """桌宠按打字速度算好的每条间隔（秒）；格式不对（或段数被防刷屏合并过）就不用，按下面的估算。"""
+        delays=result.get('segment_delays')
+        if isinstance(delays,list) and len(delays)==count and all(isinstance(x,(int,float)) and not isinstance(x,bool) and 0<=x<=15 for x in delays):
+            return [float(x) for x in delays]
+        return [None]*count
 
-    async def send_texts(self,event,segments):
-        """按顺序一条一条发；某条发送失败就停下，不重发、不打乱顺序。"""
+    async def pause(self,text,delay=None):
+        """连发几条时像真人打字一样隔一会儿：用桌宠给的间隔；没有就按下一条的字数估（中文约 0.3 秒一字，1～8 秒）。"""
+        if delay is None:delay=min(8.0,max(1.0,0.3+0.3*len(text)))
+        await asyncio.sleep(delay)
+
+    @staticmethod
+    def quoted(event,components):
+        """0.9.4：群里好几个人在说话时，第一条回复引用对方那条消息（桌宠给 quote），别人才分得清她在回谁。只引用一次。"""
+        target=getattr(event,'_aicompanion_quote',None)
+        if not target:return components
+        event._aicompanion_quote=None
+        try:
+            from astrbot.api.message_components import Reply
+            return [Reply(id=target)]+list(components)
+        except Exception:return components
+
+    async def send_texts(self,event,segments,delays=None):
+        """按顺序一条一条发，每条之间等一会儿；某条发送失败就停下，不重发、不打乱顺序。"""
         from astrbot.api.message_components import Plain
+        delays=delays or [None]*len(segments)
         for index,text in enumerate(segments):
-            if index:await self.pause(text)
-            try:await asyncio.wait_for(event.send(event.chain_result([Plain(text)])),timeout=min(30,float(self.option('timeout'))))
+            if index:await self.pause(text,delays[index])
+            try:await asyncio.wait_for(event.send(event.chain_result(self.quoted(event,[Plain(text)]))),timeout=min(30,float(self.option('timeout'))))
             except asyncio.CancelledError:raise
             except Exception as error:
                 logger.warning(f'AICompanion 第 {index+1} 条消息发送失败：{type(error).__name__}');return False
@@ -410,14 +470,14 @@ class AICompanionBridge(Star):
             segments=self.segments_of(dict(result,reply=str(expression.get('text') or result.get('reply') or '')))
             if placement=='after_text' and segments:
                 # Codex 审计：前面的文字有一条失败 / 超时就整条停下，后面的图也不发（不乱序续发）
-                if not await self.send_texts(event,segments):segments=None
+                if not await self.send_texts(event,segments,self.delays_of(result,len(segments))):segments=None
                 else:await self.pause('')
             if segments is not None or placement=='before_text':
                 attempted=True;status='unknown'
                 # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
-                await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
+                await asyncio.wait_for(event.send(event.chain_result(self.quoted(event,[image]))),timeout=min(30,float(self.option('timeout'))))
                 status='accepted'
-                if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments)
+                if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments,self.delays_of(result,len(segments)))
         except asyncio.CancelledError as error:cancelled=error
         except Exception as error:
             # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。图没尝试过仍是 cancelled。
@@ -432,7 +492,7 @@ class AICompanionBridge(Star):
         """没交给她的群里有人 @ 机器人：不能交还给 AstrBot 自己的模型——它没配模型，会在群里回"LLM 请求失败"（2026-11-09 实测），
         有模型也会变成第二个人格。指令（/ 开头）照旧交给 AstrBot。"""
         if not QQ_ADAPTERS.get(str(event.get_platform_name() or '').lower()): return False
-        if not str(event.get_group_id() or '') or not bool(getattr(event, 'is_at_or_wake_command', False)): return False
+        if not str(event.get_group_id() or '') or not self.called(event): return False
         text = (event.message_str or '').strip()
         return not any(text.startswith(p) for p in self.option('skip_prefixes') if p)
 
@@ -443,8 +503,13 @@ class AICompanionBridge(Star):
         payload = self.route(event)
         if payload is None:
             if self.unrouted_call(event):
-                event.stop_event()
+                self.swallow(event)
                 logger.info('AICompanion：这个群还没在桌宠"聊天平台"页勾选，@ 机器人的消息不处理')
+            elif str(event.get_group_id() or '') and self.mentions_anyone(event):
+                # 诊断（2026-11-09 只 @ 不带字仍落到 AstrBot 默认模型）：群消息里有 @ 却没交给她时，记下判断依据，便于下次对日志
+                logger.info(f'AICompanion：群消息含 @ 但没交给桌宠（唤醒标记 {bool(getattr(event, "is_at_or_wake_command", False))}，'
+                            f'@ 她自己 {self.called(event)}，文字 {len((event.message_str or "").strip())} 字，'
+                            f'自己的账号 {"有" if getattr(event, "get_self_id", lambda: "")() else "无"}）')
             return
         if not payload['group_id']:
             origin = getattr(event, 'unified_msg_origin', None)
@@ -452,9 +517,11 @@ class AICompanionBridge(Star):
             platform_id = getattr(event, 'get_platform_id', lambda: '')()
             if isinstance(platform_id, str) and platform_id: self.platform_id = platform_id
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
-        event.stop_event()
+        self.swallow(event)
         payload['expression_version']=1
         payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
+        # 0.9.3：允许桌宠把同一个人连发的几条合在一起回一次（前面的请求会静默返回 merged）
+        payload['debounce']=True
         try:
             await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)
@@ -469,10 +536,17 @@ class AICompanionBridge(Star):
             return
         reply = str(result.get('reply') or '').strip()
         if result.get('silent'): return
+        if result.get('quote') is True and payload['group_id']:
+            message_id = getattr(getattr(event, 'message_obj', None), 'message_id', None)
+            if message_id: event._aicompanion_quote = str(message_id)
         if await self.send_expression(event,result):return
         segments=self.segments_of(result)
-        if len(segments)>1:await self.send_texts(event,segments);return
-        if reply:yield event.plain_result(reply)
+        if len(segments)>1:await self.send_texts(event,segments,self.delays_of(result,len(segments)));return
+        if not reply: return
+        if getattr(event, '_aicompanion_quote', None):
+            from astrbot.api.message_components import Plain
+            yield event.chain_result(self.quoted(event,[Plain(reply)]))
+        else: yield event.plain_result(reply)
 
     # ---- 主动消息（用户 2026-11-09：桌面和 QQ 都可能随机发送） ----------------------------------------------
     async def deliver_outbox(self, item):
@@ -484,6 +558,7 @@ class AICompanionBridge(Star):
         self.outbox_sent.add(key)
         if len(self.outbox_sent) > 512: self.outbox_sent = {key}
         segments = self.segments_of({'reply': '', 'segments': item.get('segments')})
+        delays = self.delays_of(item, len(segments))
         expression = item.get('expression') if isinstance(item.get('expression'), dict) else {}
         attachments = [a for a in (expression.get('attachments') or [])[:1] if isinstance(a, dict)]
         origin = self.private_origins.get(user) or f'{self.platform_id}:FriendMessage:{user}'
@@ -519,7 +594,7 @@ class AICompanionBridge(Star):
         try:
             if image and image[1] == 'before_text': await send_image()
             for index, text in enumerate(segments):
-                if index or sent: await self.pause(text)
+                if index or sent: await self.pause(text, delays[index] if index else None)
                 try: await send(Plain(text)); sent += 1
                 except asyncio.CancelledError: raise
                 except Exception as error:

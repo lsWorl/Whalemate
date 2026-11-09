@@ -145,7 +145,7 @@ class PluginTests(unittest.TestCase):
             out = self.run_handler(plugin, event, {'reply': '蓝色图片', 'silent': False})
             self.assertEqual(out, [('plain', '蓝色图片')])
             self.assertTrue(plugin.sent['images'][0].startswith('data:image/jpeg;base64,'))
-            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[收到图片]')
+            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[图片]')
 
     def test_picture_converter_refuses_unmanaged_path(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -156,7 +156,7 @@ class PluginTests(unittest.TestCase):
                 async def convert_to_file_path(self): return str(outside)
             plugin = self.plugin(); plugin.managed_temp_root = lambda: str(managed)
             self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '没能读取', 'silent': False})
-            self.assertNotIn('images', plugin.sent); self.assertIn('未能读取', plugin.sent['text'])
+            self.assertNotIn('images', plugin.sent); self.assertIn('[图片]', plugin.sent['text']); self.assertNotIn('未能读取', plugin.sent['text'])
 
     def test_private_gif_and_webp_stickers_are_forwarded_as_actual_pixels(self):
         try:
@@ -188,11 +188,11 @@ class PluginTests(unittest.TestCase):
         plugin = self.plugin(group_only_when_called=False)
         self.run_handler(plugin, Event('', group='30003', called=False, images=[Segment()]), {'reply': '', 'silent': True})
         self.assertNotIn('images', plugin.sent)
-        self.assertIn('旁听不自动识图', plugin.sent['text'])
+        self.assertIn('[图片]', plugin.sent['text']); self.assertNotIn('识图', plugin.sent['text'])
         plugin.pet_vision = False
         self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '', 'silent': True})
         self.assertNotIn('images', plugin.sent)
-        self.assertIn('识图已关闭', plugin.sent['text'])
+        self.assertEqual(plugin.sent['text'].count('[图片]'), 1); self.assertNotIn('识图', plugin.sent['text'])
 
     def test_meme_is_sent_as_astrbot_image_message_even_without_text(self):
         import hashlib
@@ -212,23 +212,134 @@ class PluginTests(unittest.TestCase):
             event=Event('再发');self.run_handler(plugin,event,answer);self.assertEqual(event.sent_messages,[])
             self.assertEqual(self.run_handler(self.plugin(),Event('发表情'),{'reply':'好呀','silent':False,'images':['file:///private.png']}),[('plain','好呀')])
 
+    def test_bare_at_goes_to_her_and_never_falls_back_to_astrbot_llm(self):
+        # 2026-11-09 实测：群里只 @ 她、不带字，AstrBot 自己（没配模型）回"LLM 请求失败"
+        class AtEvent(Event):
+            def __init__(self, *a, raw=None, me='2776148574', **k):
+                super().__init__(*a, **k); self.call_llm = False; self.me = me
+                self.message_obj = types.SimpleNamespace(raw_message={'message': raw or []})
+            def should_call_llm(self, value): self.call_llm = value
+            def get_self_id(self): return self.me
+        plugin = self.plugin()
+        event = AtEvent('', group='30003', called=True)
+        self.run_handler(plugin, event, {'reply': '咋了', 'silent': False})
+        self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        self.assertIs(plugin.sent['debounce'], True)                                 # 0.9.3：允许桌宠合并连发
+        # AstrBot 没打唤醒标记、但原始消息里 @ 的是她自己：也算叫她
+        event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '2776148574'}}, {'type': 'text', 'data': {'text': '  '}}])
+        self.run_handler(plugin, event, {'reply': '在呢', 'silent': False})
+        self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.call_llm)
+        # @ 的是别人、不带字：不是叫她，不接
+        event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '3023143286'}}])
+        self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent); self.assertFalse(event.stopped)
+        # 她选择不回（silent）：也不能让 AstrBot 的默认模型接手
+        event = AtEvent('看图', group='30003', called=True)
+        self.assertEqual(self.run_handler(plugin, event, {'reply': '', 'silent': True}), []); self.assertTrue(event.call_llm)
+        # 没勾选的群里只 @：同样吞掉，不落到 AstrBot 的模型
+        event = AtEvent('', group='99999', called=True)
+        self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
+        self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        # 私聊里空消息（戳一戳之类）不当成叫她
+        event = AtEvent('', called=True); self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
+
+    def test_busy_group_reply_quotes_the_message_once(self):
+        # 负责人 2026-11-09 22:32：群里多个人 @ 她时分不清她在回谁。桌宠给 quote 时，第一条回复引用对方那条消息
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Plain=lambda value:('text',value)
+        components.Reply=lambda id:('reply',id)
+        class QuoteEvent(Event):
+            def __init__(self,*a,**k):
+                super().__init__(*a,**k); self.message_obj=types.SimpleNamespace(message_id=777,raw_message={})
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            plugin=self.plugin()
+            async def pause(text,delay=None):pass
+            plugin.pause=pause
+            event=QuoteEvent('你好',group='30003',called=True)
+            self.run_handler(plugin,event,{'reply':'在\n干嘛','silent':False,'segments':['在','干嘛'],'quote':True})
+            self.assertEqual([m[1] for m in event.sent_messages],[[('reply','777'),('text','在')],[('text','干嘛')]])
+            event=QuoteEvent('你好',group='30003',called=True)
+            out=self.run_handler(plugin,event,{'reply':'在','silent':False,'quote':True})
+            self.assertEqual(out,[('chain',[('reply','777'),('text','在')])])
+            event=QuoteEvent('你好',called=True)                                       # 私聊不引用
+            self.assertEqual(self.run_handler(plugin,event,{'reply':'在','silent':False,'quote':True}),[('plain','在')])
+
+    def test_pause_uses_given_delay_or_estimates_typing_time(self):
+        waited=[]
+        async def sleep(seconds):waited.append(seconds)
+        plugin=self.plugin()
+        with mock.patch('asyncio.sleep',sleep):
+            for args in (('逆天这次都用上了',2.7),('逆天这次都用上了',),('嗯',)):asyncio.run(plugin.pause(*args))
+        self.assertEqual(waited[0],2.7);self.assertGreater(waited[1],2.0);self.assertEqual(waited[2],1.0)
+
     def test_multi_segment_reply_is_sent_as_separate_messages(self):
         # 负责人要求：多段回复分几条消息发，不塞进一条
         components=types.ModuleType('astrbot.api.message_components')
         components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
         components.Plain=lambda value:('text',value)
         plugin=self.plugin();pauses=[]
-        async def pause(text):pauses.append(text)
+        async def pause(text,delay=None):pauses.append(text)
         plugin.pause=pause
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
             event=Event('好消息')
             out=self.run_handler(plugin,event,{'reply':'哇！\n\n恭喜爹','silent':False,'segments':['哇！','恭喜爹']})
             self.assertEqual(out,[]);self.assertEqual(event.sent_messages,[('chain',[('text','哇！')]),('chain',[('text','恭喜爹')])])
             self.assertEqual(pauses,['恭喜爹'])
+            # 负责人 2026-11-09 18:05：每条之间隔一段时间——用桌宠按打字速度算好的间隔；格式不对就自己估
+            delays=[]
+            async def timed(text,delay=None):delays.append(delay)
+            plugin.pause=timed
+            self.run_handler(plugin,Event('哈'),{'reply':'哟\n逆天','silent':False,'segments':['哟','逆天这次都用上了'],'segment_delays':[0,2.7]})
+            self.run_handler(plugin,Event('哈'),{'reply':'哟\n逆天','silent':False,'segments':['哟','逆天'],'segment_delays':[0,99]})
+            self.assertEqual(delays,[2.7,None])
+            plugin.pause=pause
             # 旧桌宠没有 segments：整段一条
             self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False}),[('plain','在呢')])
             # 不合法的 segments 不用：回退为整段
             self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False,'segments':['在呢',3]}),[('plain','在呢')])
+
+    def test_up_to_flood_limit_segments_keep_order_and_delays(self):
+        # Codex 审查 17012ca P2：桌宠允许 8 段，插件只收 6 段时 7～8 段会退回整段、没有间隔
+        from aicompanion.expression.segments import QQ_FLOOD_LIMIT
+        self.assertEqual(self.module.MAX_SEGMENTS, QQ_FLOOD_LIMIT)
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Plain=lambda value:('text',value)
+        for count in (7, 8):
+            plugin=self.plugin();delays=[]
+            async def pause(text,delay=None):delays.append(delay)
+            plugin.pause=pause
+            parts=[f'第{n}条' for n in range(count)]; given=[0]+[1.0+n for n in range(count-1)]
+            with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+                event=Event('聊')
+                out=self.run_handler(plugin,event,{'reply':'\n'.join(parts),'silent':False,'segments':parts,'segment_delays':given})
+            self.assertEqual(out,[]);self.assertEqual([m[1][0][1] for m in event.sent_messages],parts)
+            self.assertEqual(delays,given[1:])
+        # 超过上限（旧桌宠 / 异常输入）：多的并进最后一条，内容不丢；段数变了就不用给定间隔，自己估
+        plugin=self.plugin();delays=[]
+        async def pause(text,delay=None):delays.append(delay)
+        plugin.pause=pause
+        parts=[f'第{n}条' for n in range(11)]
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('聊');self.run_handler(plugin,event,{'reply':'x','silent':False,'segments':parts,'segment_delays':[0]+[1.0]*10})
+        sent=[m[1][0][1] for m in event.sent_messages]
+        self.assertEqual(len(sent),8);self.assertEqual(sent[-1],'第7条，第8条，第9条，第10条');self.assertEqual(delays,[None]*7)
+
+    def test_eight_segments_with_sticker_after_text(self):
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        async def control(path,payload):return {'allowed':True,'ok':True}
+        plugin=self.plugin();plugin.expression_control=control;delays=[]
+        async def pause(text,delay=None):delays.append(delay)
+        plugin.pause=pause
+        parts=[f'第{n}条' for n in range(8)]
+        answer={'reply':'\n'.join(parts),'segments':parts,'segment_delays':[0]+[2.0]*7,'silent':False,'expression_version':1,'expression':{'text':'\n'.join(parts),'attachments':[
+            {'delivery_id':'c'*32,'asset_id':'st_test0000','revision':'x','placement':'after_text',
+             'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('聊');self.run_handler(plugin,event,answer)
+        self.assertEqual([m[1][0] for m in event.sent_messages],[('text',p) for p in parts]+[('image','YWJj')])
+        self.assertEqual(delays[:7],[2.0]*7)
 
     def test_sticker_is_its_own_message_before_or_after_the_segments(self):
         import hashlib
@@ -236,7 +347,7 @@ class PluginTests(unittest.TestCase):
         components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
         components.Plain=lambda value:('text',value)
         async def control(path,payload):return {'allowed':True,'ok':True}
-        async def pause(text):pass
+        async def pause(text,delay=None):pass
         for placement,expected in (('before_text',[('image','YWJj'),('text','一'),('text','二')]),
                                    ('after_text',[('text','一'),('text','二'),('image','YWJj')])):
             plugin=self.plugin();plugin.expression_control=control;plugin.pause=pause
@@ -429,3 +540,4 @@ class HeartbeatTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

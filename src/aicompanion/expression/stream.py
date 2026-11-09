@@ -20,8 +20,9 @@ HANDLE = re.compile(r's(?:[1-9]|10)\Z')
 HISTORY_ANNOTATIONS = ('[角色已发送表情：', '[角色已发送表情:')
 # <img …>：第八轮验收里模型写过 `<img src="">` 想"贴图"，原样露在正文里；当作无效的图片标记隐藏（代码块里的照常保留）。
 # 标签名后面可以是任意空白（空格、制表符、换行、CRLF）、/ 或 >，属性可以跨行（Codex 审计）：进入单独的 img 状态一直吃到 >。
-STARTS = ('<sticker', '<meme', '<expression', '<img', '<task>')+HISTORY_ANNOTATIONS
-RESERVED = ('<sticker', '<meme', '<expression')
+STARTS = ('<sticker', '<meme', '<expression', '<img', '<task>', '<mind')+HISTORY_ANNOTATIONS
+RESERVED = ('<sticker', '<meme', '<expression', '<mind')
+# <mind intent="…" willing="0~1"/>：T15 她对"对方请她做事"的态度，对方看不到；只记录给关系统计和观测，不决定执行与否
 IMG_LIMIT = 1024
 # 角色动画标注：给桌宠脸和动作用，屏幕上会被 CueStream 去掉，不算对方能看到的正文。
 CUE = re.compile(r'【[^】\n]{1,12}】|<[^<>\n/]{1,12}>')
@@ -47,6 +48,7 @@ class ExpressionStream:
         self.handles = dict(handles or {})       # 's3' -> asset_id
         self.meanings = dict(meanings or {})     # 含义 -> asset_id（历史写法照抄时用）
         self.pending = ''; self.selection = None; self.reserved = False; self.diagnostics = []
+        self.mind = None
         self.markers = 0; self.visible = ''; self.has_text = False; self.cancelled = False; self.finished = False
         self.fence = 0; self.inline = False; self.ticks = ''; self.tick_start = False; self.line_start = True
         self.quote_line = False; self.json_depth = 0; self.json_string = False; self.escape = False
@@ -91,6 +93,20 @@ class ExpressionStream:
             hits = {asset for meaning, asset in self.meanings.items() if value in meaning}
             if len(hits) == 1: self.diagnose('meaning_as_id'); return hits.pop()
         return None
+
+    def _mind(self, raw):
+        """<mind intent="乐意" willing="0.8" feel="生气" toward="-2"/>：只取有限长度的态度词、0～1 的意愿、
+        感觉词和 -3～3 的好恶变化，其余忽略；不计入表情标记数。"""
+        attrs = {m[1].lower(): (m[2] if m[2] is not None else m[3] if m[3] is not None else m[4]) for m in ATTR.finditer(raw)}
+        try: willing = max(0.0, min(1.0, float(attrs.get('willing', ''))))
+        except ValueError: willing = None
+        intent = re.sub(r'[^\w\u4e00-\u9fff]', '', str(attrs.get('intent', '')))[:8]
+        # 负责人 2026-11-09：她要有自己的脾气。feel / toward 是这条消息让她对对方的感觉变好还是变差（-3～3），即时记进关系
+        feel = re.sub(r'[^\w\u4e00-\u9fff]', '', str(attrs.get('feel', '')))[:6]
+        try: toward = max(-3.0, min(3.0, float(attrs.get('toward', ''))))
+        except ValueError: toward = None
+        if self.mind is None: self.mind = {'intent': intent, 'willing': willing, 'feel': feel, 'toward': toward}
+        self.diagnose('mind')
 
     def _marker(self, raw):
         self.markers += 1
@@ -190,11 +206,18 @@ class ExpressionStream:
                     if ch == '>': self.markers += 1; self.diagnose('html_img_tag')
                     else: self.img = 5; self.img_quote = ''; self.img_quoted = 0
                     return
+            if low[:5] == '<mind' and len(low) == 6 and not (ch.isspace() or ch in '/>'):
+                raw = self.pending; self.pending = ''; self._emit(raw, out); return   # <minds> 之类是普通文字
             reserved = low.startswith(RESERVED)
             if self.pending == '<task>':
                 self.task = self.pending; self.pending = ''; return
             if reserved and (ch == '>' or ch == '\n' or len(self.pending) > 512):
                 raw = self.pending; self.pending = ''
+                if low.startswith('<mind'):
+                    if ch == '>': self._mind(raw)
+                    else: self.diagnose('invalid_mind'); self.drop_line = ch != '\n'
+                    if ch == '\n': self._emit(ch, out)
+                    return
                 if ch == '>': self._marker(raw)
                 else:
                     self.markers += 1; self.diagnose('invalid_marker')

@@ -21,14 +21,24 @@ class ChatController:
         self.agent_enabled = False
         from aicompanion.expression.service import ExpressionService
         self.expression = ExpressionService(database)
+        # T15：她对每个人的关系（同一套，桌面和 QQ 共用）；后台从真实聊天里理解关系事件
+        from aicompanion.relationship.service import RelationshipService
+        from aicompanion.relationship.analyzer import RelationshipAnalyzer
+        self.relationships = RelationshipService(database)
+        self.relationship_analyzer = RelationshipAnalyzer(database, self.relationships)
 
     def record_user_message(self,content,source='text',channel='desktop'):
         message_id = self.database.add_message('user',content,self.character.id,source=source,channel=channel)
         self.emotions.update(self.character.id,content)
+        if source!='qq':   # 桌面上说话 = 主人来了一次；QQ 上的由桥接按 QQ 身份记
+            try:
+                from aicompanion.relationship.service import OWNER_DESKTOP
+                self.relationships.resolve(OWNER_DESKTOP,self.character.id)
+            except Exception: pass
         self.memory_service.maybe_extract_memory(content,self.character.id,message_id)
         return message_id
 
-    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None,reply_filter=None,*,expression_context=None,on_expression_event=None):
+    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None,reply_filter=None,*,expression_context=None,on_expression_event=None,person=None):
         """所有自然聊天共用这一轮生成；图片控制在 yield 给 UI/TTS 之前剥离。"""
         from dataclasses import replace
         from aicompanion.expression.domain import ExpressionContext,ExpressionEvent
@@ -47,6 +57,12 @@ class ChatController:
             history,prompt=self.context.build(character,query,channel,scene,situation,through_id)
             if proactive:
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去，不用逗号句号），不编造经历。'
+            # T15：她和对方的关系、此刻的心情精力、对方最近多常找她做事——给同一个大脑做判断的依据，不规定回应方式
+            person_id=self._person(person,channel,scene,context)
+            if person_id:
+                from aicompanion.relationship.service import scope_of
+                emotion=self.database.load_emotion(character.id)
+                prompt+=self.relationships.prompt(character.id,person_id,scope_of(channel),mood=emotion.mood,energy=emotion.energy,public=scene!='pet')
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
             if self.agent_enabled and not proactive and offer_tasks:
@@ -114,6 +130,42 @@ class ChatController:
                                          result.attachments[0] if result.attachments else None,status,
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:on_expression_event(ExpressionEvent('final',turn_id,result=result))
+            self._after_turn(character,channel,scene,person,context,parser,status,turn_id)
+
+    def _person(self,person,channel,scene,context):
+        """这一轮在和谁说话：桥接传进来的人物；没传、又是桌面 / 爹的私下相处，就是主人。"""
+        if person: return person
+        if channel=='desktop' and scene=='pet':
+            try: return self.relationships.owner_person()
+            except Exception: return None
+        return None
+
+    def _after_turn(self,character,channel,scene,person,context,parser,status,turn_id):
+        """她这轮写了 <mind/>：请她做事就记一条 request（不改分，只统计"多常找她做事"）；
+        写了 feel / toward（对方让她明显高兴或不爽）就即时记一条关系事件；够条数时后台理解关系事件，吵起来时提前。
+        关系记录出错不影响聊天。"""
+        try:
+            person_id=self._person(person,channel,scene,context)
+            mind=getattr(parser,'mind',None) if parser else None
+            heated=False
+            if person_id and mind and status=='complete':
+                from aicompanion.relationship.service import scope_of
+                if mind.get('intent') or mind.get('willing') is not None:
+                    note=(mind.get('intent') or '')+(f" 意愿{mind['willing']:.1f}" if mind.get('willing') is not None else '')
+                    self.relationships.record(character.id,person_id,'request',1.0,scope=scope_of(channel),evidence=note,key='mind:'+turn_id)
+                toward=mind.get('toward')
+                if toward:
+                    # 负责人 2026-11-09：吵架要掉好感、她要有脾气。她自己当场的感觉即时记一笔（不等后台分析），
+                    # 程度由她判断，换算仍走动态规则（两端弹性、首次缓冲、单件上限）
+                    impact={'affinity':toward,'trust':toward*0.3 if toward<=-2 else 0.0}
+                    self.relationships.record(character.id,person_id,'quarrel' if toward<0 else 'friendly',0.8,scope=scope_of(channel),
+                                              evidence=(mind.get('feel') or '')+f" {toward:+.0f}",key='feel:'+turn_id,impact=impact)
+                    heated=toward<=-1
+            if status=='complete':
+                # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）
+                self.relationship_analyzer.maybe_run(character.id,channel,self.llm_client,trigger=2 if heated else None)
+        except Exception:
+            pass
 
     def stream_user_message(self,content):
         self.record_user_message(content)

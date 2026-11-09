@@ -29,6 +29,7 @@ class Base(unittest.TestCase):
         self.model = Model(); self.controller = ChatController(self.db, MemoryService(self.db), self.model); self.controller.character = self.character
         self.db.set_setting('bridge_owner:qq', '10001'); self.db.set_setting('bridge_groups', ['30003']); self.db.set_setting('bridge_memory_every', 0)
         self.service = BridgeService(self.db, self.controller)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.saved = runtime.last_heartbeat
         runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.9.0', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
     def tearDown(self):
@@ -48,6 +49,7 @@ class ProactiveQQTests(Base):
 
     def test_generated_into_outbox_shared_history_and_acked(self):
         results = []
+        self.service.chance = lambda: 0.99                      # 分句时短句一定合并（QQ 规则：空格不当停顿，拆不拆看聊天节奏）
         turn = self.service.proactive_qq('早晨问候，关心今天的心情', on_done=results.append)
         self.assertTrue(turn)
         self.assertIn('别提自己是 AI', self.model.prompts[-1])
@@ -55,7 +57,8 @@ class ProactiveQQTests(Base):
         history = self.db.recent_messages(1, self.character.id)
         self.assertEqual((history[-1]['role'], history[-1]['content']), ('assistant', '爹 吃饭了没'))   # 和桌面同一段记录
         items = self.service.take_outbox()
-        self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹 吃饭了没'])])
+        self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹，吃饭了没'])])
+        self.assertEqual(items[0]['segment_delays'], [0.0])
         self.assertEqual(self.service.take_outbox(), [])                # 只取一次
         self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
         self.assertEqual(results, [True]); self.assertFalse(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
@@ -147,11 +150,22 @@ class PluginTests(unittest.TestCase):
         plugin.context = types.SimpleNamespace(send_message=send_message)
         async def control(path, payload): posts.append((path, payload)); return {'allowed': True}
         async def post_json(path, payload): posts.append((path, payload)); return {'ok': True}
-        async def pause(text): pass
+        self.delays = []
+        async def pause(text, delay=None): self.delays.append(delay)
         plugin.expression_control = control; plugin.post_json = post_json; plugin.pause = pause
         with mock.patch.dict(sys.modules, {'astrbot.api.event': api_event, 'astrbot.api.message_components': components}):
             asyncio.run(plugin.deliver_outbox(item))
         return sent, posts
+
+    def test_outbox_with_seven_or_eight_text_segments_is_sent_in_order_and_acked(self):
+        # Codex 审查 17012ca P2：插件只收 6 段时，7～8 段的主动消息发送 0 条并 ACK failed
+        for count, key in ((7, 'c'), (8, 'd')):
+            plugin = self.plugin(); plugin.private_origins['10001'] = 'aicompanion_qq:FriendMessage:10001'
+            parts = [f'第{n}条' for n in range(count)]; given = [0]+[1.5]*(count-1)
+            sent, posts = self.run_outbox(plugin, {'id': key*32, 'user_id': '10001', 'segments': parts, 'segment_delays': given})
+            self.assertEqual([s[1] for s in sent], [('text', p) for p in parts])
+            self.assertEqual(self.delays, given[1:])
+            self.assertEqual(posts[-1], ('/v1/outbox/ack', {'id': key*32, 'status': 'sent'}))
 
     def test_outbox_is_sent_to_owner_private_once_with_sticker_and_acked(self):
         plugin = self.plugin(); plugin.private_origins['10001'] = 'aicompanion_qq:FriendMessage:10001'

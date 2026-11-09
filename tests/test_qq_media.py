@@ -25,7 +25,7 @@ def picture(width=24, height=24):
 
 
 class Chat:
-    base_url = 'https://api.deepseek.com'; api_key = 'synthetic-key'; timeout_seconds = 30
+    base_url = 'https://api.deepseek.com'; api_key = 'synthetic-key'; timeout_seconds = 30; model = 'chat-model'
     def __init__(self): self.calls = []; self.answer = '看到了，是蓝色方块。'
     def generate_reply_stream(self, history, prompt, cancellation=None):
         self.calls.append((history, prompt)); yield self.answer
@@ -35,7 +35,7 @@ class Vision:
     def __init__(self): self.calls = []; self.failure = False
     def chat(self, messages, **kwargs):
         self.calls.append((messages, kwargs))
-        if self.failure: raise RuntimeError('上游敏感详情 synthetic-key data:image/png;base64,DO-NOT-LEAK')
+        if self.failure: raise RuntimeError(self.failure if isinstance(self.failure, str) else '上游敏感详情 synthetic-key data:image/png;base64,DO-NOT-LEAK')
         return {'content': '蓝色方块，图片上没有文字。'}
 
 
@@ -61,6 +61,7 @@ class QQMediaTests(unittest.TestCase):
         self.service = BridgeService(self.db, self.controller, quota=self.quota, media=self.media)
         self.db.set_setting('bridge_owner:qq', '10001'); self.db.set_setting('bridge_groups', ['30003'])
         self.db.set_setting('bridge_memory_every', 0)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库，清理失败）
         self.image = inline_image(picture(), 'image/png')
 
     def tearDown(self): self.tmp.cleanup()
@@ -90,7 +91,7 @@ class QQMediaTests(unittest.TestCase):
     def test_sticker_observation_is_internal_and_empty_image_does_not_request_analysis(self):
         self.ask(text='')
         history, prompt = self.chat.calls[-1]
-        self.assertTrue(history[-1].content.startswith('[收到图片]'))
+        self.assertTrue(history[-1].content.startswith('[图片]'))
         self.assertNotIn('请看看这张图片', history[-1].content)
         self.assertIn('只在心里读懂情绪和含义', prompt)
         self.assertIn('不分析画面', prompt)
@@ -114,26 +115,51 @@ class QQMediaTests(unittest.TestCase):
         self.assertEqual(self.vision.calls, [])
 
     def test_invalid_oversized_and_external_references_are_rejected(self):
-        for images in ([self.image]*4, ['file:///C:/private.png'], ['https://example.invalid/image.png'],
+        # 坏图 / 外部引用 / 超大：从不解码、不送识图；也不回"图片太大""编码无效"这类机器人提示，只当成没看清的 [图片]
+        for images in (['file:///C:/private.png'], ['https://example.invalid/image.png'],
                        ['data:image/png;base64,YmFk'], ['data:image/png;base64,'+'A'*(MAX_IMAGE_BYTES*2)], 'not-a-list'):
-            with self.subTest(images_type=type(images).__name__):
-                self.assertEqual(self.ask(images=images)['reason'], 'bad_image')
-        self.assertEqual(self.vision.calls, []); self.assertEqual(self.chat.calls, [])
+            with self.subTest(images=str(images)[:30]):
+                result = self.ask(images=images)
+                self.assertNotEqual(result['reason'], 'bad_image')
+                history, prompt = self.chat.calls[-1]
+                self.assertIn('[图片]', history[-1].content); self.assertIn('别说自己看不到', prompt)
+                for word in ('MiB', '编码', '不支持', 'private.png', 'example.invalid'): self.assertNotIn(word, history[-1].content)
+        self.assertEqual(self.vision.calls, [])
+        self.ask(images=[self.image]*4)                                                   # 多于 3 张：只看前 3 张，不回"一次最多 3 张"
+        self.assertEqual(sum(part['type'] == 'image_url' for part in self.vision.calls[-1][0][0]['content']), 3)
 
     def test_pixel_limit_checked_before_decode(self):
         with self.assertRaises(MediaError): image_bytes(inline_image(picture(8193, 1), 'image/png'))
 
     def test_vision_failure_and_disabled_do_not_invent_observations_or_leak_error(self):
+        # 负责人 2026-11-09：识别不了也不能说"识别失败 / 识图已关闭"，只留中性的 [图片]，提示她含糊带过或不回
         self.vision.failure = True; self.ask()
-        history = self.chat.calls[-1][0][-1].content
-        self.assertIn('识别失败', history); self.assertNotIn('synthetic-key', history); self.assertNotIn('DO-NOT-LEAK', history)
+        history, prompt = self.chat.calls[-1]
+        self.assertIn('[图片]', history[-1].content); self.assertIn('别说自己看不到', prompt)
+        for word in ('识别失败', 'synthetic-key', 'DO-NOT-LEAK', '重发'): self.assertNotIn(word, history[-1].content)
+        self.assertTrue(self.media.vision_ready())                                        # 网络 / 未知错误只算这一次
         self.db.set_setting('qq_vision_enabled', False); self.ask()
-        self.assertEqual(len(self.vision.calls), 1); self.assertIn('识图已关闭', self.chat.calls[-1][0][-1].content)
+        self.assertEqual(len(self.vision.calls), 1)
+        self.assertNotIn('识图已关闭', self.chat.calls[-1][0][-1].content); self.assertIn('[图片]', self.chat.calls[-1][0][-1].content)
 
-    def test_other_provider_key_is_never_reused(self):
+    def test_model_without_vision_is_detected_and_not_retried(self):
+        # 接口明确拒收图片（4xx）：记下这家接口 + 模型暂不支持看图，12 小时内不再试，心跳告诉插件不用下载图片
+        self.vision.failure = '模型 API 请求失败，HTTP 400。平台返回：image input not supported'
+        self.ask(); self.assertFalse(self.media.vision_ready()); self.assertFalse(self.service.vision_ready())
+        self.ask(); self.assertEqual(len(self.vision.calls), 1)
+        self.now += 13*3600; self.assertTrue(self.media.vision_ready())
+        self.vision.failure = False; self.ask(); self.assertEqual(len(self.vision.calls), 2)
+
+    def test_vision_only_uses_the_chat_providers_own_endpoint_and_key(self):
+        # 负责人 2026-11-09："要看接入的大模型是否有多模态"——换了别家接口也试着用它自己的模型看图；
+        # 密钥只发给聊天本身的那家接口，不会拿去调用别的供应商
         self.chat.base_url = 'https://another-provider.example/v1'
         self.ask()
-        self.assertEqual(self.factory_args, []); self.assertIn('不是 DeepSeek 官方接口', self.chat.calls[-1][0][-1].content)
+        self.assertEqual([(a['base_url'], a['api_key'], a['model']) for a in self.factory_args],
+                         [('https://another-provider.example/v1', 'synthetic-key', 'chat-model')])
+        self.db.set_setting('qq_vision_model', 'vision-pro'); self.ask(); self.assertEqual(self.factory_args[-1]['model'], 'vision-pro')
+        self.chat.base_url = 'http://plain-http.example/v1'; self.ask()
+        self.assertEqual(len(self.factory_args), 2); self.assertIn('[图片]', self.chat.calls[-1][0][-1].content)   # 非 https 不送图
 
     def test_quota_rechecked_after_vision_spends_budget(self):
         original = self.vision.chat

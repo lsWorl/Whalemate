@@ -25,6 +25,7 @@ class QQExpressionTests(unittest.TestCase):
         self.model=Model();self.controller=ChatController(self.db,MemoryService(self.db),self.model);self.controller.character=char
         self.db.set_setting('bridge_owner:qq','10001');self.db.set_setting('bridge_groups',['30003']);self.db.set_setting('bridge_memory_every',0)
         self.service=BridgeService(self.db,self.controller)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.module=plugin_fixture.load_plugin()
         self.components=types.ModuleType('astrbot.api.message_components')
         self.components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
@@ -39,7 +40,7 @@ class QQExpressionTests(unittest.TestCase):
         async def ask(payload):return answer
         async def control(path,payload):
             return self.service.expression_claim(payload) if path=='claim' else self.service.expression_ack(payload)
-        async def no_pause(text):pass
+        async def no_pause(text,delay=None):pass
         plugin.avatar_permission=denied;plugin.ask_pet=ask;plugin.expression_control=control;plugin.pause=no_pause
         async def run():return [item async for item in plugin.on_message(event)]
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':self.components}):out=asyncio.run(run())
