@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS people (
 CREATE TABLE IF NOT EXISTS platform_identities (
  platform TEXT NOT NULL, bot_account_id TEXT NOT NULL, platform_user_id TEXT NOT NULL,
  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, link_state TEXT NOT NULL DEFAULT 'observed',
- created_at REAL NOT NULL, PRIMARY KEY(platform, bot_account_id, platform_user_id)
+ created_at REAL NOT NULL, prior_person_id INTEGER, PRIMARY KEY(platform, bot_account_id, platform_user_id)
 );
 CREATE TABLE IF NOT EXISTS relationship_profiles (
  character_id TEXT NOT NULL, person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,

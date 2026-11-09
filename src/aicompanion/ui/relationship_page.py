@@ -61,6 +61,7 @@ class RelationshipPage(QWidget):
             name = QTableWidgetItem(('★ ' if p['is_owner'] else '')+(p['display_name'] or '（没有昵称）'))
             name.setData(Qt.ItemDataRole.UserRole, p['person_id']); self.table.setItem(n, 0, name)
             ids = '；'.join(f"{i['platform']}:{i['platform_user_id']}" for i in p['identities'])
+            if p['parked_for']: ids = '已绑定为主人（解绑后还原）：'+'；'.join(f"{i['platform']}:{i['platform_user_id']}" for i in p['parked_for'])
             values = [ids, f"{p['affinity']:.0f}", f"{p['familiarity']:.0f}", f"{p['trust']:.0f}",
                       time.strftime('%m-%d %H:%M', time.localtime(p['last_seen'])), str(p['interactions'])]
             for col, value in enumerate(values, 1): self.table.setItem(n, col, QTableWidgetItem(value))

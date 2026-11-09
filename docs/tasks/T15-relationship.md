@@ -23,7 +23,12 @@
 ### 人物身份（`relationship/service.py` 的 `resolve`、表 `people` / `platform_identities`）
 - 平台身份 = `platform + bot_account_id + platform_user_id`。群号只是交流场景，不进身份；昵称和头像只作展示，同时记历史昵称。
 - 不同机器人账号不自动合并；昵称相同不合并。
-- 主人：桌面身份 `desktop / local / owner`。QQ 上已绑定的主人号（`bridge_owner:qq`）通过现有绑定（明确授权）关联到同一个人物，关联记录 `link_state='owner'`；解绑后这个号不再算主人。原 `relationship_state` 保留不动。
+- 主人：桌面身份 `desktop / local / owner`。QQ 上已绑定的主人号（`bridge_owner:qq`）通过现有绑定（明确授权）关联到同一个人物，关联记录 `link_state='owner'`；解绑后这个号不再算主人。
+- 绑定 / 解绑 / 重绑（Codex 第一轮 P2）：
+  - 这个号之前已被当作普通人建档，后来绑定为主人：身份改指向主人档案（`prior_person_id` 记下原档案）。原档案不删，分数、手动调整、事件都保留；她当时记下的关于他的事复制合并给主人（相似的合并，不重复）。主人自己的分数不被覆盖。
+  - 解绑：这个号还原到原档案（`link_state='observed'`），主人的关系和绑定期间记下的主人的事不带走；原档案已被删过就另建陌生人档案。
+  - 重复切换按上面两条反复执行；聊天记录里 `qq:号 → 人物` 的映射随每次识别更新，之后的后台关系分析算到当前所属的人头上。
+  - 原档案在"人物关系"页显示为"已绑定为主人（解绑后还原）"。原 `relationship_state` 保留不动。
 - 机器人账号不是 5～12 位数字（插件没报上来）时记为 `unknown`，不和其他账号的同号合并。
 
 ### 三个维度（表 `relationship_profiles`，0～100，相互独立）

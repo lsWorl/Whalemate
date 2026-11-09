@@ -144,7 +144,7 @@ class RelationshipService:
             if row: return row['person_id']
             now = self.clock()
             pid = c.execute("INSERT INTO people(display_name,created_at,last_seen) VALUES ('主人',?,?)", (now, now)).lastrowid
-            c.execute("INSERT INTO platform_identities VALUES ('desktop','local','owner',?,'owner',?)", (pid, now))
+            c.execute("INSERT INTO platform_identities(platform,bot_account_id,platform_user_id,person_id,link_state,created_at) VALUES ('desktop','local','owner',?,'owner',?)", (pid, now))
             return pid
         return work(connection) if connection is not None else self.db.locked(work)
 
@@ -157,24 +157,39 @@ class RelationshipService:
         now = self.clock()
 
         def work(c):
-            row = c.execute('SELECT person_id,link_state FROM platform_identities WHERE platform=? AND bot_account_id=? AND platform_user_id=?',
+            row = c.execute('SELECT person_id,link_state,prior_person_id FROM platform_identities WHERE platform=? AND bot_account_id=? AND platform_user_id=?',
                             (ref.platform, ref.bot_account_id, ref.platform_user_id)).fetchone()
             is_owner_binding = ref == OWNER_DESKTOP or (ref.platform == 'qq' and owner_qq and ref.platform_user_id == owner_qq)
-            if row and row['link_state'] == 'owner' and not is_owner_binding:
-                # 主人绑定已解除：这个 QQ 号不再算主人，另建自己的档案（不带走主人的关系）
-                c.execute('DELETE FROM platform_identities WHERE platform=? AND bot_account_id=? AND platform_user_id=?',
-                          (ref.platform, ref.bot_account_id, ref.platform_user_id)); row = None
-            if row is None:
-                if is_owner_binding:
-                    pid = self.owner_person(c)
-                    if ref != OWNER_DESKTOP:
-                        c.execute('INSERT OR REPLACE INTO platform_identities VALUES (?,?,?,?,?,?)',
+            if is_owner_binding:
+                pid = self.owner_person(c)
+                if ref != OWNER_DESKTOP:
+                    if row is None:
+                        c.execute('INSERT INTO platform_identities(platform,bot_account_id,platform_user_id,person_id,link_state,created_at) VALUES (?,?,?,?,?,?)',
                                   (ref.platform, ref.bot_account_id, ref.platform_user_id, pid, 'owner', now))
-                else:
-                    pid = c.execute('INSERT INTO people(display_name,created_at,last_seen) VALUES (?,?,?)', (ref.nickname, now, now)).lastrowid
-                    c.execute('INSERT INTO platform_identities VALUES (?,?,?,?,?,?)', (ref.platform, ref.bot_account_id, ref.platform_user_id, pid, 'observed', now))
+                    elif row['person_id'] != pid:
+                        # 这个号之前被当作普通人建过档，现在经主人绑定（明确授权）改绑：身份转到主人档案，
+                        # 原档案不删（分数、手动调整、事件都留着，解绑时还原），她记得的关于他的事合并给主人。
+                        prior = row['person_id']
+                        c.execute("UPDATE platform_identities SET person_id=?, link_state='owner', prior_person_id=? WHERE platform=? AND bot_account_id=? AND platform_user_id=?",
+                                  (pid, prior, ref.platform, ref.bot_account_id, ref.platform_user_id))
+                        self.notes.merge(c, prior, pid)
             else:
-                pid = row['person_id']
+                if row and row['link_state'] == 'owner':
+                    # 主人绑定已解除：这个号不再算主人。原来有自己的档案就还原回去，没有就另建；主人的关系不带走。
+                    prior = row['prior_person_id']
+                    if prior and c.execute('SELECT 1 FROM people WHERE id=?', (prior,)).fetchone():
+                        c.execute("UPDATE platform_identities SET person_id=?, link_state='observed', prior_person_id=NULL WHERE platform=? AND bot_account_id=? AND platform_user_id=?",
+                                  (prior, ref.platform, ref.bot_account_id, ref.platform_user_id))
+                        row = {'person_id': prior}
+                    else:
+                        c.execute('DELETE FROM platform_identities WHERE platform=? AND bot_account_id=? AND platform_user_id=?',
+                                  (ref.platform, ref.bot_account_id, ref.platform_user_id)); row = None
+                if row is None:
+                    pid = c.execute('INSERT INTO people(display_name,created_at,last_seen) VALUES (?,?,?)', (ref.nickname, now, now)).lastrowid
+                    c.execute('INSERT INTO platform_identities(platform,bot_account_id,platform_user_id,person_id,link_state,created_at) VALUES (?,?,?,?,?,?)',
+                              (ref.platform, ref.bot_account_id, ref.platform_user_id, pid, 'observed', now))
+                else:
+                    pid = row['person_id']
             owner = bool(is_owner_binding)
             person = c.execute('SELECT nicknames,display_name FROM people WHERE id=?', (pid,)).fetchone()
             nicknames = json.loads(person['nicknames'] or '[]')
@@ -210,9 +225,11 @@ class RelationshipService:
                                WHERE p.character_id=? AND p.person_id=?''', (character_id, person_id)).fetchone()
             if row is None: return None
             ids = c.execute('SELECT platform,bot_account_id,platform_user_id,link_state FROM platform_identities WHERE person_id=?', (person_id,)).fetchall()
+            parked = c.execute('SELECT platform,platform_user_id FROM platform_identities WHERE prior_person_id=?', (person_id,)).fetchall()
         value = dict(row)
         for key in ('manual', 'nicknames'): value[key] = json.loads(value[key] or ('{}' if key == 'manual' else '[]'))
         value['identities'] = [dict(r) for r in ids]
+        value['parked_for'] = [dict(r) for r in parked]   # 这个号现在绑定为主人，原档案暂存，解绑后还原
         return value
 
     def people(self, character_id: str) -> list[dict]:

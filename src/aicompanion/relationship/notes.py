@@ -107,6 +107,24 @@ class PersonNotes:
         for r in stale+keep[MAX_PER_PERSON:]:
             c.execute('DELETE FROM person_notes WHERE id=?', (r['id'],))
 
+    def merge(self, c, source: int, target: int) -> int:
+        """把 source 这个人的记忆复制给 target（主人改绑时用：之前当群友认识他时记下的喜好，本来就是他的）。
+        source 自己的记忆不动，解绑还原时还在。相似的合并为一条（提到次数相加、取较清楚的权重）。返回新增条数。"""
+        added = 0
+        targets = [dict(r) for r in c.execute('SELECT * FROM person_notes WHERE person_id=?', (target,))]
+        for note in c.execute('SELECT * FROM person_notes WHERE person_id=?', (source,)).fetchall():
+            same = next((t for t in targets if t['character_id'] == note['character_id'] and t['category'] == note['category']
+                         and similar(t['text'], note['text'])), None)
+            if same:
+                c.execute('UPDATE person_notes SET mentions=mentions+?, weight=MIN(3.0, MAX(weight, ?)), last_at=MAX(last_at, ?) WHERE id=?',
+                          (note['mentions'], note['weight'], note['last_at'], same['id']))
+            else:
+                c.execute('INSERT INTO person_notes(character_id,person_id,category,text,weight,mentions,origin,first_at,last_at) VALUES (?,?,?,?,?,?,?,?,?)',
+                          (note['character_id'], target, note['category'], note['text'], note['weight'], note['mentions'], note['origin'],
+                           note['first_at'], note['last_at']))
+                added += 1
+        return added
+
     # ---- 读取 ------------------------------------------------------------------------------------
     def strength(self, row) -> float:
         """此刻这条记忆还有多清楚：权重 × 半衰。'最近的状况'三周后直接忘掉。"""

@@ -303,6 +303,53 @@ class BehaviourTests(Base):
         self.ask('20002', '在吗', group='30003', name='群友A')
         self.assertIn('几乎不认识', self.model.prompts[-1]); self.assertNotIn('最亲近', self.model.prompts[-1])
 
+    def test_existing_guest_bound_as_owner_then_unbound_and_rebound(self):
+        """Codex P2：先以群友身份聊过、再被绑定成主人。"""
+        from aicompanion.relationship.analyzer import SENDERS_KEY
+        owner = self.rel.resolve(OWNER_DESKTOP, CID)
+        self.ask('20002', '我超喜欢原神', group='30003', name='阿明')
+        guest = self.rel.resolve(PersonRef('qq', '90000', '20002', '阿明'), CID)
+        self.assertNotEqual(guest, owner)
+        self.rel.adjust(CID, guest, affinity=66)
+        self.rel.notes.apply(CID, guest, category='like', text='原神', confidence=0.9, origin='group')
+        senders = lambda: self.db.get_setting(SENDERS_KEY+CID, {})['qq:20002']
+        self.assertEqual(senders(), guest)
+
+        self.db.set_setting('bridge_owner:qq', '20002')                                    # 改绑：群友号成为主人
+        self.ask('20002', '在吗')
+        self.assertIn('最亲近、天天相处', self.model.prompts[-1]); self.assertNotIn('几乎不认识', self.model.prompts[-1])
+        now = self.rel.resolve(PersonRef('qq', '90000', '20002', ''), CID)
+        self.assertEqual(now, owner); self.assertTrue(self.rel.profile(CID, owner)['is_owner'])
+        self.assertEqual(self.rel.profile(CID, owner)['affinity'], 80.0)                    # 主人的关系不被群友分数覆盖
+        self.assertIn('原神', self.model.prompts[-1])                                        # 当群友时知道的喜好合并给主人
+        self.assertEqual(senders(), owner)                                                  # 之后的后台分析算到主人头上
+        kept = self.rel.profile(CID, guest)
+        self.assertEqual(kept['affinity'], 66.0); self.assertEqual(kept['parked_for'][0]['platform_user_id'], '20002')   # 原档案保留
+        self.assertEqual(len([p for p in self.rel.people(CID) if p['is_owner']]), 1)
+        self.rel.notes.apply(CID, owner, category='like', text='爹的私房菜', confidence=0.9)    # 绑定期间她记下的主人的事
+
+        self.db.set_setting('bridge_owner:qq', '10001')                                    # 解绑（换回别的号）
+        self.ask('20002', '在吗', group='30003', name='阿明')
+        self.assertNotIn('最亲近', self.model.prompts[-1])
+        back = self.rel.resolve(PersonRef('qq', '90000', '20002', '阿明'), CID)
+        self.assertEqual(back, guest); self.assertEqual(self.rel.profile(CID, guest)['affinity'], 66.0)   # 还原原档案和手动调整
+        self.assertFalse(self.rel.profile(CID, guest)['is_owner']); self.assertEqual(self.rel.profile(CID, guest)['parked_for'], [])
+        self.assertNotIn('私房菜', self.model.prompts[-1])                                   # 主人的内容不带走
+        self.assertEqual(senders(), guest)
+        self.assertEqual(self.rel.resolve(OWNER_DESKTOP, CID), owner)                       # 桌面主人不受影响
+
+        self.db.set_setting('bridge_owner:qq', '20002'); self.ask('20002', '又是我')         # 再绑一次
+        self.assertEqual(self.rel.resolve(PersonRef('qq', '90000', '20002', ''), CID), owner)
+        likes = [n for n in self.rel.notes.items(CID, owner) if n['text'] == '原神']
+        self.assertEqual(len(likes), 1)                                                     # 重复绑定不重复记
+        self.db.set_setting('bridge_owner:qq', ''); self.assertEqual(self.rel.resolve(PersonRef('qq', '90000', '20002', ''), CID), guest)
+
+        self.rel.delete(guest)                                                              # 原档案被删过：解绑后另建新档，不复活主人
+        self.db.set_setting('bridge_owner:qq', '20002'); self.rel.resolve(PersonRef('qq', '90000', '20002', ''), CID)
+        self.db.set_setting('bridge_owner:qq', '')
+        fresh = self.rel.resolve(PersonRef('qq', '90000', '20002', ''), CID)
+        self.assertNotIn(fresh, (owner, guest)); self.assertEqual(self.rel.profile(CID, fresh)['affinity'], STRANGER['affinity'])
+
     def test_18_expression_still_works_and_closeness_only_reorders(self):
         from aicompanion.expression.domain import RelationshipSnapshot, owner_relationship
         self.assertEqual(RelationshipSnapshot().closeness, 0.0); self.assertGreater(owner_relationship().closeness, 0.5)
