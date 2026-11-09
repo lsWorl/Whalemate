@@ -743,3 +743,25 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 未修改真实账号、用户数据库、系统安全设置或运行时二进制，没有启动真实 QQ 或调用模型。仍需准备符合系统信任要求的部署，再验证真实私聊图片和插件 0.7.0 心跳，不能把诊断改善标记为 QQ 恢复。
 
 本轮 Windows Smoke：passed=true、errors=[]、failed_checks=[]、remaining_workers=0；离线检查脚本退出 0。这仅证明诊断修正回归通过，不证明被系统拦截的真实组件已能启动。
+
+### 2026-11-09 QQ：AstrBot 改用基础解释器启动，避开应用控制拦截（Claude，`task/t9-qq-app-control`）
+
+- **真机诊断**（只读脚本，结果在 `output/claude-ws/qq-diag/`）：
+  - 智能应用控制 `SmartAppControlState=On`。
+  - uv 虚拟环境里的 `Scripts\python.exe` / `pythonw.exe`（未签名）被代码完整性拦截（3033 / 3077）；`astrbot.exe` 拉起它时报 4551。
+  - 同一套 uv 装的基础解释器 `python\cpython-3.12…\python.exe` 也没签名，但能正常运行，`--version` 退出 0。
+  - uv.exe 有签名；NapCat 的 node.exe 有 OpenJS 签名，`--version` 正常。
+- **修复**（新增 `qq/launch.py`，`manager._start` 只改 AstrBot 的启动命令）：
+  - 启动命令改为 `<基础解释器> -I -X utf8 -c <引导> <虚拟环境> run`。引导用 `site.addsitedir` 加入虚拟环境的 site-packages，再从已安装包的元数据读取 `astrbot` 的 console_scripts 入口运行。
+  - `-I` 防止桌宠或用户环境里的 Python 包混进来。`-I` 会忽略 PYTHONUTF8，所以显式加 `-X utf8`；诊断时发现不加的话，日志在中文 Windows 上按 GBK 写会报 UnicodeEncodeError。
+  - 基础解释器取自 pyvenv.cfg 的 home，而且只认组件目录里确实存在的 python.exe；找不到时退回原来的 `Scripts\astrbot.exe`。
+  - 没有改系统安全设置，没有替换或删除被拦截的文件，也没有动账号和真实数据。Codex 先前加的 4551 提示保留，退回原启动器时仍然有用。
+- **验证**：
+  - 容器：新增 `test_qq_launch.py` 4 项。其中一项在 `-I` 下真的执行引导，确认能从"虚拟环境"的 site-packages 找到入口并收到参数。另一项确认管理器启动时 AstrBot 走基础解释器、cwd 和 ASTRBOT_ROOT 不变、NapCat 启动方式不变。QQ 专项共 37 项通过。
+  - Windows 真机（快照 `output/claude-ws/wsqq1`）：用分支代码生成真实命令，在临时 ASTRBOT_ROOT 里 init 后运行 40 秒。日志有 `AstrBot started.`、`Starting WebUI`、内置插件加载，没有 4551、Traceback 或编码错误，期间代码完整性拦截 0 条。QQ 专项 37 项通过（Windows，5.6 秒）。
+- **没验证的部分**：
+  - 没在桌宠里点"启动"跑真实 QQ（不碰真实 astrbot-home、账号，不发消息）。
+  - NapCat 的原生模块（未签名的 NapCatWinBootMain.exe、winpty-agent.exe）在 QQ 登录过程中会不会被拦，还没确认。
+  - **全新安装 / 升级 AstrBot 时**，`uv pip --python Scripts\python.exe` 也要执行被拦的启动器，可能同样失败。这次只修了启动，安装流程待后续处理。
+  - AstrBot 运行中如果用 `sys.executable -m pip` 给插件装依赖，会装进基础解释器而不是虚拟环境（我们的插件没有额外依赖）。
+
