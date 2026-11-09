@@ -48,6 +48,7 @@ class ProactiveQQTests(Base):
 
     def test_generated_into_outbox_shared_history_and_acked(self):
         results = []
+        self.service.chance = lambda: 0.0                       # 分句时短句一定合并（QQ 规则：空格不当停顿）
         turn = self.service.proactive_qq('早晨问候，关心今天的心情', on_done=results.append)
         self.assertTrue(turn)
         self.assertIn('别提自己是 AI', self.model.prompts[-1])
@@ -56,6 +57,7 @@ class ProactiveQQTests(Base):
         self.assertEqual((history[-1]['role'], history[-1]['content']), ('assistant', '爹 吃饭了没'))   # 和桌面同一段记录
         items = self.service.take_outbox()
         self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹，吃饭了没'])])
+        self.assertEqual(items[0]['segment_delays'], [0.0])
         self.assertEqual(self.service.take_outbox(), [])                # 只取一次
         self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
         self.assertEqual(results, [True]); self.assertFalse(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
