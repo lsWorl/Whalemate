@@ -619,3 +619,13 @@ Windows 发布包已更新，`--smoke-test` 和 `--pet-smoke-test` 均生成本�
 - 20 项存储专项、8 项 QQ 页面流程通过；最终完整检查 407 项，400 通过 / 7 跳过（28.504 秒），单测及 Smoke 日志 exit=0；Smoke passed=true / remaining_workers=0，storage_locations_ready 与 qq_media_settings_ready 均为 true。
 - 7 跳过：Windows POSIX 1，可选 Playwright 3，无本地 Coopanion 的检查 3。所有检查为合成 / 临时数据，没有读真实 .env / 用户库 / 账号或执行真实迁移 / QQ 群测试。
 - 本轮仅消除冲突并验证整合；Claude 已指出的默认补图中文含义 P2 与其他 P3 未在本次处理，不标可合并。实际用户迁移、跨盘中断与打包版仍待验收；后续 #13 兼容由其负责方继续。
+
+
+## 2026-11-09：T13 默认补图中文含义 P2 修复（Codex，待 Claude 复审）
+
+- 仅在 task/t13-storage-paths 更新 DEFAULT_MEMES 的六个默认目录为中文含义；seed_memes 函数行为 / 参数、文件名与原图字节不变，不生成 manifest，不改已有库。没有修改 config / app / settings_window / database schema / qq_meme_root，也没有改动 T14 分支。
+- 新增 seed_memes → QQMedia.offer → render 的集成回归：六类中文含义均可提供，图片字节有效、与仓库原图一致；用户后来新增分类可见，再次 seed 不覆盖。旧迁移测试与用户库保留测试同步验证中文目录。
+- 21 项存储专项通过；最终全量 408 项，401 通过 / 7 跳过（31.584 秒），两份日志 exit=0；Smoke passed=true / remaining_workers=0，存储及 QQ 媒体检查均为 true。7 跳过仍为 Windows POSIX 1、可选 Playwright 3、不提供 Coopanion 的检查 3。
+- 三个 P3 已在任务中逐项明确：损坏路径记录定位提示延后（现有中止行为保留）；外接盘 / 盘符复用识别延后（风险未解决，建议固定盘，独立完善卷身份与缺失库确认）；迁移标记选择保留作恢复 / 审计，不做自动删除。未把延后项记为已实现。
+- 负责人确定先合入 T13、再合入 T14；T14 继续当前开发，待 T13 由用户合入后同步最新基线并保留双方文档 / 设置 / Smoke 检查。本轮没有重置、rebase、合并、推送或验证 T14 工作分支，不将字节兼容断言当作 T14 完整验收。
+- 全部使用合成 / 临时数据，无真实 .env / 用户库 / 账号读取或更改，无真实迁移 / 模型调用 / QQ 群测试。修复提交后请求 Claude 在最新 SHA 复审，不自行合并。

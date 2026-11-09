@@ -45,7 +45,7 @@ class LocationMigrationTests(StorageBase):
         self.assertEqual(new.recent_memories()[0]['content'], '合成记忆蓝色')
         self.assertEqual(new.get_setting('synthetic_setting'), 'preserved')
         self.assertTrue(self.source.is_file()); self.assertNotIn('migration', locations.read_record(self.record))
-        self.assertTrue((self.memes/'happy'/'celebrate.png').is_file())
+        self.assertTrue((self.memes/'开心庆祝'/'celebrate.png').is_file())
         locations.prepare(new_settings)  # 重入不会再复制旧数据
         self.assertEqual(len(new.recent_messages()), 2)
 
@@ -99,7 +99,39 @@ class LocationMigrationTests(StorageBase):
     def test_meme_library_files_are_not_overwritten_or_moved(self):
         (self.memes/'custom').mkdir(parents=True); path = self.memes/'custom'/'owned.gif'; path.write_bytes(b'user-owned')
         locations.seed_memes(self.memes)
-        self.assertEqual(path.read_bytes(), b'user-owned'); self.assertFalse((self.memes/'happy').exists())
+        self.assertEqual(path.read_bytes(), b'user-owned')
+        self.assertEqual({p.name for p in self.memes.iterdir()}, {'custom'})
+
+    def test_seeded_library_offers_chinese_meanings_and_later_user_category(self):
+        from types import SimpleNamespace
+        from aicompanion.bridge.media import QQMedia, image_bytes
+        locations.seed_memes(self.memes)
+        self.db.set_setting('qq_meme_root', str(self.memes))
+        controller = SimpleNamespace(character=SimpleNamespace(id='deepseek-whale'))
+        media = QQMedia(self.db, controller, clock=lambda: 1000)
+        offer = media.offer('synthetic:before')
+        expected = {'开心庆祝', '思考疑惑', '困了晚安', '惊讶被戳', '无语出错', '耐心等待'}
+        self.assertEqual(set(offer.categories), expected)
+        for category, (meaning, paths) in offer.categories.items():
+            self.assertEqual(meaning, category)
+            self.assertEqual(len(paths), 1); self.assertTrue(paths[0].is_file())
+            # T14 按内容哈希认领原创来源；只改分类目录，不能重编码图片或改变文件名。
+            original = Path(locations.__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'/paths[0].name
+            self.assertEqual(paths[0].read_bytes(), original.read_bytes())
+        self.assertFalse((self.memes/'manifest.json').exists())
+        # 真正走现有发送适配，确认中文分类可选且图片字节有效，不调用模型或 QQ。
+        rendered = media.render('<meme name="开心庆祝"/>', 'complete', offer, 'synthetic:before')
+        self.assertEqual(len(rendered['images']), 1); image_bytes(rendered['images'][0])
+        user = self.memes/'用户新增分类'; user.mkdir()
+        content = (self.memes/'开心庆祝'/'celebrate.png').read_bytes()
+        (user/'custom.png').write_bytes(content)
+        before = {p.relative_to(self.memes): p.read_bytes() for p in self.memes.rglob('*') if p.is_file()}
+        locations.seed_memes(self.memes)
+        self.assertEqual(before, {p.relative_to(self.memes): p.read_bytes() for p in self.memes.rglob('*') if p.is_file()})
+        updated = media.offer('synthetic:after')
+        self.assertEqual(set(updated.categories), expected | {'用户新增分类'})
+        self.assertEqual(updated.categories['用户新增分类'][0], '用户新增分类')
+        self.assertFalse((self.memes/'manifest.json').exists())
 
     def test_custom_database_filename_is_preserved(self):
         custom = self.root/'old'/'other.sqlite3'; self.source.rename(custom)

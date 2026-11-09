@@ -16,8 +16,9 @@ import tempfile
 from uuid import uuid4
 
 DATABASE_NAME = 'aicompanion.sqlite3'
-DEFAULT_MEMES = {'happy': 'celebrate.png', 'thinking': 'thinking.png', 'sleepy': 'sleepy.png',
-                 'surprised': 'poked.png', 'error': 'error.png', 'wait': 'wait.png'}
+# 自定义目录没有内置说明映射；分类名本身保留中文含义，也不靠 manifest 限制用户后加的分类。
+DEFAULT_MEMES = {'开心庆祝': 'celebrate.png', '思考疑惑': 'thinking.png', '困了晚安': 'sleepy.png',
+                 '惊讶被戳': 'poked.png', '无语出错': 'error.png', '耐心等待': 'wait.png'}
 
 
 def project_root() -> Path:
