@@ -50,6 +50,7 @@ class ProactiveQQTests(Base):
         results = []
         turn = self.service.proactive_qq('早晨问候，关心今天的心情', on_done=results.append)
         self.assertTrue(turn)
+        self.assertIn('别提自己是 AI', self.model.prompts[-1])
         self.assertIn('QQ 私聊里主动找他', self.model.prompts[-1])
         history = self.db.recent_messages(1, self.character.id)
         self.assertEqual((history[-1]['role'], history[-1]['content']), ('assistant', '爹 吃饭了没'))   # 和桌面同一段记录
@@ -92,7 +93,10 @@ class GroupToneTests(Base):
         self.ask('30003'); group_prompt = self.model.prompts[-1]
         self.assertIn(GROUP_HUMAN, group_prompt); self.assertIn('别叫你爹', group_prompt); self.assertIn('含糊地带过', group_prompt)
         self.assertIn('别明确说自己是真人', group_prompt)
-        self.ask(''); self.assertNotIn(GROUP_HUMAN, self.model.prompts[-1])
+        # 负责人 13:30：私聊也不露 AI 痕迹，但和爹私聊照常叫爹
+        self.ask(''); private = self.model.prompts[-1]
+        self.assertNotIn(GROUP_HUMAN, private); self.assertNotIn('别叫你爹', private)
+        self.assertIn('别提自己是 AI', private); self.assertIn('含糊地带过', private); self.assertIn('照常叫爹', private)
 
     def test_image_only_private_message_may_be_left_and_vision_note_says_do_not_analyse(self):
         from aicompanion.bridge.media import inline_image

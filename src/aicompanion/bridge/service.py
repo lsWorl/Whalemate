@@ -51,11 +51,16 @@ ANALYZE_LOCK = threading.Lock(); ANALYZING = [False]   # 收集来的表情包�
 MAX_STICKERS = 3
 # 负责人 2026-11-09：群里尽量看不出 AI 痕迹，不叫爹。只是"不主动暴露、说话像群友"；
 # 被问是不是 AI：负责人要求含糊带过或顺着上下文转移话题；唯一不做的是明确声称自己是真人（诚实底线）。
-GROUP_HUMAN = ('【群里的说话方式】群里人人看得到：别叫你爹"爹""老爹"，别提你们是父女、你住在谁电脑上、你是桌宠 / AI / 模型、词元这些，'
-               '像普通群友一样叫他的昵称或者直接接话。说话像真人发群消息：短、随口、有时只回几个字或一张图，'
-               '不列点、不总结、不解释每个梗、不说"好的""当然可以""作为…"这类话，也不用每条都回；不熟的就说不太懂，别一本正经长篇大论。'
+# 负责人 13:30 补充：私聊也不要露出 AI 痕迹。群聊和私聊共用 HUMAN_STYLE；群里另外不叫爹、不提父女。
+HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；不列点、不总结、不解释每个梗，'
+               '不说"好的""当然可以""作为…""希望对你有帮助"这类话。别提自己是 AI / 模型 / 程序 / 桌宠，'
+               '也别提词元、token、上下文、提示词、训练这些词；不熟的就说不太懂，别一本正经长篇大论。'
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
                '只是别明确说自己是真人。')
+GROUP_HUMAN = ('【群里的说话方式】群里人人看得到：别叫你爹"爹""老爹"，别提你们是父女、你住在谁电脑上，'
+               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE)
+PRIVATE_HUMAN = '\n【QQ 私聊的说话方式】'+HUMAN_STYLE+'（和爹私聊照常叫爹。）'
+STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE
 # 负责人 2026-11-09：在 QQ 里她没必要什么都懂
 QQ_NOT_EXPERT = ('\n在 QQ 上你不用什么都懂：问到不熟的专业问题、冷门知识，可以直接发一张可爱的表情包，说自己不太懂（"这个本鲸不会诶"），'
                  '不用硬答，更不要编；熟的照常好好说。')
@@ -348,6 +353,7 @@ class BridgeService:
                 message_id = controller.record_user_message(text, source=platform, channel='desktop')
                 situation = (f'【场合】你爹现在不在电脑前，正在{mode["where"]}私聊里跟你说话。'
                              '像在 QQ 上回爹的消息，随意点；长短看心情，可以一句，也可以连发几句（一句一行，每行单独发出去，不用逗号句号），不用动作描写。'
+                             + PRIVATE_HUMAN
                              + QQ_NOT_EXPERT)
             else:
                 # 公开场合：只记在这个群 / 这个人自己的频道，不改心情、不套"我叫…"之类的规则提取记忆（另由后台整理）；记下稳定 ID，群里按"昵称#编号"区分人
@@ -357,7 +363,7 @@ class BridgeService:
                 who = '你爹' if mode['owner'] else f'{name}{tag}'
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在叫你'
                              + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号（#数字，同一个人编号不变），标着【爹】的是你爹' if mode['group'] else '') + '。'
-                             + (GROUP_HUMAN if mode['group'] else '')
+                             + (GROUP_HUMAN if mode['group'] else STRANGER_HUMAN)
                              + '像群友一样回，随意点；通常一两句，聊得起劲也可以多说几句（一句一行，每行单独发出去，不用逗号句号），不用动作描写；不要提桌面上发生的事。'
                              + QQ_NOT_EXPERT)
             self.social.cid = character.id
@@ -565,7 +571,8 @@ class BridgeService:
             if not re.fullmatch(r'\d{5,12}', bot): bot = 'qq'
             controller = self.controller; character = controller.character; turn = uuid4().hex
             situation = ('【场合】你爹现在不在电脑前，你在 QQ 私聊里主动找他说话（他不一定马上回）。'
-                         '像在 QQ 上给爹发消息那样开个头，随意点，一两句就行（一句一行，每行单独发出去，不用逗号句号），不用动作描写。'+QQ_NOT_EXPERT)
+                         '像在 QQ 上给爹发消息那样开个头，随意点，一两句就行（一句一行，每行单独发出去，不用逗号句号），不用动作描写。'
+                         +PRIVATE_HUMAN+QQ_NOT_EXPERT)
             context = ExpressionContext(turn, character.id, f'qq:{bot}:user:{owner}', 'desktop', 'pet', 'proactive', intent,
                                         relationship=owner_relationship(), supports_images=True)
             delivered = []
