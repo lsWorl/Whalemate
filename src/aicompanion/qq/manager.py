@@ -25,6 +25,7 @@ import time
 from aicompanion.qq import configure, specs
 from aicompanion.qq.fetch import fetch
 from aicompanion.qq.layout import Layout, default_root, install_archive
+from aicompanion.qq.launch import astrbot_command
 from aicompanion.qq.napcat_webui import NapCatWebUI, WebUIError
 from aicompanion.qq.supervisor import Supervisor
 
@@ -253,7 +254,8 @@ class QQManager:
         self.configure()   # 每次启动前同步一次配置（端口冲突、令牌、插件更新）
         keys, layout = self.secrets(), self.layout
         astrbot = layout.current('astrbot')
-        self.supervisor.start('astrbot', [astrbot/'Scripts'/'astrbot.exe', 'run'], layout.astrbot_home,
+        # 用基础解释器直接运行，避开被 Windows 智能应用控制拦截的虚拟环境启动器（见 qq/launch.py）
+        self.supervisor.start('astrbot', astrbot_command(astrbot, layout, 'run'), layout.astrbot_home,
                               child_env({'ASTRBOT_ROOT': layout.astrbot_home, 'ASTRBOT_DASHBOARD_INITIAL_PASSWORD': keys['dashboard'],
                                          'ASTRBOT_DISABLE_METRICS': '1', 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1'}))
         napcat = layout.current('napcat'); uin = str(self.db.get_setting('qq_bot_uin', '') or '')
