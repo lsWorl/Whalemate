@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.8.0'
+PLUGIN_VERSION = '0.9.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -37,6 +37,11 @@ DEFAULTS = {'pet_url': 'http://127.0.0.1:18765', 'token': '', 'groups': [], 'gro
             'offline_reply': '她现在不在电脑旁，晚点再来找她吧～', 'timeout': 60, 'skip_prefixes': ['/']}
 
 
+def markers_of(segments):
+    """原始消息段里有没有图片 / 商城表情（用于决定要不要记一行收图诊断）。"""
+    return any(seg.get('type') in ('image', 'mface') for seg in segments)
+
+
 class AICompanionBridge(Star):
     def __init__(self, context: Context, config: AstrBotConfig | None = None):
         super().__init__(context)
@@ -46,6 +51,9 @@ class AICompanionBridge(Star):
         self.pet_vision = True
         self.pet_collect = True        # 桌宠心跳告诉我们要不要收集别人发的表情包
         self.known_stickers = set()    # 桌宠已经收过的表情包（内容哈希）：再看到只传哈希，不重复传图
+        self.private_origins = {}      # QQ 号 → AstrBot 会话标识（主动发私聊时用；没聊过就按平台 id 拼）
+        self.platform_id = 'aicompanion_qq'
+        self.outbox_sent = set()       # 已经发过的主动消息 id（心跳重复带回时不重发）
         self.pet_name = '鲸娘'
         self.avatar_backoff = {}
         self.expression_attempts = set()
@@ -81,7 +89,7 @@ class AICompanionBridge(Star):
     def raw_segments(event):
         """OneBot 原始消息段（AstrBot 把商城表情 mface 丢掉了，表情包的 sub_type 也只在原始段里稳定存在）。"""
         raw = getattr(getattr(event, 'message_obj', None), 'raw_message', None)
-        message = raw.get('message') if hasattr(raw, 'get') else None
+        message = raw.get('message') if hasattr(raw, 'get') else getattr(raw, 'message', None)
         return [seg for seg in message if isinstance(seg, dict)] if isinstance(message, list) else []
 
     @staticmethod
@@ -156,8 +164,17 @@ class AICompanionBridge(Star):
             except Exception:
                 continue   # 不把下载地址、路径或图片内容打进日志
         if items: payload['stickers'] = items; payload['sticker_parts'] = sources
+        if every or markers_of(self.raw_segments(event)):
+            # 2026-11-09 实测"收集不到"：日志里只有 NapCat 的"[图片]"，看不出是没认出表情还是桌宠没收。只记数量和类型，不记图片、地址或文字
+            raw = self.raw_segments(event)
+            kinds = ','.join(f"{seg.get('type')}:{(seg.get('data') or {}).get('sub_type', '-')}" for seg in raw
+                             if seg.get('type') in ('image', 'mface') and isinstance(seg.get('data'), dict)) or '无原始段'
+            logger.info(f'AICompanion 收到图片 {len(every)} 张，认出表情包 {len(items)} 个（原始段 {kinds}）')
 
     def remember_stickers(self, result):
+        statuses = result.get('stickers_status') if isinstance(result, dict) else None
+        if isinstance(statuses, list) and statuses:
+            logger.info('AICompanion 表情包收集结果：' + ','.join(str(x)[:20] for x in statuses[:MAX_STICKERS]))
         known = result.get('stickers_known') if isinstance(result, dict) else None
         if isinstance(known, list):
             for digest in known[:MAX_STICKERS]:
@@ -309,6 +326,9 @@ class AICompanionBridge(Star):
                 media = data.get('media') or {}
                 self.pet_vision = bool(media.get('vision', True)); self.pet_name = str(media.get('name') or '鲸娘')
                 self.pet_collect = bool(media.get('collect', True))
+                outbox = data.get('outbox')
+                if isinstance(outbox, list) and outbox:
+                    for item in outbox[:5]: await self.deliver_outbox(item)
 
     async def heartbeat_loop(self):
         while True:
@@ -409,9 +429,26 @@ class AICompanionBridge(Star):
         return True
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
+    def unrouted_call(self, event) -> bool:
+        """没交给她的群里有人 @ 机器人：不能交还给 AstrBot 自己的模型——它没配模型，会在群里回"LLM 请求失败"（2026-11-09 实测），
+        有模型也会变成第二个人格。指令（/ 开头）照旧交给 AstrBot。"""
+        if not QQ_ADAPTERS.get(str(event.get_platform_name() or '').lower()): return False
+        if not str(event.get_group_id() or '') or not bool(getattr(event, 'is_at_or_wake_command', False)): return False
+        text = (event.message_str or '').strip()
+        return not any(text.startswith(p) for p in self.option('skip_prefixes') if p)
+
     async def on_message(self, event: AstrMessageEvent):
         payload = self.route(event)
-        if payload is None: return
+        if payload is None:
+            if self.unrouted_call(event):
+                event.stop_event()
+                logger.info('AICompanion：这个群还没在桌宠"聊天平台"页勾选，@ 机器人的消息不处理')
+            return
+        if not payload['group_id']:
+            origin = getattr(event, 'unified_msg_origin', None)
+            if isinstance(origin, str) and origin: self.private_origins[payload['sender_id']] = origin
+            platform_id = getattr(event, 'get_platform_id', lambda: '')()
+            if isinstance(platform_id, str) and platform_id: self.platform_id = platform_id
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
         event.stop_event()
         payload['expression_version']=1
@@ -434,6 +471,68 @@ class AICompanionBridge(Star):
         segments=self.segments_of(result)
         if len(segments)>1:await self.send_texts(event,segments);return
         if reply:yield event.plain_result(reply)
+
+    # ---- 主动消息（用户 2026-11-09：桌面和 QQ 都可能随机发送） ----------------------------------------------
+    async def deliver_outbox(self, item):
+        """桌宠主动发给爹的 QQ 私聊：按顺序发文字，表情包单独一条（先领取再发，和回复时一样不重发），最后回报发没发成。"""
+        import hashlib
+        if not isinstance(item, dict): return
+        key = str(item.get('id') or ''); user = str(item.get('user_id') or '')
+        if not re.fullmatch(r'[a-f0-9]{32}', key) or not re.fullmatch(r'\d{5,12}', user) or key in self.outbox_sent: return
+        self.outbox_sent.add(key)
+        if len(self.outbox_sent) > 512: self.outbox_sent = {key}
+        segments = self.segments_of({'reply': '', 'segments': item.get('segments')})
+        expression = item.get('expression') if isinstance(item.get('expression'), dict) else {}
+        attachments = [a for a in (expression.get('attachments') or [])[:1] if isinstance(a, dict)]
+        origin = self.private_origins.get(user) or f'{self.platform_id}:FriendMessage:{user}'
+        from astrbot.api.event import MessageChain
+        from astrbot.api.message_components import Image, Plain
+        async def send(component):
+            ok = await asyncio.wait_for(self.context.send_message(origin, MessageChain(chain=[component])), timeout=30)
+            if ok is False: raise RuntimeError('会话不存在')
+        sent = 0; failed = False
+        image = None; delivery = ''
+        if attachments:
+            a = attachments[0]; delivery = str(a.get('delivery_id') or '')
+            match = re.fullmatch(r'data:image/(?:png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)', str(a.get('data_uri') or ''))
+            if match and re.fullmatch(r'[a-f0-9]{32}', delivery):
+                try:
+                    raw = base64.b64decode(match[1], validate=True)
+                    if raw and len(raw) <= MAX_IMAGE_BYTES and hashlib.sha256(raw).hexdigest() == a.get('content_sha256'):
+                        image = (Image.fromBase64(match[1]), a.get('placement'))
+                except ValueError: image = None
+        async def send_image():
+            nonlocal sent
+            try: permission = await self.expression_control('claim', {'delivery_id': delivery})
+            except Exception: return
+            if not permission.get('allowed'): return
+            status = 'unknown'
+            try:
+                await send(image[0]); status = 'accepted'; sent += 1
+            except asyncio.CancelledError: raise
+            except Exception as error:
+                if type(error).__name__ == 'ActionFailed': status = 'failed'
+            try: await asyncio.shield(self.expression_control('ack', {'delivery_id': delivery, 'status': status}))
+            except Exception: pass
+        try:
+            if image and image[1] == 'before_text': await send_image()
+            for index, text in enumerate(segments):
+                if index or sent: await self.pause(text)
+                try: await send(Plain(text)); sent += 1
+                except asyncio.CancelledError: raise
+                except Exception as error:
+                    logger.warning(f'AICompanion 主动消息第 {index+1} 条发送失败：{type(error).__name__}'); failed = True; break
+            if image and image[1] == 'after_text' and not failed:
+                if segments: await self.pause('')
+                await send_image()
+        finally:
+            status = 'failed' if not sent else ('partial' if failed else 'sent')
+            try: await asyncio.shield(self.post_json('/v1/outbox/ack', {'id': key, 'status': status}))
+            except Exception: pass
+
+    async def post_json(self, path, payload):
+        async with await self.post(path, payload, 5) as response:
+            return await response.json() if response.status == 200 else {}
 
     async def terminate(self):
         if self.heartbeat_task: self.heartbeat_task.cancel()

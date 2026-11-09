@@ -16,7 +16,7 @@ PLUGIN = Path(__file__).resolve().parents[1]/'integrations'/'astrbot_plugin_aico
 
 def load_plugin():
     fakes = {}
-    api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None, debug=lambda *a: None)
+    api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None, debug=lambda *a: None, info=lambda *a: None)
     event = types.ModuleType('astrbot.api.event')
 
     class Filter:

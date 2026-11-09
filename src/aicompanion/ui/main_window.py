@@ -646,14 +646,34 @@ class MainWindow(QMainWindow):
         if purpose:
             # 心里惦记的事优先于固定的早晚问候
             self.database.update_purpose(purpose['id'],'delivering')
+            intent=self.purposes.intent(purpose)
+            if self._proactive_on_qq(intent,lambda ok,pid=purpose['id']:self.purposes.delivered(pid) if ok else self.purposes.release(pid)):return
             generation=self.coordinator.active=uuid4().hex
             self.purpose_ids[generation]=purpose['id']
             self._start(generation,proactive=self.purposes.intent(purpose),key=f"purpose:{purpose['id']}")
             return
         due=self.proactive.due(character_id,monotonic()-self.last_interaction)
         if due:
-            key,intent=due; self.coordinator.active=uuid4().hex
+            key,intent=due
+            if self._proactive_on_qq(intent,lambda ok,k=key:None if ok else self.database.release_proactive(character_id,k)):return
+            self.coordinator.active=uuid4().hex
             self._start(self.coordinator.active,proactive=intent,key=key)
+
+    def _proactive_on_qq(self,intent,done):
+        """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
+        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说。返回 True 表示这次走 QQ，桌面不再说。"""
+        from aicompanion.bridge.server import runtime
+        from aicompanion.services.proactive_service import choose_channel
+        from aicompanion.ui.desktop_integration import system_idle_seconds
+        service=getattr(runtime.server,'service',None) if runtime.server else None
+        ready=bool(service and getattr(service,'qq_ready',lambda:False)())
+        if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done),self)
+        self.tasks.add(worker)
+        worker.succeeded.connect(lambda turn:None if turn else done(False))
+        worker.failed.connect(lambda error:done(False))
+        worker.finished.connect(lambda w=worker:self._task_finished(w)); worker.start()
+        return True
 
     def _organize_memory(self):
         """每 10 分钟整理一次记忆卡：互动事件 → 小记忆、衰减、遗忘、容量裁剪（本地计算，不调用模型）。"""

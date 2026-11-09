@@ -1,4 +1,5 @@
 from datetime import datetime
+import random
 
 
 class ProactiveMessageService:
@@ -27,3 +28,17 @@ class ProactiveMessageService:
             self.database.set_setting('last_proactive_attempt:'+character_id,now.timestamp())
             return key,intent
         return None
+
+
+AWAY_SECONDS = 900   # 电脑闲置超过 15 分钟算"不在电脑前"
+
+
+def choose_channel(database, idle_seconds, qq_ready, chance=random.random) -> str:
+    """主动消息这次发到哪（用户 2026-11-09：桌面和 QQ 都可能随机发送）。
+    QQ 能发时：在电脑前 50% 发 QQ（设置 proactive_qq_chance）；不在电脑前（闲置超过 15 分钟）85% 发 QQ——人不在，桌面上说了也没人看。"""
+    if not qq_ready or not database.get_setting('proactive_qq_enabled', True): return 'desktop'
+    try: base = min(1.0, max(0.0, float(database.get_setting('proactive_qq_chance', 0.5))))
+    except (TypeError, ValueError): base = 0.5
+    p = max(base, 0.85) if idle_seconds >= AWAY_SECONDS else base
+    return 'qq' if chance() < p else 'desktop'
+

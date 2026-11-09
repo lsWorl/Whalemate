@@ -49,6 +49,13 @@ RECORD_LOCK = threading.Lock()
 REMEMBERING_LOCK = threading.Lock(); REMEMBERING: set = set()   # 正在整理记忆的频道（同一频道不并发整理）
 ANALYZE_LOCK = threading.Lock(); ANALYZING = [False]   # 收集来的表情包后台分析：同一时间只跑一个
 MAX_STICKERS = 3
+# 负责人 2026-11-09：群里尽量看不出 AI 痕迹，不叫爹。只是"不主动暴露、说话像群友"；
+# 被问是不是 AI：负责人要求含糊带过或顺着上下文转移话题；唯一不做的是明确声称自己是真人（诚实底线）。
+GROUP_HUMAN = ('【群里的说话方式】群里人人看得到：别叫你爹"爹""老爹"，别提你们是父女、你住在谁电脑上、你是桌宠 / AI / 模型、词元这些，'
+               '像普通群友一样叫他的昵称或者直接接话。说话像真人发群消息：短、随口、有时只回几个字或一张图，'
+               '不列点、不总结、不解释每个梗、不说"好的""当然可以""作为…"这类话，也不用每条都回；不熟的就说不太懂，别一本正经长篇大论。'
+               '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
+               '只是别明确说自己是真人。')
 # 负责人 2026-11-09：在 QQ 里她没必要什么都懂
 QQ_NOT_EXPERT = ('\n在 QQ 上你不用什么都懂：问到不熟的专业问题、冷门知识，可以直接发一张可爱的表情包，说自己不太懂（"这个本鲸不会诶"），'
                  '不用硬答，更不要编；熟的照常好好说。')
@@ -83,6 +90,7 @@ class BridgeService:
         self.quota = quota
         self.lock = PROCESS_LOCK
         self.expression_bindings={}; self.expression_lock=threading.Lock()
+        self.outbox=[]; self.outbox_waiting={}   # 主动发到 QQ 私聊的消息：等插件心跳取走（见 proactive_qq）
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
 
     def close(self) -> None:
@@ -176,7 +184,7 @@ class BridgeService:
 
         Codex 审计（7aaa065，P1）：收图落库、记用法和这条消息自己的聊天记录一样，要在 RECORD_LOCK 里、按此刻设置做最终授权判定，
         close() 返回之后不再有任何写入；只在入口看一次 closed 不够（解码图片期间服务可能已经关闭）。"""
-        empty = {'items': [], 'note': '', 'known': [], 'all_known': False, 'meanings': []}
+        empty = {'items': [], 'note': '', 'known': [], 'all_known': False, 'meanings': [], 'statuses': []}
         raw = payload.get('stickers')
         collector = self.collector
         if self.closed or not isinstance(raw, list) or not raw or collector is None or mode is None: return empty
@@ -197,8 +205,10 @@ class BridgeService:
             except (MediaError, ValueError, TypeError):
                 decoded.append(None)
         meanings, items, known = [None]*len(decoded), [], []
+        statuses = ['bad_image' if entry is None else '' for entry in decoded]
         with RECORD_LOCK:
-            if self.closed or self.classify(platform, sender_id, group_id) is None: return empty
+            if self.closed or self.classify(platform, sender_id, group_id) is None:
+                self.note_intake(['not_allowed']*len(decoded), group_id); return empty
             # 情境：这条消息自己带的话；只发了图就用这个会话里上一条话（发图前大家在说什么）
             cue = IMAGE_NOTES.sub('', text).strip()
             if not cue:
@@ -209,22 +219,37 @@ class BridgeService:
                 try:
                     if entry[0] == 'hash':
                         found = collector.known(entry[1])
-                        if not found: continue
-                        result = {'asset_id': found[0], 'meaning': meaning_of(found[1]), 'sha256': entry[1]}
+                        if not found: statuses[index] = 'unknown_hash'; continue
+                        result = {'status': 'known', 'asset_id': found[0], 'meaning': meaning_of(found[1]), 'sha256': entry[1]}
                     else:
                         result = collector.ingest(entry[1], character_id=character.id, origin=origin)
                 except (MediaError, ValueError, OSError, TypeError):
-                    continue
+                    statuses[index] = 'error'; continue
+                statuses[index] = result.get('status') or ''
                 if not result.get('asset_id'): continue
                 meanings[index] = result.get('meaning') or ''
                 items.append(result['asset_id']); known.append(result['sha256'])
                 try: usage.record(self.database, character.id, result['asset_id'], cue, tag, clock=self.clock)
                 except Exception: pass
-        if not items: return empty
+        self.note_intake(statuses, group_id)
+        if not items: return dict(empty, statuses=statuses)
         found = [m for m in meanings if m is not None]
         parts = [f'[发了表情包：{m}]' if m else '[发了表情包]' for m in found]
         self.analyze_soon()
-        return {'items': items, 'note': ''.join(parts), 'known': known, 'all_known': all(found), 'meanings': meanings}
+        return {'items': items, 'note': ''.join(parts), 'known': known, 'all_known': all(found), 'meanings': meanings, 'statuses': statuses}
+
+    INTAKE_KEY = 'sticker_intake'
+    def note_intake(self, statuses, group_id) -> None:
+        """最近收到的表情包怎么处理的（图库页显示，排查"收不到"）：只记时间、群 / 私聊和结果代码，不记图片、号码或聊天内容。"""
+        if not statuses: return
+        try:
+            def write(c):
+                ring = [e for e in (self.database.setting_in(c, self.INTAKE_KEY, []) or []) if isinstance(e, dict)][-29:]
+                ring.append({'at': round(self.clock()), 'kind': 'group' if group_id else 'private', 'status': [str(x)[:20] for x in statuses[:MAX_STICKERS]]})
+                self.database.set_setting_in(c, self.INTAKE_KEY, ring)
+            self.database.locked(write)
+        except Exception:
+            pass
 
     @staticmethod
     def skip_known_sticker_images(images, payload, meanings):
@@ -304,7 +329,8 @@ class BridgeService:
                 if avatar_info and subject != sender_id: avatar_info = '\n此头像属于本条消息 @ 的群友'+alias(self.database, f'{platform}:{subject}')+'：'+avatar_info
             if self.quota.check_silent(purpose) == 'stop': return {'reply': '', 'silent': True, 'reason': 'quota'}
             stickers = self.take_stickers(mode, platform, sender_id, group_id, payload, original_text)
-            sticker_only = bool(stickers['items']) and not IMAGE_NOTES.sub('', original_text).strip()
+            # 只发了图（认出是表情包，或者插件没认出来但这条只有图片）：都按"只发了表情"处理——不一定要回，回也只接一句
+            sticker_only = bool(stickers['items'] or images) and not IMAGE_NOTES.sub('', original_text).strip()
             if stickers['items']:
                 # 收过、分析过的表情包：直接用存好的含义，不再为它调一次识图。
                 # Codex 审计（7aaa065）：不能按"数量"认定所有图片都是已知表情——商城表情不在 images 里，同一条消息还可能带普通照片。
@@ -331,18 +357,21 @@ class BridgeService:
                 who = '你爹' if mode['owner'] else f'{name}{tag}'
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在叫你'
                              + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号（#数字，同一个人编号不变），标着【爹】的是你爹' if mode['group'] else '') + '。'
-                             '像群友一样回，随意点；通常一两句，聊得起劲也可以多说几句（一句一行，每行单独发出去，不用逗号句号），不用动作描写；不要提桌面上发生的事。'
+                             + (GROUP_HUMAN if mode['group'] else '')
+                             + '像群友一样回，随意点；通常一两句，聊得起劲也可以多说几句（一句一行，每行单独发出去，不用逗号句号），不用动作描写；不要提桌面上发生的事。'
                              + QQ_NOT_EXPERT)
             self.social.cid = character.id
             self.social.observe(mode['channel'], stable, original_text, bool(images) or bool(payload.get('has_image')))
             situation += avatar_info
             if sticker_only:
                 # 用户 2026-11-09：表情包发出来她能看懂，但不是每张都要回
-                situation += ('\n对方这条只发了一张表情包：可以回一张图、回一句，也可以觉得不用接话就只回复'+SILENCE+'（表示看到了，不发消息）。')
+                situation += ('\n对方这条只发了图（多半是表情包）：把它当成对方的语气，回一张图或一句短话就行，也可以觉得不用接话就只回复'
+                              +SILENCE+'（表示看到了，不发消息）；别描述、点评或追问这张图。')
             if '头像' in original_text and not avatar_info:
                 situation += '\n本次没有读取到可用头像，不能猜测头像内容；可以请对方稍后再试或直接发图。'
             result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only)
             if stickers['known']: result['stickers_known'] = stickers['known']
+            if stickers['statuses']: result['stickers_status'] = stickers['statuses']
             return result
 
     def _overhear(self, mode, platform, sender_id, group_id, name, text, request=None) -> dict:
@@ -372,6 +401,7 @@ class BridgeService:
         self.social.observe(mode['channel'], stable, text)
         observed = {'reply': '', 'silent': True, 'reason': 'observed'}
         if stickers['known']: observed['stickers_known'] = stickers['known']
+        if stickers['statuses']: observed['stickers_status'] = stickers['statuses']
         if sticker_only:
             # 只发了一张表情包：她看懂了、记下了，但不为一张图插话
             self.maybe_remember(character.id, mode['channel'])
@@ -387,11 +417,12 @@ class BridgeService:
                 self.maybe_remember(character.id, mode['channel'])
                 return observed
             situation = (f'【场合】你在{mode["where"]}群聊里旁听，这条消息没有叫你。每条消息前面是说话人的昵称和编号（#数字），'
-                         '标着【爹】的是你爹，群里其他人都看得到你的回复。看看最近大家在聊什么：有想接的话、能接的梗、或者聊到你感兴趣 / 熟悉的事，'
+                         '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+'看看最近大家在聊什么：有想接的话、能接的梗、或者聊到你感兴趣 / 熟悉的事，'
                          f'就像群友一样自然插一句；话题跟你没关系、别人正聊得热乎不需要你、或者没什么好说的，就只回复{SILENCE}，别硬聊。'
-                         '不要提桌面上发生的事。')
+                         '不要提桌面上发生的事。'+QQ_NOT_EXPERT)
             result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request)
             if stickers['known']: result['stickers_known'] = stickers['known']
+            if stickers['statuses']: result['stickers_status'] = stickers['statuses']
             return result
         finally:
             self.lock.release()
@@ -503,6 +534,93 @@ class BridgeService:
         # cancelled：插件因前面的文字发送失败而没有尝试发图（如实上报，不算已发送）
         if not known or status not in ('accepted','failed','unknown','cancelled'):return {'ok':False}
         return {'ok':self.controller.expression.receipt(delivery,status)}
+
+    # ---- 主动消息发到 QQ 私聊（用户 2026-11-09：桌面和 QQ 都可能随机发送） ------------------------------
+    # 桌面的主动问候 / 心事到点时，桌面按概率决定这次发到哪：选中 QQ 就调用 proactive_qq。
+    # 生成和桌面主动消息是同一个大脑、同一段和爹的记录（desktop 频道）；生成完放进发件箱，插件下一次心跳（15 秒内）取走，
+    # 用 AstrBot 的主动发送接口发到爹的 QQ 私聊，再回报发没发成。没发出去的话从记录里拿掉（不算她说过）。
+    OUTBOX_TTL = 600
+
+    def qq_ready(self) -> bool:
+        """能不能主动发 QQ：接口开着、绑定了爹、插件 1 分钟内有心跳且 QQ 已连上、插件版本支持发件箱（0.9.0 起）。"""
+        from aicompanion.bridge.server import runtime
+        beat = runtime.last_heartbeat or {}
+        owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
+        version = re.fullmatch(r'plugin-(\d+)\.(\d+)\.(\d+)', str(beat.get('astrbot') or ''))
+        return bool(not self.closed and re.fullmatch(r'\d{5,12}', owner) and beat and time.time()-beat.get('at', 0) < 60
+                    and (beat.get('onebot') or {}).get('connected') and version
+                    and tuple(int(x) for x in version.groups()) >= (0, 9, 0))
+
+    def proactive_qq(self, intent: str, on_done=None) -> str | None:
+        """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
+        on_done(sent: bool) 在插件回报（或过期）时调用一次。"""
+        from aicompanion.bridge.server import runtime
+        from aicompanion.bridge.media import inline_image
+        from aicompanion.expression.domain import ExpressionContext, owner_relationship
+        from aicompanion.expression.segments import split_segments
+        with self.lock:
+            if not self.qq_ready() or self.quota.check_silent('companion') == 'stop': return None
+            owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
+            bot = str(((runtime.last_heartbeat or {}).get('onebot') or {}).get('self_id') or '')
+            if not re.fullmatch(r'\d{5,12}', bot): bot = 'qq'
+            controller = self.controller; character = controller.character; turn = uuid4().hex
+            situation = ('【场合】你爹现在不在电脑前，你在 QQ 私聊里主动找他说话（他不一定马上回）。'
+                         '像在 QQ 上给爹发消息那样开个头，随意点，一两句就行（一句一行，每行单独发出去，不用逗号句号），不用动作描写。'+QQ_NOT_EXPERT)
+            context = ExpressionContext(turn, character.id, f'qq:{bot}:user:{owner}', 'desktop', 'pet', 'proactive', intent,
+                                        relationship=owner_relationship(), supports_images=True)
+            delivered = []
+            def event(value):
+                if value.kind == 'final': delivered.append(value.result)
+            try:
+                for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
+                                             situation=situation, source='qq', offer_tasks=False, purpose='companion',
+                                             expression_context=context, on_expression_event=event): pass
+            except Exception:
+                return None
+            if self.closed or controller.character.id != character.id or not delivered:
+                if delivered: controller.expression.cancel(turn, character.id)
+                self.database.drop_reply(turn, character.id); return None
+            expression = delivered[-1]; wire = expression.wire(); wire['attachments'] = []
+            for attachment in expression.attachments:
+                media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
+                if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
+                item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
+                with self.expression_lock: self.expression_bindings[attachment.delivery_id] = ('qq', owner, '', character.id)
+            segments = split_segments(expression.text)
+            if not segments and not wire['attachments']:
+                self.database.drop_reply(turn, character.id); return None
+            wire['text'] = '\n'.join(segments)
+            with self.expression_lock:
+                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'expression_version': 1, 'expression': wire,
+                                    'at': self.clock(), 'character': character.id})
+                self.outbox_waiting[turn] = on_done
+            return turn
+
+    def take_outbox(self) -> list:
+        """插件心跳时取走待发的主动消息；超过 OUTBOX_TTL 还没取走的作废（插件掉线时不会攒一堆过期问候）。"""
+        with self.expression_lock:
+            items, self.outbox = self.outbox, []
+        fresh = []
+        for item in items:
+            if self.clock()-item['at'] > self.OUTBOX_TTL: self._outbox_done(item['id'], False, item.get('character'))
+            else: fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
+        return fresh
+
+    def outbox_ack(self, payload) -> dict:
+        if set(payload) != {'id', 'status'} or payload.get('status') not in ('sent', 'partial', 'failed'): return {'ok': False}
+        with self.expression_lock:
+            known = str(payload['id']) in self.outbox_waiting
+        if not known: return {'ok': False}
+        self._outbox_done(str(payload['id']), payload['status'] != 'failed', self.controller.character.id)
+        return {'ok': True}
+
+    def _outbox_done(self, turn, sent, character_id) -> None:
+        with self.expression_lock:
+            callback = self.outbox_waiting.pop(turn, None)
+        if not sent and character_id: self.database.drop_reply(turn, character_id)   # 没发出去：不算她说过
+        if callback:
+            try: callback(sent)
+            except Exception: pass
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------
     def maybe_remember(self, character_id, channel, background=True):

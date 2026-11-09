@@ -257,6 +257,18 @@ class BridgeStickerTests(Base):
         finally: fresh.close()
         self.assertEqual(self.collector.collected_count(), 1)   # 撤掉群以后不再收
 
+    def test_collection_result_goes_back_to_plugin_and_into_intake_log(self):
+        # 2026-11-09 实测"收不到"时日志里什么都看不出：结果回给插件写日志，图库页也能看到最近几次
+        sticker = inline_image(png(0xff4a4a4a), 'image/png')
+        result = self.overhear('', [sticker, 'not-an-image'])
+        self.assertEqual(result['stickers_status'], ['collected', 'bad_image'])
+        self.db.set_setting('qq_meme_root', '')
+        result = self.overhear('', [inline_image(png(0xff4b4b4b), 'image/png')])
+        self.assertEqual(result['stickers_status'], ['no_library'])
+        ring = self.db.get_setting('sticker_intake')
+        self.assertEqual([e['status'] for e in ring], [['collected', 'bad_image'], ['no_library']])
+        self.assertEqual({e['kind'] for e in ring}, {'group'}); self.assertNotIn('30003', json.dumps(ring))
+
     def test_qq_situation_says_she_does_not_need_to_know_everything(self):
         self.ingest(0xff232323); self.collector.analyze_pending(lambda d, m: dict(GOOD))
         for group in ('', '30003'):

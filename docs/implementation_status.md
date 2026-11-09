@@ -795,3 +795,17 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 怎么验证：容器全量 510+ 项，除基线环境错误外全部通过；`test_sticker_learning.py` 增至 18 项，插件新增对应关系测试。
 - 没验证的部分：Windows 复跑、真实 QQ 和真实识图。
 
+### 2026-11-09 T17 第三轮：负责人实测后的修正（Claude，`task/t17b-sticker-fixes`）
+
+- 做了什么：见 `docs/tasks/T17-sticker-learning.md` 的"第三轮"。
+  - 插件 0.9.0 拦下未允许群里的 @，AstrBot 不再回"LLM 请求失败"；
+  - 表情包只当语气、不点评，只发图时可以不回；
+  - 收图诊断写进插件日志和图库页；
+  - 主动消息随机发到桌面或 QQ 私聊（发件箱 + 心跳 + 回执）；
+  - 群里不叫爹、少露 AI 痕迹。
+- 怎么验证：新增 `test_qq_proactive.py` 10 项，`test_sticker_learning.py` 19 项。容器全量 524 项，除基线环境错误外全部通过。
+- 没验证的部分：
+  - 真实 QQ 主动发送（AstrBot `send_message` 的会话标识格式按源码约定拼写，没聊过时用 `平台id:FriendMessage:QQ号`）；
+  - 真实表情包的 `sub_type`（等新日志确认）；
+  - 群里语气的实际效果。
+
