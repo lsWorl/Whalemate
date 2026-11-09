@@ -19,10 +19,14 @@ def load_plugin():
     api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None, debug=lambda *a: None, info=lambda *a: None)
     event = types.ModuleType('astrbot.api.event')
 
+    registered = []   # 被装饰器登记为消息处理函数的名字（真实 AstrBot 只调用登记过的）
+
     class Filter:
         class EventMessageType: ALL = 'all'
         @staticmethod
-        def event_message_type(kind, priority=0): return lambda fn: fn
+        def event_message_type(kind, priority=0):
+            def mark(fn): registered.append(fn.__name__); return fn
+            return mark
     event.filter = Filter; event.AstrMessageEvent = object
     star = types.ModuleType('astrbot.api.star')
 
@@ -40,6 +44,7 @@ def load_plugin():
     try:
         spec = importlib.util.spec_from_file_location('aicompanion_astrbot_plugin', PLUGIN)
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        module.REGISTERED = list(registered)
         return module
     finally:
         for k, v in saved.items():
@@ -83,6 +88,12 @@ class PluginTests(unittest.TestCase):
         plugin.sent = None; plugin.ask_pet = fake
         async def collect(): return [item async for item in plugin.on_message(event)]
         return asyncio.run(collect())
+
+    def test_handler_is_registered(self):
+        # 0.9.0 实测：装饰器挂错函数，插件收不到任何消息，私聊全部回"LLM 请求失败"
+        self.assertEqual(self.module.REGISTERED, ['on_message'])
+        import inspect
+        self.assertTrue(inspect.isasyncgenfunction(self.module.AICompanionBridge.on_message))
 
     def test_routes_only_qq_sessions_it_owns(self):
         p = self.plugin()
