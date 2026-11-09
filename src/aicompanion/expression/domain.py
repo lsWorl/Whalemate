@@ -29,6 +29,7 @@ class ExpressionCandidate:
     category: str = ''
     tone_strength: int = 1
     handle: str = ''          # 本轮给模型看的短编号 s1～s10；每轮重新分配，只在这一轮有效
+    learned: str = ''         # 向群友学到的用法（"群友在「…」时发过" / "群友常用"），见 expression/usage.py
 
 @dataclass(frozen=True)
 class ExpressionContext:

@@ -236,6 +236,96 @@ class PluginTests(unittest.TestCase):
                 event=Event('来');self.run_handler(plugin,event,answer)
             self.assertEqual([m[1][0] for m in event.sent_messages],expected,placement)
 
+    # ---- v0.8.0：收集别人发的表情包（用户 2026-11-09） ----
+    @staticmethod
+    def raw(event, segments):
+        event.message_obj = types.SimpleNamespace(raw_message={'message': segments}); return event
+
+    def gif(self, folder, name='s.gif'):
+        try:
+            from PIL import Image
+        except ImportError: self.skipTest('需要 AstrBot 自带的 Pillow')
+        path = Path(folder)/name
+        Image.new('RGB', (40, 40), 'blue').save(path, save_all=True, append_images=[Image.new('RGB', (40, 40), 'red')], duration=100, loop=0)
+        return path
+
+    def test_overheard_group_sticker_is_sent_as_original_gif_but_photos_stay_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.gif(folder)
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'
+                async def convert_to_file_path(self): return str(path)
+            class Photo:
+                type = 'Image'; file = 'photo.jpg'
+                async def convert_to_file_path(self): raise AssertionError('旁听的普通照片不应读取')
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = self.raw(Event('', group='30003', called=False, images=[Sticker(), Photo()]),
+                             [{'type': 'image', 'data': {'file': 'abc.gif', 'sub_type': 1, 'summary': '[动画表情]'}},
+                              {'type': 'image', 'data': {'file': 'photo.jpg', 'sub_type': 0}}])
+            self.run_handler(plugin, event, {'reply': '', 'silent': True, 'reason': 'observed'})
+            self.assertEqual(len(plugin.sent['stickers']), 1)
+            self.assertTrue(plugin.sent['stickers'][0].startswith('data:image/gif;base64,'))   # 原图，动画保留
+            self.assertEqual(base64.b64decode(plugin.sent['stickers'][0].split(',', 1)[1]), path.read_bytes())
+            self.assertNotIn('images', plugin.sent); self.assertNotIn(folder, str(plugin.sent))
+
+    def test_called_mixed_message_reports_which_image_is_the_sticker(self):
+        # Codex 审计（7aaa065）：桌宠按对应关系只跳过已看懂的表情，照片照常识图
+        with tempfile.TemporaryDirectory() as folder:
+            gif = self.gif(folder)
+            from PIL import Image
+            photo_path = Path(folder)/'p.png'; Image.new('RGB', (30, 30), 'green').save(photo_path)
+            class Photo:
+                type = 'Image'; file = 'p.png'
+                async def convert_to_file_path(self): return str(photo_path)
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'; sub_type = 1
+                async def convert_to_file_path(self): return str(gif)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = self.raw(Event('看', images=[Photo(), Sticker()]),
+                             [{'type': 'image', 'data': {'file': 'p.png', 'sub_type': 0}}, {'type': 'image', 'data': {'file': 'abc.gif', 'sub_type': 1}},
+                              {'type': 'mface', 'data': {'url': 'https://gxh.vip.qq.com/x/raw300.gif'}}])
+            async def market(url): return b'GIF89a'+b'm'*20
+            plugin.fetch_market = market
+            self.run_handler(plugin, event, {'reply': '好', 'silent': False})
+            self.assertEqual(plugin.sent['image_parts'], [0, 1]); self.assertEqual(len(plugin.sent['images']), 2)
+            self.assertEqual(plugin.sent['sticker_parts'], [1, -1]); self.assertEqual(len(plugin.sent['stickers']), 2)
+
+    def test_known_sticker_only_sends_hash_and_collect_can_be_turned_off(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.gif(folder); digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'; sub_type = '1'
+                async def convert_to_file_path(self): return str(path)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            self.run_handler(plugin, Event('', group='30003', called=False, images=[Sticker()]),
+                             {'reply': '', 'silent': True, 'stickers_known': [digest]})
+            self.assertIn(digest, plugin.known_stickers)
+            self.run_handler(plugin, Event('', group='30003', called=False, images=[Sticker()]), {'reply': '', 'silent': True})
+            self.assertEqual(plugin.sent['stickers'], [{'sha256': digest}])
+            plugin.pet_collect = False
+            self.run_handler(plugin, Event('', group='30003', called=False, images=[Sticker()]), {'reply': '', 'silent': True})
+            self.assertNotIn('stickers', plugin.sent)
+
+    def test_market_face_only_message_is_routed_and_only_fixed_hosts_are_fetched(self):
+        plugin = self.plugin(); fetched = []
+        async def fetch(url): fetched.append(url); return None
+        plugin.fetch_market = fetch
+        event = self.raw(Event('', group='30003', called=False),
+                         [{'type': 'mface', 'data': {'url': 'https://gxh.vip.qq.com/club/item/parcel/item/ab/abc/raw300.gif', 'summary': '[开心]'}},
+                          {'type': 'mface', 'data': {'url': 'https://evil.example.com/x.gif'}},
+                          {'type': 'mface', 'data': {'url': 'http://gxh.vip.qq.com/x.gif'}}])
+        self.assertIsNotNone(plugin.route(event))     # AstrBot 丢掉了商城表情，原始段里仍能认出来
+        self.run_handler(plugin, event, {'reply': '', 'silent': True})
+        self.assertEqual(fetched, ['https://gxh.vip.qq.com/club/item/parcel/item/ab/abc/raw300.gif'])
+        self.assertFalse(plugin.market_url_ok('https://gxh.vip.qq.com.evil.com/x.gif'))
+
+    def test_sticker_uri_accepts_only_image_headers(self):
+        self.assertTrue(self.module.AICompanionBridge.sticker_uri(b'GIF89a'+b'x'*10).startswith('data:image/gif;base64,'))
+        self.assertTrue(self.module.AICompanionBridge.sticker_uri(b'RIFF\0\0\0\0WEBPVP8 ').startswith('data:image/webp;base64,'))
+        for bad in (b'', b'<svg/>', b'GIF89a'+b'x'*(1024*1024)):
+            with self.assertRaises(ValueError): self.module.AICompanionBridge.sticker_uri(bad)
+
     def test_avatar_only_downloads_after_desktop_permission_and_uses_sender(self):
         plugin = self.plugin(); calls = []
         async def permission(payload):

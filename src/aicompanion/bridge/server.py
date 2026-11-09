@@ -72,6 +72,8 @@ class BridgeServer:
         from aicompanion.bridge.service import setting
         return {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []],
                 'media': {'vision': bool(self.service.database.get_setting('qq_vision_enabled', True)),
+                          # 插件据此决定要不要把别人发的表情包原图附上来（关掉收集就不传图）
+                          'collect': bool(self.service.database.get_setting('sticker_collect_enabled', True)),
                           'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸娘')}}
 
     @property

@@ -46,14 +46,14 @@ class ChatController:
         try:
             history,prompt=self.context.build(character,query,channel,scene,situation,through_id)
             if proactive:
-                prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（每条之间空一行，会分成几条消息发出去），不编造经历。'
+                prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去，不用逗号句号），不编造经历。'
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
             if self.agent_enabled and not proactive and offer_tasks:
                 from aicompanion.pet.script import TASK_PROMPT
                 prompt+=TASK_PROMPT
             candidates,report=self.expression.prepare_report(context,character,query,history)
-            prompt+=self.expression.prompt(candidates,proactive=bool(proactive))
+            prompt+=self.expression.prompt(candidates,proactive=bool(proactive),qq=context.scope.startswith('qq:'))
             if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
             parser=ExpressionStream([c.asset_id for c in candidates],self.expression.legacy_map(candidates),
                                     {c.handle:c.asset_id for c in candidates if c.handle},
