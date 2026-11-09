@@ -162,8 +162,11 @@ class AssetCatalog:
             metadata=json.loads(row['metadata'])
             metadata.update({k:original[k] for k in self.PROVENANCE if k in original})
             if not metadata.get('user_annotated'):
-                metadata.update({k:v for k,v in original.items() if k not in self.PROVENANCE})
-            enabled=metadata['user_enabled'] if isinstance(metadata.get('user_enabled'),bool) else True
+                # Codex 审计（ee541d0）：0a2b1d6 及更早版本里用户改过的说明没有 user_annotated 标记。
+                # 只有字段还是扫描默认值（含义为空或等于目录名、情绪 / 用法为空）时才补内置说明，否则按旧版用户标注保留。
+                legacy=self._legacy_annotations(metadata)
+                metadata.update({k:v for k,v in original.items() if k not in self.PROVENANCE and k not in legacy})
+            enabled=self._chosen_enabled(metadata,row)
             c.execute("UPDATE expression_assets SET metadata=?,review_status='approved',enabled=? WHERE asset_id=?",
                       (json.dumps(metadata,ensure_ascii=False),int(enabled),asset_id))
         self.db.locked(apply)
@@ -175,16 +178,38 @@ class AssetCatalog:
         with self.db.transaction() as c:
             rows=c.execute('SELECT * FROM expression_assets WHERE root=? ORDER BY asset_id',(str(Path(root or self.root).resolve()),)).fetchall()
         return [dict(r,metadata=json.loads(r['metadata'])) for r in rows]
-    def review(self,asset_id,*,author,source,license,enabled=True):
+    ANNOTATION_FIELDS=('semantic','intents','emotions')
+    @classmethod
+    def _legacy_annotations(cls,metadata):
+        """旧记录里看起来是用户手写（不是扫描默认值）的说明字段。"""
+        kept=set()
+        semantic=str(metadata.get('semantic') or '').strip()
+        if semantic and semantic!=str(metadata.get('category') or '').strip():kept.add('semantic')
+        for key in ('intents','emotions'):
+            if metadata.get(key):kept.add(key)
+        return kept
+    @staticmethod
+    def _chosen_enabled(metadata,row):
+        """启用状态：用户明确选过就按用户的；已审核的图保持现状；没审核过、也没表过态才默认启用。"""
+        if isinstance(metadata.get('user_enabled'),bool):return metadata['user_enabled']
+        if row['review_status']=='approved':return bool(row['enabled'])
+        return True
+    def review(self,asset_id,*,author,source,license,enabled=None):
+        """确认来源和许可。审核和启用是两件事（Codex 审计 ee541d0）：
+        不传 enabled 时不改变用户的启停选择——已审核但被停用的图，保存标注和许可后仍然停用。
+        读改写在一个写事务里，和图库页的启停 / 标注、自动识别串行。"""
         if license not in LICENSES or not str(author).strip() or not str(source).strip():
             raise ValueError('需填写作者、来源和明确许可；未知许可不能启用')
-        row=self.get(asset_id)
-        if row is None: raise ValueError('素材不存在')
-        metadata=row['metadata']; metadata.update(author=str(author)[:200],source=str(source)[:500],license=license,review_status='approved')
-        if 'coopanion' in json.dumps(metadata,ensure_ascii=False).casefold(): raise ValueError('禁止来源素材')
-        with self.db.transaction() as c:
+        def apply(c):
+            row=c.execute('SELECT metadata,review_status,enabled FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if row is None: raise ValueError('素材不存在')
+            metadata=json.loads(row['metadata']); metadata.update(author=str(author)[:200],source=str(source)[:500],license=license,review_status='approved')
+            if 'coopanion' in json.dumps(metadata,ensure_ascii=False).casefold(): raise ValueError('禁止来源素材')
+            if enabled is not None: metadata['user_enabled']=bool(enabled)
+            value=self._chosen_enabled(metadata,row)
             c.execute('UPDATE expression_assets SET metadata=?,review_status=?,enabled=? WHERE asset_id=?',
-                      (json.dumps(metadata,ensure_ascii=False),'approved',int(enabled),asset_id))
+                      (json.dumps(metadata,ensure_ascii=False),'approved',int(value),asset_id))
+        self.db.locked(apply)
     def annotate(self,asset_id,values):
         def apply(c):
             row=c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()

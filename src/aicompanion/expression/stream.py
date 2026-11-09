@@ -18,9 +18,11 @@ TAG = re.compile(r"""<\s*(sticker|meme|expression)\b([^<>\n]*?)/?\s*>\Z""", re.I
 HANDLE = re.compile(r's(?:[1-9]|10)\Z')
 # 旧版曾把内部附件回执拼进 assistant 正文；只剥离这个精确前缀，不把任意方括号当图片。
 HISTORY_ANNOTATIONS = ('[角色已发送表情：', '[角色已发送表情:')
-# <img …>：第八轮验收里模型写过 `<img src="">` 想"贴图"，原样露在正文里；当作无效的图片标记隐藏（代码块里的照常保留）
-STARTS = ('<sticker', '<meme', '<expression', '<img ', '<img>', '<img/', '<task>')+HISTORY_ANNOTATIONS
-RESERVED = ('<sticker', '<meme', '<expression', '<img ', '<img>', '<img/')
+# <img …>：第八轮验收里模型写过 `<img src="">` 想"贴图"，原样露在正文里；当作无效的图片标记隐藏（代码块里的照常保留）。
+# 标签名后面可以是任意空白（空格、制表符、换行、CRLF）、/ 或 >，属性可以跨行（Codex 审计）：进入单独的 img 状态一直吃到 >。
+STARTS = ('<sticker', '<meme', '<expression', '<img', '<task>')+HISTORY_ANNOTATIONS
+RESERVED = ('<sticker', '<meme', '<expression')
+IMG_LIMIT = 1024
 # 角色动画标注：给桌宠脸和动作用，屏幕上会被 CueStream 去掉，不算对方能看到的正文。
 CUE = re.compile(r'【[^】\n]{1,12}】|<[^<>\n/]{1,12}>')
 
@@ -53,7 +55,7 @@ class ExpressionStream:
         # 角色动画词表：传入时，词表外的短情绪方括号（【委屈】【心虚】…）不会被动画执行、只会原样露在正文里，
         # 这里直接隐藏并记诊断（第一轮真实验收里她常这样写，而那正是该发表情包的时候）。【不说】是群里的静默标记，保留。
         self.cue_words = frozenset(cue_words or ()) | {'不说'} if cue_words else None
-        self.bracket = ''; self.rejected = []
+        self.bracket = ''; self.rejected = []; self.img = ''; self.img_quote = ''
 
     def diagnose(self, code):
         if code not in self.diagnostics and len(self.diagnostics) < 16: self.diagnostics.append(code)
@@ -92,8 +94,6 @@ class ExpressionStream:
 
     def _marker(self, raw):
         self.markers += 1
-        if raw.lower().startswith('<img'):
-            self.diagnose('html_img_tag'); return
         match = TAG.match(raw.strip())
         if not match:
             self.diagnose('invalid_marker'); return
@@ -150,6 +150,17 @@ class ExpressionStream:
                 safe = re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task)
                 self._emit(safe, out); self.task = ''
             return
+        if self.img:
+            # <img 标签内部：跨行累积到 >；引号里的 > 不算结束
+            self.img += ch
+            if self.img_quote:
+                if ch == self.img_quote: self.img_quote = ''
+            elif ch in '"\'': self.img_quote = ch
+            elif ch == '>':
+                self.img = ''; self.markers += 1; self.diagnose('html_img_tag')
+            elif len(self.img) > IMG_LIMIT:
+                raw = self.img; self.img = ''; self.img_quote = ''; self._emit(raw, out)   # 太长不像标签：原样还回去
+            return
         if self.bracket:
             self.bracket += ch
             if ch == '】' or ch == '\n' or len(self.bracket) > 10:
@@ -169,6 +180,12 @@ class ExpressionStream:
                     if ch == '\n': self._emit(ch, out)
                     elif ch != ']': self.drop_annotation = True
                 return
+            if low[:4] == '<img' and len(low) == 5:
+                if ch.isspace() or ch in '/>':
+                    self.pending = ''
+                    if ch == '>': self.markers += 1; self.diagnose('html_img_tag')
+                    else: self.img = '<img'+ch
+                    return
             reserved = low.startswith(RESERVED)
             if self.pending == '<task>':
                 self.task = self.pending; self.pending = ''; return
@@ -230,12 +247,13 @@ class ExpressionStream:
             self._emit(re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task), out)
         if self.ticks: self._emit(self.ticks, out)
         if self.bracket: self._emit(self.bracket, out)
+        if self.img: self.markers += 1; self.diagnose('html_img_tag')   # 没闭合的 <img 标签：整段不显示
         if self.selection and self.after_text_seen: self.diagnose('mid_text_marker')
-        self.pending = self.task = self.ticks = self.bracket = ''; self.finished = True
+        self.pending = self.task = self.ticks = self.bracket = self.img = ''; self.finished = True
         return ''.join(out)
 
     def cancel(self):
-        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = self.bracket = ''
+        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = self.bracket = self.img = ''
 
 
 def clean_expression_history(text):

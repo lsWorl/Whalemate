@@ -204,8 +204,19 @@ class HtmlImgTagTests(unittest.TestCase):
             self.assertEqual(text, '烤红薯  你就不想着给我留一口'); self.assertIn('html_img_tag', stream.diagnostics)
         self.assertEqual(self.parse('好<img/>')[0], '好'); self.assertEqual(self.parse('好<img>')[0], '好')
 
+    def test_whitespace_variants_and_multiline_attributes_at_every_split(self):
+        # Codex 审计：制表符 / 换行 / CRLF 跟在 img 后面也要隐藏，属性跨行时整段去掉，不能把 src 吐成正文
+        for raw in ('你好<img\tsrc="合成地址">晚安', '你好<img\nsrc="合成地址">晚安', '你好<img\r\nsrc="合成地址"\r\nalt="x">晚安',
+                    '你好<img src="a>b">晚安', '你好<IMG\n  src=x\n/>晚安'):
+            for n in range(len(raw)+1):
+                text, stream = self.parse(raw, [raw[:n], raw[n:]])
+                self.assertEqual(text, '你好晚安', (raw, n)); self.assertIn('html_img_tag', stream.diagnostics)
+        text, stream = self.parse('你好<img\nsrc="没闭合')
+        self.assertEqual(text, '你好'); self.assertIn('html_img_tag', stream.diagnostics)
+
     def test_code_and_ordinary_angle_text_kept(self):
-        for raw in ('`<img src="a.png">`', '```html\n<img src="a.png">\n```', '<input> 和 <imgs> 都是普通文字', '1<img', 'a<i'):
+        for raw in ('`<img src="a.png">`', '```html\n<img src="a.png">\n```', '```\n<img\tsrc="a">\n```', '<input> 和 <imgs> 都是普通文字', '1<img', 'a<i',
+                    '{"html": "<img src=1>"}'):
             self.assertEqual(self.parse(raw)[0], raw, raw)
 
     def test_img_does_not_block_real_sticker(self):

@@ -29,6 +29,26 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.cat.review(aid,author='x',source='x',license='unknown')
         self.cat.review(aid,**{k:self.meta[k] for k in ('author','source','license')})
         self.assertEqual(self.cat.resolve(aid)[0],png())
+    def test_review_keeps_user_disable_choice(self):
+        # Codex 审计（ee541d0）：审核 / 保存许可和启用是两件事，已审核但被停用的图保存后仍然停用
+        aid,_=self.cat.register(self.path,self.library)
+        keys={k:self.meta[k] for k in ('author','source','license')}
+        self.cat.review(aid,**keys); self.assertEqual(self.cat.get(aid)['enabled'],1)     # 没表过态：默认启用
+        self.cat.enable(aid,False); self.cat.review(aid,**keys)
+        self.assertEqual((self.cat.get(aid)['review_status'],self.cat.get(aid)['enabled']),('approved',0))
+        self.cat.review(aid,enabled=True,**keys); self.assertEqual(self.cat.get(aid)['enabled'],1)  # 显式传入才改变
+
+    def test_review_of_pending_respects_disable_chosen_before_review(self):
+        aid,_=self.cat.register(self.path,self.library); self.cat.enable(aid,False)
+        self.cat.review(aid,**{k:self.meta[k] for k in ('author','source','license')})
+        self.assertEqual((self.cat.get(aid)['review_status'],self.cat.get(aid)['enabled']),('approved',0))
+
+    def test_review_of_legacy_disabled_approved_row_without_marker_stays_disabled(self):
+        aid,_=self.cat.register(self.path,self.library,self.meta)
+        with self.db.transaction() as c: c.execute("UPDATE expression_assets SET review_status='approved',enabled=0 WHERE asset_id=?",(aid,))
+        self.cat.review(aid,**{k:self.meta[k] for k in ('author','source','license')})
+        self.assertEqual(self.cat.get(aid)['enabled'],0)
+
     def test_hash_duplicate_id_stable_and_thumbnail(self):
         aid,_=self.cat.register(self.path,self.library,self.meta)
         other=self.library/'happy'/'renamed.png';other.write_bytes(png())
@@ -195,6 +215,28 @@ class OriginalSpriteCopyTests(unittest.TestCase):
         barrier.wait(); self.cat.enable(aid, False); worker.join(5)
         row = self.cat.get(aid)
         self.assertEqual(row['review_status'], 'approved'); self.assertEqual(row['enabled'], 0)
+
+    def legacy_pending(self, **legacy):
+        """合成 0a2b1d6 及更早版本的待审核记录：用户改过说明，但还没有 user_annotated 标记。"""
+        aid = self.copy_pending()
+        with self.db.transaction() as c:
+            meta = json.loads(c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?', (aid,)).fetchone()[0])
+            meta.update(legacy); meta.pop('user_annotated', None)
+            c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?', (json.dumps(meta, ensure_ascii=False), aid))
+        return aid
+
+    def test_legacy_custom_annotation_without_marker_survives(self):
+        # Codex 审计（ee541d0）：旧版用户标注没有 user_annotated，识别原创图时也不能被内置说明覆盖
+        aid = self.legacy_pending(semantic='旧版用户标注：只留作纪念', intents=['纪念'], emotions=['平静'])
+        self.cat.scan(); row = self.cat.get(aid)
+        self.assertEqual(row['review_status'], 'approved'); self.assertEqual(row['metadata']['license'], 'project-original')
+        self.assertEqual((row['metadata']['semantic'], row['metadata']['intents'], row['metadata']['emotions']),
+                         ('旧版用户标注：只留作纪念', ['纪念'], ['平静']))
+
+    def test_legacy_partial_annotation_fills_only_default_fields(self):
+        aid = self.legacy_pending(semantic='happy', intents=['纪念'])          # 含义还是目录名（默认值），用法是用户写的
+        self.cat.scan(); meta = self.cat.get(aid)['metadata']
+        self.assertEqual(meta['semantic'], '开心、庆祝、赞同'); self.assertEqual(meta['intents'], ['纪念'])
 
     def test_previously_pending_copy_is_upgraded_but_rejected_is_kept(self):
         import shutil

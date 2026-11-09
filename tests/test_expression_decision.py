@@ -156,6 +156,14 @@ class DecisionTests(unittest.TestCase):
         text, _ = self.turn('哈哈\n\n<sticker id="{h}"/>\n\n', turn='g9')
         self.assertEqual(text, '哈哈')                                # 图在后时结尾不留空行
 
+    def test_img_tag_variants_never_reach_yield_or_storage(self):
+        # Codex 审计：经原 ChatController，yield 的正文（也是 TTS 的输入）和存库正文都不能带 <img 变体
+        self.add('smile', semantic='开心到笑出声')
+        for n, reply in enumerate(('你好<img\tsrc="合成地址">晚安', '你好<img\nsrc="合成地址">晚安', '你好<img\r\nsrc="合成地址">晚安')):
+            text, _ = self.turn(reply, turn=f'img{n}')
+            self.assertEqual(text, '你好晚安')
+            self.assertEqual(self.db.recent_messages(1, self.character.id)[0]['content'], '你好晚安')
+
     def test_trace_has_no_chat_text_or_paths(self):
         self.add('smile', semantic='开心到笑出声')
         _, trace = self.turn('秘密内容<sticker id="{h}"/>', query='用户的私事')

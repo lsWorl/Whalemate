@@ -78,6 +78,10 @@ class ExpressionUITests(unittest.TestCase):
             page.intents.setText('庆祝,附和');page.approve()
             self.assertEqual(page.catalog.stats()['approved'],1)
             aid=page.catalog.rows()[0]['asset_id'];self.assertEqual(page.catalog.get(aid)['metadata']['intents'],['庆祝','附和'])
+            # Codex 审计（ee541d0）：已审核但被停用的图，再点"保存标注和许可确认"仍然停用
+            page.catalog.enable(aid,False);page.refresh();page.table.selectRow(0);self.app.processEvents()
+            page.author.setText('合成作者');page.source.setText('synthetic:test');page.license.setCurrentText('user-owned')
+            page.approve();self.assertEqual(page.catalog.get(aid)['enabled'],0)
             page.clear_cache();self.assertEqual(page.catalog.stats()['thumbnail_bytes'],0)
             page.deleteLater();self.app.processEvents()
     def test_worker_orders_attachment_before_text_and_final_without_tts_tags(self):

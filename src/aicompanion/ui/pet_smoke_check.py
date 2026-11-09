@@ -179,24 +179,45 @@ def schedule_pet_smoke_check(window, database, output):
         model=ExpressionModel();window.controller.llm_client=model
         generation=uuid4().hex;window.coordinator.active=generation
         window._start(generation,query='合成的庆祝消息')
-        def check():
-            state['expression_flow']=bool(window.controller.expression.history(generation,window.controller.character.id))
-            state['expression_single_request']=model.calls==1
-            state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
-            traces=window.controller.expression.traces(5)
-            state['expression_trace_ready']=bool(traces) and traces[-1].get('stage') in ('OK_displayed','E_pending')
-            from aicompanion.ui.library_page import LibraryPage
-            page=LibraryPage(database,window.controller.character.id)
-            state['expression_library_ready']=page.table.rowCount()>=6;page.deleteLater()
-            window._load_history(); window.show()  # 可见窗口完成布局后再截图，避免离屏抓图使用旧几何。
+        # Codex 审计（ee541d0）：不再固定等 400ms。轮询到这一轮结束、表达决策到达最终阶段（或总超时）再检查，
+        # 慢机器上不会因为还在 E_pending 误判；超时也照常继续后面的检查并写明停在哪个阶段，不吞掉第一次失败。
+        started=time.monotonic(); final=('OK_displayed','OK_accepted','F_display_failed','F_send_unknown','E_not_delivered',
+                                         'A_no_candidates','B_model_chose_text','C_marker_unparsed','D_asset_invalid')
+        def latest():
+            mine=[t for t in window.controller.expression.traces(10) if t.get('turn')==generation[-12:]]
+            return mine[-1] if mine else None
+        def poll():
+            trace=latest()
+            if model.calls and not window.workers and trace and trace.get('stage') in final:return check(trace,False)
+            if time.monotonic()-started>EXPRESSION_TIMEOUT:return check(trace,True)
+            QTimer.singleShot(100,poll)
+        def check(trace,timed_out):
+            try:
+                state['expression_wait_ms']=round((time.monotonic()-started)*1000)
+                state['expression_trace_stage']=trace.get('stage') if trace else None
+                if timed_out:state['errors'].append('表达自检超时：停在 '+str(state['expression_trace_stage']))
+                state['expression_flow']=bool(window.controller.expression.history(generation,window.controller.character.id))
+                state['expression_single_request']=model.calls==1
+                state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
+                state['expression_trace_ready']=state['expression_trace_stage']=='OK_displayed'
+                from aicompanion.ui.library_page import LibraryPage
+                page=LibraryPage(database,window.controller.character.id)
+                state['expression_library_ready']=page.table.rowCount()>=6;page.deleteLater()
+                window._load_history(); window.show()  # 可见窗口完成布局后再截图，避免离屏抓图使用旧几何。
+            except Exception as error:
+                state['errors'].append('表达自检：'+repr(error)); window.controller.llm_client=original
+                QTimer.singleShot(300,after_expression); return
             def restored():
-                from aicompanion.ui.expression_image import ExpressionImage
-                state['expression_history_ready']=bool(window.chat_list.findChildren(ExpressionImage))
-                window.grab().save(str(output/'expression-panel.png')); window.hide()
+                try:
+                    from aicompanion.ui.expression_image import ExpressionImage
+                    state['expression_history_ready']=bool(window.chat_list.findChildren(ExpressionImage))
+                    window.grab().save(str(output/'expression-panel.png')); window.hide()
+                finally:QTimer.singleShot(300,after_expression)
             QTimer.singleShot(200,restored)
             window.controller.llm_client=original
-        QTimer.singleShot(400,check)
+        QTimer.singleShot(100,poll)
     later(24200,expression_start)
+    EXPRESSION_TIMEOUT = 8.0   # 秒；正常几百毫秒就到最终阶段
 
     def agent():
         # P5/P6：干活交给 DeepSeek Harness（需要联网和真实模型，自检只检查是否已安装、会话对象是否就绪）
@@ -246,7 +267,6 @@ def schedule_pet_smoke_check(window, database, output):
         window.coordinator.submit('额度用完还能聊吗'); window.coordinator.last_at -= 5; window._pump()
         state['quota_blocks_model'] = len(window.workers) == before
         database.set_setting('quota_daily_total', 0)
-    later(25000, offer_and_quota)
 
     def panel_shot():
         # 自检只用纯色背景，不读取用户的私人立绘。
@@ -255,7 +275,17 @@ def schedule_pet_smoke_check(window, database, output):
         QTimer.singleShot(400, lambda: (window.grab().save(str(output/'panel.png')), state.update(panel_shot=True, panel_bubbles=window.chat_list.column.count()-1), window.hide()))
     later(23500, panel_shot)
 
-    later(26500, window.request_exit)
+    def after_expression():
+        # 表达检查结束后再做额度检查和退出（原来固定在 25.0s / 26.5s，表达检查变成"等到完成"后改成串联）
+        if state.get('after_expression_ran'): return
+        state['after_expression_ran'] = True
+        try: offer_and_quota()
+        finally: QTimer.singleShot(1500, window.request_exit)
+    def safety_exit():
+        # 兜底：表达检查本身出异常、串联没走到时，也要退出并留下报告，而不是一直挂着
+        if not state.get('after_expression_ran'):
+            state['errors'].append('表达自检没有走完，兜底退出'); after_expression()
+    later(24200+int(EXPRESSION_TIMEOUT*1000)+6000, safety_exit)
 
     def finish():
         rows = database.recent_messages(10, 'deepseek-whale')
