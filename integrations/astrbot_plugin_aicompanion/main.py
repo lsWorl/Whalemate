@@ -29,6 +29,8 @@ PLUGIN_VERSION = '0.9.2'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
+# 和桌宠 expression/segments.py 的 QQ_FLOOD_LIMIT 保持一致（Codex 审查 17012ca P2：两边不一致时 7～8 段会退回整段或主动消息整条丢失）
+MAX_SEGMENTS = 8
 # 商城表情（mface）的图片只从 QQ 自己的固定主机下载
 MARKET_HOSTS = {'gxh.vip.qq.com', 'i.gtimg.cn'}
 MAGIC = ((b'GIF87a', 'gif'), (b'GIF89a', 'gif'), (b'\x89PNG\r\n\x1a\n', 'png'), (b'\xff\xd8\xff', 'jpeg'))
@@ -358,16 +360,19 @@ class AICompanionBridge(Star):
 
     @staticmethod
     def segments_of(result) -> list:
-        """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。"""
+        """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。
+        防刷屏：超过 MAX_SEGMENTS 段时，多出来的并进最后一条（不丢内容，主动消息也照常发出）。"""
         reply=str(result.get('reply') or '').strip()
         segments=result.get('segments')
-        if (isinstance(segments,list) and 1<=len(segments)<=6 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
-            return [x.strip() for x in segments]
+        if (isinstance(segments,list) and 1<=len(segments)<=64 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
+            segments=[x.strip() for x in segments]
+            if len(segments)>MAX_SEGMENTS:segments=segments[:MAX_SEGMENTS-1]+['，'.join(segments[MAX_SEGMENTS-1:])]
+            return segments
         return [reply] if reply else []
 
     @staticmethod
     def delays_of(result,count) -> list:
-        """桌宠按打字速度算好的每条间隔（秒）；格式不对就不用，按下面的估算。"""
+        """桌宠按打字速度算好的每条间隔（秒）；格式不对（或段数被防刷屏合并过）就不用，按下面的估算。"""
         delays=result.get('segment_delays')
         if isinstance(delays,list) and len(delays)==count and all(isinstance(x,(int,float)) and not isinstance(x,bool) and 0<=x<=15 for x in delays):
             return [float(x) for x in delays]

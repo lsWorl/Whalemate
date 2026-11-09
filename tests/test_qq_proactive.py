@@ -150,11 +150,22 @@ class PluginTests(unittest.TestCase):
         plugin.context = types.SimpleNamespace(send_message=send_message)
         async def control(path, payload): posts.append((path, payload)); return {'allowed': True}
         async def post_json(path, payload): posts.append((path, payload)); return {'ok': True}
-        async def pause(text, delay=None): pass
+        self.delays = []
+        async def pause(text, delay=None): self.delays.append(delay)
         plugin.expression_control = control; plugin.post_json = post_json; plugin.pause = pause
         with mock.patch.dict(sys.modules, {'astrbot.api.event': api_event, 'astrbot.api.message_components': components}):
             asyncio.run(plugin.deliver_outbox(item))
         return sent, posts
+
+    def test_outbox_with_seven_or_eight_text_segments_is_sent_in_order_and_acked(self):
+        # Codex 审查 17012ca P2：插件只收 6 段时，7～8 段的主动消息发送 0 条并 ACK failed
+        for count, key in ((7, 'c'), (8, 'd')):
+            plugin = self.plugin(); plugin.private_origins['10001'] = 'aicompanion_qq:FriendMessage:10001'
+            parts = [f'第{n}条' for n in range(count)]; given = [0]+[1.5]*(count-1)
+            sent, posts = self.run_outbox(plugin, {'id': key*32, 'user_id': '10001', 'segments': parts, 'segment_delays': given})
+            self.assertEqual([s[1] for s in sent], [('text', p) for p in parts])
+            self.assertEqual(self.delays, given[1:])
+            self.assertEqual(posts[-1], ('/v1/outbox/ack', {'id': key*32, 'status': 'sent'}))
 
     def test_outbox_is_sent_to_owner_private_once_with_sticker_and_acked(self):
         plugin = self.plugin(); plugin.private_origins['10001'] = 'aicompanion_qq:FriendMessage:10001'

@@ -246,6 +246,50 @@ class PluginTests(unittest.TestCase):
             # 不合法的 segments 不用：回退为整段
             self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False,'segments':['在呢',3]}),[('plain','在呢')])
 
+    def test_up_to_flood_limit_segments_keep_order_and_delays(self):
+        # Codex 审查 17012ca P2：桌宠允许 8 段，插件只收 6 段时 7～8 段会退回整段、没有间隔
+        from aicompanion.expression.segments import QQ_FLOOD_LIMIT
+        self.assertEqual(self.module.MAX_SEGMENTS, QQ_FLOOD_LIMIT)
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Plain=lambda value:('text',value)
+        for count in (7, 8):
+            plugin=self.plugin();delays=[]
+            async def pause(text,delay=None):delays.append(delay)
+            plugin.pause=pause
+            parts=[f'第{n}条' for n in range(count)]; given=[0]+[1.0+n for n in range(count-1)]
+            with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+                event=Event('聊')
+                out=self.run_handler(plugin,event,{'reply':'\n'.join(parts),'silent':False,'segments':parts,'segment_delays':given})
+            self.assertEqual(out,[]);self.assertEqual([m[1][0][1] for m in event.sent_messages],parts)
+            self.assertEqual(delays,given[1:])
+        # 超过上限（旧桌宠 / 异常输入）：多的并进最后一条，内容不丢；段数变了就不用给定间隔，自己估
+        plugin=self.plugin();delays=[]
+        async def pause(text,delay=None):delays.append(delay)
+        plugin.pause=pause
+        parts=[f'第{n}条' for n in range(11)]
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('聊');self.run_handler(plugin,event,{'reply':'x','silent':False,'segments':parts,'segment_delays':[0]+[1.0]*10})
+        sent=[m[1][0][1] for m in event.sent_messages]
+        self.assertEqual(len(sent),8);self.assertEqual(sent[-1],'第7条，第8条，第9条，第10条');self.assertEqual(delays,[None]*7)
+
+    def test_eight_segments_with_sticker_after_text(self):
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        async def control(path,payload):return {'allowed':True,'ok':True}
+        plugin=self.plugin();plugin.expression_control=control;delays=[]
+        async def pause(text,delay=None):delays.append(delay)
+        plugin.pause=pause
+        parts=[f'第{n}条' for n in range(8)]
+        answer={'reply':'\n'.join(parts),'segments':parts,'segment_delays':[0]+[2.0]*7,'silent':False,'expression_version':1,'expression':{'text':'\n'.join(parts),'attachments':[
+            {'delivery_id':'c'*32,'asset_id':'st_test0000','revision':'x','placement':'after_text',
+             'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('聊');self.run_handler(plugin,event,answer)
+        self.assertEqual([m[1][0] for m in event.sent_messages],[('text',p) for p in parts]+[('image','YWJj')])
+        self.assertEqual(delays[:7],[2.0]*7)
+
     def test_sticker_is_its_own_message_before_or_after_the_segments(self):
         import hashlib
         components=types.ModuleType('astrbot.api.message_components')
