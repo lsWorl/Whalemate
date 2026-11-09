@@ -45,8 +45,8 @@ class ExpressionUITests(unittest.TestCase):
         self.assertTrue(reply.set_attachment(GIF,'image/gif','before_text'))   # 还没说话：占位气泡变成图片气泡
         reply.set_text('哇！\n\n真的假的\n一箱啊\n\n分我一半')
         texts=[h.bubble.label.text() for h in reply.texts]
-        self.assertEqual(texts,['哇！','真的假的\n一箱啊','分我一半'])
-        self.assertEqual(len(visible()),4);self.assertIs(visible()[0],reply.image.row)   # 图在最前
+        self.assertEqual(texts,['哇！','真的假的','一箱啊','分我一半'])                  # 2026-11-09：一句一行，每行一个气泡
+        self.assertEqual(len(visible()),5);self.assertIs(visible()[0],reply.image.row)   # 图在最前
         reply.set_text('哇！')                                                          # 流式过程中段数变少：多余气泡隐藏
         self.assertEqual(len(visible()),2)
         reply.mark('[已打断]');self.assertEqual(reply.texts[0].bubble.label.text(),'哇！\n[已打断]')

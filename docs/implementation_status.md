@@ -775,8 +775,11 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
   - 回复不用逗号句号，一句一条（桌面和 QQ）；人设 v5。
   - 顺手修了观测渠道标签、私聊冷却和 history_echo 的阶段名。
 - 怎么验证：容器新增 `test_sticker_learning.py` 10 项、插件 4 项、分段 / 人设 / 桥接相关更新。全量 504 项，除基线的环境错误（无 PySide6 / QtWidgets）外全部通过。
+- Windows（快照 `output/claude-ws/wst17a`）：
+  - 全量 582 项中只有 1 项失败：旧的 UI 测试还按"单个换行不拆"写，已按新规则更新。更新后 `test_expression_ui` 9 项全过，包括图库页的收集开关和每日分析上限。
+  - 表情专项 141 项。
+  - Smoke：passed=true、errors=[]、remaining_workers=0，expression_trace_stage=OK_displayed（221ms）。
 - 没验证的部分：
-  - Windows 全量和 Smoke；
   - 真实 QQ 群里的表情包识别；
   - 真实识图分析的质量和费用；
   - 长期运行后用法学习的效果。
