@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.0'
+PLUGIN_VERSION = '0.9.1'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -428,7 +428,6 @@ class AICompanionBridge(Star):
         if cancelled:raise cancelled
         return True
 
-    @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     def unrouted_call(self, event) -> bool:
         """没交给她的群里有人 @ 机器人：不能交还给 AstrBot 自己的模型——它没配模型，会在群里回"LLM 请求失败"（2026-11-09 实测），
         有模型也会变成第二个人格。指令（/ 开头）照旧交给 AstrBot。"""
@@ -437,6 +436,9 @@ class AICompanionBridge(Star):
         text = (event.message_str or '').strip()
         return not any(text.startswith(p) for p in self.option('skip_prefixes') if p)
 
+    # 注意：这个装饰器必须紧贴在 on_message 上。0.9.0 曾把它错挂到 unrouted_call 上，插件一条消息都收不到，
+    # 全部落到 AstrBot 自己（没配模型）的流程里，私聊回"LLM 请求失败"（2026-11-09 实测）。test_handler_is_registered 守着这一点。
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def on_message(self, event: AstrMessageEvent):
         payload = self.route(event)
         if payload is None:
