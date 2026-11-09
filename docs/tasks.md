@@ -6,6 +6,7 @@
 | --- | --- | --- | --- | --- |
 | T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 进行中（Claude，PR #13）：八轮真实验收，171 张素材包下适合场景发图 72～81%，应纯文字 1/14（第八轮周会配图负责人已接受）；多段回复已分条（桌面多气泡、QQ 逐条发）；已同步 T13 合入后的基线；待 Codex 复审、负责人人工评估与真机验收 | docs/tasks/T14-smart-expression-design.md；docs/tasks/T14-claude-handoff.md；后续自然度 / 主动发言 / QQ 实测 / 图库交付 / 崩溃定位由 Claude 负责 |
 | T14-导入修复 | 素材清单导入无反馈：线程清理与结果提示 | Codex | 修复已验证，负责人授权追加至 PR #13，待 Claude 复核与用户重启验收：专项 38；全量 560（553 通过 / 7 跳过）；Smoke 通过；171 张两次实导入通过 | 仅图库界面、合成测试和 Smoke；不改用户库、主窗口和表结构 |
+| T14-QQ诊断 | AstrBot 被 Windows 应用控制拦截及旧日志混入 | Codex | 诊断已修复并验证；真实 QQ 仍阻塞：系统应用控制拦截未签名解释器；不改变系统策略 | 运行时受信任发布仍需解决，不能标记 QQ 恢复 |
 | T14-0 | 智能表达协议与接入设计冻结（历史） | Codex；Claude 复审 | 负责人已授权进入 T14 正式开发 | docs/tasks/T14-smart-expression-design.md 已同步实际实现；最新正式指令要求旧标签统一适配，取代 v1 的直接移除策略；原设计保留 |
 | T1 | 协作规则、`.gitattributes`、任务清单 | Claude | 已合入 | PR #1 |
 | T2 | MCP 服务改用官方 `mcp` 包（统一接口） | Codex | 待复审（PR #4） | `docs/tasks/T2-mcp-official-sdk.md`；工作区隔离与行尾断言已修复，Codex 真实 DeepSeek 六类 / 八任务全通过，246 项离线检查通过 |

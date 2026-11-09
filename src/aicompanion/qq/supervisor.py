@@ -86,6 +86,7 @@ class Supervisor:
         if self.running(name): return self.ours(name) or self.children[name].pid
         self.layout.logs.mkdir(parents=True, exist_ok=True)
         log = open(self.layout.logs/f'{name}.log', 'ab')
+        log_start = log.tell()
         flags = (getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)) if IS_WINDOWS else 0
         extra = {} if IS_WINDOWS else {'start_new_session': True}
         try:
@@ -96,7 +97,7 @@ class Supervisor:
         self.children[name] = child
         identity = self.identity_of(child.pid) or ('', 0)
         records = self._records()
-        records[name] = {'pid': child.pid, 'started': time.time(), 'exe': identity[0] or str(args[0]), 'created': identity[1]}
+        records[name] = {'pid': child.pid, 'started': time.time(), 'exe': identity[0] or str(args[0]), 'created': identity[1], 'log_start': log_start}
         self.layout.update_manifest(processes=records)
         return child.pid
 
@@ -143,7 +144,14 @@ class Supervisor:
 
     def tail(self, name: str, lines: int = 20, secrets=()) -> str:
         """日志最后几行（诊断用）。上游程序自己可能把令牌打进日志（例如 NapCat 打印带 token 的面板地址），这里显示前替换掉。"""
-        try: data = (self.layout.logs/f'{name}.log').read_bytes()[-8000:].decode('utf-8', 'replace')
+        try:
+            # 保留完整日志，但本次启动失败只展示本次输出，避免混入旧聊天或旧插件的发送记录。
+            offset = (self._records().get(name) or {}).get('log_start', 0)
+            if not isinstance(offset, int) or offset < 0: offset = 0
+            with (self.layout.logs/f'{name}.log').open('rb') as log:
+                size = os.fstat(log.fileno()).st_size
+                log.seek(max(offset if offset <= size else 0, size-8000))
+                data = log.read(8000).decode('utf-8', 'replace')
         except OSError: return ''
         for secret in secrets:
             if secret: data = data.replace(secret, '***')
