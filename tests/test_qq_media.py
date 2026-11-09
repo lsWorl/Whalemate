@@ -61,6 +61,7 @@ class QQMediaTests(unittest.TestCase):
         self.service = BridgeService(self.db, self.controller, quota=self.quota, media=self.media)
         self.db.set_setting('bridge_owner:qq', '10001'); self.db.set_setting('bridge_groups', ['30003'])
         self.db.set_setting('bridge_memory_every', 0)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库，清理失败）
         self.image = inline_image(picture(), 'image/png')
 
     def tearDown(self): self.tmp.cleanup()

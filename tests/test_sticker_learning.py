@@ -161,6 +161,7 @@ class BridgeStickerTests(Base):
         self.db.set_setting('bridge_owner:qq', '10001'); self.db.set_setting('bridge_groups', ['30003'])
         self.db.set_setting('bridge_memory_every', 0); self.db.set_setting('bridge_chime', 'often')
         self.service = BridgeService(self.db, self.controller, chance=lambda: 0.0)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.analyzed = []
         def analyzer(data, mime): self.analyzed.append(mime); return dict(GOOD)
         self.service.media.analyze_sticker = analyzer

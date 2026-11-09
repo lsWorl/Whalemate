@@ -29,6 +29,7 @@ class Base(unittest.TestCase):
         self.model = Model(); self.controller = ChatController(self.db, MemoryService(self.db), self.model); self.controller.character = self.character
         self.db.set_setting('bridge_owner:qq', '10001'); self.db.set_setting('bridge_groups', ['30003']); self.db.set_setting('bridge_memory_every', 0)
         self.service = BridgeService(self.db, self.controller)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.saved = runtime.last_heartbeat
         runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.9.0', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
     def tearDown(self):
