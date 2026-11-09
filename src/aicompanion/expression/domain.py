@@ -12,6 +12,7 @@ class RelationshipSnapshot:
     relationship_kind: str = 'neutral'
     intimacy_allowed: bool = False
     link_state: str = 'unlinked'
+    closeness: float = 0.0    # T15：好感和熟悉算出的 0～1，只影响候选排序（熟人多给调侃 / 接梗类），不授予任何权限
 
 @dataclass(frozen=True)
 class CommunityContext:
@@ -50,7 +51,7 @@ class ExpressionContext:
 def owner_relationship() -> 'RelationshipSnapshot':
     """已绑定的用户本人（桌面使用者 / QQ 绑定号的私聊）。沿用现有的"爹"绑定，不是 T15 的关系评分；
     陌生人、群聊仍是默认的中性快照。"""
-    return RelationshipSnapshot('verified', 'owner', 'owner_family', True, 'bound')
+    return RelationshipSnapshot('verified', 'owner', 'owner_family', True, 'bound', 0.8)
 
 
 @dataclass(frozen=True)

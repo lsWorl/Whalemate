@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+from aicompanion.storage.schema import SCHEMA_VERSION
 import unittest
 import urllib.error
 import urllib.request
@@ -383,6 +384,7 @@ class GroupChimeTests(BridgeTests.__base__):
         return self.service.handle({'platform': 'qq', 'sender_id': sender, 'sender_name': name, 'group_id': GROUP, 'text': text, 'called': False})
 
     def setUp_rolls(self, rolls, now=1000.0):
+        self.db.set_setting('relationship_learning', False)   # 这里只数插话的模型调用；关系事件的后台理解另有测试（test_relationship.py）
         self.rolls = list(rolls); self.now = [now]
         self.service.chance = lambda: self.rolls.pop(0) if self.rolls else 0.99
         self.service.clock = lambda: self.now[0]
@@ -587,7 +589,7 @@ class EarlyV4Tests(unittest.TestCase):
             db.add_message('user', '新消息', 'emilia', channel='qq:group:30003', sender='qq:1')
             Database(path).initialize()                                      # 重复打开
             self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
-            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 6)
+            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
 
 
 class ServerTests(unittest.TestCase):

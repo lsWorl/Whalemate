@@ -199,7 +199,10 @@ class ExpressionService:
             score=(len(wanted&semantic_words)*8+min(3,len(recent_words&semantic_words)*.5)
                    +(2 if mood in emotions else 0)+cues.get(group,0)
                    -len(recent_intents&terms(' '.join(intents)))*3
-                   +usage.get(row['asset_id'],(0,''))[0])
+                   +usage.get(row['asset_id'],(0,''))[0]
+                   # T15：越熟越愿意调侃、接梗、撒娇；对几乎不认识的人少一点（只调排序，是否发图仍由同一次生成决定）
+                   +(1.5 if group in ('调侃','撒娇','得意') and context.relationship.closeness>=0.6 else 0)
+                   -(1.0 if group in ('调侃','撒娇') and context.relationship.closeness<0.25 else 0))
             candidate=ExpressionCandidate(row['asset_id'],row['revision'],semantic,emotions,intents,
                        str(m.get('image_text',''))[:80],str(m.get('category',''))[:64],max(0,min(3,int(m.get('tone_strength',1)))),
                        learned=usage.get(row['asset_id'],(0,''))[1])

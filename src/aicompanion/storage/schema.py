@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -119,4 +119,31 @@ CREATE TABLE IF NOT EXISTS expression_deliveries (
 );
 CREATE INDEX IF NOT EXISTS ix_expression_scope ON expression_deliveries(character_id,scope,created_at);
 CREATE INDEX IF NOT EXISTS ix_expression_turn ON expression_deliveries(turn_id,character_id);
+
+-- v7（T15 人物关系）：人物 / 平台身份 / 角色对人物的关系 / 关系事件。原 relationship_state（主人信任度）保留不动。
+-- 平台身份 = platform + bot_account_id + platform_user_id；群号只是场景，不进身份；昵称只作展示。
+CREATE TABLE IF NOT EXISTS people (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, display_name TEXT NOT NULL DEFAULT '', nicknames TEXT NOT NULL DEFAULT '[]',
+ created_at REAL NOT NULL, last_seen REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_identities (
+ platform TEXT NOT NULL, bot_account_id TEXT NOT NULL, platform_user_id TEXT NOT NULL,
+ person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, link_state TEXT NOT NULL DEFAULT 'observed',
+ created_at REAL NOT NULL, PRIMARY KEY(platform, bot_account_id, platform_user_id)
+);
+CREATE TABLE IF NOT EXISTS relationship_profiles (
+ character_id TEXT NOT NULL, person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+ affinity REAL NOT NULL, familiarity REAL NOT NULL, trust REAL NOT NULL, is_owner INTEGER NOT NULL DEFAULT 0,
+ interactions INTEGER NOT NULL DEFAULT 0, first_met REAL NOT NULL, last_seen REAL NOT NULL, last_familiar_day TEXT NOT NULL DEFAULT '',
+ manual TEXT NOT NULL DEFAULT '{}', interests TEXT NOT NULL DEFAULT '[]', experiences TEXT NOT NULL DEFAULT '[]',
+ source TEXT NOT NULL DEFAULT 'auto', PRIMARY KEY(character_id, person_id)
+);
+CREATE TABLE IF NOT EXISTS relationship_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL, confidence REAL NOT NULL, scope TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL DEFAULT '',
+ d_affinity REAL NOT NULL DEFAULT 0, d_familiarity REAL NOT NULL DEFAULT 0, d_trust REAL NOT NULL DEFAULT 0,
+ applied INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', dedupe_key TEXT NOT NULL, created_at REAL NOT NULL, day TEXT NOT NULL,
+ UNIQUE(character_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS ix_relationship_events_person ON relationship_events(character_id, person_id, created_at);
 """

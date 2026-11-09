@@ -174,6 +174,26 @@ class BridgeService:
         need = called and re.fullmatch(r'\d{5,12}', subject) and self.media.avatar_needed(mode['channel'], subject, text)
         return {'allowed': True, 'avatar_needed': bool(need), 'avatar_subject': subject}
 
+    # ---- T15 人物关系：认出是谁（同一个 QQ 号在群聊和私聊是同一个人；不同机器人账号不合并） ----------------------
+    def person_of(self, platform, sender_id, name, request) -> int | None:
+        relationships = getattr(self.controller, 'relationships', None)
+        if relationships is None or self.closed: return None
+        from aicompanion.relationship.service import PersonRef
+        from aicompanion.relationship.analyzer import remember_sender
+        bot = str((request or {}).get('bot_account_id') or '')
+        if not re.fullmatch(r'\d{5,12}', bot): bot = 'unknown'
+        try:
+            person = relationships.resolve(PersonRef(platform, bot, sender_id, name), self.controller.character.id)
+            remember_sender(self.database, self.controller.character.id, f'{platform}:{sender_id}', person)
+            return person
+        except Exception:
+            return None   # 关系记录出错不影响聊天
+
+    def closeness_of(self, person) -> float:
+        relationships = getattr(self.controller, 'relationships', None)
+        try: return relationships.closeness(self.controller.character.id, person) if relationships and person else 0.0
+        except Exception: return 0.0
+
     # ---- 收集别人发的表情包、学大家的发图习惯（用户 2026-11-09） ----------------------------------------
     @property
     def collector(self):
@@ -317,6 +337,7 @@ class BridgeService:
             purpose = 'companion' if private else 'qq'
             controller = self.controller; character = controller.character
             stable = f'{platform}:{sender_id}'
+            person = self.person_of(platform, sender_id, name, payload)
             # 额度和条数在锁里、真正生成之前核验：排队期间额度用完的请求不会再发给模型
             if self.quota.check_silent(purpose) == 'stop':
                 return {'reply': '今天的额度用完啦，明天再聊～' if private else '', 'silent': not private, 'reason': 'quota'}
@@ -375,7 +396,7 @@ class BridgeService:
                               +SILENCE+'（表示看到了，不发消息）；别描述、点评或追问这张图。')
             if '头像' in original_text and not avatar_info:
                 situation += '\n本次没有读取到可用头像，不能猜测头像内容；可以请对方稍后再试或直接发图。'
-            result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only)
+            result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']
             return result
@@ -405,6 +426,7 @@ class BridgeService:
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         self.social.cid = character.id
         self.social.observe(mode['channel'], stable, text)
+        person = self.person_of(platform, sender_id, name, request)
         observed = {'reply': '', 'silent': True, 'reason': 'observed'}
         if stickers['known']: observed['stickers_known'] = stickers['known']
         if stickers['statuses']: observed['stickers_status'] = stickers['statuses']
@@ -426,14 +448,14 @@ class BridgeService:
                          '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+'看看最近大家在聊什么：有想接的话、能接的梗、或者聊到你感兴趣 / 熟悉的事，'
                          f'就像群友一样自然插一句；话题跟你没关系、别人正聊得热乎不需要你、或者没什么好说的，就只回复{SILENCE}，别硬聊。'
                          '不要提桌面上发生的事。'+QQ_NOT_EXPERT)
-            result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request)
+            result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']
             return result
         finally:
             self.lock.release()
 
-    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None,may_skip=False):
+    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None,may_skip=False,person=None):
         """统一大脑生成；这里只提供 QQ 场景和最终静默过滤，不再分类随机选图。"""
         from aicompanion.bridge.social import NATURAL_PROMPT
         from aicompanion.bridge.community import prompt as community_prompt,maybe_refresh
@@ -458,7 +480,7 @@ class BridgeService:
             'group_chime' if chime else 'user_reply',community=CommunityContext(selected_source(self.database,group),(background[:1200],) if background else ()),
             no_memes=bool(learned.get('preferences',{}).get('no_memes')),more_memes=bool(learned.get('preferences',{}).get('more_memes')),supports_images=version,
             # 只有绑定的爹在私聊里算本人；群里即使是爹也按公开场合（亲昵图不发到群里）
-            relationship=owner_relationship() if private else RelationshipSnapshot())
+            relationship=owner_relationship() if private else RelationshipSnapshot(closeness=self.closeness_of(person)))
         delivered=[]
         def event(value):
             if value.kind=='final':delivered.append(value.result)
@@ -467,7 +489,7 @@ class BridgeService:
         try:
             for _ in controller.generate(turn,character,CancellationToken(),text,channel=mode['channel'],scene=mode['scene'],
                 situation=situation,source=platform,offer_tasks=False,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
-                expression_context=context,on_expression_event=event):pass
+                expression_context=context,on_expression_event=event,person=person):pass
         except Exception:
             return {'reply':'','silent':True,'reason':'error'}
         if self.closed or controller.character.id!=character.id:
