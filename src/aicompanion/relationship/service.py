@@ -2,8 +2,11 @@
 
 职责分工（见 docs/tasks/T15-relationship.md）：
 - 模型只负责"理解发生了什么"（relationship/analyzer.py 产出事件、置信度、依据）；
-- 这里用确定性规则把事件变成分数：每种事件固定的变化量 × 置信度，低置信度丢弃，同一依据只算一次，
-  每人每天每个维度有涨跌上限，单次负面且把握不大时减半，手动调整过的维度 72 小时内不自动改。
+  模型同时给出这件事对她的影响轻重（每个维度 -3～3），不直接给分数；
+- 这里按此刻的关系动态换算成分数（dynamic_delta）：没有每日上限，同一种事反复发生时边际效应递减、
+  越靠近两端越难再动、第一次的负面事件按信任程度缓冲；把握不够的丢弃，同一依据只算一次，
+  手动调整过的维度 72 小时内不自动改；熟悉度随相处天数增长、长期不联系会慢慢变淡。
+- 对方的喜好、相处习惯等记在 relationship/notes.py（跟人走，不分群）。
 - 关系只影响"她怎么相处、愿不愿意"，不授予任何权限（主人身份、群白名单、工具审批都在别处强制）。
 
 人物身份 = platform + bot_account_id + platform_user_id。群号是场景，不进身份；昵称只作展示。
@@ -23,12 +26,11 @@ STRANGER = {'affinity': 30.0, 'familiarity': 0.0, 'trust': 20.0}
 OWNER_SEED = {'affinity': 80.0, 'familiarity': 75.0, 'trust': 75.0}
 DIMENSIONS = ('affinity', 'familiarity', 'trust')
 MIN_CONFIDENCE = 0.6
-DAILY_UP = 4.0
-DAILY_DOWN = 6.0
 MANUAL_HOLD = 72*3600
-FAMILIAR_PER_DAY = 0.6        # 每天和她说过话，熟悉度 +0.6（按天不按条，刷屏不涨）
+GAIN = 1.5                    # 影响 1 ≈ 1.5 分（置信度 1、关系中段、第一次）
+EVENT_LIMIT = 8.0             # 单件事最多动 8 分：防模型一句话把关系推到头，不是每日上限
 
-# 每种事件对（好感, 熟悉, 信任）的变化量，置信度 1.0 时的值。中性事件不动好感和信任。
+# 每种事件对（好感, 熟悉, 信任）的"常见影响"，模型没给 impact 时才用；模型给了就按它对这件事轻重的判断。
 EVENTS = {
     # 正向
     'care': (2.0, 1.0, 1.0),               # 真诚关心她
@@ -53,6 +55,44 @@ EVENTS = {
 NEGATIVE = {k for k, v in EVENTS.items() if v[0] < 0 or v[2] < 0}
 
 
+def clean_impact(impact) -> dict:
+    """模型给的影响：每个维度 -3～3，非数字丢掉。全 0 / 没给返回空，由调用方用常见影响。"""
+    if not isinstance(impact, dict): return {}
+    out = {}
+    for d in DIMENSIONS:
+        try: out[d] = max(-3.0, min(3.0, float(impact.get(d, 0) or 0)))
+        except (TypeError, ValueError): out[d] = 0.0
+    return out if any(out.values()) else {}
+
+
+def dynamic_delta(hint, confidence, current, *, repeats=0, first_negative=False, trust=50.0):
+    """把"这件事有多大影响"换算成此刻的分数变化。返回 (变化, 说明)。
+    - 越靠近两端越难再动：涨的时候乘 (100-当前)/60，跌的时候乘 当前/60（夹在 0.15～1.3）；
+      也就是关系很好时再被夸涨得少，信任很高时被骗掉得多；
+    - 24 小时内同一种事已经发生 n 次：乘 1/(1+0.5n)，刷屏夸她 / 骂她的效果越来越小，但不会被一刀切掉；
+    - 7 天内第一次的负面事件：按信任和把握缓冲（信任越高、把握越小，越倾向于"可能是误会"）。"""
+    why = []
+    value = hint*confidence*GAIN
+    room = (100-current) if value > 0 else current
+    value *= max(0.15, min(1.3, room/60))
+    if repeats:
+        value /= 1+0.5*repeats; why.append('habituated')
+    if value < 0 and first_negative:
+        cushion = max(0.3, 1-0.4*trust/100-max(0.0, 0.85-confidence))
+        value *= cushion; why.append('cushioned')
+    return max(-EVENT_LIMIT, min(EVENT_LIMIT, value)), why
+
+
+def familiar_step(familiarity: float) -> float:
+    """今天第一次说话时熟悉度涨多少：不熟时涨得快（1.5），越熟越慢（最少 0.1）。按天不按条，刷屏不涨。"""
+    return max(0.1, 1.5*(1-familiarity/100))
+
+
+def fade(familiarity: float, gap_days: float) -> float:
+    """很久没联系，熟悉度慢慢变淡：两周以内不变，之后每天 -0.3，一次最多 -15。"""
+    return min(15.0, max(0.0, gap_days-14)*0.3)
+
+
 @dataclass(frozen=True)
 class PersonRef:
     platform: str
@@ -73,11 +113,11 @@ def clean_id(value, pattern=r'[\w@.:-]{1,64}') -> str:
 
 
 def scope_of(channel: str) -> str:
-    """事件 / 经历的作用范围：群里的只在那个群用，私聊和桌面各自一份。用不可逆短哈希，看不出群号。"""
-    if channel.startswith('qq:group:'):
-        return 'group:'+hashlib.sha256(channel.encode()).hexdigest()[:12]
+    """事件 / 记忆是在哪类场合知道的（群聊、QQ 私聊、桌面），只作来源标注，不限制使用范围：
+    负责人 2026-11-09 确认不需要场景隔离——在群里了解到的喜好，跟着这个人的平台身份走。"""
+    if channel.startswith('qq:group:'): return 'group'
     if channel.startswith('qq:user:'): return 'qq_private'
-    return 'private'   # 桌面和爹的 QQ 私聊是同一段相处（desktop 频道）
+    return 'desktop'   # 桌面和爹的 QQ 私聊是同一段相处（desktop 频道）
 
 
 def level(value: float, words) -> str:
@@ -92,7 +132,9 @@ TRUST_WORDS = ('不太信得过', '还谈不上信任', '一般', '比较信任'
 
 class RelationshipService:
     def __init__(self, database, clock=time.time, today=date.today):
+        from aicompanion.relationship.notes import PersonNotes
         self.db, self.clock, self.today = database, clock, today
+        self.notes = PersonNotes(database, clock)
 
     # ---- 身份 ------------------------------------------------------------------------------------
     def owner_person(self, connection=None) -> int:
@@ -146,7 +188,8 @@ class RelationshipService:
                 profile = c.execute('SELECT * FROM relationship_profiles WHERE character_id=? AND person_id=?', (character_id, pid)).fetchone()
                 familiar = profile['familiarity']
                 if profile['last_familiar_day'] != day and not self._held(profile, 'familiarity'):
-                    familiar = min(100.0, familiar+FAMILIAR_PER_DAY)
+                    familiar = max(0.0, familiar-fade(familiar, (now-profile['last_seen'])/86400))
+                    familiar = min(100.0, familiar+familiar_step(familiar))
                 c.execute('UPDATE relationship_profiles SET interactions=interactions+1,last_seen=?,familiarity=?,last_familiar_day=? WHERE character_id=? AND person_id=?',
                           (now, familiar, day, character_id, pid))
             return pid
@@ -168,7 +211,7 @@ class RelationshipService:
             if row is None: return None
             ids = c.execute('SELECT platform,bot_account_id,platform_user_id,link_state FROM platform_identities WHERE person_id=?', (person_id,)).fetchall()
         value = dict(row)
-        for key in ('manual', 'interests', 'experiences', 'nicknames'): value[key] = json.loads(value[key] or ('{}' if key == 'manual' else '[]'))
+        for key in ('manual', 'nicknames'): value[key] = json.loads(value[key] or ('{}' if key == 'manual' else '[]'))
         value['identities'] = [dict(r) for r in ids]
         return value
 
@@ -183,19 +226,30 @@ class RelationshipService:
                              (character_id, person_id, limit)).fetchall()
         return [dict(r) for r in rows]
 
+    def trend(self, character_id: str, person_id: int, days=7) -> float:
+        """最近几天好感和信任的净变化（不含手动调整），用来让她感觉到"最近对他印象变好 / 变差"。"""
+        with self.db.transaction() as c:
+            row = c.execute('SELECT COALESCE(SUM(d_affinity+d_trust),0) FROM relationship_events WHERE character_id=? AND person_id=? AND applied=1 AND created_at>=?',
+                            (character_id, person_id, self.clock()-days*86400)).fetchone()
+        return float(row[0])
+
     def recent_requests(self, character_id: str, person_id: int, hours=24) -> int:
         with self.db.transaction() as c:
             return c.execute("SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND kind='request' AND created_at>=?",
                              (character_id, person_id, self.clock()-hours*3600)).fetchone()[0]
 
-    # ---- 事件 → 分数（确定性） --------------------------------------------------------------------------
+    # ---- 事件 → 分数（动态调整） -----------------------------------------------------------------------
     def _held(self, profile, dimension) -> bool:
         manual = json.loads(profile['manual'] or '{}') if not isinstance(profile['manual'], dict) else profile['manual']
         return self.clock()-float(manual.get(dimension, 0) or 0) < MANUAL_HOLD
 
     def record(self, character_id: str, person_id: int, kind: str, confidence: float, *, scope='', evidence='', key='',
-               interest='', experience='') -> dict:
-        """记一条关系事件并按规则打分。返回 {applied, deltas, note}。kind 不认识、置信度低、重复的都不改分。"""
+               impact=None) -> dict:
+        """记一条关系事件并动态调整分数。返回 {applied, deltas, note}。
+
+        impact 是模型对这件事轻重的判断（每个维度 -3～3）；没给时用这类事件的常见影响。
+        实际变化 = 影响 × 置信度 × 增益，再按此刻的关系动态调整（见 dynamic_delta）。没有每日上限：
+        同一种事反复发生时边际效应递减，分数越靠近两端越难再动，第一次的负面事件有缓冲。"""
         kind = str(kind or '').strip()
         try: confidence = max(0.0, min(1.0, float(confidence)))
         except (TypeError, ValueError): confidence = 0.0
@@ -208,39 +262,27 @@ class RelationshipService:
             if profile is None or kind not in EVENTS: return {'applied': False, 'note': 'unknown'}
             if c.execute('SELECT 1 FROM relationship_events WHERE character_id=? AND dedupe_key=?', (character_id, key)).fetchone():
                 return {'applied': False, 'note': 'duplicate'}
-            deltas = {d: 0.0 for d in DIMENSIONS}; note = ''
-            if confidence < MIN_CONFIDENCE: note = 'low_confidence'
+            deltas = {d: 0.0 for d in DIMENSIONS}; notes = []
+            if confidence < MIN_CONFIDENCE: notes.append('low_confidence')
             else:
-                base = dict(zip(DIMENSIONS, EVENTS[kind]))
-                scale = confidence
-                if kind in NEGATIVE:
-                    # 单次负面且把握不大：减半。最近 7 天已有负面事件才按全量算（长期行为综合判断）
-                    earlier = c.execute(f"SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND applied=1 AND created_at>=? AND kind IN ({','.join('?'*len(NEGATIVE))})",
-                                        (character_id, person_id, now-7*86400, *sorted(NEGATIVE))).fetchone()[0]
-                    if confidence < 0.85 and not earlier: scale *= 0.5; note = 'first_negative_halved'
+                hint = clean_impact(impact) or dict(zip(DIMENSIONS, EVENTS[kind]))
+                repeats = c.execute('SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND kind=? AND applied=1 AND created_at>=?',
+                                    (character_id, person_id, kind, now-86400)).fetchone()[0]
+                negative = any(v < 0 for v in hint.values())
+                recent_negative = negative and c.execute(
+                    'SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND applied=1 AND created_at>=? '
+                    'AND (d_affinity<0 OR d_trust<0)', (character_id, person_id, now-7*86400)).fetchone()[0]
                 for d in DIMENSIONS:
-                    value = base[d]*scale
-                    if not value: continue
-                    if self._held(profile, d): note = note or 'manual_hold'; continue
-                    used = c.execute(f'SELECT COALESCE(SUM(CASE WHEN d_{d}>0 THEN d_{d} ELSE 0 END),0) AS up, COALESCE(SUM(CASE WHEN d_{d}<0 THEN d_{d} ELSE 0 END),0) AS down '
-                                     'FROM relationship_events WHERE character_id=? AND person_id=? AND day=? AND applied=1', (character_id, person_id, day)).fetchone()
-                    if value > 0: value = max(0.0, min(value, DAILY_UP-used['up']))
-                    else: value = min(0.0, max(value, -DAILY_DOWN-used['down']))
-                    if value == 0 and base[d]: note = note or 'daily_cap'
-                    deltas[d] = round(value, 2)
+                    if not hint.get(d): continue
+                    if self._held(profile, d): notes.append('manual_hold'); continue
+                    value, why = dynamic_delta(hint[d], confidence, profile[d], repeats=repeats,
+                                               first_negative=negative and not recent_negative, trust=profile['trust'])
+                    notes.extend(why); deltas[d] = round(value, 2)
             applied = any(deltas.values())
             if applied:
                 c.execute('UPDATE relationship_profiles SET affinity=MIN(100,MAX(0,affinity+?)),familiarity=MIN(100,MAX(0,familiarity+?)),trust=MIN(100,MAX(0,trust+?)) WHERE character_id=? AND person_id=?',
                           (deltas['affinity'], deltas['familiarity'], deltas['trust'], character_id, person_id))
-            # 兴趣、共同经历：只记模型确认过的，带作用范围，各保留最近 12 条
-            for field, text in (('interests', interest), ('experiences', experience)):
-                text = re.sub(r'\s+', ' ', str(text or '')).strip()[:40]
-                if text and confidence >= MIN_CONFIDENCE:
-                    items = json.loads(profile[field] or '[]')
-                    if not any(i.get('text') == text and i.get('scope') == scope for i in items):
-                        items = (items+[{'text': text, 'scope': scope, 'at': round(now)}])[-12:]
-                        c.execute(f'UPDATE relationship_profiles SET {field}=? WHERE character_id=? AND person_id=?',
-                                  (json.dumps(items, ensure_ascii=False), character_id, person_id))
+            note = ','.join(dict.fromkeys(notes))
             c.execute('''INSERT INTO relationship_events(character_id,person_id,kind,confidence,scope,evidence,d_affinity,d_familiarity,d_trust,applied,note,dedupe_key,created_at,day)
                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (character_id, person_id, kind, confidence, scope, evidence, deltas['affinity'], deltas['familiarity'], deltas['trust'],
@@ -265,15 +307,16 @@ class RelationshipService:
         self.db.locked(work)
 
     def reset(self, character_id: str, person_id: int) -> None:
-        """重置：分数回到初始值，清空事件、兴趣、经历；人物和平台身份保留。"""
+        """重置：分数回到初始值，清空事件和对他的记忆；人物和平台身份保留。"""
         def work(c):
             row = c.execute('SELECT is_owner FROM relationship_profiles WHERE character_id=? AND person_id=?', (character_id, person_id)).fetchone()
             if row is None: return
             start = OWNER_SEED if row['is_owner'] else STRANGER
-            c.execute("""UPDATE relationship_profiles SET affinity=?,familiarity=?,trust=?,manual='{}',interests='[]',experiences='[]',
+            c.execute("""UPDATE relationship_profiles SET affinity=?,familiarity=?,trust=?,manual='{}',
                          interactions=0,source='reset' WHERE character_id=? AND person_id=?""",
                       (start['affinity'], start['familiarity'], start['trust'], character_id, person_id))
             c.execute('DELETE FROM relationship_events WHERE character_id=? AND person_id=?', (character_id, person_id))
+            c.execute('DELETE FROM person_notes WHERE character_id=? AND person_id=?', (character_id, person_id))
         self.db.locked(work)
 
     def delete(self, person_id: int) -> None:
@@ -281,7 +324,7 @@ class RelationshipService:
         def work(c):
             if c.execute("SELECT 1 FROM platform_identities WHERE person_id=? AND link_state='owner'", (person_id,)).fetchone():
                 raise ValueError('主人的档案不能删除，可以重置')
-            for table, column in (('relationship_events', 'person_id'), ('relationship_profiles', 'person_id'),
+            for table, column in (('relationship_events', 'person_id'), ('person_notes', 'person_id'), ('relationship_profiles', 'person_id'),
                                   ('platform_identities', 'person_id'), ('people', 'id')):
                 c.execute(f'DELETE FROM {table} WHERE {column}=?', (person_id,))
         self.db.locked(work)
@@ -292,8 +335,8 @@ class RelationshipService:
         return round((p['affinity']*0.5+p['familiarity']*0.5)/100, 2) if p else 0.0
 
     def prompt(self, character_id: str, person_id: int | None, scope: str, *, mood='', energy=None, public=False) -> str:
-        """给原聊天大脑的"她此刻的处境"：和对方的关系（定性，不报数字）、心情精力、对方最近多常找她做事、
-        她知道的对方兴趣和共同经历（只取这个作用范围的），以及"自己的意愿"。不规定回应方式，只给依据。"""
+        """给原聊天大脑的"她此刻的处境"：和对方的关系（定性，不报数字）、最近印象的变化、心情精力、
+        对方最近多常找她做事、她记得的关于对方的事（跟人走，不分群），以及"自己的意愿"。不规定回应方式，只给依据。"""
         p = self.profile(character_id, person_id) if person_id else None
         if p is None: return ''
         days = max(0, int((self.clock()-p['first_met'])//86400))
@@ -306,10 +349,11 @@ class RelationshipService:
                          f"{level(p['affinity'], AFFINITY_WORDS)}；{level(p['trust'], TRUST_WORDS)}。")
         if p['is_owner']:
             lines.append(f"你对他：{level(p['affinity'], AFFINITY_WORDS)}；{level(p['trust'], TRUST_WORDS)}。")
-        interests = [i['text'] for i in p['interests'] if i.get('scope') == scope][-4:]
-        experiences = [i['text'] for i in p['experiences'] if i.get('scope') == scope][-3:]
-        if interests: lines.append('你知道他感兴趣的：'+'、'.join(interests)+'。')
-        if experiences: lines.append('你们一起经历过：'+'；'.join(experiences)+'。（只提这些真实发生过的，别编新的。）')
+        trend = self.trend(character_id, person_id)
+        if trend >= 3: lines.append('最近对他的印象在变好。')
+        elif trend <= -3: lines.append('最近他让你有点不舒服。')
+        known = self.notes.prompt(character_id, person_id)
+        if known: lines.append(known)
         requests = self.recent_requests(character_id, person_id)
         if requests >= 2: lines.append(f'这一天他已经找你做过 {requests} 次事了。')
         state = []

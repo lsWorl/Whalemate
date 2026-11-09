@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS relationship_profiles (
  character_id TEXT NOT NULL, person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
  affinity REAL NOT NULL, familiarity REAL NOT NULL, trust REAL NOT NULL, is_owner INTEGER NOT NULL DEFAULT 0,
  interactions INTEGER NOT NULL DEFAULT 0, first_met REAL NOT NULL, last_seen REAL NOT NULL, last_familiar_day TEXT NOT NULL DEFAULT '',
- manual TEXT NOT NULL DEFAULT '{}', interests TEXT NOT NULL DEFAULT '[]', experiences TEXT NOT NULL DEFAULT '[]',
+ manual TEXT NOT NULL DEFAULT '{}',
  source TEXT NOT NULL DEFAULT 'auto', PRIMARY KEY(character_id, person_id)
 );
 CREATE TABLE IF NOT EXISTS relationship_events (
@@ -146,4 +146,10 @@ CREATE TABLE IF NOT EXISTS relationship_events (
  UNIQUE(character_id, dedupe_key)
 );
 CREATE INDEX IF NOT EXISTS ix_relationship_events_person ON relationship_events(character_id, person_id, created_at);
+CREATE TABLE IF NOT EXISTS person_notes (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+ category TEXT NOT NULL, text TEXT NOT NULL, weight REAL NOT NULL, mentions INTEGER NOT NULL DEFAULT 1, origin TEXT NOT NULL DEFAULT '',
+ first_at REAL NOT NULL, last_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_person_notes_person ON person_notes(character_id, person_id);
 """

@@ -76,10 +76,20 @@ class ScoringTests(Base):
         self.assertGreater(self.score(p)[0], base[0]); self.assertGreater(self.score(p)[2], base[2])
         q = self.person('222'); start = self.score(q)
         first = self.rel.record(CID, q, 'insult', 0.7, evidence='骂了一句')
-        self.assertEqual(first['note'], 'first_negative_halved')                              # 单次、把握不大：减半
-        self.assertAlmostEqual(self.score(q)[0], start[0]-1.05, places=2)
-        self.rel.record(CID, q, 'harassment', 0.9, evidence='反复刷屏骂')                       # 7 天内第二次：全量
-        self.assertLess(self.score(q)[0], start[0]-3)
+        self.assertIn('cushioned', first['note'])                                              # 第一次、把握不大：缓冲
+        once = start[0]-self.score(q)[0]
+        self.assertTrue(0 < once < 2)
+        second = self.rel.record(CID, q, 'harassment', 0.9, evidence='反复刷屏骂')                # 7 天内第二次：不再缓冲
+        self.assertNotIn('cushioned', second['note']); self.assertGreater(-second['deltas']['affinity'], once)
+
+    def test_model_judges_how_much_it_matters(self):
+        p, q = self.person('111'), self.person('222')
+        self.rel.record(CID, p, 'help_her', 0.9, evidence='顺手递了个链接', impact={'affinity': 1, 'trust': 0.5})
+        self.rel.record(CID, q, 'help_her', 0.9, evidence='熬夜帮她修好了崩掉的存档', impact={'affinity': 3, 'trust': 3, 'familiarity': 2})
+        self.assertGreater(self.score(q)[0]-STRANGER['affinity'], 2*(self.score(p)[0]-STRANGER['affinity']))
+        r = self.person('333')
+        self.rel.record(CID, r, 'care', 1.0, impact={'affinity': 99, 'trust': 'x'})              # 越界的影响被夹到 3，非数字丢掉
+        self.assertLessEqual(self.score(r)[0]-STRANGER['affinity'], 8.0); self.assertEqual(self.score(r)[2], STRANGER['trust'])
 
     def test_6_neutral_does_not_move_affinity_or_trust(self):
         p = self.person(); before = self.score(p)
@@ -101,20 +111,37 @@ class ScoringTests(Base):
         for _ in range(20): self.rel.resolve(PersonRef('qq', '90000', '111'), CID)                # 同一天刷屏不涨熟悉
         self.assertEqual(self.score(p)[1], fam_today)
 
-    def test_8_daily_cap(self):
-        p = self.person(); start = self.score(p)[0]
-        for n in range(6): self.rel.record(CID, p, 'care', 1.0, evidence=f'关心{n}')
-        self.assertAlmostEqual(self.score(p)[0], start+4.0, places=2)
-        self.assertEqual(self.rel.record(CID, p, 'care', 1.0, evidence='再关心')['note'], 'daily_cap')
-        self.clock.advance(days=1); self.rel.record(CID, p, 'care', 1.0, evidence='第二天')
-        self.assertAlmostEqual(self.score(p)[0], start+6.0, places=2)
+    def test_8_no_daily_cap_but_diminishing_and_elastic(self):
+        p = self.person(); start = self.score(p)[0]; gains = []
+        for n in range(8):
+            before = self.score(p)[0]; self.rel.record(CID, p, 'care', 1.0, evidence=f'关心{n}'); gains.append(self.score(p)[0]-before)
+        self.assertGreater(self.score(p)[0], start+4.0)                                        # 不再被每天 +4 卡住
+        self.assertTrue(all(a > b > 0 for a, b in zip(gains, gains[1:])))                       # 刷屏夸她：边际递减，但不归零
+        self.assertIn('habituated', self.rel.events(CID, p)[0]['note'])
+        self.clock.advance(seconds=60, days=1); before = self.score(p)[0]
+        self.rel.record(CID, p, 'care', 1.0, evidence='第二天'); fresh = self.score(p)[0]-before
+        self.assertGreater(fresh, gains[-1])                                                   # 隔天又是新鲜的
+        high = self.person('444'); self.rel.adjust(CID, high, affinity=95); self.clock.advance(seconds=73*3600, days=3)
+        low = self.person('555')
+        h = self.rel.record(CID, high, 'care', 1.0, evidence='关心')['deltas']['affinity']
+        l = self.rel.record(CID, low, 'care', 1.0, evidence='关心')['deltas']['affinity']
+        self.assertLess(h, l/3)                                                                 # 已经很喜欢了，再涨得慢
+
+    def test_familiarity_grows_fast_then_slow_and_fades_after_long_silence(self):
+        p = self.person(); steps = []
+        for _ in range(30):
+            before = self.score(p)[1]; self.clock.advance(days=1); self.rel.resolve(PersonRef('qq', '90000', '111'), CID); steps.append(self.score(p)[1]-before)
+        self.assertGreater(steps[0], steps[-1])
+        known = self.score(p)[1]
+        self.clock.advance(days=60); self.rel.resolve(PersonRef('qq', '90000', '111'), CID)
+        self.assertLess(self.score(p)[1], known-5)                                             # 两个月没说话，淡了
 
     def test_9_low_confidence_unknown_and_duplicate_are_ignored(self):
         p = self.person(); before = self.score(p)
         self.assertEqual(self.rel.record(CID, p, 'care', 0.4, evidence='好像关心')['note'], 'low_confidence')
         self.assertFalse(self.rel.record(CID, p, 'love_bomb', 1.0)['applied'])
         self.rel.record(CID, p, 'care', 0.9, key='k1'); self.assertEqual(self.rel.record(CID, p, 'care', 0.9, key='k1')['note'], 'duplicate')
-        self.assertAlmostEqual(self.score(p)[0], before[0]+1.8, places=2)
+        self.assertEqual(len([e for e in self.rel.events(CID, p) if e['applied']]), 1)
 
     def test_16_manual_adjust_is_kept_then_auto_continues(self):
         p = self.person()
@@ -123,24 +150,29 @@ class ScoringTests(Base):
         self.assertEqual(self.score(p)[0], 70.0)                                           # 72 小时内不自动改
         self.assertIn('affinity', self.rel.profile(CID, p)['manual'])
         self.clock.advance(seconds=73*3600, days=3); self.rel.record(CID, p, 'care', 1.0, evidence='关心')
-        self.assertAlmostEqual(self.score(p)[0], 72.0, places=2)                            # 从手动值继续
+        self.assertTrue(70.0 < self.score(p)[0] < 73.0)                                      # 从手动值继续
         self.rel.reset(CID, p); self.assertEqual(self.score(p)[0], STRANGER['affinity']); self.assertEqual(self.rel.events(CID, p), [])
 
 
 class AnalyzerTests(Base):
-    def test_model_only_describes_events_and_scope_stays_in_its_group(self):
+    def test_model_only_describes_events_and_notes_follow_the_person_across_groups(self):
         a = self.person('111'); b = self.person('222')
         analyzer = RelationshipAnalyzer(self.db, self.rel)
         raw = json.dumps({'events': [
-            {'who': 'P1', 'type': 'care', 'confidence': 0.9, 'evidence': '问她累不累', 'affinity': 100, 'interest': '原神', 'experience': '一起修好了脚本'},
+            {'who': 'P1', 'type': 'care', 'confidence': 0.9, 'evidence': '问她累不累', 'affinity': 100},
             {'who': 'P2', 'type': 'insult', 'confidence': 0.3, 'evidence': '开玩笑'},
-            {'who': 'P9', 'type': 'care', 'confidence': 1.0}, {'who': 'P1', 'type': 'not_a_type', 'confidence': 1.0}]}, ensure_ascii=False)
+            {'who': 'P9', 'type': 'care', 'confidence': 1.0}, {'who': 'P1', 'type': 'not_a_type', 'confidence': 1.0}],
+            'notes': [{'who': 'P1', 'op': 'add', 'category': 'like', 'text': '原神', 'confidence': 0.9, 'self_said': True},
+                      {'who': 'P1', 'op': 'add', 'category': 'experience', 'text': '一起修好了脚本', 'confidence': 0.8},
+                      {'who': 'P2', 'op': 'add', 'category': 'like', 'text': '小猫', 'confidence': 0.9, 'self_said': False}]}, ensure_ascii=False)
         self.assertEqual(analyzer.apply(CID, 'qq:group:30003', '```json\n'+raw+'\n```', {'P1': a, 'P2': b}, last_id=5), 1)
-        self.assertLess(self.score(a)[0], 40)                                                # 模型给的 affinity:100 被忽略
+        self.assertLess(self.score(a)[0], 40)                                                # 模型给的 affinity:100 不是分数
         self.assertEqual(self.score(b)[0], STRANGER['affinity'])                             # 低置信度的"辱骂"不计
-        here = self.rel.prompt(CID, a, scope_of('qq:group:30003')); there = self.rel.prompt(CID, a, scope_of('qq:group:40004'))
-        self.assertIn('原神', here); self.assertIn('一起修好了脚本', here)
-        self.assertNotIn('原神', there); self.assertNotIn('脚本', there)                       # 不把一个群的细节带到另一个群
+        elsewhere = self.rel.prompt(CID, a, scope_of('qq:group:40004')); private = self.rel.prompt(CID, a, scope_of('qq:user:111'))
+        for text in (elsewhere, private): self.assertIn('原神', text); self.assertIn('一起修好了脚本', text)   # 跟人走，不分群
+        self.assertNotIn('原神', self.rel.prompt(CID, b, scope_of('qq:group:30003')))            # 不串到别人身上
+        self.assertNotIn('小猫', self.rel.prompt(CID, b, scope_of('qq:group:30003')))              # 别人转述的不当真
+        self.assertEqual(self.rel.notes.items(CID, a)[0]['origin'], 'group')
         self.assertEqual(analyzer.apply(CID, 'qq:group:30003', '不是 JSON', {'P1': a}, last_id=6), 0)
 
     def test_background_runs_only_when_enough_new_messages(self):
@@ -160,6 +192,46 @@ class AnalyzerTests(Base):
         self.db.set_setting('relationship_learning', False)
         for n in range(6): self.db.add_message('user', f'小明#1：又{n}', CID, channel='qq:group:30003', sender='qq:111')
         self.assertFalse(analyzer.maybe_run(CID, 'qq:group:30003', Model(), background=False))
+
+
+class NoteTests(Base):
+    def setUp(self):
+        super().setUp(); self.p = self.person(); self.notes = self.rel.notes
+    def add(self, category, text, confidence=0.9, **kw): return self.notes.apply(CID, self.p, category=category, text=text, confidence=confidence, **kw)
+
+    def test_sensitive_hearsay_jokes_and_low_confidence_are_not_kept(self):
+        for text in ('手机号13812345678', 'QQ 123456789', '住在幸福路12号3栋', '身份证', 'a@b.com', '确诊抑郁症'):
+            self.assertEqual(self.add('identity', text), 'rejected:sensitive', text)
+        self.assertEqual(self.add('like', '原神', self_said=False), 'rejected:hearsay')
+        self.assertEqual(self.add('like', '原神', confidence=0.4), 'rejected:low_confidence')
+        self.assertEqual(self.add('mood', '今天很烦'), 'rejected:category')
+        self.assertEqual(self.notes.items(CID, self.p), [])
+
+    def test_reinforce_update_forget_and_changed_preference(self):
+        self.assertEqual(self.add('like', '原神'), 'added')
+        self.assertEqual(self.add('like', '原神'), 'reinforced')
+        note = self.notes.items(CID, self.p)[0]; self.assertEqual(note['mentions'], 2); self.assertGreater(note['weight'], 0.9)
+        self.add('like', '小猫'); self.add('dislike', '原神')                                   # 不喜欢原神了：旧的喜欢被替换
+        texts = {(n['category'], n['text']) for n in self.notes.items(CID, self.p)}
+        self.assertEqual(texts, {('like', '小猫'), ('dislike', '原神')})
+        cat = [n for n in self.notes.items(CID, self.p) if n['text'] == '小猫'][0]
+        self.assertEqual(self.notes.apply(CID, self.p, op='update', ref=str(cat['id']), text='布偶猫', confidence=0.8), 'updated')
+        self.assertEqual(self.notes.apply(CID, self.p, op='forget', ref=str(cat['id']), confidence=0.8), 'forgotten')
+        other = self.person('999')
+        self.assertEqual(self.notes.apply(CID, other, op='forget', ref=str(self.notes.items(CID, self.p)[0]['id']), confidence=0.9), 'rejected:no_such_note')
+
+    def test_recent_state_fades_long_term_stays(self):
+        self.add('recent', '在考试周'); self.add('like', '原神')
+        self.assertIn('考试周', self.rel.prompt(CID, self.p, 'group'))
+        self.clock.advance(days=25)
+        prompt = self.rel.prompt(CID, self.p, 'group')
+        self.assertNotIn('考试周', prompt); self.assertIn('原神', prompt)
+        self.add('like', '小猫'); self.assertNotIn('在考试周', [n['text'] for n in self.notes.items(CID, self.p)])   # 过期的顺手清掉
+
+    def test_reset_and_delete_clear_notes(self):
+        self.add('like', '原神'); self.rel.reset(CID, self.p); self.assertEqual(self.notes.items(CID, self.p), [])
+        self.add('like', '原神'); self.rel.delete(self.p)
+        with closing(sqlite3.connect(self.db.database_path)) as c: self.assertEqual(c.execute('SELECT COUNT(*) FROM person_notes').fetchone()[0], 0)
 
 
 class Model:
@@ -245,7 +317,7 @@ class MigrationTests(unittest.TestCase):
             path = Path(tmp)/'old.sqlite3'; db = Database(path); db.initialize()
             db.add_message('user', '合成旧消息', 'emilia'); db.set_setting('keep', 1)
             with closing(sqlite3.connect(path)) as c:
-                for table in ('relationship_events', 'relationship_profiles', 'platform_identities', 'people'): c.execute(f'DROP TABLE {table}')
+                for table in ('person_notes', 'relationship_events', 'relationship_profiles', 'platform_identities', 'people'): c.execute(f'DROP TABLE {table}')
                 c.execute('PRAGMA user_version=6'); c.commit()
             Database(path).initialize()
             self.assertEqual(len(list(Path(tmp).glob('old.backup-*.sqlite3'))), 1)
