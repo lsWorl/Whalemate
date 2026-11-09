@@ -129,6 +129,9 @@ class SettingsWindow(QDialog):
                             '手动删除 = 真的忘掉：存档里的同一事实也会删除，以后不会再被记住；聊天正文不受影响。\n'
                             '记忆在桌面和 QQ 之间共享（群里听来的事她在桌面上也记得）；标成"只在私下用"的，她不会在群聊和陌生人私聊里用。'))
         self.tabs.addTab(memories,'记忆')
+        from aicompanion.ui.storage_page import StoragePage
+        self.storage_page = StoragePage(self.database, settings)
+        self.tabs.addTab(self.storage_page, '存储位置')
         purposes=QWidget(); pl=QVBoxLayout(purposes)
         self.purpose_table=QTableWidget(0,4); self.purpose_table.setHorizontalHeaderLabels(['状态','类型','心里惦记的事','计划时间'])
         self.purpose_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -304,6 +307,9 @@ class SettingsWindow(QDialog):
                           ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
                           ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value())]: self.database.set_setting(key,value)
         self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
+        try: self.storage_page.save()
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, '存储位置没有保存', str(error)); return
         self.accept()
 
     def _validate_model_input(self):

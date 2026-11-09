@@ -1,5 +1,6 @@
 # Local configuration and credentials; keep the shareable template.
 .env
+.aicompanion-paths.json
 .env.*
 !.env.example
 *.pem
