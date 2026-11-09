@@ -7,6 +7,7 @@
 | T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 已合入（PR #13）；负责人真机试用中 | docs/tasks/T14-smart-expression-design.md |
 | T17 | 收集别人发的表情包、向群友学发图习惯、聊天短句分条 | Claude 实现；Codex 审计 | 已合入（PR #16、#17、#18） | docs/tasks/T17-sticker-learning.md |
 | T15 | 自主社交人格与人物关系系统 | Claude 实现；Codex 审查 | 进行中（Claude，`task/t15-relationship`） | docs/tasks/T15-relationship.md；人物身份、好感 / 熟悉 / 信任、关系事件确定性打分、自主意愿进同一个大脑、人物关系页；schema 6→7；`ui/settings_window.py` 只加一行挂页面 |
+| T18 | 社交语境与攻击意图理解、社区知识学习（黑话 / 梗、来源、演变、联网）、自然串梗与社区参与 | Claude 实现；Codex 审查 | 进行中（Claude，`task/t18-social-community`，叠在 T15 之上） | docs/tasks/T18-social-community.md；schema 7→8；插件 0.9.5；`ui/settings_window.py` 只加一行挂页面 |
 | T14-导入修复 | 素材清单导入无反馈：线程清理与结果提示 | Codex | 修复已验证，负责人授权追加至 PR #13，待 Claude 复核与用户重启验收：专项 38；全量 560（553 通过 / 7 跳过）；Smoke 通过；171 张两次实导入通过 | 仅图库界面、合成测试和 Smoke；不改用户库、主窗口和表结构 |
 | T14-QQ诊断 | AstrBot 被 Windows 应用控制拦截及旧日志混入 | Codex | 诊断已修复并验证；真实 QQ 仍阻塞：系统应用控制拦截未签名解释器；不改变系统策略 | 运行时受信任发布仍需解决，不能标记 QQ 恢复 |
 | T14-0 | 智能表达协议与接入设计冻结（历史） | Codex；Claude 复审 | 负责人已授权进入 T14 正式开发 | docs/tasks/T14-smart-expression-design.md 已同步实际实现；最新正式指令要求旧标签统一适配，取代 v1 的直接移除策略；原设计保留 |
