@@ -146,10 +146,11 @@ class RelationshipAnalyzer:
         cancellation.check()
         count = self.apply(character_id, channel, raw, people, last_id=new[-1]['id'])
         self._advance(character_id, channel, rows)
-        if getattr(self, 'due_terms', None):
-            # T18：这段话里有词跨过了推断阈值：接着在这个后台线程里推断（可能联网查出处）
-            from aicompanion.community.learner import CommunityLearner
-            CommunityLearner(self.db, clock=self.relationships.clock).run_due(self.due_terms, client, channel, background=False)
+        # T18：这段话里有词跨过了推断阈值就接着推断（可能联网查出处）；没有新词也顺带看看每周热梗该不该刷新
+        # （Codex 审查 9217558 P2：原来只有 due_terms 非空时才会走到周更检查，平常聊天永远不刷新）。
+        # run_due 自己检查开关、额度，热梗有七天去重，不会每批都联网。
+        from aicompanion.community.learner import CommunityLearner
+        CommunityLearner(self.db, clock=self.relationships.clock).run_due(getattr(self, 'due_terms', []), client, channel, background=False)
         return count
 
     def apply(self, character_id, channel, raw, people, last_id) -> int:
@@ -193,6 +194,8 @@ class RelationshipAnalyzer:
         """T18：记下这段话里出现的黑话 / 梗（谁用过、上下文），以及群里的共同记忆。跨过推断阈值的词留给 analyze 之后推断。"""
         from aicompanion.community.learner import CommunityLearner
         from aicompanion.community.lore import GroupLore
+        # Codex 审查 9217558 P2：关掉"从群聊里学梗 / 黑话"后，词和群记忆都不再写入（关系分析照常）
+        if not self.db.get_setting('community_learning', True): return
         learner = CommunityLearner(self.db, clock=self.relationships.clock)
         for item in (data.get('terms') if isinstance(data.get('terms'), list) else [])[:6]:
             if not isinstance(item, dict): continue

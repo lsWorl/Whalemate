@@ -175,7 +175,8 @@ class ChatController:
             rows=self.database.recent_messages(4,character.id,channel=channel)
             text='\n'.join([str(r['content']) for r in rows]+[str(query or '')])
             group=channel.startswith('qq:group:')
-            out=Lexicon(self.database).prompt(text,'group:'+channel if group else '')
+            from aicompanion.community.learner import local_scope
+            out=Lexicon(self.database).prompt(text,local_scope(channel))   # 本会话推断的用法 + 公开来源的通用义，不串别的群
             if group:out+=GroupLore(self.database).prompt(character.id,channel)
             return out
         except Exception:

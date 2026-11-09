@@ -57,6 +57,12 @@ def ask(client, instruction: str, content: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def local_scope(channel: str) -> str:
+    """群里推断的意思只在那个群用；桌面 / 私聊里推断的只在那段聊天用。检索时 Lexicon.match 用同样的规则。"""
+    channel = str(channel or '')
+    return 'group:'+channel if channel.startswith('qq:group:') else 'chat:'+(channel or 'desktop')
+
+
 class CommunityLearner:
     def __init__(self, database, lexicon: Lexicon | None = None, clock=time.time, search=None):
         self.db, self.clock = database, clock
@@ -91,11 +97,17 @@ class CommunityLearner:
 
     # ---- 推断一个词 ------------------------------------------------------------------------------------
     def infer(self, term: str, client, channel='') -> str:
-        """推断 + （可选）联网查出处 + 演变更新。返回做了什么（给测试和日志）。"""
-        sightings = self.lexicon.sightings(term)
+        """推断 + （可选）联网查出处 + 演变更新。返回做了什么（给测试和日志）。
+
+        Codex 审查 9217558 P2：群里推断出的意思只属于那个群（作用域 group:<会话>），桌面 / 私聊里推断的只属于那段聊天
+        （chat:<会话>）——同一个词在别的群出现，不能把某个群的内部用法升成通用义，也不能拿几个群的上下文混在一起推断。
+        通用义（作用域空）只来自公开来源：联网查到的、每周热梗、手动。"""
+        everywhere = self.lexicon.sightings(term)
+        if not everywhere: return 'no_sightings'
+        sightings = [s for s in everywhere if s['channel'] == channel] or ([] if channel else everywhere)
         if not sightings: return 'no_sightings'
-        total = sum(s['count'] for s in sightings)
-        speakers = len({sp for s in sightings for sp in s['speakers']})
+        total = sum(s['count'] for s in everywhere)
+        speakers = len({sp for s in everywhere for sp in s['speakers']})
         contexts = [ctx for s in sightings for ctx in s['contexts']][-10:]
         data = ask(client, INFER.format(term=term), '上下文：\n'+'\n'.join(contexts))
         if not data or data.get('no_info'):
@@ -107,10 +119,10 @@ class CommunityLearner:
         if not is_jargon: return 'plain_word'
         tone = str(data.get('tone') or ''); tone = tone if tone in TONES else ''
         circle = str(data.get('circle') or '')[:20]
-        scope = 'group:'+channel if channel.startswith('qq:group:') and len({s['channel'] for s in sightings}) == 1 else ''
+        scope = local_scope(channel)
         result = 'observed'
         web = None
-        if searchable(term, speakers=speakers, names=self.known_names()):
+        if self.db.get_setting('community_web', True) and searchable(term, speakers=speakers, names=self.known_names()):
             hits = self.web(client).search(f'{term} 梗 意思')
             if hits:
                 listing = '\n'.join(f'{n}. {h.title}（{h.site or h.url}）：{h.summary[:500]}' for n, h in enumerate(hits[:5], 1))
@@ -126,8 +138,7 @@ class CommunityLearner:
                                        tone=str(web.get('tone') or tone), circle=str(web.get('circle') or circle), source_name=pick.site or pick.title,
                                        source_url=pick.url, confidence=0.75, change=mode)
                     result = 'web'
-                    if change == 'group_variant' and channel.startswith('qq:group:'): scope = 'group:'+channel
-                    elif change in ('same', 'extend'): return result   # 群里的用法就是网上的意思，不另记
+                    if change in ('same', 'extend'): return result   # 这里的用法就是网上的意思，不另记一条本地用法
         if here:
             current = [s for s in self.lexicon.senses(term, include_old=False) if s['scope'] == scope]
             mode = 'new' if not current else self.compare(client, term, current[0]['meaning'], here)
@@ -143,7 +154,7 @@ class CommunityLearner:
 
     # ---- 最近的热梗 ------------------------------------------------------------------------------------
     def trending(self, client, force=False) -> int:
-        if not self.enabled: return 0
+        if not self.enabled or not self.db.get_setting('community_web', True): return 0
         last = float(self.db.get_setting('community_trend_at', 0) or 0)
         if not force and self.clock()-last < TREND_EVERY: return 0
         self.db.set_setting('community_trend_at', self.clock())
@@ -175,6 +186,7 @@ class CommunityLearner:
         """把跨过阈值的词推断一遍（后台线程，额度允许时）；顺带看看要不要刷新热梗。"""
         terms = [t for t in dict.fromkeys(terms) if t]
         if not self.enabled or not (terms or self.db.get_setting('community_web', True)): return False
+        if not terms and self.clock()-float(self.db.get_setting('community_trend_at', 0) or 0) < TREND_EVERY: return False   # 本周已刷新过热梗
         try:
             from aicompanion.usage.meter import Quota
             if Quota(self.db).check_silent('memory') == 'stop': return False

@@ -41,6 +41,16 @@ class CueTests(unittest.TestCase):
         self.assertIn('更可能是在逗你', brief(cues('你个笨蛋 哈哈', at_me=True), reading='teasing'))
 
 
+class SnarkTests(unittest.TestCase):
+    def test_low_affinity_insult_or_sarcasm_gets_snark_back(self):
+        """负责人 2026-11-10：有人骂她 / 阴阳她、且好感低时，可以阴阳回去。"""
+        self.assertIn('阴阳回去', brief(cues('你个sb', at_me=True), reading='mocking', affinity=20))
+        self.assertIn('阴阳回去', brief(cues('您可真厉害呢🙂', at_me=True), reading='unsure', affinity=35))
+        self.assertNotIn('阴阳回去', brief(cues('你个笨蛋 哈哈', at_me=True), reading='teasing', affinity=85))      # 熟人逗她不算
+        self.assertNotIn('阴阳回去', brief(cues('他说你是傻逼', at_me=True), reading='mocking', affinity=20))       # 转述不算
+        self.assertNotIn('阴阳回去', brief(cues('他说你是傻逼', at_me=True), reading='unsure', affinity=60))
+
+
 class FeltTests(unittest.TestCase):
     def test_her_judgement_maps_to_events_deterministically(self):
         felt = ChatController._felt
@@ -81,6 +91,12 @@ class BehaviourTests(BridgeFixture):
         self.say('你又在干嘛', '<mind feel="不爽" toward="-1"/>看着呢')                      # 普通的话不加线索块
         self.assertIn('最近还在群里攻击过别人 1 次', self.say('你也是个sb', '<mind at="me" tone="attack"/>哈？')
                       and self.model.prompts[-1])
+
+    def test_disliked_person_mocking_her_is_answered_with_snark(self):
+        guy = self.guy(); self.rel.adjust(CID, guy, affinity=15)
+        self.say('您可真厉害呢🙂', '<mind at="me" tone="sarcasm"/>嗯嗯，还是你懂')
+        prompt = self.model.prompts[-1]
+        self.assertIn('阴阳回去', prompt); self.assertIn('正话反说', prompt)
 
     def test_persistent_targeting_is_noticed(self):
         for n in range(3):

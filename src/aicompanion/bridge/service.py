@@ -269,7 +269,7 @@ class BridgeService:
             profile = rel.profile(cid, person) if person else None
             return brief(found, reading=reading(profile) if profile else 'mocking', hostility=rel.hostility(cid, person),
                          hostility_week=rel.hostility(cid, person, hours=168), bullied_others=rel.bullied_others(cid, person),
-                         upset=rel.upset(cid, person), last_said=last_said)
+                         upset=rel.upset(cid, person), last_said=last_said, affinity=profile['affinity'] if profile else None)
         except Exception:
             return ''
 

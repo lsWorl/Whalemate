@@ -75,7 +75,14 @@ def cues(text: str, *, at_me=False, at_others=(), at_all=False, reply_to=None, h
     return found
 
 
-def brief(found: Cues, *, reading='unsure', hostility=0, hostility_week=0, bullied_others=0, upset=False, last_said='') -> str:
+# 负责人 2026-11-10 00:38："有人在骂 AI 或者阴阳 AI、且好感低时，可以阴阳回去"
+SNARK = ('7. 怎么回：他本来就不招你喜欢，现在又在骂你 / 阴阳你——别直白地生气、别解释，**阴阳回去**更有杀伤力：'
+         '正话反说、假装夸他、客客气气地损他、把他的话原样还给他、顺着他的逻辑推到离谱、装作没听懂地反问。'
+         '语气越平静越好，一两句就够；比如"哇，这么懂，那你上啊""嗯嗯你说得都对"这类意思（只是示意，别照抄，每次换着来）。'
+         '不说脏话，不攻击外貌、家人、出身。')
+
+
+def brief(found: Cues, *, reading='unsure', hostility=0, hostility_week=0, bullied_others=0, upset=False, last_said='', affinity=None) -> str:
     """给大脑的"先想清楚再回"：六个问题的依据。只给线索，不下结论。"""
     relation = {'mocking': '你们不熟、也谈不上信任：同样的话从他嘴里出来更可能是嘲讽',
                 'unsure': '你们算认识但不算很熟：是玩笑还是嘲讽要看语气',
@@ -94,6 +101,8 @@ def brief(found: Cues, *, reading='unsure', hostility=0, hostility_week=0, bulli
     elif hostility_week: persist.append(f'这周他冲你来过 {hostility_week} 次')
     if bullied_others: persist.append(f'最近还在群里攻击过别人 {bullied_others} 次')
     lines.append('6. 是不是一直在针对你：' + ('；'.join(persist) if persist else '之前没有冲你来过') + '。')
+    disliked = reading == 'mocking' or (affinity is not None and affinity < 40)
+    if (found.insult or found.sarcasm) and disliked and not found.report: lines.append(SNARK)
     lines.append('想清楚以后，在回复开头的 <mind/> 里写上：at="me|other|all|none"（这句冲谁）、voice="own|quote"（他自己的话还是引用别人）、'
                  'tone="joke|tease|sarcasm|attack|neutral"（开玩笑 / 调侃 / 反讽 / 认真攻击 / 普通），再按你的判断回：'
                  '是冲你来的攻击就别客气地怼回去；是熟人逗你就笑着接；是他在转述别人的话，就针对那件事说，别冲他发火；'

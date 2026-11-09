@@ -151,12 +151,35 @@ class LearnerTests(Base):
 
     def test_meaning_change_is_recorded_as_evolution(self):
         learner, _ = self.learner()
-        learner.lexicon.learn('摆烂', '放弃努力', origin='web')
+        learner.lexicon.learn('摆烂', '放弃努力', origin='observed', scope='group:'+GROUP)
         self.seed(learner, '摆烂', speakers=('1',))
         client = Client(**{'只看这个词本身': {'in_context': '故意躺平给老板看', 'plain': '摆放烂东西', 'same': False}, '只回一个词': 'changed'})
-        learner.infer('摆烂', client, '')
+        learner.infer('摆烂', client, GROUP)
         senses = learner.lexicon.senses('摆烂')
         self.assertEqual([s['valid_to'] is None for s in senses], [False, True])
+        self.assertEqual({s['scope'] for s in senses}, {'group:'+GROUP})
+
+    def test_two_groups_same_term_different_meanings_never_leak(self):
+        """Codex 审查 9217558 P2：第二个群出现同一个词后，群内推断义被升成通用义，第三个群和桌面也看得到。"""
+        class ByContext(Client):
+            def generate_reply_stream(self, history, prompt, cancellation=None):
+                self.calls.append(prompt)
+                here = 'A群：合成的内部项目' if 'A群' in history[-1].content else 'B群：合成的秘密代号'
+                yield json.dumps({'in_context': here, 'plain': '一种鲸鱼', 'same': False}, ensure_ascii=False)
+        learner, web = self.learner()
+        self.db.set_setting('community_web', False)
+        A, B, C = 'qq:group:1001', 'qq:group:1002', 'qq:group:1003'
+        for n in range(2): learner.saw('蓝鲸行动', A, str(n), f'A群上下文{n}')
+        learner.infer('蓝鲸行动', ByContext(), A)
+        for n in range(3): learner.saw('蓝鲸行动', B, str(10+n), f'B群上下文{n}')
+        learner.infer('蓝鲸行动', ByContext(), B)
+        scopes = {s['scope']: s['meaning'] for s in learner.lexicon.senses('蓝鲸行动')}
+        self.assertEqual(scopes, {'group:'+A: 'A群：合成的内部项目', 'group:'+B: 'B群：合成的秘密代号'})   # 没有通用义
+        lex = learner.lexicon
+        self.assertIn('A群', lex.prompt('蓝鲸行动启动', 'group:'+A)); self.assertNotIn('B群', lex.prompt('蓝鲸行动启动', 'group:'+A))
+        self.assertIn('B群', lex.prompt('蓝鲸行动启动', 'group:'+B))
+        self.assertEqual(lex.prompt('蓝鲸行动启动', 'group:'+C), ''); self.assertEqual(lex.prompt('蓝鲸行动启动', 'chat:desktop'), '')
+        web.search.assert_not_called()
 
     def test_trending_once_a_week_with_sources(self):
         learner, web = self.learner([Hit('2026 热梗盘点', 'https://example.org/hot', '"哈基米"指可爱的猫……', '某站')])
@@ -219,6 +242,40 @@ class RetrievalTests(BridgeFixture):
         text = self.service.community_topics(GROUP, '我家猫今天又拆家了，哈基米真能闹')
         self.assertIn('哈基米', text); self.assertIn('别播报', text)
         self.assertEqual(self.service.community_topics(GROUP, '今天写代码'), '')
+
+
+class SwitchAndScheduleTests(Base):
+    def batch(self, client, n=6):
+        a = self.person('111'); remember_sender(self.db, CID, 'qq:111', a)
+        for i in range(n): self.db.add_message('user', f'甲#1：第{i}句', CID, channel=GROUP, sender='qq:111')
+        return RelationshipAnalyzer(self.db, self.rel).maybe_run(CID, GROUP, client, background=False)
+
+    def test_learning_switch_stops_terms_and_lore(self):
+        """Codex 审查 9217558 P2：关掉"从群聊里学梗"后仍写入群梗 / 共同记忆。"""
+        self.db.set_setting('community_learning', False); self.db.set_setting('community_web', False)
+        client = Client(**{'整理人际关系': {'events': [], 'notes': [], 'terms': [{'term': '急急国王', 'here': '催人', 'who': 'P1'}],
+                                            'lore': [{'kind': 'inside_joke', 'text': '大家互相叫对方急急国王', 'confidence': 0.9}]}})
+        self.assertTrue(self.batch(client))
+        self.assertIsNone(Lexicon(self.db).info('急急国王'))
+        self.assertEqual(GroupLore(self.db).items(CID, GROUP), []); self.assertEqual(GroupLore(self.db).prompt(CID, GROUP), '')
+
+    def test_weekly_trend_check_runs_from_the_real_analysis_entry(self):
+        """Codex 审查 9217558 P2：没有新词跨阈值时，周更热梗永远不会被检查。"""
+        fake = mock.Mock(); fake.search.return_value = [Hit('热梗', 'https://example.org/hot', '"哈基米"指猫', '某站')]
+        client = Client(**{'整理人际关系': {'events': [], 'notes': [], 'terms': [], 'lore': []},
+                           '最近的网络热梗': {'terms': [{'term': '哈基米', 'meaning': '对猫的爱称', 'source': '1'}]}})
+        with mock.patch('aicompanion.community.learner.CommunityLearner.web', lambda self, client: fake):
+            self.batch(client)
+            self.assertEqual(fake.search.call_count, 1); self.assertTrue(Lexicon(self.db).senses('哈基米'))
+            self.clock.advance(seconds=3600); self.batch(client)
+            self.assertEqual(fake.search.call_count, 1)                                            # 一周内不重复
+            self.clock.advance(days=8); self.db.set_setting('community_web', False); self.batch(client)
+            self.assertEqual(fake.search.call_count, 1)                                            # 关了联网：不查，也不占掉这周
+            self.assertLess(float(self.db.get_setting('community_trend_at')), self.clock()-7*86400)
+            self.db.set_setting('community_web', True); self.db.set_setting('community_learning', False); self.batch(client)
+            self.assertEqual(fake.search.call_count, 1)                                            # 关了学习：不查
+            self.db.set_setting('community_learning', True); self.batch(client)
+            self.assertEqual(fake.search.call_count, 2)
 
 
 class MigrationTests(unittest.TestCase):
