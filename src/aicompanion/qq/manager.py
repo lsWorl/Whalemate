@@ -296,8 +296,13 @@ class QQManager:
             for name, label in (('astrbot', 'AstrBot'), ('napcat', 'NapCat')):
                 code = self.supervisor.exited_with(name)
                 if code is not None:
-                    return Status('start_failed', f'{label} 启动后退出了（代码 {code}）', '重试',
-                                  self.supervisor.tail(name, secrets=self.known_secrets()))
+                    detail = self.supervisor.tail(name, secrets=self.known_secrets())
+                    if 'os error 4551' in detail or 'WinError 4551' in detail:
+                        detail = ('Windows 应用控制阻止了组件运行（4551），不是 QQ 登录或插件连接错误。'
+                                  '请在 Windows 安全中心及代码完整性事件中确认被阻止的文件，使用符合系统信任要求的运行环境；'
+                                  '重复启动或重置账号配置不能解除此拦截。\n'+detail)
+                        return Status('start_failed', f'{label} 被 Windows 应用控制阻止', '重试', detail)
+                    return Status('start_failed', f'{label} 启动后退出了（代码 {code}）', '重试', detail)
                 if not self.supervisor.running(name):
                     return Status('stopped', 'QQ 服务没有在运行', '启动')
             try:

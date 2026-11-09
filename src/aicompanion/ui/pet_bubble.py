@@ -70,6 +70,15 @@ class SpeechBubble(QWidget):
         if seconds > 0: self.hide_timer.start(int(seconds*1000))
         else: self.hide_timer.stop()
 
+    def show_image(self,data,mime,anchor,seconds=8.0):
+        from aicompanion.ui.expression_image import ExpressionImage
+        self.image_label=ExpressionImage(self,144)
+        if not self.image_label.load(data,mime):self.image_label.deleteLater();return False
+        self.label.hide();self.layout().addWidget(self.image_label)
+        self.anchor=QPoint(anchor);self.text='';self.full_text=''
+        self.resize(self.image_label.width()+2*self.PAD_X,self.image_label.height()+2*self.PAD_Y+self.TAIL)
+        self._place();self.show();self.raise_();self.hide_timer.start(int(seconds*1000));return True
+
     def _fit(self, text):
         """最多 6 行：流式回复太长时只保留最后一段，前面用省略号。"""
         metrics = QFontMetrics(self.label.font())
@@ -118,6 +127,7 @@ class SpeechBubble(QWidget):
 
     def fade_out(self):
         was_visible = self.isVisible()
+        if hasattr(self,'image_label'):self.image_label.stop()
         self.hide_timer.stop(); self.type_timer.stop(); self.hide(); self.text = ''; self.full_text = ''
         if was_visible: self.closed.emit(self)
 
@@ -170,6 +180,14 @@ class BubbleStack:
         bubble.show_text(text, self.anchor, seconds, typewriter)
         self.relayout()
         return bubble
+
+    def say_image(self,data,mime,anchor,key=None):
+        self.anchor=QPoint(anchor);bubble=SpeechBubble('reply');bubble.key=key
+        bubble.closed.connect(self._closed)
+        if not bubble.show_image(data,mime,self.anchor):bubble.deleteLater();return False
+        self.bubbles.append(bubble)
+        for old in [b for b in self.bubbles if b.isVisible()][:-self.MAX]:old.fade_out()
+        self.relayout();return True
 
     def release(self, key, delay=1.0):
         """这个气泡不再更新（例如一轮回复结束）：delay 秒后淡出，之后同 key 会开新气泡。"""

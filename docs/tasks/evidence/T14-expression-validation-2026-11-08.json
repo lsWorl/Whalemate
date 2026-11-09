@@ -1,0 +1,86 @@
+{
+  "kind": "sanitized_delivery_summary",
+  "date": "2026-11-08",
+  "code_head": "4af066f29937403fe70f73b36dca68f5b7d60a6b",
+  "model": "deepseek-flash",
+  "real_model": true,
+  "synthetic_dialogue_only": true,
+  "user_chat_uploaded": false,
+  "real_QQ_sent": false,
+  "real_database_modified": false,
+  "tests": {
+    "expression_total": 76,
+    "expression_passed": 76,
+    "offline_total": 463,
+    "offline_passed": 456,
+    "offline_skipped": 7,
+    "offline_seconds": 34.737,
+    "smoke_passed": true,
+    "remaining_workers": 0
+  },
+  "cases": [
+    {
+      "case": "joke_context",
+      "synthetic_input": "绷不住了",
+      "text": "那猫回头估计还在琢磨，这饭盆怎么还带防贼的",
+      "action": "text_and_sticker",
+      "placement": "before_text",
+      "selected_asset_id": "st_8092a07825b7aa174f00f1621597e292",
+      "selected_meaning": "想到恶作剧或想露出不怀好意的笑时",
+      "model_requests": 1,
+      "attachment_generated": true,
+      "image_bytes_valid": true,
+      "visible_internal_annotation": false,
+      "seconds": 2.88
+    },
+    {
+      "case": "serious_context",
+      "synthetic_input": "绷不住了",
+      "text": "绷不住就别绷了。我在",
+      "action": "text_only",
+      "placement": null,
+      "selected_asset_id": null,
+      "selected_meaning": null,
+      "model_requests": 1,
+      "attachment_generated": false,
+      "image_bytes_valid": true,
+      "visible_internal_annotation": false,
+      "seconds": 3.07
+    },
+    {
+      "case": "good_news",
+      "synthetic_input": "今天终于把那个难搞的小项目收尾了，爽！",
+      "text": "老爹牛啊，那个磨了这么久的总算搞定了。今晚是不是该配点好的，别又糊弄一口白饭就过去了",
+      "action": "text_and_sticker",
+      "placement": "before_text",
+      "selected_asset_id": "st_96a5deed4b40698108889e34d368df0b",
+      "selected_meaning": "给对方的表现打满分并盖章认可时",
+      "model_requests": 1,
+      "attachment_generated": true,
+      "image_bytes_valid": true,
+      "visible_internal_annotation": false,
+      "seconds": 3.99
+    },
+    {
+      "case": "proactive_greeting",
+      "synthetic_input": "心情轻快，主动跟爹爹打个招呼，不要求他做任何事",
+      "text": "那我也不吵你，瘫会儿去吧",
+      "action": "text_only",
+      "placement": null,
+      "selected_asset_id": null,
+      "selected_meaning": null,
+      "model_requests": 1,
+      "attachment_generated": false,
+      "image_bytes_valid": true,
+      "visible_internal_annotation": false,
+      "seconds": 2.91
+    }
+  ],
+  "limitations": [
+    "有限样例，不是固定发送率或语义正确保证",
+    "主动问候样例选择纯文字，主动配图自然度未验收",
+    "附件生成与字节有效不等于真实平台显示或送达",
+    "Qt 原生崩溃根因仍未定位",
+    "80 张可选素材包仅在本机交付，未随代码发布"
+  ]
+}

@@ -362,6 +362,31 @@ class ProcessTests(ManagerBase):
         self.assertEqual(status.code, 'start_failed'); self.assertNotIn(secret, status.detail); self.assertIn('***', status.detail)
         self.assertNotIn(secret, self.qq.diagnostics_text())
 
+    def test_current_start_log_excludes_old_chat_and_persists_boundary(self):
+        layout=Layout(self.root/'qq');layout.logs.mkdir(parents=True)
+        log=layout.logs/'astrbot.log';log.write_bytes(b'old chat and old send record\n')
+        def popen(args,**kwargs):
+            kwargs['stdout'].write(b'current startup failure\n');return FakeProcess(code=1)
+        sup=Supervisor(layout,identity_of=lambda pid:None,popen=popen)
+        sup.start('astrbot',[layout.root/'astrbot.exe'],layout.root,{})
+        self.assertEqual(sup.tail('astrbot'),'current startup failure')
+        restored=Supervisor(layout,identity_of=lambda pid:None)
+        self.assertEqual(restored.tail('astrbot'),'current startup failure')
+        self.assertIn(b'old chat',log.read_bytes())
+
+    def test_application_control_block_is_explained_without_old_chat(self):
+        self.qq.prepare();self.qq.layout.logs.mkdir(parents=True,exist_ok=True)
+        (self.qq.layout.logs/'astrbot.log').write_bytes(b'old chat\n')
+        def popen(args,**kwargs):
+            kwargs['stdout'].write(b'uv trampoline failed to spawn Python child process (os error 4551)\n')
+            return FakeProcess(code=1)
+        self.qq.supervisor=Supervisor(self.qq.layout,identity_of=lambda pid:None,popen=popen)
+        self.qq.start();status=self.qq.diagnose()
+        self.assertEqual(status.code,'start_failed')
+        self.assertIn('Windows 应用控制',status.title)
+        self.assertIn('4551',status.detail)
+        self.assertNotIn('old chat',status.detail)
+
     def recorded(self):
         layout = Layout(self.root/'qq'); exe = str(layout.root/'napcat'/'1.0'/'node.exe')
         layout.update_manifest(processes={'napcat': {'pid': 424242, 'exe': exe, 'created': 111}})

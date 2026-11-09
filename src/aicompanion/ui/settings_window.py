@@ -156,6 +156,8 @@ class SettingsWindow(QDialog):
         self.audit_page=AuditPage(self.database); self.tabs.addTab(self.audit_page,'操作日志')
         from aicompanion.ui.bridge_page import BridgePage
         self.bridge_page=BridgePage(self.database); self.tabs.addTab(self.bridge_page,'聊天平台')
+        from aicompanion.ui.library_page import LibraryPage
+        self.library_page=LibraryPage(self.database,controller.character.id,self); self.tabs.addTab(self.library_page,'表情图库')
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)

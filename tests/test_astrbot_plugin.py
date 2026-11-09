@@ -52,6 +52,7 @@ class Event:
         self.message_str = text; self.sender = sender; self.group = group; self.platform = platform
         self.is_at_or_wake_command = called; self.stopped = False
         self.images = images or []
+        self.sent_messages=[]
     def get_platform_name(self): return self.platform
     def get_group_id(self): return self.group
     def get_sender_id(self): return self.sender
@@ -60,6 +61,7 @@ class Event:
     def plain_result(self, text): return ('plain', text)
     def get_messages(self): return self.images
     def chain_result(self, chain): return ('chain', chain)
+    async def send(self,message):self.sent_messages.append(message)
 
 
 class PluginTests(unittest.TestCase):
@@ -182,14 +184,57 @@ class PluginTests(unittest.TestCase):
         self.assertIn('识图已关闭', plugin.sent['text'])
 
     def test_meme_is_sent_as_astrbot_image_message_even_without_text(self):
-        components = types.ModuleType('astrbot.api.message_components')
-        components.Image = type('Image', (), {'fromBase64': staticmethod(lambda value: ('image', value))})
-        components.Plain = lambda value: ('text', value)
-        with mock.patch.dict(sys.modules, {'astrbot.api.message_components': components}):
-            result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '', 'silent': False, 'images': ['data:image/png;base64,YWJj']})
-            self.assertEqual(result, [('chain', [('image', 'YWJj')])])
-            result = self.run_handler(self.plugin(), Event('发表情'), {'reply': '好呀', 'silent': False, 'images': ['file:///private.png']})
-            self.assertEqual(result, [('chain', [('text', '好呀')])])
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        plugin=self.plugin();controls=[]
+        async def control(path,payload):controls.append((path,payload));return {'allowed':True,'ok':True}
+        plugin.expression_control=control
+        answer={'reply':'','silent':False,'expression_version':1,'expression':{'text':'','attachments':[
+            {'delivery_id':'a'*32,'asset_id':'st_test0000','revision':'x','placement':'before_text',
+             'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('发表情');self.assertEqual(self.run_handler(plugin,event,answer),[])
+            self.assertEqual(event.sent_messages,[('chain',[('image','YWJj')])])
+            self.assertEqual(controls[-1],('ack',{'delivery_id':'a'*32,'status':'accepted'}))
+            event=Event('再发');self.run_handler(plugin,event,answer);self.assertEqual(event.sent_messages,[])
+            self.assertEqual(self.run_handler(self.plugin(),Event('发表情'),{'reply':'好呀','silent':False,'images':['file:///private.png']}),[('plain','好呀')])
+
+    def test_multi_segment_reply_is_sent_as_separate_messages(self):
+        # 负责人要求：多段回复分几条消息发，不塞进一条
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        plugin=self.plugin();pauses=[]
+        async def pause(text):pauses.append(text)
+        plugin.pause=pause
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('好消息')
+            out=self.run_handler(plugin,event,{'reply':'哇！\n\n恭喜爹','silent':False,'segments':['哇！','恭喜爹']})
+            self.assertEqual(out,[]);self.assertEqual(event.sent_messages,[('chain',[('text','哇！')]),('chain',[('text','恭喜爹')])])
+            self.assertEqual(pauses,['恭喜爹'])
+            # 旧桌宠没有 segments：整段一条
+            self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False}),[('plain','在呢')])
+            # 不合法的 segments 不用：回退为整段
+            self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False,'segments':['在呢',3]}),[('plain','在呢')])
+
+    def test_sticker_is_its_own_message_before_or_after_the_segments(self):
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        async def control(path,payload):return {'allowed':True,'ok':True}
+        async def pause(text):pass
+        for placement,expected in (('before_text',[('image','YWJj'),('text','一'),('text','二')]),
+                                   ('after_text',[('text','一'),('text','二'),('image','YWJj')])):
+            plugin=self.plugin();plugin.expression_control=control;plugin.pause=pause
+            answer={'reply':'一\n\n二','segments':['一','二'],'silent':False,'expression_version':1,'expression':{'text':'一\n\n二','attachments':[
+                {'delivery_id':('a' if placement=='before_text' else 'b')*32,'asset_id':'st_test0000','revision':'x','placement':placement,
+                 'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+            with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+                event=Event('来');self.run_handler(plugin,event,answer)
+            self.assertEqual([m[1][0] for m in event.sent_messages],expected,placement)
 
     def test_avatar_only_downloads_after_desktop_permission_and_uses_sender(self):
         plugin = self.plugin(); calls = []

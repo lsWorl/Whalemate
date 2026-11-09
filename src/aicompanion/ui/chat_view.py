@@ -76,6 +76,15 @@ class Bubble(QFrame):
         layout.addWidget(self.label)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
 
+    def set_attachment(self,data,mime,placement):
+        from aicompanion.ui.expression_image import ExpressionImage
+        if hasattr(self,'image'):self.image.stop();self.layout().removeWidget(self.image);self.image.deleteLater()
+        self.image=ExpressionImage(self)
+        valid=self.image.load(data,mime)
+        self.layout().insertWidget(0 if placement=='before_text' else self.layout().count(),self.image)
+        self.label.setVisible(bool(self.label.text()))
+        return valid
+
 
 class MessageHandle:
     def __init__(self, view: 'ChatView', sender: str, row: QWidget, bubble: Bubble):
@@ -88,7 +97,55 @@ class MessageHandle:
         prefix = f'{self.sender}: '
         if text.startswith(prefix): text = text[len(prefix):]
         elif text.startswith(f'{self.sender}:'): text = text[len(self.sender)+1:]
-        self.bubble.label.setText(text); self.view._limit(self.bubble); self.view.follow()
+        self.bubble.label.setText(text); self.bubble.label.setVisible(bool(text)); self.view._limit(self.bubble); self.view.follow()
+
+    def setAttachment(self,data,mime,placement='after_text'):
+        valid=self.bubble.set_attachment(data,mime,placement);self.view.follow();return valid
+
+
+class SegmentedReply:
+    """她的一轮回复在聊天面板里的样子：多段话显示成几个连续气泡，表情包单独一个气泡（图在前就在最前，图在后就在最后）。
+    拆分规则见 expression/segments.py；数据库里仍是一轮一条完整回复。"""
+    def __init__(self, view: 'ChatView', sender: str, first: 'MessageHandle'):
+        self.view = view; self.sender = sender; self.texts = [first]; self.image = None; self.content = ''
+
+    def _new(self, before=None) -> 'MessageHandle':
+        return self.view.append(self.sender, '', before=before.row if before else None)
+
+    def set_text(self, text: str):
+        from aicompanion.expression.segments import split_segments
+        self.content = text
+        parts = split_segments(text)
+        if not parts and not self.texts: return
+        parts = parts or ['']
+        while len(self.texts) < len(parts): self.texts.append(self._new())
+        for handle, part in zip(self.texts, parts): handle.row.setVisible(True); handle.setText(part)
+        for handle in self.texts[len(parts):]: handle.setText(''); handle.row.setVisible(False)
+
+    def set_attachment(self, data, mime, placement='after_text') -> bool:
+        if self.image is None:
+            first = self.texts[0] if self.texts else None
+            if placement == 'before_text' and first is not None and not self.content.strip():
+                # 还没开始说话：占位气泡直接变成图片气泡，后面的话另起气泡
+                self.image = self.texts.pop(0)
+            elif placement == 'before_text' and first is not None:
+                self.image = self._new(before=first)
+            else:
+                self.image = self._new()
+            self.image.setText('')
+        self.image.row.setVisible(True)
+        return self.image.setAttachment(data, mime, placement)
+
+    def mark(self, note: str):
+        """打断 / 失败时在最后一个文字气泡后面注明。"""
+        # 用 isHidden 而不是 isVisible：聊天面板关着时所有行都"不可见"（桌宠 Smoke 在面板隐藏时切换角色触发过越界）
+        shown = [h for h in self.texts if not h.row.isHidden()]
+        if shown and self.content.strip():
+            last = shown[-1]
+            last.setText(last.bubble.label.text()+'\n'+note)
+        else:
+            if not self.texts: self.texts.append(self._new())
+            self.texts[0].row.setVisible(True); self.texts[0].setText(note)
 
 
 class ChatView(QScrollArea):
@@ -135,12 +192,16 @@ class ChatView(QScrollArea):
         natural = max((metrics.horizontalAdvance(line) for line in bubble.label.text().split('\n')), default=0)+6
         bubble.label.setMinimumWidth(min(natural, width)); bubble.label.setMaximumWidth(width)
 
-    def append(self, sender, text, index=None) -> MessageHandle:
-        """index 不为空时插到历史顶部的第 index 条（加载更早记录用）。"""
+    def append(self, sender, text, index=None, before=None) -> MessageHandle:
+        """index 不为空时插到历史顶部的第 index 条（加载更早记录用）；before 是某个已有的行，新行插在它前面。"""
         row, bubble = self._row(sender, text)
-        if index is not None: self.column.insertWidget(1+index, row)
+        if before is not None and self.column.indexOf(before) >= 0: self.column.insertWidget(self.column.indexOf(before), row)
+        elif index is not None: self.column.insertWidget(1+index, row)
         else: self.column.addWidget(row); self._stick = True
         return MessageHandle(self, sender, row, bubble)
+
+    def reply(self, sender, placeholder='') -> SegmentedReply:
+        return SegmentedReply(self, sender, self.append(sender, placeholder))
 
     def follow(self):
         if self._stick: QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))

@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -100,4 +100,23 @@ CREATE TABLE IF NOT EXISTS agent_steps (
     started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), ended_at TEXT, error TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_agent_steps_run ON agent_steps(run_id, seq);
+
+CREATE TABLE IF NOT EXISTS expression_assets (
+ asset_id TEXT PRIMARY KEY, revision TEXT NOT NULL, root TEXT NOT NULL, relative_path TEXT NOT NULL,
+ sha256 TEXT NOT NULL, metadata TEXT NOT NULL, thumbnail BLOB, review_status TEXT NOT NULL,
+ enabled INTEGER NOT NULL DEFAULT 0, imported_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS expression_asset_revisions (
+ asset_id TEXT NOT NULL REFERENCES expression_assets(asset_id), revision TEXT NOT NULL,
+ root TEXT NOT NULL, relative_path TEXT NOT NULL, sha256 TEXT NOT NULL,
+ PRIMARY KEY(asset_id,revision)
+);
+CREATE TABLE IF NOT EXISTS expression_deliveries (
+ delivery_id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, character_id TEXT NOT NULL,
+ scope TEXT NOT NULL, channel TEXT NOT NULL, asset_id TEXT NOT NULL REFERENCES expression_assets(asset_id),
+ revision TEXT NOT NULL, placement TEXT NOT NULL, alt_text TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'pending', created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_expression_scope ON expression_deliveries(character_id,scope,created_at);
+CREATE INDEX IF NOT EXISTS ix_expression_turn ON expression_deliveries(turn_id,character_id);
 """

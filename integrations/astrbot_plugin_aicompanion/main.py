@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.5.1'
+PLUGIN_VERSION = '0.7.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 QQ_ADAPTERS = {'aiocqhttp': 'qq', 'qq_official': 'qq', 'qq_official_webhook': 'qq'}
@@ -42,6 +42,7 @@ class AICompanionBridge(Star):
         self.pet_vision = True
         self.pet_name = '鲸娘'
         self.avatar_backoff = {}
+        self.expression_attempts = set()
         self.heartbeat_task = None
         try:
             self.heartbeat_task = asyncio.get_running_loop().create_task(self.heartbeat_loop())
@@ -230,12 +231,94 @@ class AICompanionBridge(Star):
             response.raise_for_status()
             return await response.json()
 
+    async def expression_control(self,path,payload):
+        async with await self.post('/v1/expression/'+path,payload,5) as response:
+            if response.status!=200:return {}
+            return await response.json()
+
+    @staticmethod
+    def segments_of(result) -> list:
+        """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。"""
+        reply=str(result.get('reply') or '').strip()
+        segments=result.get('segments')
+        if (isinstance(segments,list) and 1<len(segments)<=5 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
+            return [x.strip() for x in segments]
+        return [reply] if reply else []
+
+    async def pause(self,text):
+        """连发几条时像真人打字一样隔一小会儿（按下一条的长度，0.6～2.5 秒）。"""
+        await asyncio.sleep(min(2.5,0.6+len(text)*0.04))
+
+    async def send_texts(self,event,segments):
+        """按顺序一条一条发；某条发送失败就停下，不重发、不打乱顺序。"""
+        from astrbot.api.message_components import Plain
+        for index,text in enumerate(segments):
+            if index:await self.pause(text)
+            try:await asyncio.wait_for(event.send(event.chain_result([Plain(text)])),timeout=min(30,float(self.option('timeout'))))
+            except asyncio.CancelledError:raise
+            except Exception as error:
+                logger.warning(f'AICompanion 第 {index+1} 条消息发送失败：{type(error).__name__}');return False
+        return True
+
+    async def send_expression(self,event,result):
+        """平台 await send 成功才 ACK；超时结果未知，绝不自动重发。"""
+        import hashlib
+        expression=result.get('expression')
+        if result.get('expression_version')!=1 or not isinstance(expression,dict):return False
+        attachments=expression.get('attachments') or []
+        if not attachments:return False
+        item=attachments[0]
+        if not isinstance(item,dict):return False
+        delivery=str(item.get('delivery_id') or '')
+        if not re.fullmatch(r'[a-f0-9]{32}',delivery):return False
+        if delivery in self.expression_attempts:return True
+        value=item.get('data_uri');placement=item.get('placement')
+        if not isinstance(value,str) or len(value)>MAX_IMAGE_BYTES*4//3+128 or placement not in ('before_text','after_text'):return False
+        match=re.fullmatch(r'data:image/(?:png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)',value)
+        if not match:return False
+        try:raw=base64.b64decode(match[1],validate=True)
+        except ValueError:return False
+        if not raw or len(raw)>MAX_IMAGE_BYTES or hashlib.sha256(raw).hexdigest()!=item.get('content_sha256'):return False
+        self.expression_attempts.add(delivery)
+        if len(self.expression_attempts)>2048:self.expression_attempts={delivery}
+        try:permission=await self.expression_control('claim',{'delivery_id':delivery})
+        except Exception:return True
+        if not permission.get('allowed'):return permission.get('reason')!='media_unavailable'
+        # 图片状态：没尝试过 = cancelled（如实上报"没发"，不伪造 accepted / unknown）；发了以后才是 accepted / failed / unknown
+        status='cancelled';cancelled=None;attempted=False
+        try:
+            from astrbot.api.message_components import Image,Plain
+            image=Image.fromBase64(match[1])
+            # 文字按段一条一条发，表情包单独一条：图在前就先发图，图在后就最后发图（像真人聊天）
+            segments=self.segments_of(dict(result,reply=str(expression.get('text') or result.get('reply') or '')))
+            if placement=='after_text' and segments:
+                # Codex 审计：前面的文字有一条失败 / 超时就整条停下，后面的图也不发（不乱序续发）
+                if not await self.send_texts(event,segments):segments=None
+                else:await self.pause('')
+            if segments is not None or placement=='before_text':
+                attempted=True;status='unknown'
+                # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
+                await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
+                status='accepted'
+                if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments)
+        except asyncio.CancelledError as error:cancelled=error
+        except Exception as error:
+            # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。图没尝试过仍是 cancelled。
+            if attempted and status=='unknown' and type(error).__name__=='ActionFailed':status='failed'
+        try:
+            await asyncio.shield(self.expression_control('ack',{'delivery_id':delivery,'status':status}))
+        except Exception:pass  # ACK 可幂等补报；不能据此重发图片。
+        if cancelled:raise cancelled
+        return True
+
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def on_message(self, event: AstrMessageEvent):
         payload = self.route(event)
         if payload is None: return
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
         event.stop_event()
+        payload['expression_version']=1
+        payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
         try:
             await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)
@@ -248,16 +331,10 @@ class AICompanionBridge(Star):
             return
         reply = str(result.get('reply') or '').strip()
         if result.get('silent'): return
-        images = result.get('images') or []
-        if images:
-            from astrbot.api.message_components import Image, Plain
-            chain = [Plain(reply)] if reply else []
-            for value in images[:1]:
-                if isinstance(value, str) and len(value) <= MAX_IMAGE_BYTES*4//3+128:
-                    match = re.fullmatch(r'data:image/(?:png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)', value)
-                    if match: chain.append(Image.fromBase64(match[1]))
-            if chain: yield event.chain_result(chain)
-        elif reply: yield event.plain_result(reply)
+        if await self.send_expression(event,result):return
+        segments=self.segments_of(result)
+        if len(segments)>1:await self.send_texts(event,segments);return
+        if reply:yield event.plain_result(reply)
 
     async def terminate(self):
         if self.heartbeat_task: self.heartbeat_task.cancel()

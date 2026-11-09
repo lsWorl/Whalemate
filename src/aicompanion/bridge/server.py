@@ -40,7 +40,7 @@ class BridgeServer:
 
             def do_POST(self):
                 if not self._authorized(): return self._send(401, {'error': 'unauthorized'})
-                if self.path not in ('/v1/chat', '/v1/heartbeat', '/v1/media-permission'): return self._send(404, {'error': 'not_found'})
+                if self.path not in ('/v1/chat', '/v1/heartbeat', '/v1/media-permission','/v1/expression/claim','/v1/expression/ack'): return self._send(404, {'error': 'not_found'})
                 try:
                     length = int(self.headers.get('Content-Length') or 0)
                     if length <= 0 or length > MAX_BODY: return self._send(413, {'error': 'too_large'})
@@ -48,6 +48,8 @@ class BridgeServer:
                     if not isinstance(payload, dict): raise ValueError
                 except ValueError:
                     return self._send(400, {'error': 'bad_json'})
+                if self.path == '/v1/expression/claim': return self._send(200,server.service.expression_claim(payload))
+                if self.path == '/v1/expression/ack': return self._send(200,server.service.expression_ack(payload))
                 if self.path == '/v1/heartbeat': return self._send(200, server.heartbeat(payload))
                 if self.path == '/v1/media-permission': return self._send(200, server.service.media_permission(payload))
                 self._send(200, server.service.handle(payload))

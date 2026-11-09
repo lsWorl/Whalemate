@@ -93,6 +93,9 @@ class Database:
                 connection.execute("UPDATE conversation_turns SET status='interrupted' WHERE status='generating'")
                 connection.execute("UPDATE purposes SET status='pending' WHERE status='delivering'")
                 connection.execute("UPDATE agent_runs SET status='interrupted',ended_at=datetime('now','localtime') WHERE status='running'")   # 上次退出时没说完的心事放回去
+                # 重启后未确认的外部发送不能自动重发；尚未开始的待发结果作废。
+                connection.execute("UPDATE expression_deliveries SET status='unknown' WHERE status='sending'")
+                connection.execute("UPDATE expression_deliveries SET status='cancelled' WHERE status='pending'")
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 connection.commit()
             except Exception:
@@ -168,7 +171,8 @@ class Database:
 
     def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text") -> None:
         with self.transaction() as connection:
-            if content.strip():
+            has_attachment=connection.execute("SELECT 1 FROM expression_deliveries WHERE turn_id=? AND character_id=? AND status IN ('pending','sending','displayed','accepted') LIMIT 1",(turn_id,character_id)).fetchone()
+            if content.strip() or has_attachment:
                 row=connection.execute("SELECT id FROM chat_messages WHERE turn_id=? AND character_id=? AND role='assistant'",(turn_id,character_id)).fetchone()
                 if row:
                     connection.execute("UPDATE chat_messages SET status=? WHERE id=?",(status,row['id']))

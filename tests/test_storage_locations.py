@@ -103,34 +103,47 @@ class LocationMigrationTests(StorageBase):
         self.assertEqual({p.name for p in self.memes.iterdir()}, {'custom'})
 
     def test_seeded_library_offers_chinese_meanings_and_later_user_category(self):
-        from types import SimpleNamespace
-        from aicompanion.bridge.media import QQMedia, image_bytes
+        # T13 写的集成回归，T14 合入后迁到现在的表达链路（Codex 审计 e28c1ac）：旧的 QQMedia.offer 已移除，
+        # 改为 seed_memes → AssetCatalog.scan → ExpressionService 候选 / 提示 → 取图字节。保护的东西不变：
+        # 六类中文分类、原创图可直接用且字节不变、用户后加的分类经审核后能被提供、再次 seed 不覆盖、不写 manifest。
+        from dataclasses import replace
+        from aicompanion.domain.character import DEFAULT_CHARACTER
+        from aicompanion.expression.catalog import AssetCatalog
+        from aicompanion.expression.domain import ExpressionContext
+        from aicompanion.expression.service import ExpressionService
         locations.seed_memes(self.memes)
         self.db.set_setting('qq_meme_root', str(self.memes))
-        controller = SimpleNamespace(character=SimpleNamespace(id='deepseek-whale'))
-        media = QQMedia(self.db, controller, clock=lambda: 1000)
-        offer = media.offer('synthetic:before')
+        character = replace(DEFAULT_CHARACTER, id='deepseek-whale', name='鲸娘'); self.db.add_character(character)
+        catalog = AssetCatalog(self.db); catalog.scan()
         expected = {'开心庆祝', '思考疑惑', '困了晚安', '惊讶被戳', '无语出错', '耐心等待'}
-        self.assertEqual(set(offer.categories), expected)
-        for category, (meaning, paths) in offer.categories.items():
-            self.assertEqual(meaning, category)
-            self.assertEqual(len(paths), 1); self.assertTrue(paths[0].is_file())
-            # T14 按内容哈希认领原创来源；只改分类目录，不能重编码图片或改变文件名。
-            original = Path(locations.__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'/paths[0].name
-            self.assertEqual(paths[0].read_bytes(), original.read_bytes())
+        rows = catalog.rows()
+        self.assertEqual({r['metadata']['category'] for r in rows}, expected)
+        sprites = Path(locations.__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'
+        for row in rows:
+            # 原创图按内容哈希认领：直接通过审核并启用，补上内置中文说明，字节与仓库原图一致
+            self.assertEqual((row['review_status'], row['enabled'], row['metadata']['license']), ('approved', 1, 'project-original'))
+            data, _ = catalog.resolve(row['asset_id'])
+            self.assertEqual(data, (sprites/Path(row['relative_path']).name).read_bytes())
+        self.assertEqual(next(r for r in rows if r['metadata']['category'] == '开心庆祝')['metadata']['semantic'], '开心、庆祝、赞同')
         self.assertFalse((self.memes/'manifest.json').exists())
-        # 真正走现有发送适配，确认中文分类可选且图片字节有效，不调用模型或 QQ。
-        rendered = media.render('<meme name="开心庆祝"/>', 'complete', offer, 'synthetic:before')
-        self.assertEqual(len(rendered['images']), 1); image_bytes(rendered['images'][0])
+        service = ExpressionService(self.db, lambda: 1000)
+        context = ExpressionContext('synthetic-before', character.id, 'desktop:'+character.id)
+        prompt = service.prompt(service.prepare(context, character, '好开心'))
+        self.assertIn('开心、庆祝、赞同', prompt); self.assertNotIn(str(self.memes), prompt)
+        # 用户后加的分类：没有许可前不提供；用户在图库页确认来源和许可（授权）后才进入候选
         user = self.memes/'用户新增分类'; user.mkdir()
-        content = (self.memes/'开心庆祝'/'celebrate.png').read_bytes()
-        (user/'custom.png').write_bytes(content)
+        from test_expression_catalog import png
+        (user/'custom.png').write_bytes(png(0xff0cc85a))
         before = {p.relative_to(self.memes): p.read_bytes() for p in self.memes.rglob('*') if p.is_file()}
         locations.seed_memes(self.memes)
         self.assertEqual(before, {p.relative_to(self.memes): p.read_bytes() for p in self.memes.rglob('*') if p.is_file()})
-        updated = media.offer('synthetic:after')
-        self.assertEqual(set(updated.categories), expected | {'用户新增分类'})
-        self.assertEqual(updated.categories['用户新增分类'][0], '用户新增分类')
+        catalog.scan()
+        custom = next(r for r in catalog.rows() if r['relative_path'] == '用户新增分类/custom.png')
+        self.assertEqual((custom['review_status'], custom['metadata']['semantic']), ('pending_review', '用户新增分类'))
+        listed = lambda turn: service.prompt(service.prepare(replace(context, generation_id=turn), character, '用户新增分类'))
+        self.assertNotIn('用户新增分类', listed('synthetic-pending'))
+        catalog.review(custom['asset_id'], author='合成作者', source='synthetic:test', license='user-owned')
+        self.assertIn('用户新增分类', listed('synthetic-after'))
         self.assertFalse((self.memes/'manifest.json').exists())
 
     def test_custom_database_filename_is_preserved(self):
