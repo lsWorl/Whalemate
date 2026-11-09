@@ -106,10 +106,13 @@ class StickerCollector:
                  AND json_extract(metadata,'$.analysis')='pending' ORDER BY imported_at LIMIT ?""", (limit,)).fetchall()
         return [r['asset_id'] for r in rows]
 
-    def analyze_pending(self, analyzer, limit: int = 5) -> int:
-        """分析排队的图（后台线程调用）。analyzer(data, mime) → dict 或 None（失败）。每张先预留当天额度，额度用完就停。"""
+    def analyze_pending(self, analyzer, limit: int = 5, alive=None) -> int:
+        """分析排队的图（后台线程调用）。analyzer(data, mime) → dict 或 None（失败）。每张先预留当天额度，额度用完就停。
+        alive()：每张开始前再确认一次能不能继续（服务关闭、收集 / 识图被关掉就停，不再把图交给视觉模型）。"""
         done = 0
         for asset_id in self.pending(limit):
+            if alive is not None and not alive(): break
+            if not self.enabled(): break
             if not self.db.reserve_daily(f'sticker_analysis_count:{self.today().isoformat()}', self.analysis_daily()): break
             media = self.catalog.resolve(asset_id)
             result = None
@@ -130,8 +133,11 @@ class StickerCollector:
                 metadata['attempts'] = int(metadata.get('attempts') or 0)+1
                 if metadata['attempts'] >= MAX_ATTEMPTS: metadata['analysis'] = 'failed'
             else:
-                suitable = bool(result.get('sticker', True)) and bool(result.get('suitable', True))
-                metadata.update(analysis='done', suitable=suitable, analyzed_at=round(self.clock()))
+                # 只认显式的布尔 true（解析层已拒绝字符串 / null / 缺字段）。是不是"表情包"只记录不拦：
+                # 这张图本来就是 QQ 标成表情包发出来的，很多人会把一张反应照片存成表情；负责人 2026-11-09 要求分类别太严，
+                # 只有明显不适合（suitable=false）的才停用。
+                suitable = result.get('suitable') is True
+                metadata.update(analysis='done', suitable=suitable, is_sticker=result.get('sticker') is not False, analyzed_at=round(self.clock()))
                 if not metadata.get('user_annotated'):
                     metadata['semantic'] = str(result.get('meaning') or '')[:40]
                     metadata['intents'] = [str(x)[:20] for x in (result.get('use_when') or [])[:4] if str(x).strip()]

@@ -138,7 +138,8 @@ class AICompanionBridge(Star):
         import hashlib
         if not self.pet_collect: return
         parts, markets = self.sticker_parts(event)
-        items = []
+        every = self.image_parts(event)
+        items, sources = [], []
         for source in [('part', p) for p in parts]+[('market', u) for u in markets]:
             if len(items) >= MAX_STICKERS: break
             try:
@@ -150,9 +151,11 @@ class AICompanionBridge(Star):
                     if not data: continue
                 digest = hashlib.sha256(data).hexdigest()
                 items.append({'sha256': digest} if digest in self.known_stickers else self.sticker_uri(data))
+                # sticker_parts[j]：第 j 个表情包来自第几个图片段（和 image_parts 对得上）；商城表情不在图片段里，记 -1
+                sources.append(next((i for i, p in enumerate(every) if p is source[1]), -1) if source[0] == 'part' else -1)
             except Exception:
                 continue   # 不把下载地址、路径或图片内容打进日志
-        if items: payload['stickers'] = items
+        if items: payload['stickers'] = items; payload['sticker_parts'] = sources
 
     def remember_stickers(self, result):
         known = result.get('stickers_known') if isinstance(result, dict) else None
@@ -196,15 +199,17 @@ class AICompanionBridge(Star):
         if payload['group_id'] and not called:
             payload['text'] += '\n[收到图片，旁听不自动识图，不能猜测图片内容。]'
             return
-        images = []
+        images, sources = [], []
         failed = len(parts) > MAX_IMAGES
-        for part in parts[:MAX_IMAGES]:
+        for index, part in enumerate(parts[:MAX_IMAGES]):
             try:
                 path = await asyncio.wait_for(part.convert_to_file_path(), timeout=10)
-                images.append(await asyncio.to_thread(self.encode_image, path, self.managed_temp_root()))
+                images.append(await asyncio.to_thread(self.encode_image, path, self.managed_temp_root())); sources.append(index)
             except Exception:
                 failed = True   # 不把下载 URL、绝对路径或图片内容打进日志
-        if images: payload['images'] = images
+        if images:
+            # image_parts[i]：第 i 张图片来自第几个图片段。桌宠据此只跳过"已经看懂的那张表情包"，同条消息里的普通照片照常识图
+            payload['images'] = images; payload['image_parts'] = sources
         if failed: payload['text'] += '\n[部分图片未能读取或超过 3 张，不能猜测这些图片的内容。]'
 
     @staticmethod

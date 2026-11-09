@@ -53,7 +53,7 @@ class ChatController:
                 from aicompanion.pet.script import TASK_PROMPT
                 prompt+=TASK_PROMPT
             candidates,report=self.expression.prepare_report(context,character,query,history)
-            prompt+=self.expression.prompt(candidates,proactive=bool(proactive))
+            prompt+=self.expression.prompt(candidates,proactive=bool(proactive),qq=context.scope.startswith('qq:'))
             if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
             parser=ExpressionStream([c.asset_id for c in candidates],self.expression.legacy_map(candidates),
                                     {c.handle:c.asset_id for c in candidates if c.handle},

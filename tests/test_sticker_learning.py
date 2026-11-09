@@ -98,10 +98,26 @@ class CollectorTests(Base):
         self.collector.analyze_pending(lambda d, m: dict(GOOD))
         self.assertEqual(self.controller.expression.catalog.get(result['asset_id'])['metadata']['semantic'], '我自己写的含义')
 
+    def test_non_boolean_verdicts_never_release_a_sticker(self):
+        # Codex 审计（7aaa065）：字符串 "false"、null、缺字段都按分析失败，不能被当成"适合发"
+        for raw in ('{"meaning": "synthetic private screenshot", "suitable": "false", "sticker": "false"}',
+                    '{"meaning": "x", "suitable": null}', '{"meaning": "x"}', '{"meaning": "x", "suitable": true, "sticker": "true"}'):
+            self.assertIsNone(parse_sticker_analysis(raw), raw)
+        result = self.ingest(0xff0a0b0c)
+        for _ in range(2): self.collector.analyze_pending(lambda d, m: parse_sticker_analysis('{"meaning": "截图", "suitable": "false"}'))
+        meta = self.controller.expression.catalog.get(result['asset_id'])['metadata']
+        self.assertEqual(meta['analysis'], 'failed'); self.assertNotIn(result['asset_id'], [c.asset_id for c in self.candidates()[0]])
+
+    def test_neutral_or_photo_like_sticker_is_still_usable(self):
+        # 负责人 2026-11-09：分类别太严，中性的表情也能发；QQ 本来就标成表情包的反应照片也算，只有 suitable=false 才停用
+        result = self.ingest(0xff0d0e0f)
+        self.collector.analyze_pending(lambda d, m: {'sticker': False, 'suitable': True, 'meaning': '收到', 'use_when': ['回应'], 'emotions': []})
+        self.assertIn(result['asset_id'], [c.asset_id for c in self.candidates('好的')[0]])
+
     def test_parse_sticker_analysis(self):
         self.assertEqual(parse_sticker_analysis('```json\n'+json.dumps(GOOD, ensure_ascii=False)+'\n```')['meaning'], '无语到翻白眼')
         self.assertIsNone(parse_sticker_analysis('看不清'))
-        self.assertIsNone(parse_sticker_analysis('{"meaning": ""}'))
+        self.assertIsNone(parse_sticker_analysis('{"meaning": "", "suitable": true}'))
         self.assertFalse(parse_sticker_analysis('{"meaning": "", "suitable": false}')['suitable'])
 
 
@@ -120,6 +136,23 @@ class UsageTests(Base):
         learned = next(c for c in items if c.asset_id == a)
         self.assertIn('咖啡', learned.learned)
         self.assertIn(learned.learned, self.controller.expression.prompt(items)); self.assertIn('群友', self.controller.expression.prompt(items))
+
+
+class LooserRulesTests(Base):
+    """负责人 2026-11-09：分类别太严、中性的表情也能发；QQ 里聊技术也能配图；QQ 里不用什么都懂。"""
+    def test_neutral_group_and_substring_grouping(self):
+        from aicompanion.expression.service import feeling_group, FEELINGS
+        self.assertIn('回应', FEELINGS)
+        self.assertEqual(feeling_group(('收到', ), ('收到', )), '回应')
+        self.assertEqual(feeling_group(('对方说好的时', '默默围观'), ('对方说好的时',)), '回应')   # 模型写的短语也能认
+
+    def test_qq_prompt_allows_tech_stickers_and_not_knowing(self):
+        from aicompanion.expression.domain import ExpressionCandidate
+        items = (ExpressionCandidate('a', 'r', '疑惑歪头', handle='s1'),)
+        qq = self.controller.expression.prompt(items, qq=True); desktop = self.controller.expression.prompt(items)
+        self.assertIn('在 QQ 上聊技术也可以配图', qq); self.assertIn('不用什么都懂', qq); self.assertNotIn('认真讲技术', qq)
+        self.assertIn('认真讲技术', desktop); self.assertNotIn('QQ 上聊技术', desktop)
+        for text in (qq, desktop): self.assertIn('中性的、平常的图也能发', text)
 
 
 class BridgeStickerTests(Base):
@@ -162,11 +195,74 @@ class BridgeStickerTests(Base):
         self.service.media.describe = lambda images, text, purpose: described.append(images) or text
         self.model.reply = '【不说】'
         result = self.service.handle(dict(platform='qq', sender_id='10001', sender_name='爹', group_id='', text='[收到图片]',
-                                          images=[sticker], stickers=[sticker], expression_version=1, bot_account_id='90009'))
+                                          images=[sticker], image_parts=[0], stickers=[sticker], sticker_parts=[0],
+                                          expression_version=1, bot_account_id='90009'))
         self.assertEqual((result['silent'], result['reason']), (True, 'sticker_seen'))
         self.assertEqual(described, [])                              # 分析过的表情包不再识图
         self.assertIn('无语到翻白眼', self.model.prompts[-1]); self.assertIn('不用接话', self.model.prompts[-1])
         self.assertNotEqual(self.db.recent_messages(1, self.character.id)[-1]['role'], 'assistant')
+
+    def known_sticker(self, color):
+        data = png(color); self.collector.ingest(data, character_id=self.character.id, origin='qq:group:x')
+        self.collector.analyze_pending(lambda d, m: dict(GOOD))
+        import hashlib
+        return hashlib.sha256(data).hexdigest()
+
+    def test_mixed_message_keeps_photo_recognition(self):
+        # Codex 审计（7aaa065）：已知表情 + 普通照片，照片仍要交给识图；只跳过插件明确标出的那张表情
+        digest = self.known_sticker(0xff313131)
+        photo = inline_image(png(0xff989898), 'image/png'); sticker_image = inline_image(png(0xff313131), 'image/png')
+        described = []
+        self.service.media.describe = lambda images, text, purpose: described.append(list(images)) or text
+        base = dict(platform='qq', sender_id='10001', sender_name='爹', group_id='', text='[收到图片]', expression_version=1, bot_account_id='90009')
+        # 商城表情（不在 images 里）+ 一张照片
+        self.service.handle(dict(base, images=[photo], image_parts=[0], stickers=[{'sha256': digest}], sticker_parts=[-1]))
+        self.assertEqual(described[-1], [photo])
+        # 图片表情 + 照片：只跳过表情那张
+        self.service.handle(dict(base, images=[sticker_image, photo], image_parts=[0, 1], stickers=[{'sha256': digest}], sticker_parts=[0]))
+        self.assertEqual(described[-1], [photo])
+        # 旧插件没有对应关系：一张都不跳过
+        self.service.handle(dict(base, images=[sticker_image, photo], stickers=[{'sha256': digest}]))
+        self.assertEqual(described[-1], [sticker_image, photo])
+        self.assertIn('无语到翻白眼', self.model.prompts[-1])
+
+    def test_close_during_sticker_decoding_writes_nothing_and_stops_analysis(self):
+        # Codex 审计（7aaa065，P1）：解码期间服务被关，close() 返回之后不能再收图、记用法或调用分析
+        import threading
+        from unittest import mock
+        import aicompanion.bridge.media as media
+        started, resume = threading.Event(), threading.Event(); original = media.image_bytes
+        def slow(value):
+            started.set(); resume.wait(5); return original(value)
+        sticker = inline_image(png(0xff575757), 'image/png'); results = []
+        with mock.patch.object(media, 'image_bytes', slow):
+            worker = threading.Thread(target=lambda: results.append(self.overhear('', [sticker])))
+            worker.start(); started.wait(5)
+            self.service.close(); resume.set(); worker.join(5)
+        self.assertEqual(results[0]['reason'], 'closed')
+        self.assertEqual(self.collector.collected_count(), 0)
+        self.assertFalse(self.db.get_setting(usage.KEY+self.character.id)); self.assertEqual(self.analyzed, [])
+
+    def test_revoked_group_or_disabled_collection_stops_background_analysis(self):
+        self.collector.ingest(png(0xff676767), character_id=self.character.id, origin='qq:group:x')
+        self.db.set_setting('sticker_collect_enabled', False)
+        self.assertFalse(self.service.analyze_soon(background=False) and self.analyzed)
+        self.assertEqual(self.analyzed, [])
+        self.db.set_setting('sticker_collect_enabled', True); self.service.close()
+        self.assertFalse(self.service.analyze_soon(background=False)); self.assertEqual(self.analyzed, [])
+        self.db.set_setting('bridge_groups', [])
+        fresh = BridgeService(self.db, self.controller)
+        try: self.assertEqual(fresh.handle(dict(platform='qq', sender_id='20002', sender_name='群友', group_id='30003', text='',
+                                                 called=False, stickers=[inline_image(png(0xff777777), 'image/png')]))['reason'], 'not_allowed')
+        finally: fresh.close()
+        self.assertEqual(self.collector.collected_count(), 1)   # 撤掉群以后不再收
+
+    def test_qq_situation_says_she_does_not_need_to_know_everything(self):
+        self.ingest(0xff232323); self.collector.analyze_pending(lambda d, m: dict(GOOD))
+        for group in ('', '30003'):
+            self.service.handle(dict(platform='qq', sender_id='10001', sender_name='爹', group_id=group, text='rebase 冲突怎么办',
+                                     called=True, expression_version=1, bot_account_id='90009'))
+            self.assertIn('不用什么都懂', self.model.prompts[-1]); self.assertIn('在 QQ 上聊技术也可以配图', self.model.prompts[-1])
 
     def test_trace_marks_owner_private_qq_and_cooldown_only_for_groups(self):
         self.ingest(0xff121212); self.collector.analyze_pending(lambda d, m: dict(GOOD))

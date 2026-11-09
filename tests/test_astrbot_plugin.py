@@ -268,6 +268,28 @@ class PluginTests(unittest.TestCase):
             self.assertEqual(base64.b64decode(plugin.sent['stickers'][0].split(',', 1)[1]), path.read_bytes())
             self.assertNotIn('images', plugin.sent); self.assertNotIn(folder, str(plugin.sent))
 
+    def test_called_mixed_message_reports_which_image_is_the_sticker(self):
+        # Codex 审计（7aaa065）：桌宠按对应关系只跳过已看懂的表情，照片照常识图
+        with tempfile.TemporaryDirectory() as folder:
+            gif = self.gif(folder)
+            from PIL import Image
+            photo_path = Path(folder)/'p.png'; Image.new('RGB', (30, 30), 'green').save(photo_path)
+            class Photo:
+                type = 'Image'; file = 'p.png'
+                async def convert_to_file_path(self): return str(photo_path)
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'; sub_type = 1
+                async def convert_to_file_path(self): return str(gif)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = self.raw(Event('看', images=[Photo(), Sticker()]),
+                             [{'type': 'image', 'data': {'file': 'p.png', 'sub_type': 0}}, {'type': 'image', 'data': {'file': 'abc.gif', 'sub_type': 1}},
+                              {'type': 'mface', 'data': {'url': 'https://gxh.vip.qq.com/x/raw300.gif'}}])
+            async def market(url): return b'GIF89a'+b'm'*20
+            plugin.fetch_market = market
+            self.run_handler(plugin, event, {'reply': '好', 'silent': False})
+            self.assertEqual(plugin.sent['image_parts'], [0, 1]); self.assertEqual(len(plugin.sent['images']), 2)
+            self.assertEqual(plugin.sent['sticker_parts'], [1, -1]); self.assertEqual(len(plugin.sent['stickers']), 2)
+
     def test_known_sticker_only_sends_hash_and_collect_can_be_turned_off(self):
         import hashlib
         with tempfile.TemporaryDirectory() as folder:
