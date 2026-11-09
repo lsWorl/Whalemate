@@ -50,6 +50,17 @@ class SnarkTests(unittest.TestCase):
         self.assertNotIn('阴阳回去', brief(cues('他说你是傻逼', at_me=True), reading='mocking', affinity=20))       # 转述不算
         self.assertNotIn('阴阳回去', brief(cues('他说你是傻逼', at_me=True), reading='unsure', affinity=60))
 
+    def test_snark_never_decides_the_target_for_her(self):
+        """Codex 审查 906cd6b P2：反击说明是条件策略，不先断定"他在骂你"；明确冲别人时不加。"""
+        def snark(**kw): return brief(cues('你个sb', **kw), reading='mocking', affinity=15)
+        for text in (snark(at_me=True), snark()):                                                  # @ 她 / 对象不明
+            self.assertIn('如果你结合上下文判断，这句确实是他本人冲你来的', text)
+            self.assertNotIn('现在又在骂你', text)
+        self.assertNotIn('阴阳回去', snark(at_others=['40004']))                                   # @ 了别人
+        self.assertNotIn('阴阳回去', snark(reply_to={'self': False, 'name': '阿明'}))              # 回复别人
+        self.assertIn('阴阳回去', snark(at_others=['40004'], at_me=True))                          # 同时 @ 了她：交给她判断
+        self.assertIn('阴阳回去', snark(reply_to={'self': True}))
+
 
 class FeltTests(unittest.TestCase):
     def test_her_judgement_maps_to_events_deterministically(self):
@@ -97,6 +108,16 @@ class BehaviourTests(BridgeFixture):
         self.say('您可真厉害呢🙂', '<mind at="me" tone="sarcasm"/>嗯嗯，还是你懂')
         prompt = self.model.prompts[-1]
         self.assertIn('阴阳回去', prompt); self.assertIn('正话反说', prompt)
+
+    def test_bridge_brief_does_not_turn_an_attack_on_someone_else_into_one_on_her(self):
+        """Codex 复现：没 @ 她、@ 了别人并引用别人，正文"你个sb"，好感低。"""
+        guy = self.guy(); self.rel.adjust(CID, guy, affinity=15)
+        mode = {'channel': 'qq:group:30003'}
+        aimed = self.service.intent_brief(mode, guy, '你个sb', {'context': {'mentions': ['40004'], 'reply_to': {'self': False, 'name': '阿明'}}}, called=False)
+        self.assertIn('@ 了别人', aimed); self.assertIn('引用的是阿明的消息', aimed)
+        self.assertNotIn('阴阳回去', aimed); self.assertNotIn('又在骂你', aimed)
+        unclear = self.service.intent_brief(mode, guy, '你个sb', {}, called=False)
+        self.assertIn('如果你结合上下文判断', unclear); self.assertNotIn('又在骂你', unclear)
 
     def test_persistent_targeting_is_noticed(self):
         for n in range(3):

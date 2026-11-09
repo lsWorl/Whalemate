@@ -43,6 +43,7 @@ class Cues:
     sarcasm: bool = False
     joke: bool = False
     report: bool = False
+    elsewhere: bool = False                         # 明确冲着别人：@ 了别人或引用别人的消息，且没 @ 她、没提到她
 
     @property
     def worth_reading(self) -> bool:
@@ -63,6 +64,8 @@ def cues(text: str, *, at_me=False, at_others=(), at_all=False, reply_to=None, h
     if any(n in text for n in names) or HER.search(text): found.target.append('提到了你（名字或"她 / 这 AI"）')
     if SECOND.search(text): found.target.append('用"你"直接对人说' + ('（紧接着你刚说的话）' if after_her else ''))
     if GROUP_ADDR.search(text): found.target.append('对着一群人说（你们 / 大家）')
+    toward_her = at_me or bool(reply_to and reply_to.get('self')) or any(n in text for n in names) or bool(HER.search(text))
+    found.elsewhere = not toward_her and bool(at_others or (reply_to and not reply_to.get('self')))
     quoted = QUOTED.findall(text)
     if quoted:
         found.voice.append('引号里有别人的话：' + '、'.join(q[:20] for q in quoted[:2])); found.report = True
@@ -76,10 +79,12 @@ def cues(text: str, *, at_me=False, at_others=(), at_all=False, reply_to=None, h
 
 
 # 负责人 2026-11-10 00:38："有人在骂 AI 或者阴阳 AI、且好感低时，可以阴阳回去"
-SNARK = ('7. 怎么回：他本来就不招你喜欢，现在又在骂你 / 阴阳你——别直白地生气、别解释，**阴阳回去**更有杀伤力：'
+# Codex 审查 906cd6b P2：只给条件策略，不替她断定"他在骂你"——冲谁由她自己结合上下文判断（<mind at>）。
+SNARK = ('7. 如果你结合上下文判断，这句确实是他本人冲你来的（at="me"、voice="own"）：他本来就不招你喜欢，'
+         '那就别直白地生气、别解释，**阴阳回去**更有杀伤力：'
          '正话反说、假装夸他、客客气气地损他、把他的话原样还给他、顺着他的逻辑推到离谱、装作没听懂地反问。'
          '语气越平静越好，一两句就够；比如"哇，这么懂，那你上啊""嗯嗯你说得都对"这类意思（只是示意，别照抄，每次换着来）。'
-         '不说脏话，不攻击外貌、家人、出身。')
+         '不说脏话，不攻击外貌、家人、出身。要是判断下来他其实在说别人、在转述，或者只是在开玩笑，这条就不用。')
 
 
 def brief(found: Cues, *, reading='unsure', hostility=0, hostility_week=0, bullied_others=0, upset=False, last_said='', affinity=None) -> str:
@@ -102,7 +107,8 @@ def brief(found: Cues, *, reading='unsure', hostility=0, hostility_week=0, bulli
     if bullied_others: persist.append(f'最近还在群里攻击过别人 {bullied_others} 次')
     lines.append('6. 是不是一直在针对你：' + ('；'.join(persist) if persist else '之前没有冲你来过') + '。')
     disliked = reading == 'mocking' or (affinity is not None and affinity < 40)
-    if (found.insult or found.sarcasm) and disliked and not found.report: lines.append(SNARK)
+    if (found.insult or found.sarcasm) and disliked and not found.report and not found.elsewhere:
+        lines.append(SNARK)       # 明确冲着别人时不加，免得把骂别人的话先当成冲她来
     lines.append('想清楚以后，在回复开头的 <mind/> 里写上：at="me|other|all|none"（这句冲谁）、voice="own|quote"（他自己的话还是引用别人）、'
                  'tone="joke|tease|sarcasm|attack|neutral"（开玩笑 / 调侃 / 反讽 / 认真攻击 / 普通），再按你的判断回：'
                  '是冲你来的攻击就别客气地怼回去；是熟人逗你就笑着接；是他在转述别人的话，就针对那件事说，别冲他发火；'

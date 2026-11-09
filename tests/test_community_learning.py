@@ -9,7 +9,14 @@ from aicompanion.community.lexicon import Lexicon
 from aicompanion.community.lore import GroupLore
 from aicompanion.community.search import Hit, WebSearch, searchable
 from aicompanion.relationship.analyzer import RelationshipAnalyzer, remember_sender
-from test_relationship import CID, Base, BridgeFixture
+from test_relationship import CID, BridgeFixture
+from test_relationship import Base as RelationshipBase
+
+
+class Base(RelationshipBase):
+    """社区测试按生产默认打开联网；真实出口仍被基类拦着，搜索结果只来自注入的假 opener / 假搜索。"""
+    def setUp(self):
+        super().setUp(); self.db.set_setting('community_web', True)
 
 GROUP = 'qq:group:30003'
 
