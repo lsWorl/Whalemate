@@ -82,7 +82,7 @@ class AICompanionBridge(Star):
             if self.option('group_only_when_called') and not called: return None
         else: called = True
         return {'platform': platform, 'sender_id': str(event.get_sender_id()), 'sender_name': event.get_sender_name() or '',
-                'group_id': group_id, 'text': text or '[收到图片]', 'called': called}
+                'group_id': group_id, 'text': text or '[图片]', 'called': called}
 
     # ---- 表情包（用户 2026-11-09：收集别人发的表情包，学大家的发图习惯） ----------------------------
     @staticmethod
@@ -210,11 +210,9 @@ class AICompanionBridge(Star):
         if not parts: return
         payload['has_image'] = True
         called = payload['called'] or any(n and n in payload['text'] for n in (self.pet_name, '鲸娘', '大肥鱼'))
-        if not self.pet_vision:
-            payload['text'] += '\n[图片未识别：识图已关闭，不能猜测图片内容。]'
-            return
-        if payload['group_id'] and not called:
-            payload['text'] += '\n[收到图片，旁听不自动识图，不能猜测图片内容。]'
+        # 负责人 2026-11-09：说"无法识别图片"一看就是 AI。没识别的图只留中性的 [图片]，原因不写进消息，怎么接交给桌宠按上下文定
+        if not self.pet_vision or (payload['group_id'] and not called):
+            self.mark_unseen(payload)
             return
         images, sources = [], []
         failed = len(parts) > MAX_IMAGES
@@ -227,7 +225,12 @@ class AICompanionBridge(Star):
         if images:
             # image_parts[i]：第 i 张图片来自第几个图片段。桌宠据此只跳过"已经看懂的那张表情包"，同条消息里的普通照片照常识图
             payload['images'] = images; payload['image_parts'] = sources
-        if failed: payload['text'] += '\n[部分图片未能读取或超过 3 张，不能猜测这些图片的内容。]'
+        if failed: self.mark_unseen(payload)
+
+    @staticmethod
+    def mark_unseen(payload):
+        """没送去识别的图片：消息里只留一个中性的 [图片]（只发了图时文字本来就是它，不重复加）。"""
+        if '[图片]' not in payload['text']: payload['text'] = (payload['text']+'\n[图片]').strip()
 
     @staticmethod
     def managed_temp_root():

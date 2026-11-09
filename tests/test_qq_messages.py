@@ -1,14 +1,17 @@
-"""负责人 2026-11-09 18:05：QQ 上不要一次发一堆、不要用空格当停顿、两条之间隔一会儿、主动程度随关系变。
-全部临时库、假模型。"""
+"""负责人 2026-11-09：QQ 上不要用空格当停顿、两条之间隔一会儿、发几条随情况和上下文变（不是固定上限）、
+主动程度随关系变；没看到的图片别说"识别不了"，含糊接或者不回。全部临时库、假模型。"""
 from datetime import datetime
 import unittest
 
-from aicompanion.expression.segments import qq_segments, split_segments, typing_delays
+import random
+
+from aicompanion.bridge.service import SILENCE
+from aicompanion.expression.segments import chat_burst, qq_segments, split_segments, typing_delays
 from aicompanion.relationship.service import OWNER_DESKTOP, PersonRef
 from aicompanion.services.proactive_service import ProactiveMessageService
 from test_relationship import CID, Base, BridgeFixture
 
-ALWAYS, NEVER = (lambda: 0.0), (lambda: 0.99)   # chance() 小于合并概率就合并
+ALWAYS, NEVER = (lambda: 0.99), (lambda: 0.0)   # 碎句合并：ALWAYS 一定合成一条，NEVER 一定分开发
 
 
 class SegmentTests(unittest.TestCase):
@@ -24,35 +27,67 @@ class SegmentTests(unittest.TestCase):
         self.assertEqual(qq_segments('Python 3 的 asyncio 挺好用', chance=NEVER), ['Python 3 的 asyncio 挺好用'])
         self.assertEqual(qq_segments('他说"好 的。"然后走了', chance=NEVER), ['他说"好 的。"然后走了'])
 
-    def test_mostly_one_message_at_most_three(self):
-        self.assertEqual(len(qq_segments('好的。我看看。行吧', chance=ALWAYS)), 1)        # 短的大多合成一条
-        many = qq_segments('一\n二\n三\n四\n五', chance=NEVER)
-        self.assertEqual(len(many), 3); self.assertEqual(many[-1], '三，四，五')
+    def test_count_is_not_capped_and_follows_the_moment(self):
+        five = qq_segments('一下\n两下\n三下\n四下\n五下', chance=ALWAYS)
+        self.assertEqual(len(five), 5)                                                       # 她换行想分几条就几条，不砍到 3
+        self.assertEqual(len(qq_segments('\n'.join(f'第{n}句' for n in range(12)), chance=ALWAYS)), 8)   # 只防刷屏
         doc = '1. 第一步\n2. 第二步'
         self.assertEqual(qq_segments(doc), [doc])                                             # 像文档的不拆
+        text = '行吧 你自己弄。我看看 这啥啊。算了 不管了'
+        def average(burst):
+            rng = random.Random(7)
+            return sum(len(qq_segments(text, chance=rng.random, burst=burst)) for _ in range(300))/300
+        self.assertGreater(average(0.8), average(0.2)+1.5)                                   # 聊得热时更容易连发，平时多半一条
+
+    def test_burst_reads_context(self):
+        calm = chat_burst('嗯 好的', peer_burst=1, closeness=0.3)
+        self.assertGreater(chat_burst('哈哈哈哈 笑死！！', peer_burst=1, closeness=0.3), calm)  # 情绪
+        self.assertGreater(chat_burst('嗯 好的', peer_burst=4, closeness=0.3), calm)            # 对方连发了好几条
+        self.assertGreater(chat_burst('嗯 好的', peer_burst=1, closeness=0.9), calm)            # 关系亲近
+        for value in (calm, chat_burst('啊啊啊！'*20, peer_burst=9, closeness=1)): self.assertTrue(0.1 <= value <= 0.9)
 
     def test_desktop_bubbles_unchanged(self):
         self.assertEqual(split_segments('在呢，刚摸完鱼。'), ['在呢 刚摸完鱼'])
 
-    def test_typing_delays_follow_length(self):
-        delays = typing_delays(['哟', '嗯', '这次是真的逆天了谁想出来的'], chance=lambda: 0.5)
+    def test_typing_delays_follow_length_and_pace(self):
+        steady = lambda: 0.5                                                                  # 不触发"想了一下再补一句"
+        delays = typing_delays(['哟', '嗯', '这次是真的逆天了谁想出来的'], chance=steady)
         self.assertEqual(delays[0], 0.0)
-        self.assertTrue(1.0 <= delays[1] < delays[2] <= 8.0)
+        self.assertTrue(0.6 <= delays[1] < delays[2] <= 12.0)
+        self.assertLess(typing_delays(['a', '这次是真的逆天了'], chance=steady, burst=0.9)[1],
+                        typing_delays(['a', '这次是真的逆天了'], chance=steady, burst=0.1)[1])   # 聊得快打得也快
+        values = iter([0.5, 0.1, 0.5])                                                         # 偶尔停久一点再补一句
+        self.assertGreater(typing_delays(['a', '嗯'], chance=lambda: next(values))[1], 2.0)
 
 
 class BridgeMessageTests(BridgeFixture):
-    def test_reply_split_with_delays_and_prompt_asks_for_one_message(self):
+    def test_reply_split_with_delays_and_prompt_leaves_count_to_context(self):
         self.service.chance = NEVER
         self.model.replies.append('哟 逆天这次都用上了')
         result = self.ask('10001', '看我新写的')
         self.assertEqual(result['segments'], ['哟', '逆天这次都用上了'])
         self.assertEqual(len(result['segment_delays']), 2); self.assertGreaterEqual(result['segment_delays'][1], 1.0)
         prompt = self.model.prompts[-1]
-        self.assertIn('大多数时候就发一条', prompt); self.assertIn('别用空格', prompt); self.assertNotIn('一句一行', prompt)
+        self.assertIn('发几条没有固定数', prompt); self.assertIn('别用空格', prompt); self.assertNotIn('一句一行', prompt)
         self.service.chance = ALWAYS
         self.model.replies.append('哟 逆天这次都用上了')
         result = self.ask('10001', '再看看')
         self.assertEqual((result['reply'], result.get('segments')), ('哟，逆天这次都用上了', None))
+
+    def test_unseen_picture_is_never_called_unrecognisable(self):
+        # 旧插件带原因的说明进来也换成中性的 [图片]；她被要求别说看不到图，只发了图时可以不回
+        self.db.set_setting('qq_vision_enabled', False)
+        self.model.replies.append(SILENCE)
+        result = self.ask('10001', '[收到图片]\n[图片未识别：识图已关闭，不能猜测图片内容。]')
+        self.assertTrue(result['silent'])
+        prompt = self.model.prompts[-1]
+        self.assertIn('别说自己看不到', prompt); self.assertIn(SILENCE, prompt)
+        stored = '\n'.join(r['content'] for r in self.db.recent_messages(5, CID, channel='desktop'))
+        self.assertIn('[图片]', stored)
+        for word in ('识图已关闭', '不能猜测', '未识别'): self.assertNotIn(word, stored)
+        self.model.replies.append('哈哈哈 绝了')                                              # 有文字：照常接文字，不提看不到
+        result = self.ask('10001', '今天抽卡出金了！\n[图片]')
+        self.assertFalse(result['silent']); self.assertIn('别说自己看不到', self.model.prompts[-1])
 
     def test_chime_chance_follows_relationship_with_speaker(self):
         channel = 'qq:group:30003'

@@ -12,12 +12,13 @@
 - 只影响展示 / 发送；数据库里仍是一轮一条完整回复（模型看到的历史、TTS 朗读的文字不变）。
 
 QQ 另有一套（负责人 2026-11-09 18:05："不要一次性生成这么多回复，不像人在手敲；不要用空格作间断，
-如'哟 逆天这次都用上了'，可以搞成两次回复，每次间隔一段时间；没必要每次都回 2～3 句"），参考 MaiBot 的分句：
+如'哟 逆天这次都用上了'，可以搞成两次回复，每次间隔一段时间"；18:27 补充："不是限制最多几条，要有不固定的频率，
+根据情况和上下文而定"）。参考 MaiBot 的分句合并和真实聊天记录（约六成消息一句，其余两三句）：
+- 发几条首先由她自己决定：换行就是另一条，这里不砍、不并（只有超过 QQ_FLOOD_LIMIT 条的刷屏才并）；
 - "，"照常保留，不换成空格；
-- 一行里夹在中文之间的空格当作"这里本来想分两条发"：拆开（英文、数字之间的空格不动）；
-- 拆出来的短句按概率合并回去（整段越短越容易合并，用"，"连），所以大多数时候是一条、偶尔两条；
-- 最多 QQ_MAX_SEGMENTS 条，多出来的并进最后一条；
-- 每条之间的等待时间按打字速度算（typing_delays），插件按这个间隔一条条发。
+- 一行里夹在中文之间的空格、"。"：当作"这里可能想分两条发"。拆不拆按此刻的聊天节奏（chat_burst）：
+  对方连发、聊得热、情绪激动、关系亲近、内容长 → 更容易拆开；随口应一句、关系一般 → 多半合成一条（用"，"连）；
+- 每条之间的等待时间按打字速度算（typing_delays），聊得越快越短，偶尔会像想了一下再补一句那样停久一点。
 """
 from __future__ import annotations
 import random
@@ -25,7 +26,7 @@ import re
 
 
 MAX_SEGMENTS = 6
-QQ_MAX_SEGMENTS = 3
+QQ_FLOOD_LIMIT = 8      # 只防刷屏，不是"最多几条"的设计
 CJK = '\u4e00-\u9fff\u3400-\u4dbf'
 LONG_FORM = 600
 FENCE = re.compile(r'^\s*(```|~~~)', re.M)
@@ -84,31 +85,44 @@ def _qq_pieces(line: str) -> list[str]:
     return [re.sub(r'[，,\s]+$', '', p).strip() for p in parts if p.strip()]
 
 
-def qq_segments(text: str, chance=random.random, limit: int = QQ_MAX_SEGMENTS) -> list[str]:
-    """QQ 上分几条发。换行是她明确想分开发的地方，只在超过条数时才并；一行里拆出来的碎句按概率合并。"""
+def chat_burst(reply: str, *, peer_burst: int = 1, closeness: float = 0.4) -> float:
+    """此刻的聊天节奏（0.1～0.9）：越高越像"一句话拆成几条连发"，也打得越快。
+    依据：对方刚才连发了几条（跟着对方的节奏）、她这条话的情绪（感叹、问号连发、哈哈哈、笑死）、内容长短、和对方多亲近。"""
+    text = str(reply or '')
+    value = 0.35
+    if len(re.sub(r'\s', '', text)) > 30: value += 0.15
+    if re.search(r'[！!]|[？?]{2,}|哈{3,}|笑死|草{2,}|卧槽|救命|啊{2,}', text): value += 0.2
+    value += 0.1*min(3, max(0, peer_burst-1))
+    value += 0.25*(closeness-0.4)
+    return round(max(0.1, min(0.9, value)), 2)
+
+
+def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_FLOOD_LIMIT) -> list[str]:
+    """QQ 上分几条发。换行处一定分开（她自己想分开发）；一行里拆出来的碎句按聊天节奏决定拆还是合。"""
     text = str(text or '').replace('\r\n', '\n')
     if is_long_form(text): return [text.strip()] if text.strip() else []
-    total = len(re.sub(r'\s', '', text))
-    merge = 0.8 if total < 12 else 0.4 if total < 32 else 0.3      # MaiBot：越短越倾向一条发完
+    keep_apart = max(0.1, min(0.9, burst))
     segments = []
     for line in text.split('\n'):
-        pieces = _qq_pieces(line)
         merged = []
-        for piece in pieces:
-            if merged and chance() < merge: merged[-1] = merged[-1]+'，'+piece
+        for piece in _qq_pieces(line):
+            if merged and chance() >= keep_apart: merged[-1] = merged[-1]+'，'+piece
             else: merged.append(piece)
         segments.extend(merged)
     if len(segments) > limit: segments = segments[:limit-1]+['，'.join(segments[limit-1:])]
     return segments
 
 
-def typing_delays(segments: list[str], chance=random.random) -> list[float]:
+def typing_delays(segments: list[str], chance=random.random, burst: float = 0.5) -> list[float]:
     """每条消息发出前等多久（第一条为 0，生成本身就是"想"的时间）。参考 MaiBot calculate_typing_time：
-    中文约 0.3 秒一个字、其他 0.15 秒，加 0.3 秒回车，再上下浮动 20%；夹在 1～8 秒。"""
+    中文 0.2～0.35 秒一个字（聊得越快越快）、其他字符减半，加 0.3 秒回车，上下浮动 20%；
+    偶尔（约 15%）像想了一下再补一句，多停 2～5 秒。夹在 0.6～12 秒。"""
     delays = []
+    per_char = 0.35-0.15*max(0.0, min(1.0, burst))
     for index, text in enumerate(segments):
         if index == 0: delays.append(0.0); continue
         cjk = len(re.findall(f'[{CJK}]', text))
-        base = 0.3*cjk+0.15*(len(text)-cjk)+0.3
-        delays.append(round(min(8.0, max(1.0, base*(0.8+0.4*chance()))), 2))
+        value = (per_char*cjk+per_char/2*(len(text)-cjk)+0.3)*(0.8+0.4*chance())
+        if chance() < 0.15: value += 2+3*chance()
+        delays.append(round(min(12.0, max(0.6, value)), 2))
     return delays

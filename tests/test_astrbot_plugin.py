@@ -145,7 +145,7 @@ class PluginTests(unittest.TestCase):
             out = self.run_handler(plugin, event, {'reply': '蓝色图片', 'silent': False})
             self.assertEqual(out, [('plain', '蓝色图片')])
             self.assertTrue(plugin.sent['images'][0].startswith('data:image/jpeg;base64,'))
-            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[收到图片]')
+            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[图片]')
 
     def test_picture_converter_refuses_unmanaged_path(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -156,7 +156,7 @@ class PluginTests(unittest.TestCase):
                 async def convert_to_file_path(self): return str(outside)
             plugin = self.plugin(); plugin.managed_temp_root = lambda: str(managed)
             self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '没能读取', 'silent': False})
-            self.assertNotIn('images', plugin.sent); self.assertIn('未能读取', plugin.sent['text'])
+            self.assertNotIn('images', plugin.sent); self.assertIn('[图片]', plugin.sent['text']); self.assertNotIn('未能读取', plugin.sent['text'])
 
     def test_private_gif_and_webp_stickers_are_forwarded_as_actual_pixels(self):
         try:
@@ -188,11 +188,11 @@ class PluginTests(unittest.TestCase):
         plugin = self.plugin(group_only_when_called=False)
         self.run_handler(plugin, Event('', group='30003', called=False, images=[Segment()]), {'reply': '', 'silent': True})
         self.assertNotIn('images', plugin.sent)
-        self.assertIn('旁听不自动识图', plugin.sent['text'])
+        self.assertIn('[图片]', plugin.sent['text']); self.assertNotIn('识图', plugin.sent['text'])
         plugin.pet_vision = False
         self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '', 'silent': True})
         self.assertNotIn('images', plugin.sent)
-        self.assertIn('识图已关闭', plugin.sent['text'])
+        self.assertEqual(plugin.sent['text'].count('[图片]'), 1); self.assertNotIn('识图', plugin.sent['text'])
 
     def test_meme_is_sent_as_astrbot_image_message_even_without_text(self):
         import hashlib

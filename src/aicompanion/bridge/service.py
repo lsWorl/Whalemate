@@ -32,6 +32,18 @@ DEFAULTS = {'bridge_chime': 'often', 'bridge_chime_daily': 80, 'bridge_memory_ev
             'bridge_groups': [], 'bridge_strangers': False, 'bridge_public_daily': 100}
 
 
+def neutral_images(text: str) -> str:
+    """把旧插件 / 旧记录里带原因的图片说明统一换成中性的 [图片]，连续几个只留一个。"""
+    from aicompanion.bridge.media import UNSEEN
+    text = IMAGE_NOTES.sub(UNSEEN, str(text or ''))
+    return re.sub(r'(?:\s*\[图片\]){2,}', '\n'+UNSEEN, text).strip()
+
+
+def unseen_image(text: str) -> bool:
+    """消息里有没看到内容的图（有 [图片] 标记、后面没有视觉描述）。"""
+    return '[图片]' in text and '[图片描述' not in text
+
+
 def setting(database, key):
     return database.get_setting(key, DEFAULTS[key])
 
@@ -52,9 +64,17 @@ MAX_STICKERS = 3
 # 负责人 2026-11-09：群里尽量看不出 AI 痕迹，不叫爹。只是"不主动暴露、说话像群友"；
 # 被问是不是 AI：负责人要求含糊带过或顺着上下文转移话题；唯一不做的是明确声称自己是真人（诚实底线）。
 # 负责人 13:30 补充：私聊也不要露出 AI 痕迹。群聊和私聊共用 HUMAN_STYLE；群里另外不叫爹、不提父女。
-# 负责人 2026-11-09 18:05：不要一次生成一堆消息、不要用空格当停顿（"哟 逆天这次都用上了"）、没必要每次都回 2～3 句
-MESSAGES = ('大多数时候就发一条；偶尔想补一句再另起一行，当作第二条消息发出去，很少超过两条。'
+# 负责人 2026-11-09：不要一次生成一堆消息、不要用空格当停顿（"哟 逆天这次都用上了"）；
+# 18:27 补充：也不是固定最多几条，要随情况和上下文变。真实聊天记录里大约六成消息只有一句、其余两三句（Ivanovic 2005），
+# 想到哪说到哪：随口应一句就一条，激动、好笑、吐槽、一下子想到好几件事会连着发好几条短的。
+MESSAGES = ('发几条没有固定数，像真人一样看情况：随口应一句、回个"嗯"、接个梗，一条就够；'
+            '激动、笑疯了、吐槽、一下子想到好几件事、要把一件事讲清楚，就连着发好几条短的（换行就是另一条消息，每条一个意思）；'
+            '对方连发了好几条、聊得正热，你也可以多说几句；对方很冷淡或你没兴趣，就一两个字。别为了凑条数硬拆，也别把几件事硬塞进一条。'
             '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就用逗号，或者干脆拆成两条。')
+# 负责人 2026-11-09 18:27：说"无法识别图片"正常人一看就知道是 AI。没看到的图只有中性标记 [图片]，处理方式交给她按上下文定
+UNSEEN_RULE = ('\n这条消息里的图片你没看到内容（只知道对方发了图）。别说自己看不到、识别不了、加载不出来、看不清图片，'
+               '也别问"发的啥""啥图"——正常人不会这么说。能从上下文猜到大概，就顺着含糊接一句（比如跟着情绪笑一下、接前面的话）；'
+               '猜不到又没别的话要接，就只回复'+SILENCE+'。')
 HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；'+MESSAGES+'不列点、不总结、不解释每个梗，'
                '不说"好的""当然可以""作为…""希望对你有帮助"这类话。别提自己是 AI / 模型 / 程序 / 桌宠，'
                '也别提词元、token、上下文、提示词、训练这些词；不熟的就说不太懂，别一本正经长篇大论。'
@@ -67,8 +87,9 @@ STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。
 # 负责人 2026-11-09：在 QQ 里她没必要什么都懂
 QQ_NOT_EXPERT = ('\n在 QQ 上你不用什么都懂：问到不熟的专业问题、冷门知识，可以直接发一张可爱的表情包，说自己不太懂（"这个本鲸不会诶"），'
                  '不用硬答，更不要编；熟的照常好好说。')
-# 插件在图片后面附的说明（旁听不识图 / 部分没读到）；整条消息只剩这些就算"只发了图"
-IMAGE_NOTES = re.compile(r'\[(?:收到图片[^\]]*|部分图片未能读取[^\]]*|图片未识别[^\]]*)\]')
+# 插件在图片后面附的说明（旁听不识图 / 部分没读到）；整条消息只剩这些就算"只发了图"。
+# 新插件只写中性的 [图片]；旧插件那些带原因的说明（"识图已关闭""不能猜测"）进来就换成 [图片]，免得她照着说"看不到图"
+IMAGE_NOTES = re.compile(r'\[(?:图片|收到图片[^\]]*|部分图片未能读取[^\]]*|图片未识别[^\]]*|本次图片识别失败[^\]]*)\]')
 
 
 def alias(database, stable: str) -> str:
@@ -137,6 +158,20 @@ class BridgeService:
         """群里没 @ 她，但提到了她的名字 / 外号：当作在叫她。"""
         names = {self.controller.character.name, '鲸娘', '大肥鱼'}
         return any(n and n in text for n in names)
+
+    def vision_ready(self) -> bool:
+        """现在接的模型能不能看图（插件心跳时取，决定要不要下载图片）。"""
+        try: return bool(self.media.vision_ready())
+        except Exception: return False
+
+    def peer_burst(self, channel: str) -> int:
+        """她上次说话以后，对方在这个会话里连发了几条（自己这条也算）。"""
+        rows = self.database.recent_messages(12, self.controller.character.id, channel=channel)
+        count = 0
+        for row in reversed(rows):
+            if row['role'] == 'assistant': break
+            count += 1
+        return max(1, count)
 
     def _chime_ok(self, channel: str, person=None) -> bool:
         """没人叫她时要不要试着插一句：按活跃度的概率、这个群离她上次说话的间隔和条数。
@@ -323,13 +358,13 @@ class BridgeService:
         sender_id = str(payload.get('sender_id') or '').strip()
         group_id = str(payload.get('group_id') or '').strip()
         name = re.sub(r'[\r\n]+', ' ', str(payload.get('sender_name') or '').strip())[:30] or sender_id
-        text = str(payload.get('text') or '').strip()[:MAX_TEXT]
+        text = neutral_images(str(payload.get('text') or '').strip()[:MAX_TEXT])
         if not re.fullmatch(r'[a-z0-9_-]{1,20}', platform) or not re.fullmatch(r'[\w@.:-]{1,64}', sender_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         images = payload.get('images') or []
-        if not text and (images or payload.get('stickers')): text = '[收到图片]'
+        if not text and (images or payload.get('stickers')): text = '[图片]'
         if not text: return {'reply': '', 'silent': True, 'reason': 'empty'}
         mode = self.classify(platform, sender_id, group_id)
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
@@ -363,7 +398,8 @@ class BridgeService:
             if self.quota.check_silent(purpose) == 'stop': return {'reply': '', 'silent': True, 'reason': 'quota'}
             stickers = self.take_stickers(mode, platform, sender_id, group_id, payload, original_text)
             # 只发了图（认出是表情包，或者插件没认出来但这条只有图片）：都按"只发了表情"处理——不一定要回，回也只接一句
-            sticker_only = bool(stickers['items'] or images) and not IMAGE_NOTES.sub('', original_text).strip()
+            sticker_only = (bool(stickers['items'] or images or payload.get('has_image') or IMAGE_NOTES.search(original_text))
+                            and not IMAGE_NOTES.sub('', original_text).strip())
             if stickers['items']:
                 # 收过、分析过的表情包：直接用存好的含义，不再为它调一次识图。
                 # Codex 审计（7aaa065）：不能按"数量"认定所有图片都是已知表情——商城表情不在 images 里，同一条消息还可能带普通照片。
@@ -373,7 +409,7 @@ class BridgeService:
             if images:
                 from aicompanion.bridge.media import MediaError
                 try: text = self.media.describe(images, text, purpose)
-                except MediaError as error: return {'reply': str(error), 'silent': False, 'reason': 'bad_image'}
+                except MediaError: text = neutral_images(text+'\n[图片]')   # 不回"图片太大""编码无效"这类机器人提示
                 if self.quota.check_silent(purpose) == 'stop':
                     return {'reply': '', 'silent': True, 'reason': 'quota'}
             if private:
@@ -397,12 +433,13 @@ class BridgeService:
             self.social.cid = character.id
             self.social.observe(mode['channel'], stable, original_text, bool(images) or bool(payload.get('has_image')))
             situation += avatar_info
+            if unseen_image(text): situation += UNSEEN_RULE
             if sticker_only:
                 # 用户 2026-11-09：表情包发出来她能看懂，但不是每张都要回
                 situation += ('\n对方这条只发了图（多半是表情包）：把它当成对方的语气，回一张图或一句短话就行，也可以觉得不用接话就只回复'
                               +SILENCE+'（表示看到了，不发消息）；别描述、点评或追问这张图。')
             if '头像' in original_text and not avatar_info:
-                situation += '\n本次没有读取到可用头像，不能猜测头像内容；可以请对方稍后再试或直接发图。'
+                situation += '\n他问到头像，但你这次没看清他的头像：别说看不到、读取不了头像，也别编头像内容；顺着话含糊带过，或者把话题岔开。'
             result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']
@@ -413,6 +450,7 @@ class BridgeService:
         记录不排队等 PROCESS_LOCK：她正在别处说话时，群里刷屏的消息不会堆在锁上等到插件超时；这时也不插话。"""
         controller = self.controller; character = controller.character
         stable = f'{platform}:{sender_id}'
+        text = neutral_images(text)
         stickers = self.take_stickers(mode, platform, sender_id, group_id, request or {}, text)
         sticker_only = bool(stickers['items']) and not IMAGE_NOTES.sub('', text).strip()
         if stickers['items']:
@@ -454,7 +492,7 @@ class BridgeService:
             situation = (f'【场合】你在{mode["where"]}群聊里旁听，这条消息没有叫你。每条消息前面是说话人的昵称和编号（#数字），'
                          '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+'看看最近大家在聊什么：有想接的话、能接的梗、或者聊到你感兴趣 / 熟悉的事，'
                          f'就像群友一样自然插一句；话题跟你没关系、别人正聊得热乎不需要你、或者没什么好说的，就只回复{SILENCE}，别硬聊。'
-                         '不要提桌面上发生的事。'+QQ_NOT_EXPERT)
+                         '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else ''))
             result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']
@@ -471,6 +509,7 @@ class BridgeService:
         from aicompanion.bridge.media import inline_image
         from dataclasses import replace
         request=request or {};private=mode['owner'] and not mode['group'];turn=uuid4().hex
+        peer=self.peer_burst(mode['channel'])
         stable=platform+':'+str(request.get('sender_id') or '')
         group=mode['channel'].split(':')[-1] if mode['group'] else ''
         sender=str(request.get('sender_id') or '')
@@ -525,9 +564,10 @@ class BridgeService:
         result={'reply':reply,'silent':not (reply or outgoing),'reason':('chime' if chime else 'ok') if reply or outgoing else 'empty_reply'}
         # 多段回复：插件按顺序分几条消息发出去，每条之间按打字速度等一会儿（QQ 的分句规则，见 expression/segments.py）；
         # 旧插件只看 reply，不受影响。只有一条时也换成整理后的写法。
-        from aicompanion.expression.segments import qq_segments, typing_delays
-        segments=qq_segments(reply,chance=self.chance)
-        if len(segments)>1:result.update(segments=segments,segment_delays=typing_delays(segments,chance=self.chance))
+        from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
+        burst=chat_burst(reply,peer_burst=peer,closeness=0.8 if private else self.closeness_of(person))
+        segments=qq_segments(reply,chance=self.chance,burst=burst)
+        if len(segments)>1:result.update(segments=segments,segment_delays=typing_delays(segments,chance=self.chance,burst=burst))
         if len(segments)==1:
             result['reply']=segments[0]
             if version:wire['text']=segments[0]
@@ -592,7 +632,7 @@ class BridgeService:
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.media import inline_image
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
-        from aicompanion.expression.segments import qq_segments, typing_delays
+        from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
         with self.lock:
             if not self.qq_ready() or self.quota.check_silent('companion') == 'stop': return None
             owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
@@ -622,12 +662,13 @@ class BridgeService:
                 if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
                 item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
                 with self.expression_lock: self.expression_bindings[attachment.delivery_id] = ('qq', owner, '', character.id)
-            segments = qq_segments(expression.text, chance=self.chance)
+            burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
+            segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
                 self.database.drop_reply(turn, character.id); return None
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
-                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance),
+                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
                 self.outbox_waiting[turn] = on_done

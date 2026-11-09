@@ -48,7 +48,7 @@ class ProactiveQQTests(Base):
 
     def test_generated_into_outbox_shared_history_and_acked(self):
         results = []
-        self.service.chance = lambda: 0.0                       # 分句时短句一定合并（QQ 规则：空格不当停顿）
+        self.service.chance = lambda: 0.99                      # 分句时短句一定合并（QQ 规则：空格不当停顿，拆不拆看聊天节奏）
         turn = self.service.proactive_qq('早晨问候，关心今天的心情', on_done=results.append)
         self.assertTrue(turn)
         self.assertIn('别提自己是 AI', self.model.prompts[-1])
