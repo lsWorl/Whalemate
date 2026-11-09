@@ -95,12 +95,17 @@ class ExpressionStream:
         return None
 
     def _mind(self, raw):
-        """<mind intent="乐意" willing="0.8"/>：只取有限长度的态度词和 0～1 的意愿，其余忽略；不计入表情标记数。"""
+        """<mind intent="乐意" willing="0.8" feel="生气" toward="-2"/>：只取有限长度的态度词、0～1 的意愿、
+        感觉词和 -3～3 的好恶变化，其余忽略；不计入表情标记数。"""
         attrs = {m[1].lower(): (m[2] if m[2] is not None else m[3] if m[3] is not None else m[4]) for m in ATTR.finditer(raw)}
         try: willing = max(0.0, min(1.0, float(attrs.get('willing', ''))))
         except ValueError: willing = None
         intent = re.sub(r'[^\w\u4e00-\u9fff]', '', str(attrs.get('intent', '')))[:8]
-        if self.mind is None: self.mind = {'intent': intent, 'willing': willing}
+        # 负责人 2026-11-09：她要有自己的脾气。feel / toward 是这条消息让她对对方的感觉变好还是变差（-3～3），即时记进关系
+        feel = re.sub(r'[^\w\u4e00-\u9fff]', '', str(attrs.get('feel', '')))[:6]
+        try: toward = max(-3.0, min(3.0, float(attrs.get('toward', ''))))
+        except ValueError: toward = None
+        if self.mind is None: self.mind = {'intent': intent, 'willing': willing, 'feel': feel, 'toward': toward}
         self.diagnose('mind')
 
     def _marker(self, raw):

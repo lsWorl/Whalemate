@@ -25,12 +25,13 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.2'
+PLUGIN_VERSION = '0.9.3'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
 # 和桌宠 expression/segments.py 的 QQ_FLOOD_LIMIT 保持一致（Codex 审查 17012ca P2：两边不一致时 7～8 段会退回整段或主动消息整条丢失）
 MAX_SEGMENTS = 8
+AT_ONLY = '[@了你一下，没说别的]'
 # 商城表情（mface）的图片只从 QQ 自己的固定主机下载
 MARKET_HOSTS = {'gxh.vip.qq.com', 'i.gtimg.cn'}
 MAGIC = ((b'GIF87a', 'gif'), (b'GIF89a', 'gif'), (b'\x89PNG\r\n\x1a\n', 'png'), (b'\xff\xd8\xff', 'jpeg'))
@@ -75,16 +76,42 @@ class AICompanionBridge(Star):
         if not platform: return None
         text = (event.message_str or '').strip()
         has_images = bool(self.image_parts(event)) or bool(self.sticker_parts(event)[1])
-        if (not text and not has_images) or any(text.startswith(p) for p in self.option('skip_prefixes') if p): return None
+        if any(text.startswith(p) for p in self.option('skip_prefixes') if p): return None
         group_id = str(event.get_group_id() or '')
         if group_id:
             allowed = self.pet_groups if self.pet_groups is not None else self.option('groups')
             if group_id not in [str(g).strip() for g in allowed]: return None
-            called = bool(getattr(event, 'is_at_or_wake_command', False))
+            called = self.called(event)
             if self.option('group_only_when_called') and not called: return None
         else: called = True
+        if not text and not has_images:
+            # 2026-11-09 实测：群里只 @ 她、不带字时，插件不接，AstrBot 自己（没配模型）就在群里回"LLM 请求失败"。
+            # 只 @ 了一下也是在叫她：交给她，像真人那样回一句（"咋了""在呢"）
+            if not (group_id and called): return None
+            text = AT_ONLY
         return {'platform': platform, 'sender_id': str(event.get_sender_id()), 'sender_name': event.get_sender_name() or '',
                 'group_id': group_id, 'text': text or '[图片]', 'called': called}
+
+    def called(self, event) -> bool:
+        """群里是不是在叫她：AstrBot 的唤醒标记，或者原始消息里有 @ 她自己的账号（只 @ 不带字时不依赖 AstrBot 的标记）。"""
+        if bool(getattr(event, 'is_at_or_wake_command', False)): return True
+        me = str(getattr(event, 'get_self_id', lambda: '')() or '')
+        if not me: return False
+        for seg in self.raw_segments(event):
+            if seg.get('type') == 'at' and str((seg.get('data') or {}).get('qq') or '') == me: return True
+        for part in (getattr(event, 'get_messages', lambda: [])() or []):
+            if type(part).__name__ == 'At' and str(getattr(part, 'qq', '') or '') == me: return True
+        return False
+
+    @staticmethod
+    def swallow(event):
+        """这条消息归桌宠管：终止传播，并明确告诉 AstrBot 不要走它自己的默认模型。
+        只 stop_event 不够——AstrBot 4.29.3 在没有结果、也没发过消息时（只 @、她选择不回）仍会走默认模型，回"LLM 请求失败"。"""
+        event.stop_event()
+        should = getattr(event, 'should_call_llm', None)
+        if callable(should):
+            try: should(True)
+            except Exception: pass
 
     # ---- 表情包（用户 2026-11-09：收集别人发的表情包，学大家的发图习惯） ----------------------------
     @staticmethod
@@ -450,7 +477,7 @@ class AICompanionBridge(Star):
         """没交给她的群里有人 @ 机器人：不能交还给 AstrBot 自己的模型——它没配模型，会在群里回"LLM 请求失败"（2026-11-09 实测），
         有模型也会变成第二个人格。指令（/ 开头）照旧交给 AstrBot。"""
         if not QQ_ADAPTERS.get(str(event.get_platform_name() or '').lower()): return False
-        if not str(event.get_group_id() or '') or not bool(getattr(event, 'is_at_or_wake_command', False)): return False
+        if not str(event.get_group_id() or '') or not self.called(event): return False
         text = (event.message_str or '').strip()
         return not any(text.startswith(p) for p in self.option('skip_prefixes') if p)
 
@@ -461,7 +488,7 @@ class AICompanionBridge(Star):
         payload = self.route(event)
         if payload is None:
             if self.unrouted_call(event):
-                event.stop_event()
+                self.swallow(event)
                 logger.info('AICompanion：这个群还没在桌宠"聊天平台"页勾选，@ 机器人的消息不处理')
             return
         if not payload['group_id']:
@@ -470,7 +497,7 @@ class AICompanionBridge(Star):
             platform_id = getattr(event, 'get_platform_id', lambda: '')()
             if isinstance(platform_id, str) and platform_id: self.platform_id = platform_id
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
-        event.stop_event()
+        self.swallow(event)
         payload['expression_version']=1
         payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
         try:

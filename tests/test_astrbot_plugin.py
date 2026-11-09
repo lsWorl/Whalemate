@@ -212,6 +212,35 @@ class PluginTests(unittest.TestCase):
             event=Event('再发');self.run_handler(plugin,event,answer);self.assertEqual(event.sent_messages,[])
             self.assertEqual(self.run_handler(self.plugin(),Event('发表情'),{'reply':'好呀','silent':False,'images':['file:///private.png']}),[('plain','好呀')])
 
+    def test_bare_at_goes_to_her_and_never_falls_back_to_astrbot_llm(self):
+        # 2026-11-09 实测：群里只 @ 她、不带字，AstrBot 自己（没配模型）回"LLM 请求失败"
+        class AtEvent(Event):
+            def __init__(self, *a, raw=None, me='2776148574', **k):
+                super().__init__(*a, **k); self.call_llm = False; self.me = me
+                self.message_obj = types.SimpleNamespace(raw_message={'message': raw or []})
+            def should_call_llm(self, value): self.call_llm = value
+            def get_self_id(self): return self.me
+        plugin = self.plugin()
+        event = AtEvent('', group='30003', called=True)
+        self.run_handler(plugin, event, {'reply': '咋了', 'silent': False})
+        self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        # AstrBot 没打唤醒标记、但原始消息里 @ 的是她自己：也算叫她
+        event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '2776148574'}}, {'type': 'text', 'data': {'text': '  '}}])
+        self.run_handler(plugin, event, {'reply': '在呢', 'silent': False})
+        self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.call_llm)
+        # @ 的是别人、不带字：不是叫她，不接
+        event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '3023143286'}}])
+        self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent); self.assertFalse(event.stopped)
+        # 她选择不回（silent）：也不能让 AstrBot 的默认模型接手
+        event = AtEvent('看图', group='30003', called=True)
+        self.assertEqual(self.run_handler(plugin, event, {'reply': '', 'silent': True}), []); self.assertTrue(event.call_llm)
+        # 没勾选的群里只 @：同样吞掉，不落到 AstrBot 的模型
+        event = AtEvent('', group='99999', called=True)
+        self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
+        self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        # 私聊里空消息（戳一戳之类）不当成叫她
+        event = AtEvent('', called=True); self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
+
     def test_pause_uses_given_delay_or_estimates_typing_time(self):
         waited=[]
         async def sleep(seconds):waited.append(seconds)

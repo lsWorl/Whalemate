@@ -111,6 +111,15 @@ class ScoringTests(Base):
         for _ in range(20): self.rel.resolve(PersonRef('qq', '90000', '111'), CID)                # 同一天刷屏不涨熟悉
         self.assertEqual(self.score(p)[1], fam_today)
 
+    def test_stream_parses_feel_and_toward(self):
+        from aicompanion.expression.stream import ExpressionStream
+        for text in ('<mind feel="生气" toward="-2"/>哼', '<mind intent="不想" willing="0.1" feel="烦" toward="-1.5"/>不去'):
+            parser = ExpressionStream()
+            shown = ''.join(parser.feed(ch) for ch in text)+parser.finish()
+            self.assertNotIn('<mind', shown); self.assertIn(parser.mind['feel'], ('生气', '烦')); self.assertLess(parser.mind['toward'], 0)
+        parser = ExpressionStream(); ''.join(parser.feed(ch) for ch in '<mind toward="-99"/>x'); parser.finish()
+        self.assertEqual(parser.mind['toward'], -3.0)
+
     def test_8_no_daily_cap_but_diminishing_and_elastic(self):
         p = self.person(); start = self.score(p)[0]; gains = []
         for n in range(8):
@@ -297,6 +306,55 @@ class BehaviourTests(BridgeFixture):
         out4 = self.desktop('好吧 那陪我聊会儿', '好呀 聊啥')                                    # 拒绝后照常聊
         self.assertEqual(out4, '好呀 聊啥')
         self.assertEqual((self.score(owner)[0], self.score(owner)[2]), (start[0], start[2]))   # 拒绝 / 被拒绝不改好感信任
+
+    def test_quarrel_lowers_affinity_right_away_and_she_stays_upset(self):
+        """负责人 2026-11-09 19:24：吵架时好感不降、她不会和人吵。现在她当场的感觉（<mind feel toward/>）即时记进关系。"""
+        self.db.set_setting('bridge_groups', ['30003'])
+        prompt_before = None
+        self.model.replies.append('<mind feel="不爽" toward="-2"/>骂我？那我可记仇了啊')
+        result = self.ask('20002', '蠢得一', group='30003', name='tangle')
+        self.assertEqual(result['reply'], '骂我？那我可记仇了啊')                                # 标记不显示
+        prompt_before = self.model.prompts[-1]
+        self.assertIn('你的脾气', prompt_before); self.assertIn('怼回去', prompt_before); self.assertIn('toward', prompt_before)
+        guy = self.rel.resolve(PersonRef('qq', '90000', '20002', 'tangle'), CID)
+        first = STRANGER['affinity']-self.score(guy)[0]
+        self.assertGreater(first, 0.5)                                                       # 当场就掉好感
+        event = self.rel.events(CID, guy)[0]
+        self.assertEqual(event['kind'], 'quarrel'); self.assertIn('不爽', event['evidence'])
+        for n, line in enumerate(('你太纯了', '太让人难绷了你')):
+            self.model.replies.append(f'<mind feel="生气" toward="-2"/>你再说一句试试{n}')
+            self.ask('20002', line, group='30003', name='tangle')
+        total = STRANGER['affinity']-self.score(guy)[0]
+        self.assertGreater(total, first*2.4)                                                  # 反复被说，越来越烦（不像被夸那样很快习惯）
+        self.model.replies.append('哼')
+        self.ask('20002', '在吗', group='30003', name='tangle')
+        self.assertIn('还有点气', self.model.prompts[-1])                                       # 刚吵过，下一句还带着气
+        self.model.replies.append('<mind feel="消气了" toward="1"/>行吧 原谅你了')
+        self.ask('20002', '对不起嘛 刚才说过头了', group='30003', name='tangle')
+        self.assertGreater(self.rel.events(CID, guy)[0]['d_affinity'], 0)                      # 和好也会回升
+
+    def test_heated_turn_runs_analysis_early_and_does_not_double_count(self):
+        from aicompanion.relationship.analyzer import RelationshipAnalyzer
+        owner = self.rel.resolve(OWNER_DESKTOP, CID)
+        calls = []
+        real = RelationshipAnalyzer.maybe_run
+        def spy(analyzer, character_id, channel, client, background=True, trigger=None):
+            calls.append(trigger); return False
+        RelationshipAnalyzer.maybe_run = spy
+        try:
+            self.desktop('你怎么这么笨', '<mind feel="委屈" toward="-1"/>你才笨')
+            self.desktop('今天天气不错', '是挺好')
+        finally:
+            RelationshipAnalyzer.maybe_run = real
+        self.assertEqual(calls, [2, None])
+        before = self.score(owner)
+        analyzer = RelationshipAnalyzer(self.db, self.rel)
+        raw = json.dumps({'events': [{'who': 'P1', 'type': 'quarrel', 'confidence': 0.9, 'evidence': '说她笨'},
+                                     {'who': 'P1', 'type': 'apology', 'confidence': 0.9, 'evidence': '道歉了'}]})
+        analyzer.apply(CID, 'desktop', raw, {'P1': owner}, last_id=99)
+        kinds = [e['kind'] for e in self.rel.events(CID, owner) if e['applied']]
+        self.assertEqual(kinds.count('quarrel'), 1); self.assertIn('apology', kinds)          # 当场记过的情绪不重复扣，道歉照常算
+        self.assertGreater(self.score(owner)[0], before[0])
 
     def test_17_relationship_enters_unified_context_desktop_and_qq_owner_are_one(self):
         self.desktop('在吗', '在')

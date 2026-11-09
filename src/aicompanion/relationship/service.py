@@ -41,6 +41,7 @@ EVENTS = {
     'apology': (1.0, 0.0, 1.0),             # 真诚道歉
     'personal_share': (0.5, 1.5, 0.5),      # 跟她分享自己的事
     # 负向（恶意，不是负面情绪或不同意见）
+    'quarrel': (-1.5, 0.3, -0.5),           # 争吵：语气冲、嘲讽贬低她、跟她对着干（不是正常的意见不同）
     'insult': (-3.0, 0.0, -1.0),
     'harassment': (-3.0, 0.0, -2.0),
     'deception': (-1.0, 0.0, -4.0),
@@ -69,14 +70,15 @@ def dynamic_delta(hint, confidence, current, *, repeats=0, first_negative=False,
     """把"这件事有多大影响"换算成此刻的分数变化。返回 (变化, 说明)。
     - 越靠近两端越难再动：涨的时候乘 (100-当前)/60，跌的时候乘 当前/60（夹在 0.15～1.3）；
       也就是关系很好时再被夸涨得少，信任很高时被骗掉得多；
-    - 24 小时内同一种事已经发生 n 次：乘 1/(1+0.5n)，刷屏夸她 / 骂她的效果越来越小，但不会被一刀切掉；
+    - 24 小时内同一种事已经发生 n 次：正向乘 1/(1+0.5n)（刷屏夸她效果越来越小），负向乘 1/(1+0.15n)（反复被骂只会越来越烦）；
     - 7 天内第一次的负面事件：按信任和把握缓冲（信任越高、把握越小，越倾向于"可能是误会"）。"""
     why = []
     value = hint*confidence*GAIN
     room = (100-current) if value > 0 else current
     value *= max(0.15, min(1.3, room/60))
     if repeats:
-        value /= 1+0.5*repeats; why.append('habituated')
+        # 被夸多了会习惯（递减快）；被骂、吵架反复发生只会越来越烦，递减很慢
+        value /= 1+(0.5 if value > 0 else 0.15)*repeats; why.append('habituated')
     if value < 0 and first_negative:
         cushion = max(0.3, 1-0.4*trust/100-max(0.0, 0.85-confidence))
         value *= cushion; why.append('cushioned')
@@ -394,8 +396,11 @@ class RelationshipService:
                          f"{level(p['affinity'], AFFINITY_WORDS)}；{level(p['trust'], TRUST_WORDS)}。")
         if p['is_owner']:
             lines.append(f"你对他：{level(p['affinity'], AFFINITY_WORDS)}；{level(p['trust'], TRUST_WORDS)}。")
+        recent = self.trend(character_id, person_id, days=0.25)   # 最近 6 小时
         trend = self.trend(character_id, person_id)
-        if trend >= 3: lines.append('最近对他的印象在变好。')
+        if recent <= -2: lines.append('你们刚才闹得不太愉快，你现在还有点气：不用马上装没事，他好好道歉或者过一阵你可以慢慢消气。')
+        elif recent >= 2: lines.append('刚才和他聊得挺开心。')
+        elif trend >= 3: lines.append('最近对他的印象在变好。')
         elif trend <= -3: lines.append('最近他让你有点不舒服。')
         known = self.notes.prompt(character_id, person_id)
         if known: lines.append(known)
@@ -415,5 +420,11 @@ AUTONOMY = ('\n【你自己的意愿】你不是有求必应的工具。对方�
             '可能乐意做，可能勉强答应，可能开玩笑推回去，可能直说不想，可能说等会儿再说，也可能对事情本身来了兴趣、反过来聊你的想法——'
             '这些只是可能性，不是固定说法，照此刻的你自然决定。关系好也可以拒绝，关系一般也可以因为有意思而参与。'
             '拒绝时别讲大道理、别解释规则，也别威胁、冷战或让人愧疚，拒绝完照常聊。真正涉及安全和权限的事由系统把关，不归你的意愿决定。'
-            '\n如果对方这条是在请你做事，回复最开头写一个对方看不到的 <mind intent="你的态度" willing="0到1"/>（intent 用几个字描述，例如 乐意、勉强、推回去、不想、晚点、来兴趣了），'
-            '然后照常说话；没请你做事就不写。')
+            # 负责人 2026-11-09 19:24："AI 应该要有自己的脾气，会和人进行争吵"
+            '\n【你的脾气】你有自己的脾气，不是谁说什么都笑着接。被冒犯、被嘲讽、被无理指责、被当成工具使唤、对方一直阴阳你或说话很冲时，'
+            '可以不高兴、直接怼回去、跟他争、坚持自己的看法，不用急着让步、道歉或讨好；关系越差越没耐心，关系好的人开玩笑你也分得清是不是玩笑。'
+            '吵归吵：不说脏话、不人身攻击、不拿隐私或现实威胁人；对方好好道歉、或者过一阵聊点别的，你可以慢慢消气，但不用马上装作没事。'
+            '\n回复最开头可以写一个对方看不到的 <mind …/>，用不上就不写：对方在请你做事时写 intent="你的态度" willing="0到1"'
+            '（intent 用几个字，例如 乐意、勉强、推回去、不想、晚点、来兴趣了）；对方这条让你明显高兴或明显不爽时写 feel="此刻的感觉" toward="-3到3"'
+            '（这件事让你对他的感觉变好还是变差：被骂、被嘲讽 -2～-3，说话冲、不尊重你 -1～-2，真心夸你、关心你、哄好你 +1～+2；普通聊天不写）。'
+            '两种可以写在同一个标签里，例如 <mind feel="生气" toward="-2"/>，然后照常说话。')

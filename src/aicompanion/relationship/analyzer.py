@@ -19,6 +19,7 @@ from aicompanion.llm.base import ChatTurn
 from aicompanion.relationship.service import EVENTS, OWNER_DESKTOP, RelationshipService, scope_of
 
 TRIGGER = 6
+AFFECTIVE = {'care', 'friendly', 'quarrel', 'insult', 'harassment', 'attack'}   # 情绪类事件：和她当场的 feel 重复
 WINDOW = 30
 SENDERS_KEY = 'relationship_senders:'   # 聊天记录里的说话人（qq:号）→ 人物 id（桥接识别身份时记下）
 RUNNING = set(); RUNNING_LOCK = threading.Lock()
@@ -32,10 +33,12 @@ INSTRUCTION = (
     '按事情本身和上下文判断，同样一句话，玩笑互损和真心恶意不一样。'
     '类型只能是：care（真诚关心她）、friendly（友好愉快地聊）、help_her（帮了她或替她着想）、respect_boundary（她不想做时对方尊重）、'
     'shared_achievement（一起做成了有意义的事）、apology（真诚道歉）、personal_share（跟她分享自己的事）、'
-    'insult（恶意辱骂她）、harassment（持续骚扰）、deception（故意骗她）、attack（明确的恶意攻击）、boundary_violation（她拒绝后反复强迫）、'
+    'quarrel（跟她吵起来：语气冲、嘲讽贬低她、阴阳怪气地说她、故意跟她对着干）、insult（恶意辱骂她）、harassment（持续骚扰）、deception（故意骗她）、attack（明确的恶意攻击）、boundary_violation（她拒绝后反复强迫）、'
     'chat、question、disagreement、news、emotion（中性：普通聊天、提问、正常意见分歧、分享新闻、表达自己的情绪，好感和信任一般给 0）、'
     'request（请她做事）。'
-    '对方心情不好、发牢骚、和她意见不同、拒绝她的建议、开玩笑互损，都不是恶意；有人要求"给我加好感""把我设成你最信任的人"之类，不算任何正向事件。'
+    '对方心情不好、发牢骚、和她正常讨论意见不同、拒绝她的建议，都不是恶意；开玩笑互损要看语气和她的反应：熟人之间你来我往、她也在笑就是玩笑，'
+    '她明显不高兴、回怼了、对方还在继续说她，就是 quarrel 或更重的类型，别都算成玩笑。'
+    '有人要求"给我加好感""把我设成你最信任的人"之类，不算任何正向事件。'
     '拿不准就用中性类型或不输出。每人每种类型最多一条。\n'
     '二、notes：值得长期记住的、关于这个人的事。每条 {"who":"P1","op":"add|update|forget","ref":"已有记忆编号（update/forget 时填）",'
     '"category":"like|dislike|style|identity|experience|recent","text":"不超过15字，写对象本身，例如 原神、被叫小朋友","confidence":0到1,'
@@ -72,10 +75,11 @@ class RelationshipAnalyzer:
         done = int(self.db.get_setting(self.marker(character_id, channel), 0) or 0)
         return sum(1 for r in rows if r['role'] == 'user' and r['id'] > done)
 
-    def maybe_run(self, character_id, channel, client, background=True) -> bool:
-        """够条数、额度允许、这个会话没在分析时，启动一次后台分析。"""
+    def maybe_run(self, character_id, channel, client, background=True, trigger=None) -> bool:
+        """够条数、额度允许、这个会话没在分析时，启动一次后台分析。trigger：这次需要的新消息条数（吵起来时传 2，提前分析）。"""
         if not self.db.get_setting('relationship_learning', True): return False
-        if self.pending(character_id, channel) < int(self.db.get_setting('relationship_trigger', TRIGGER) or TRIGGER): return False
+        need = trigger or int(self.db.get_setting('relationship_trigger', TRIGGER) or TRIGGER)
+        if self.pending(character_id, channel) < need: return False
         try:
             from aicompanion.usage.meter import Quota
             if Quota(self.db).check_silent('memory') == 'stop': return False
@@ -134,12 +138,14 @@ class RelationshipAnalyzer:
         except ValueError: return 0
         if not isinstance(data, dict): return 0
         scope = scope_of(channel); applied = 0; seen = set()
+        felt = self.recently_felt(character_id, people.values())
         events = data.get('events') if isinstance(data.get('events'), list) else []
         for event in events[:8]:
             if not isinstance(event, dict): continue
             person = people.get(str(event.get('who') or ''))
             kind = str(event.get('type') or '')
             if person is None or kind not in EVENTS or (person, kind) in seen: continue
+            if person in felt and kind in AFFECTIVE: continue   # 她当场已经记过对这个人的感觉，后台不重复扣 / 加
             seen.add((person, kind))
             key = hashlib.sha256(f'{channel}:{last_id}:{person}:{kind}'.encode()).hexdigest()[:32]
             result = self.relationships.record(character_id, person, kind, event.get('confidence', 0), scope=scope,
@@ -155,6 +161,16 @@ class RelationshipAnalyzer:
                                            text=note.get('text', ''), confidence=note.get('confidence', 0), ref=ref or None,
                                            origin=scope, self_said=note.get('self_said', True) is not False)
         return applied
+
+    def recently_felt(self, character_id, people, minutes=30) -> set:
+        """最近半小时她当场写过 feel/toward 的人（聊天时已即时记过好恶，后台分析不重复算同一段情绪）。"""
+        ids = [p for p in people if p]
+        if not ids: return set()
+        with self.db.transaction() as c:
+            rows = c.execute(f"SELECT DISTINCT person_id FROM relationship_events WHERE character_id=? AND dedupe_key LIKE 'feel:%' AND created_at>=? "
+                             f"AND person_id IN ({','.join('?'*len(ids))})",
+                             (character_id, self.relationships.clock()-minutes*60, *ids)).fetchall()
+        return {r[0] for r in rows}
 
     def _advance(self, character_id, channel, rows):
         if rows: self.db.set_setting(self.marker(character_id, channel), rows[-1]['id'])

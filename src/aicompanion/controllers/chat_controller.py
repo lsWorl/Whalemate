@@ -141,17 +141,29 @@ class ChatController:
         return None
 
     def _after_turn(self,character,channel,scene,person,context,parser,status,turn_id):
-        """她这轮写了 <mind/>（对方在请她做事）就记一条 request（不改分，只统计"多常找她做事"）；够条数时后台理解关系事件。
+        """她这轮写了 <mind/>：请她做事就记一条 request（不改分，只统计"多常找她做事"）；
+        写了 feel / toward（对方让她明显高兴或不爽）就即时记一条关系事件；够条数时后台理解关系事件，吵起来时提前。
         关系记录出错不影响聊天。"""
         try:
             person_id=self._person(person,channel,scene,context)
             mind=getattr(parser,'mind',None) if parser else None
+            heated=False
             if person_id and mind and status=='complete':
                 from aicompanion.relationship.service import scope_of
-                note=(mind.get('intent') or '')+(f" 意愿{mind['willing']:.1f}" if mind.get('willing') is not None else '')
-                self.relationships.record(character.id,person_id,'request',1.0,scope=scope_of(channel),evidence=note,key='mind:'+turn_id)
+                if mind.get('intent') or mind.get('willing') is not None:
+                    note=(mind.get('intent') or '')+(f" 意愿{mind['willing']:.1f}" if mind.get('willing') is not None else '')
+                    self.relationships.record(character.id,person_id,'request',1.0,scope=scope_of(channel),evidence=note,key='mind:'+turn_id)
+                toward=mind.get('toward')
+                if toward:
+                    # 负责人 2026-11-09：吵架要掉好感、她要有脾气。她自己当场的感觉即时记一笔（不等后台分析），
+                    # 程度由她判断，换算仍走动态规则（两端弹性、首次缓冲、单件上限）
+                    impact={'affinity':toward,'trust':toward*0.3 if toward<=-2 else 0.0}
+                    self.relationships.record(character.id,person_id,'quarrel' if toward<0 else 'friendly',0.8,scope=scope_of(channel),
+                                              evidence=(mind.get('feel') or '')+f" {toward:+.0f}",key='feel:'+turn_id,impact=impact)
+                    heated=toward<=-1
             if status=='complete':
-                self.relationship_analyzer.maybe_run(character.id,channel,self.llm_client)
+                # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）
+                self.relationship_analyzer.maybe_run(character.id,channel,self.llm_client,trigger=2 if heated else None)
         except Exception:
             pass
 

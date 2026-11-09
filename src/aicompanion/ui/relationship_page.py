@@ -8,8 +8,8 @@ from aicompanion.relationship.notes import CATEGORIES
 from aicompanion.relationship.service import RelationshipService, DIMENSIONS
 
 NAMES = {'affinity': '好感', 'familiarity': '熟悉', 'trust': '信任'}
-KINDS = {'care': '关心她', 'friendly': '友好交流', 'help_her': '帮了她', 'respect_boundary': '尊重她的边界', 'shared_achievement': '一起做成事',
-         'apology': '道歉', 'personal_share': '分享自己的事', 'insult': '辱骂', 'harassment': '骚扰', 'deception': '欺骗', 'attack': '恶意攻击',
+KINDS = {'care': '关心她', 'friendly': '友好交流 / 让她开心', 'help_her': '帮了她', 'respect_boundary': '尊重她的边界', 'shared_achievement': '一起做成事',
+         'apology': '道歉', 'personal_share': '分享自己的事', 'quarrel': '吵架 / 让她不爽', 'insult': '辱骂', 'harassment': '骚扰', 'deception': '欺骗', 'attack': '恶意攻击',
          'boundary_violation': '反复越界', 'chat': '聊天', 'question': '提问', 'disagreement': '意见不同', 'news': '分享新闻',
          'emotion': '表达情绪', 'request': '请她做事'}
 NOTES = {'low_confidence': '把握不够，不计分', 'duplicate': '重复', 'manual_hold': '手动调整后暂停',
