@@ -39,7 +39,7 @@ class QQExpressionTests(unittest.TestCase):
         async def ask(payload):return answer
         async def control(path,payload):
             return self.service.expression_claim(payload) if path=='claim' else self.service.expression_ack(payload)
-        async def no_pause(text):pass
+        async def no_pause(text,delay=None):pass
         plugin.avatar_permission=denied;plugin.ask_pet=ask;plugin.expression_control=control;plugin.pause=no_pause
         async def run():return [item async for item in plugin.on_message(event)]
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':self.components}):out=asyncio.run(run())

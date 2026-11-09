@@ -212,19 +212,35 @@ class PluginTests(unittest.TestCase):
             event=Event('再发');self.run_handler(plugin,event,answer);self.assertEqual(event.sent_messages,[])
             self.assertEqual(self.run_handler(self.plugin(),Event('发表情'),{'reply':'好呀','silent':False,'images':['file:///private.png']}),[('plain','好呀')])
 
+    def test_pause_uses_given_delay_or_estimates_typing_time(self):
+        waited=[]
+        async def sleep(seconds):waited.append(seconds)
+        plugin=self.plugin()
+        with mock.patch('asyncio.sleep',sleep):
+            for args in (('逆天这次都用上了',2.7),('逆天这次都用上了',),('嗯',)):asyncio.run(plugin.pause(*args))
+        self.assertEqual(waited[0],2.7);self.assertGreater(waited[1],2.0);self.assertEqual(waited[2],1.0)
+
     def test_multi_segment_reply_is_sent_as_separate_messages(self):
         # 负责人要求：多段回复分几条消息发，不塞进一条
         components=types.ModuleType('astrbot.api.message_components')
         components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
         components.Plain=lambda value:('text',value)
         plugin=self.plugin();pauses=[]
-        async def pause(text):pauses.append(text)
+        async def pause(text,delay=None):pauses.append(text)
         plugin.pause=pause
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
             event=Event('好消息')
             out=self.run_handler(plugin,event,{'reply':'哇！\n\n恭喜爹','silent':False,'segments':['哇！','恭喜爹']})
             self.assertEqual(out,[]);self.assertEqual(event.sent_messages,[('chain',[('text','哇！')]),('chain',[('text','恭喜爹')])])
             self.assertEqual(pauses,['恭喜爹'])
+            # 负责人 2026-11-09 18:05：每条之间隔一段时间——用桌宠按打字速度算好的间隔；格式不对就自己估
+            delays=[]
+            async def timed(text,delay=None):delays.append(delay)
+            plugin.pause=timed
+            self.run_handler(plugin,Event('哈'),{'reply':'哟\n逆天','silent':False,'segments':['哟','逆天这次都用上了'],'segment_delays':[0,2.7]})
+            self.run_handler(plugin,Event('哈'),{'reply':'哟\n逆天','silent':False,'segments':['哟','逆天'],'segment_delays':[0,99]})
+            self.assertEqual(delays,[2.7,None])
+            plugin.pause=pause
             # 旧桌宠没有 segments：整段一条
             self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False}),[('plain','在呢')])
             # 不合法的 segments 不用：回退为整段
@@ -236,7 +252,7 @@ class PluginTests(unittest.TestCase):
         components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
         components.Plain=lambda value:('text',value)
         async def control(path,payload):return {'allowed':True,'ok':True}
-        async def pause(text):pass
+        async def pause(text,delay=None):pass
         for placement,expected in (('before_text',[('image','YWJj'),('text','一'),('text','二')]),
                                    ('after_text',[('text','一'),('text','二'),('image','YWJj')])):
             plugin=self.plugin();plugin.expression_control=control;plugin.pause=pause
@@ -429,3 +445,4 @@ class HeartbeatTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

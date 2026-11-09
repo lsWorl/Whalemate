@@ -52,7 +52,10 @@ MAX_STICKERS = 3
 # 负责人 2026-11-09：群里尽量看不出 AI 痕迹，不叫爹。只是"不主动暴露、说话像群友"；
 # 被问是不是 AI：负责人要求含糊带过或顺着上下文转移话题；唯一不做的是明确声称自己是真人（诚实底线）。
 # 负责人 13:30 补充：私聊也不要露出 AI 痕迹。群聊和私聊共用 HUMAN_STYLE；群里另外不叫爹、不提父女。
-HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；不列点、不总结、不解释每个梗，'
+# 负责人 2026-11-09 18:05：不要一次生成一堆消息、不要用空格当停顿（"哟 逆天这次都用上了"）、没必要每次都回 2～3 句
+MESSAGES = ('大多数时候就发一条；偶尔想补一句再另起一行，当作第二条消息发出去，很少超过两条。'
+            '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就用逗号，或者干脆拆成两条。')
+HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；'+MESSAGES+'不列点、不总结、不解释每个梗，'
                '不说"好的""当然可以""作为…""希望对你有帮助"这类话。别提自己是 AI / 模型 / 程序 / 桌宠，'
                '也别提词元、token、上下文、提示词、训练这些词；不熟的就说不太懂，别一本正经长篇大论。'
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
@@ -135,8 +138,10 @@ class BridgeService:
         names = {self.controller.character.name, '鲸娘', '大肥鱼'}
         return any(n and n in text for n in names)
 
-    def _chime_ok(self, channel: str) -> bool:
+    def _chime_ok(self, channel: str, person=None) -> bool:
         """没人叫她时要不要试着插一句：按活跃度的概率、这个群离她上次说话的间隔和条数。
+        T15：概率再乘上她和刚说话这个人的关系（RelationshipService.chime_factor）：熟人、喜欢的人说话更容易接，
+        不熟的少接，最近让她不舒服的人更少；关系很好时也不用等那么多条。
         通过后同时预留两份每日额度：设置页的"群和陌生人每天最多回复"总数（和被叫时的回复共用）和插话次数；
         任何一份用完都不插话，也不占另一份。"""
         rule = CHIME.get(setting(self.database, 'bridge_chime') or 'off')
@@ -148,7 +153,9 @@ class BridgeService:
         for row in reversed(history):
             if row['role'] == 'assistant': break
             since += 1
-        if since < rule['after'] or self.chance() >= rule['chance']: return False
+        factor = self.controller.relationships.chime_factor(self.controller.character.id, person) if person else 1.0
+        after = rule['after']-1 if factor >= 1.3 else rule['after']
+        if since < max(1, after) or self.chance() >= min(0.9, rule['chance']*factor): return False
         day = self.today().isoformat()
         return self.database.reserve_daily_all([(f'bridge_public_count:{day}', int(setting(self.database, 'bridge_public_daily') or 0)),
                                                 (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))])
@@ -373,7 +380,7 @@ class BridgeService:
                 # 爹：和桌面同一段相处，正常更新心情、提取记忆
                 message_id = controller.record_user_message(text, source=platform, channel='desktop')
                 situation = (f'【场合】你爹现在不在电脑前，正在{mode["where"]}私聊里跟你说话。'
-                             '像在 QQ 上回爹的消息，随意点；长短看心情，可以一句，也可以连发几句（一句一行，每行单独发出去，不用逗号句号），不用动作描写。'
+                             '像在 QQ 上回爹的消息，随意点，不用动作描写。'
                              + PRIVATE_HUMAN
                              + QQ_NOT_EXPERT)
             else:
@@ -385,7 +392,7 @@ class BridgeService:
                 situation = (f'【场合】你在{mode["where"]}{"群聊" if mode["group"] else "私聊"}里，{who}在叫你'
                              + ('，群里其他人都看得到你的回复；每条消息前面是说话人的昵称和编号（#数字，同一个人编号不变），标着【爹】的是你爹' if mode['group'] else '') + '。'
                              + (GROUP_HUMAN if mode['group'] else STRANGER_HUMAN)
-                             + '像群友一样回，随意点；通常一两句，聊得起劲也可以多说几句（一句一行，每行单独发出去，不用逗号句号），不用动作描写；不要提桌面上发生的事。'
+                             + '像群友一样回，随意点，不用动作描写；不要提桌面上发生的事。'
                              + QQ_NOT_EXPERT)
             self.social.cid = character.id
             self.social.observe(mode['channel'], stable, original_text, bool(images) or bool(payload.get('has_image')))
@@ -441,7 +448,7 @@ class BridgeService:
             now = self.classify(platform, sender_id, group_id) if not self.closed else None
             if now is None: return observed
             mode = now
-            if self.quota.check_silent('qq') == 'stop' or not self._chime_ok(mode['channel']):
+            if self.quota.check_silent('qq') == 'stop' or not self._chime_ok(mode['channel'], person):
                 self.maybe_remember(character.id, mode['channel'])
                 return observed
             situation = (f'【场合】你在{mode["where"]}群聊里旁听，这条消息没有叫你。每条消息前面是说话人的昵称和编号（#数字），'
@@ -516,11 +523,11 @@ class BridgeService:
         if mode['group'] and (reply or outgoing):self.database.set_setting('bridge_last_spoke:'+mode['channel'],self.clock())
         if not private:self.maybe_remember(character.id,mode['channel'])
         result={'reply':reply,'silent':not (reply or outgoing),'reason':('chime' if chime else 'ok') if reply or outgoing else 'empty_reply'}
-        # 多段回复：插件按顺序分几条消息发出去（规则和桌面气泡相同）；旧插件只看 reply，不受影响。
-        # 只有一条时也换成整理后的写法（不用逗号句号），否则 QQ 上单条消息仍是带标点的原文。
-        from aicompanion.expression.segments import split_segments
-        segments=split_segments(reply)
-        if len(segments)>1:result['segments']=segments
+        # 多段回复：插件按顺序分几条消息发出去，每条之间按打字速度等一会儿（QQ 的分句规则，见 expression/segments.py）；
+        # 旧插件只看 reply，不受影响。只有一条时也换成整理后的写法。
+        from aicompanion.expression.segments import qq_segments, typing_delays
+        segments=qq_segments(reply,chance=self.chance)
+        if len(segments)>1:result.update(segments=segments,segment_delays=typing_delays(segments,chance=self.chance))
         if len(segments)==1:
             result['reply']=segments[0]
             if version:wire['text']=segments[0]
@@ -585,7 +592,7 @@ class BridgeService:
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.media import inline_image
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
-        from aicompanion.expression.segments import split_segments
+        from aicompanion.expression.segments import qq_segments, typing_delays
         with self.lock:
             if not self.qq_ready() or self.quota.check_silent('companion') == 'stop': return None
             owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
@@ -593,7 +600,7 @@ class BridgeService:
             if not re.fullmatch(r'\d{5,12}', bot): bot = 'qq'
             controller = self.controller; character = controller.character; turn = uuid4().hex
             situation = ('【场合】你爹现在不在电脑前，你在 QQ 私聊里主动找他说话（他不一定马上回）。'
-                         '像在 QQ 上给爹发消息那样开个头，随意点，一两句就行（一句一行，每行单独发出去，不用逗号句号），不用动作描写。'
+                         '像在 QQ 上给爹发消息那样开个头，随意点，一条就行，不用动作描写。'
                          +PRIVATE_HUMAN+QQ_NOT_EXPERT)
             context = ExpressionContext(turn, character.id, f'qq:{bot}:user:{owner}', 'desktop', 'pet', 'proactive', intent,
                                         relationship=owner_relationship(), supports_images=True)
@@ -615,12 +622,13 @@ class BridgeService:
                 if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
                 item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
                 with self.expression_lock: self.expression_bindings[attachment.delivery_id] = ('qq', owner, '', character.id)
-            segments = split_segments(expression.text)
+            segments = qq_segments(expression.text, chance=self.chance)
             if not segments and not wire['attachments']:
                 self.database.drop_reply(turn, character.id); return None
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
-                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'expression_version': 1, 'expression': wire,
+                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance),
+                                    'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
                 self.outbox_waiting[turn] = on_done
             return turn

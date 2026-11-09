@@ -55,7 +55,7 @@ class ProactiveQQTests(Base):
         history = self.db.recent_messages(1, self.character.id)
         self.assertEqual((history[-1]['role'], history[-1]['content']), ('assistant', '爹 吃饭了没'))   # 和桌面同一段记录
         items = self.service.take_outbox()
-        self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹 吃饭了没'])])
+        self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹，吃饭了没'])])
         self.assertEqual(self.service.take_outbox(), [])                # 只取一次
         self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
         self.assertEqual(results, [True]); self.assertFalse(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
@@ -147,7 +147,7 @@ class PluginTests(unittest.TestCase):
         plugin.context = types.SimpleNamespace(send_message=send_message)
         async def control(path, payload): posts.append((path, payload)); return {'allowed': True}
         async def post_json(path, payload): posts.append((path, payload)); return {'ok': True}
-        async def pause(text): pass
+        async def pause(text, delay=None): pass
         plugin.expression_control = control; plugin.post_json = post_json; plugin.pause = pause
         with mock.patch.dict(sys.modules, {'astrbot.api.event': api_event, 'astrbot.api.message_components': components}):
             asyncio.run(plugin.deliver_outbox(item))

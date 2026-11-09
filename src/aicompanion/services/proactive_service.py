@@ -5,14 +5,24 @@ import random
 class ProactiveMessageService:
     """只决定调度意图；生成与用户回复共用协调器。"""
 
-    def __init__(self,database,clock=datetime.now):
-        self.database=database; self.clock=clock
+    def __init__(self,database,clock=datetime.now,pace=None):
+        self.database=database; self.clock=clock; self.pace=pace
+
+    def pace_of(self,character_id) -> float:
+        """T15：主动找他的间隔随关系变化（RelationshipService.proactive_pace），1 = 原来的节奏。出错就按原节奏。"""
+        try:
+            if self.pace: return float(self.pace(character_id))
+            from aicompanion.relationship.service import RelationshipService
+            return RelationshipService(self.database).proactive_pace(character_id)
+        except Exception:
+            return 1.0
 
     def due(self,character_id,idle_seconds):
         if not self.database.get_setting('proactive_enabled',True): return None
         now=self.clock(); hour=now.hour
         last=self.database.get_setting('last_proactive_attempt:'+character_id,0)
-        if now.timestamp()-last<3600: return None
+        pace=self.pace_of(character_id)
+        if now.timestamp()-last<3600*pace: return None
         quiet_start=self.database.get_setting('quiet_start',23)
         quiet_end=self.database.get_setting('quiet_end',8)
         quiet=(hour>=quiet_start or hour<quiet_end) if quiet_start>quiet_end else quiet_start<=hour<quiet_end
@@ -22,7 +32,7 @@ class ProactiveMessageService:
             key=now.strftime('%Y-%m-%d')+':morning'; intent='早晨问候，关心今天的心情'
         elif 20<=hour<22:
             key=now.strftime('%Y-%m-%d')+':evening'; intent='晚间问候，温和关心今天的经历'
-        elif idle_seconds>=3600:
+        elif idle_seconds>=3600*pace:
             key=now.strftime('%Y-%m-%d:%H')+':idle'; intent='从有记录的共同话题开启一句自然闲聊'
         if key and self.database.claim_proactive(character_id,key):
             self.database.set_setting('last_proactive_attempt:'+character_id,now.timestamp())

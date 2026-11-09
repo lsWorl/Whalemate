@@ -243,7 +243,8 @@ class Model:
         yield self.replies.pop(0) if self.replies else '嗯'
 
 
-class BehaviourTests(Base):
+class BridgeFixture(Base):
+    """真实 ChatController + BridgeService + 假模型；test_qq_messages 也用它。"""
     def setUp(self):
         super().setUp()
         self.db.set_setting('relationship_learning', False)
@@ -262,6 +263,9 @@ class BehaviourTests(Base):
         self.model.replies.append(reply); self.controller.record_user_message(text)
         return ''.join(self.controller.generate(text+'-turn', self.character, CancellationToken(), text))
 
+
+
+class BehaviourTests(BridgeFixture):
     def test_10_11_same_request_different_relationships_get_different_context(self):
         friend = self.rel.resolve(PersonRef('qq', '90000', '20002', '老朋友'), CID); self.rel.adjust(CID, friend, affinity=85, familiarity=80, trust=75)
         self.ask('20002', '帮我查下明天天气', group='30003', name='老朋友'); close = self.model.prompts[-1]

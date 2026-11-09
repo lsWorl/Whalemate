@@ -351,6 +351,34 @@ class RelationshipService:
         p = self.profile(character_id, person_id) if person_id else None
         return round((p['affinity']*0.5+p['familiarity']*0.5)/100, 2) if p else 0.0
 
+    # ---- 关系 → 主动程度（负责人 2026-11-09：根据人物关系动态调整主动回复的频率） -------------------------------
+    # 参考 MaiBot 的"发言频率 talk_value × 运行时调整"：基础频率仍由设置决定，这里只给一个随关系连续变化的倍数。
+    def chime_factor(self, character_id: str, person_id: int | None) -> float:
+        """群里没人叫她时，听到这个人说话后插一句的概率倍数（0.2～1.8）。
+        熟、喜欢的人说话更想接；陌生人略少；好感很低或最近让她不舒服的人明显少接。"""
+        p = self.profile(character_id, person_id) if person_id else None
+        if not p: return 1.0
+        closeness = (p['affinity']+p['familiarity'])/200
+        factor = 0.5+1.5*closeness
+        if p['affinity'] < 20: factor *= 0.4
+        trend = self.trend(character_id, person_id)
+        if trend <= -3: factor *= 0.6
+        elif trend >= 3: factor *= 1.15
+        return round(max(0.2, min(1.8, factor)), 2)
+
+    def proactive_pace(self, character_id: str) -> float:
+        """主动找主人说话的间隔倍数（0.6～2.0，1 = 原来的节奏）。以主人初始关系为基准：
+        越亲近、最近相处越愉快，越常主动找他；关系变淡或最近有摩擦，就隔久一点。"""
+        pid = self.owner_person()
+        p = self.profile(character_id, pid) if pid else None
+        if not p: return 1.0
+        seed = (OWNER_SEED['affinity']+OWNER_SEED['familiarity'])/200
+        pace = 1+((seed-(p['affinity']+p['familiarity'])/200))*2
+        trend = self.trend(character_id, pid)
+        if trend <= -3: pace *= 1.5
+        elif trend >= 3: pace *= 0.85
+        return round(max(0.6, min(2.0, pace)), 2)
+
     def prompt(self, character_id: str, person_id: int | None, scope: str, *, mood='', energy=None, public=False) -> str:
         """给原聊天大脑的"她此刻的处境"：和对方的关系（定性，不报数字）、最近印象的变化、心情精力、
         对方最近多常找她做事、她记得的关于对方的事（跟人走，不分群），以及"自己的意愿"。不规定回应方式，只给依据。"""

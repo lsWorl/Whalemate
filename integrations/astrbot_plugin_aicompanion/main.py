@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.1'
+PLUGIN_VERSION = '0.9.2'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -362,15 +362,25 @@ class AICompanionBridge(Star):
             return [x.strip() for x in segments]
         return [reply] if reply else []
 
-    async def pause(self,text):
-        """连发几条时像真人打字一样隔一小会儿（按下一条的长度，0.6～2.5 秒）。"""
-        await asyncio.sleep(min(2.5,0.6+len(text)*0.04))
+    @staticmethod
+    def delays_of(result,count) -> list:
+        """桌宠按打字速度算好的每条间隔（秒）；格式不对就不用，按下面的估算。"""
+        delays=result.get('segment_delays')
+        if isinstance(delays,list) and len(delays)==count and all(isinstance(x,(int,float)) and not isinstance(x,bool) and 0<=x<=15 for x in delays):
+            return [float(x) for x in delays]
+        return [None]*count
 
-    async def send_texts(self,event,segments):
-        """按顺序一条一条发；某条发送失败就停下，不重发、不打乱顺序。"""
+    async def pause(self,text,delay=None):
+        """连发几条时像真人打字一样隔一会儿：用桌宠给的间隔；没有就按下一条的字数估（中文约 0.3 秒一字，1～8 秒）。"""
+        if delay is None:delay=min(8.0,max(1.0,0.3+0.3*len(text)))
+        await asyncio.sleep(delay)
+
+    async def send_texts(self,event,segments,delays=None):
+        """按顺序一条一条发，每条之间等一会儿；某条发送失败就停下，不重发、不打乱顺序。"""
         from astrbot.api.message_components import Plain
+        delays=delays or [None]*len(segments)
         for index,text in enumerate(segments):
-            if index:await self.pause(text)
+            if index:await self.pause(text,delays[index])
             try:await asyncio.wait_for(event.send(event.chain_result([Plain(text)])),timeout=min(30,float(self.option('timeout'))))
             except asyncio.CancelledError:raise
             except Exception as error:
@@ -410,14 +420,14 @@ class AICompanionBridge(Star):
             segments=self.segments_of(dict(result,reply=str(expression.get('text') or result.get('reply') or '')))
             if placement=='after_text' and segments:
                 # Codex 审计：前面的文字有一条失败 / 超时就整条停下，后面的图也不发（不乱序续发）
-                if not await self.send_texts(event,segments):segments=None
+                if not await self.send_texts(event,segments,self.delays_of(result,len(segments))):segments=None
                 else:await self.pause('')
             if segments is not None or placement=='before_text':
                 attempted=True;status='unknown'
                 # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
                 await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
                 status='accepted'
-                if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments)
+                if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments,self.delays_of(result,len(segments)))
         except asyncio.CancelledError as error:cancelled=error
         except Exception as error:
             # 明确的 OneBot 拒绝可记失败；连接断开或超时可能已送达，只记未知。图没尝试过仍是 cancelled。
@@ -471,7 +481,7 @@ class AICompanionBridge(Star):
         if result.get('silent'): return
         if await self.send_expression(event,result):return
         segments=self.segments_of(result)
-        if len(segments)>1:await self.send_texts(event,segments);return
+        if len(segments)>1:await self.send_texts(event,segments,self.delays_of(result,len(segments)));return
         if reply:yield event.plain_result(reply)
 
     # ---- 主动消息（用户 2026-11-09：桌面和 QQ 都可能随机发送） ----------------------------------------------
@@ -484,6 +494,7 @@ class AICompanionBridge(Star):
         self.outbox_sent.add(key)
         if len(self.outbox_sent) > 512: self.outbox_sent = {key}
         segments = self.segments_of({'reply': '', 'segments': item.get('segments')})
+        delays = self.delays_of(item, len(segments))
         expression = item.get('expression') if isinstance(item.get('expression'), dict) else {}
         attachments = [a for a in (expression.get('attachments') or [])[:1] if isinstance(a, dict)]
         origin = self.private_origins.get(user) or f'{self.platform_id}:FriendMessage:{user}'
@@ -519,7 +530,7 @@ class AICompanionBridge(Star):
         try:
             if image and image[1] == 'before_text': await send_image()
             for index, text in enumerate(segments):
-                if index or sent: await self.pause(text)
+                if index or sent: await self.pause(text, delays[index] if index else None)
                 try: await send(Plain(text)); sent += 1
                 except asyncio.CancelledError: raise
                 except Exception as error:
