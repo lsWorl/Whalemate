@@ -28,7 +28,7 @@ class LibraryPage(QWidget):
         layout.addLayout(form)
         approve=QPushButton('保存标注并确认许可、启用选中图片');approve.clicked.connect(self.approve);layout.addWidget(approve)
         self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setMaximumHeight(105);layout.addWidget(self.details)
-        self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.status=QLabel();self.status.setWordWrap(True);self.status.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.status)
         # 最近几轮"发没发表情、卡在哪一步"：没发图时能直接看出是没候选、模型选了文字、格式没解析、图片校验失败还是显示 / 发送失败
         decisions=QHBoxLayout();decisions.addWidget(QLabel('最近的表达决策（不含聊天内容）'))
         self.debug=QCheckBox('开发模式：同时写入日志');self.debug.setChecked(bool(database.get_setting('expression_debug',False)))
@@ -78,16 +78,25 @@ class LibraryPage(QWidget):
                     emotions=[x.strip()[:40] for x in self.emotions.text().replace('，',',').split(',') if x.strip()][:8],
                     author=self.author.text().strip(),source=self.source.text().strip(),license=self.license.currentText())
     def background(self,fn):
-        if self.worker and self.worker.isRunning():self.status.setText('正在处理，请稍候');return
+        # finished 会释放 QThread；只用完成信号清空的引用判断忙闲，不访问已删除的 Qt 对象。
+        if self.worker is not None:self.status.setText('正在处理，请稍候');return
         owner=self.window().parentWidget()
         worker=TaskWorker(fn,owner or QApplication.instance());self.worker=worker
         if owner is not None and hasattr(owner,'tasks'):
             owner.tasks.add(worker);worker.finished.connect(lambda:owner._task_finished(worker))
         else:worker.finished.connect(worker.deleteLater)
-        worker.succeeded.connect(self.done);worker.failed.connect(lambda _:self.status.setText('处理失败：图片、目录或来源不符合要求；原文件保留'))
+        worker.succeeded.connect(self.done);worker.failed.connect(self.failed)
+        worker.finished.connect(self.background_finished)
         worker.start();self.status.setText('正在后台校验图片…')
+    def background_finished(self):
+        self.worker=None
+    def failed(self,error):
+        self.status.setText('处理失败：'+str(error)[:500]+'；原始素材文件保留')
     def done(self,value):
-        self.refresh();self.status.setText('处理完成：'+str(value))
+        self.refresh()
+        if isinstance(value,dict) and all(k in value for k in ('imported','reused','invalid')):
+            self.status.setText(f"处理完成：新增 {value['imported']} 张，重复 {value['reused']} 张，失败 {value['invalid']} 张")
+        else:self.status.setText('处理完成：'+str(value))
     def scan(self):
         self.background(lambda token:self.catalog.scan(token))
     def pick_import(self):

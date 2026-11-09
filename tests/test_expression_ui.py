@@ -1,9 +1,10 @@
 """真实 Qt 控件与 worker；所有图片、模型和数据库均为合成。"""
-import os,base64,tempfile,time,unittest
+import os,base64,json,tempfile,time,unittest
+from unittest import mock
 from pathlib import Path
 from dataclasses import replace
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint,QCoreApplication,QEvent
 from PySide6.QtWidgets import QApplication
 from aicompanion.ui.chat_view import ChatView
 from aicompanion.ui.pet_bubble import BubbleStack
@@ -98,3 +99,70 @@ class ExpressionUITests(unittest.TestCase):
             text=''.join(p[1] for _,p in events if p[0]=='text')
             self.assertEqual(text,'好耶！');self.assertNotIn('sticker',text);self.assertEqual(model.calls,1)
             worker.deleteLater();self.app.processEvents()
+
+    def finish_library_task(self,page):
+        worker=page.worker
+        self.assertIsNotNone(worker)
+        self.assertTrue(worker.wait(5000),'合成图库任务应及时结束')
+        for _ in range(4):
+            self.app.processEvents()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+        self.assertIsNone(page.worker,'完成的线程引用应清空，后续导入不能访问已释放的 Qt 对象')
+
+    @mock.patch.dict(os.environ,{'SystemDrive':'Z:'})
+    def test_library_import_button_after_scan_and_repeated_import(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            db.set_setting('qq_meme_root',str(root/'library'))
+            (root/'source.png').write_bytes(fixtures.png())
+            manifest=root/'manifest.json'
+            manifest.write_text(json.dumps({'version':1,'assets':[{'file':'source.png','metadata':{
+                'author':'合成作者','source':'synthetic:test','license':'user-owned','semantic':'庆祝'}}]}),encoding='utf-8')
+            page=LibraryPage(db,'deepseek-whale')
+            try:
+                page.scan();self.finish_library_task(page)
+                from PySide6.QtWidgets import QPushButton
+                button=next(b for b in page.findChildren(QPushButton) if b.text()=='导入素材清单')
+                with mock.patch('aicompanion.ui.library_page.QFileDialog.getOpenFileName',return_value=(str(manifest),'清单 (*.json)')):
+                    button.click();self.finish_library_task(page)
+                    self.assertEqual(page.table.rowCount(),1)
+                    self.assertIn('新增 1',page.status.text())
+                    button.click();self.finish_library_task(page)
+                    self.assertEqual(page.table.rowCount(),1)
+                    self.assertIn('重复 1',page.status.text())
+            finally:
+                page.deleteLater();self.app.processEvents()
+
+    def test_library_failed_import_shows_reason_and_allows_retry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            db.set_setting('qq_meme_root',str(root/'library'))
+            page=LibraryPage(db,'deepseek-whale')
+            bad=root/'bad.json';bad.write_text('{"version": 99}',encoding='utf-8')
+            try:
+                with mock.patch('aicompanion.ui.library_page.QFileDialog.getOpenFileName',return_value=(str(bad),'')):
+                    page.pick_pack();self.finish_library_task(page)
+                self.assertIn('素材清单格式不支持',page.status.text())
+                page.scan();self.finish_library_task(page)
+                self.assertIn('处理完成',page.status.text())
+            finally:
+                page.deleteLater();self.app.processEvents()
+
+    def test_library_task_cleanup_with_main_window_owner(self):
+        from PySide6.QtWidgets import QWidget,QDialog
+        class Owner(QWidget):
+            def __init__(self):super().__init__();self.tasks=set()
+            def _task_finished(self,worker):
+                self.tasks.discard(worker);worker.deleteLater()
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            db.set_setting('qq_meme_root',str(root/'library'))
+            owner=Owner();settings=QDialog(owner);page=LibraryPage(db,'deepseek-whale',settings)
+            try:
+                for _ in range(2):
+                    page.scan();self.assertEqual(len(owner.tasks),1)
+                    self.finish_library_task(page)
+                    self.assertFalse(owner.tasks)
+                    self.assertIn('处理完成',page.status.text())
+            finally:
+                owner.deleteLater();self.app.processEvents()

@@ -210,7 +210,17 @@ def schedule_pet_smoke_check(window, database, output):
                 state['expression_trace_ready']=state['expression_trace_stage']=='OK_displayed'
                 from aicompanion.ui.library_page import LibraryPage
                 page=LibraryPage(database,window.controller.character.id)
-                state['expression_library_ready']=page.table.rowCount()>=6;page.deleteLater()
+                state['expression_library_ready']=page.table.rowCount()>=6
+                # 真正走两次后台刷新，覆盖线程已销毁后再次导入 / 刷新无反馈的问题。
+                def library_repeated():
+                    try:
+                        page.scan()
+                        page.worker.finished.connect(library_finished)
+                    except Exception as error:state['errors'].append('图库重复任务失败：'+str(error));page.deleteLater()
+                def library_finished():
+                    state['expression_library_background_ready']=page.worker is None and '处理完成' in page.status.text()
+                    page.deleteLater()
+                page.scan();page.worker.finished.connect(library_repeated)
                 window._load_history(); window.show()  # 可见窗口完成布局后再截图，避免离屏抓图使用旧几何。
             except Exception as error:
                 state['errors'].append('表达自检：'+repr(error)); window.controller.llm_client=original
@@ -317,7 +327,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.append('storage_locations_ready')
 
         required.append('qq_media_settings_ready')
-        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_history_ready','expression_trace_ready'])
+        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
