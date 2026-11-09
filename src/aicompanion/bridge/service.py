@@ -595,6 +595,11 @@ class BridgeService:
             if now is None: return observed
             mode = now
             if addressed and self.quota.check_silent('qq') != 'stop':
+                # Codex 审查 a53b506 P2：接话可以跳过随机概率和插话冷却，但不能跳过用户设置的每日公开回复上限。
+                # 和被 @ 时一样，在锁里、生成之前原子地预留一条；额度用完就只旁听，不调用模型
+                if not self._reserve_public():
+                    self.maybe_remember(character.id, mode['channel'])
+                    return observed
                 self.database.set_setting('bridge_addressed_at:'+mode['channel'], self.clock())
                 situation = (f'【场合】你在{mode["where"]}群聊里。这条消息没有 @ 你，但看上下文：{addressed}。每条消息前面是说话人的昵称和编号（#数字），'
                              '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+

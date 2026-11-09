@@ -441,6 +441,23 @@ class GroupChimeTests(BridgeTests.__base__):
         self.db.set_setting('bridge_chime', 'off')
         self.assertEqual(self.hear(STRANGER, '你还在吗')['reason'], 'observed')            # 过了好几分钟：不再留意
 
+    def test_follow_up_uses_the_daily_public_reply_budget(self):
+        """Codex 审查 a53b506 P2：上下文接话绕过了每日公开回复上限。"""
+        self.setUp_rolls([0.9]*10)
+        day = self.service.today().isoformat()
+        self.db.set_setting('bridge_public_daily', 2)
+        self.ask(STRANGER, '你会画画吗', group=GROUP, name='大壮')                    # 被 @：占 1 条
+        self.assertEqual(self.db.get_setting('bridge_public_count:'+day), 1)
+        calls = len(self.client.calls)
+        self.assertEqual(self.hear(STRANGER, '那你画一个看看')['reason'], 'addressed')   # 有余额：接话，占 1 条
+        self.assertEqual(self.db.get_setting('bridge_public_count:'+day), 2); self.assertEqual(len(self.client.calls), calls+1)
+        for n in range(3):                                                          # 额度用完：只旁听，不调用模型
+            self.now[0] += 6
+            self.assertEqual(self.hear(STRANGER, f'你画呀{n}')['reason'], 'observed')
+        self.assertEqual(len(self.client.calls), calls+1); self.assertEqual(self.db.get_setting('bridge_public_count:'+day), 2)
+        self.assertIn('你画呀2', ' '.join(r['content'] for r in self.group_rows()))     # 旁听照常记下
+        self.assertEqual(self.ask(STRANGER, '你画呀', group=GROUP, name='大壮')['reason'], 'daily_limit')
+
     def test_busy_group_replies_quote_the_message(self):
         self.setUp_rolls([0.9])
         self.assertNotIn('quote', self.ask(STRANGER, '在吗', group=GROUP, name='大壮'))
