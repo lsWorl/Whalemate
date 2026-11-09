@@ -417,7 +417,7 @@ class GroupChimeTests(BridgeTests.__base__):
         result = self.hear(STRANGER, '第二条')
         self.assertEqual((result['reason'], result['reply']), ('chime', '好呀'))
         self.assertIn('没有叫你', self.client.calls[-1][1]); self.assertIn('【不说】', self.client.calls[-1][1])
-        self.hear(STRANGER, '第三条'); self.hear(STRANGER, '第四条')
+        self.hear('40004', '第三条', name='路人'); self.hear('40004', '第四条', name='路人')   # 别人说的、没在跟她说话
         self.assertEqual(len(self.client.calls), 1)                              # 冷却中
         self.now[0] += 100
         self.assertEqual(self.hear(STRANGER, '第五条')['reason'], 'observed')   # 掷到 0.9，没插
@@ -425,6 +425,28 @@ class GroupChimeTests(BridgeTests.__base__):
         self.db.set_setting('bridge_chime', 'off'); self.now[0] += 1000
         self.hear(STRANGER, 'a'); self.hear(STRANGER, 'b')
         self.assertEqual(len(self.client.calls), 2)
+
+    def test_follow_up_without_at_is_judged_by_context(self):
+        """负责人 2026-11-09 22:32：不是只有 @ 了才说话。她刚在群里和谁聊过，对方接着说的话不 @ 也交给她判断是不是在跟她说。"""
+        self.setUp_rolls([0.0])
+        self.ask(STRANGER, '你会画画吗', group=GROUP, name='大壮')                    # 被 @，她回了
+        calls = len(self.client.calls)
+        result = self.hear(STRANGER, '那你画一个看看')                               # 没 @，但接着她的话
+        self.assertEqual(result['reason'], 'addressed'); self.assertEqual(len(self.client.calls), calls+1)
+        self.assertIn('像是接着你们的话', self.client.calls[-1][1]); self.assertIn('【不说】', self.client.calls[-1][1])
+        self.now[0] += 10
+        self.assertEqual(self.hear('40004', '今天吃啥', name='路人')['reason'], 'observed')   # 别人、和她无关：不当成在叫她
+        self.assertIn(self.hear('40004', '你们这 AI 会画画？', name='路人')['reason'], ('addressed',))   # 刚说完话就有人在说她
+        self.now[0] += 400
+        self.db.set_setting('bridge_chime', 'off')
+        self.assertEqual(self.hear(STRANGER, '你还在吗')['reason'], 'observed')            # 过了好几分钟：不再留意
+
+    def test_busy_group_replies_quote_the_message(self):
+        self.setUp_rolls([0.9])
+        self.assertNotIn('quote', self.ask(STRANGER, '在吗', group=GROUP, name='大壮'))
+        self.hear('40004', '我也来', name='路人')
+        self.assertIs(self.ask(STRANGER, '你好', group=GROUP, name='大壮').get('quote'), True)   # 两个人在说话：引用对方那条
+        self.assertNotIn('quote', self.ask(STRANGER, '在吗'))                                     # 私聊不引用
 
     def test_silence_marker_sends_nothing_and_leaves_no_trace(self):
         self.setUp_rolls([0.0])

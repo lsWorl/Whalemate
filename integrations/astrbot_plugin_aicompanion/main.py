@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.3'
+PLUGIN_VERSION = '0.9.4'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -102,6 +102,10 @@ class AICompanionBridge(Star):
         for part in (getattr(event, 'get_messages', lambda: [])() or []):
             if type(part).__name__ == 'At' and str(getattr(part, 'qq', '') or '') == me: return True
         return False
+
+    def mentions_anyone(self, event) -> bool:
+        if any(seg.get('type') == 'at' for seg in self.raw_segments(event)): return True
+        return any(type(part).__name__ == 'At' for part in (getattr(event, 'get_messages', lambda: [])() or []))
 
     @staticmethod
     def swallow(event):
@@ -410,13 +414,24 @@ class AICompanionBridge(Star):
         if delay is None:delay=min(8.0,max(1.0,0.3+0.3*len(text)))
         await asyncio.sleep(delay)
 
+    @staticmethod
+    def quoted(event,components):
+        """0.9.4：群里好几个人在说话时，第一条回复引用对方那条消息（桌宠给 quote），别人才分得清她在回谁。只引用一次。"""
+        target=getattr(event,'_aicompanion_quote',None)
+        if not target:return components
+        event._aicompanion_quote=None
+        try:
+            from astrbot.api.message_components import Reply
+            return [Reply(id=target)]+list(components)
+        except Exception:return components
+
     async def send_texts(self,event,segments,delays=None):
         """按顺序一条一条发，每条之间等一会儿；某条发送失败就停下，不重发、不打乱顺序。"""
         from astrbot.api.message_components import Plain
         delays=delays or [None]*len(segments)
         for index,text in enumerate(segments):
             if index:await self.pause(text,delays[index])
-            try:await asyncio.wait_for(event.send(event.chain_result([Plain(text)])),timeout=min(30,float(self.option('timeout'))))
+            try:await asyncio.wait_for(event.send(event.chain_result(self.quoted(event,[Plain(text)]))),timeout=min(30,float(self.option('timeout'))))
             except asyncio.CancelledError:raise
             except Exception as error:
                 logger.warning(f'AICompanion 第 {index+1} 条消息发送失败：{type(error).__name__}');return False
@@ -460,7 +475,7 @@ class AICompanionBridge(Star):
             if segments is not None or placement=='before_text':
                 attempted=True;status='unknown'
                 # AstrBot 4.29.3 的公开事件发送接口等待 OneBot 调用；yield 不作为 ACK。ACK 只针对图片这一条。
-                await asyncio.wait_for(event.send(event.chain_result([image])),timeout=min(30,float(self.option('timeout'))))
+                await asyncio.wait_for(event.send(event.chain_result(self.quoted(event,[image]))),timeout=min(30,float(self.option('timeout'))))
                 status='accepted'
                 if placement=='before_text' and segments:await self.pause(segments[0]);await self.send_texts(event,segments,self.delays_of(result,len(segments)))
         except asyncio.CancelledError as error:cancelled=error
@@ -490,6 +505,11 @@ class AICompanionBridge(Star):
             if self.unrouted_call(event):
                 self.swallow(event)
                 logger.info('AICompanion：这个群还没在桌宠"聊天平台"页勾选，@ 机器人的消息不处理')
+            elif str(event.get_group_id() or '') and self.mentions_anyone(event):
+                # 诊断（2026-11-09 只 @ 不带字仍落到 AstrBot 默认模型）：群消息里有 @ 却没交给她时，记下判断依据，便于下次对日志
+                logger.info(f'AICompanion：群消息含 @ 但没交给桌宠（唤醒标记 {bool(getattr(event, "is_at_or_wake_command", False))}，'
+                            f'@ 她自己 {self.called(event)}，文字 {len((event.message_str or "").strip())} 字，'
+                            f'自己的账号 {"有" if getattr(event, "get_self_id", lambda: "")() else "无"}）')
             return
         if not payload['group_id']:
             origin = getattr(event, 'unified_msg_origin', None)
@@ -516,10 +536,17 @@ class AICompanionBridge(Star):
             return
         reply = str(result.get('reply') or '').strip()
         if result.get('silent'): return
+        if result.get('quote') is True and payload['group_id']:
+            message_id = getattr(getattr(event, 'message_obj', None), 'message_id', None)
+            if message_id: event._aicompanion_quote = str(message_id)
         if await self.send_expression(event,result):return
         segments=self.segments_of(result)
         if len(segments)>1:await self.send_texts(event,segments,self.delays_of(result,len(segments)));return
-        if reply:yield event.plain_result(reply)
+        if not reply: return
+        if getattr(event, '_aicompanion_quote', None):
+            from astrbot.api.message_components import Plain
+            yield event.chain_result(self.quoted(event,[Plain(reply)]))
+        else: yield event.plain_result(reply)
 
     # ---- 主动消息（用户 2026-11-09：桌面和 QQ 都可能随机发送） ----------------------------------------------
     async def deliver_outbox(self, item):

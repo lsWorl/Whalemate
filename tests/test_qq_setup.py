@@ -121,6 +121,8 @@ class ConfigureTests(Base):
         self.assertEqual(len(ours), 1); self.assertEqual((ours[0]['ws_reverse_host'], ours[0]['ws_reverse_port']), ('127.0.0.1', 6201))
         self.assertIn(other, conf['platform']); self.assertEqual(conf['provider'], [{'id': 'x'}])
         self.assertEqual(conf['dashboard'], {'host': '127.0.0.1', 'port': 6186})
+        # 2026-11-09 实测：只 @ 不带字时 AstrBot 自带模型（没配）回"LLM 请求失败"。桌宠自己装的 AstrBot 只给她用，关掉自带大模型聊天
+        self.assertIs(conf['provider_settings']['enable'], False)
 
     def test_broken_json_is_not_overwritten(self):
         root = self.root/'astrbot'; configure.astrbot_init(root)

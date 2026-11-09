@@ -242,6 +242,27 @@ class PluginTests(unittest.TestCase):
         # 私聊里空消息（戳一戳之类）不当成叫她
         event = AtEvent('', called=True); self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
 
+    def test_busy_group_reply_quotes_the_message_once(self):
+        # 负责人 2026-11-09 22:32：群里多个人 @ 她时分不清她在回谁。桌宠给 quote 时，第一条回复引用对方那条消息
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Plain=lambda value:('text',value)
+        components.Reply=lambda id:('reply',id)
+        class QuoteEvent(Event):
+            def __init__(self,*a,**k):
+                super().__init__(*a,**k); self.message_obj=types.SimpleNamespace(message_id=777,raw_message={})
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            plugin=self.plugin()
+            async def pause(text,delay=None):pass
+            plugin.pause=pause
+            event=QuoteEvent('你好',group='30003',called=True)
+            self.run_handler(plugin,event,{'reply':'在\n干嘛','silent':False,'segments':['在','干嘛'],'quote':True})
+            self.assertEqual([m[1] for m in event.sent_messages],[[('reply','777'),('text','在')],[('text','干嘛')]])
+            event=QuoteEvent('你好',group='30003',called=True)
+            out=self.run_handler(plugin,event,{'reply':'在','silent':False,'quote':True})
+            self.assertEqual(out,[('chain',[('reply','777'),('text','在')])])
+            event=QuoteEvent('你好',called=True)                                       # 私聊不引用
+            self.assertEqual(self.run_handler(plugin,event,{'reply':'在','silent':False,'quote':True}),[('plain','在')])
+
     def test_pause_uses_given_delay_or_estimates_typing_time(self):
         waited=[]
         async def sleep(seconds):waited.append(seconds)

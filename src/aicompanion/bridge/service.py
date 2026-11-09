@@ -208,6 +208,44 @@ class BridgeService:
                     del self.bursts[key]
                     return merge_burst(entry['items'])
 
+    # ---- 群里在跟谁说话（负责人 2026-11-09 22:32：多人 @ 时分不清她在回谁；不 @ 她就不知道有人在跟她说话） ----------------
+    # 参考 MaiBot 的"专注聊天"：她在一个群里说过话之后，一段时间内会留意这个群里接着她的话、或者在说她的消息，
+    # 交给同一个大脑判断"是不是在跟我说"，是就接，不是就【不说】；而不是只有被 @ 才开口。
+    ATTENTION = 180          # 她在群里说完话后，留意多久（秒）
+    ADDRESSED_GAP = 5        # 同一个群两次"是不是在跟我说"的判断至少隔几秒（省模型调用）
+    ABOUT_HER = re.compile(r'你|她|本鲸|鲸娘|[Aa][Ii]|机器人|[Bb]ot')
+
+    def note_partner(self, channel: str, stable: str) -> None:
+        """记下她在这个群刚和谁说过话（最近 3 分钟内的才算"正在聊"）。"""
+        now = self.clock()
+        partners = {k: v for k, v in (self.database.get_setting('bridge_partners:'+channel, {}) or {}).items() if now-float(v) < self.ATTENTION}
+        partners[stable] = now
+        self.database.set_setting('bridge_partners:'+channel, partners)
+
+    def maybe_addressed(self, channel: str, stable: str, text: str) -> str:
+        """群里没 @ 她的这条，看上下文像不像在跟她说话 / 在说她。像就返回理由（给大脑看），不像返回空。"""
+        now = self.clock()
+        if now-float(self.database.get_setting('bridge_last_spoke:'+channel, 0) or 0) > self.ATTENTION: return ''
+        rows = self.database.recent_messages(8, self.controller.character.id, channel=channel)
+        since = 0
+        for row in reversed(rows):
+            if row['role'] == 'assistant': break
+            since += 1
+        if since == 0 or since > 4: return ''   # 她说完以后群里已经插进来好几条，多半早就不是在接她的话
+        partners = self.database.get_setting('bridge_partners:'+channel, {}) or {}
+        talking = now-float(partners.get(stable, 0) or 0) < self.ATTENTION
+        about_her = bool(self.ABOUT_HER.search(text))
+        question = bool(re.search(r'[?？]|[吗呢吧啊]\s*$', text.strip()))
+        if talking and (about_her or question or since <= 2): return '他刚才就在和你聊，这条像是接着你们的话'
+        if about_her and since <= 2: return '你刚说完话，这条像是在回你或者在说你'
+        return ''
+
+    def busy_group(self, channel: str, stable: str) -> bool:
+        """群里最近不止一个人在说话（或者她要回的这条后面已经有别人插话）：回的时候引用对方那条，别人才知道她在回谁。"""
+        rows = [r for r in self.database.recent_messages(8, self.controller.character.id, channel=channel) if r['role'] == 'user']
+        senders = {r['sender'] for r in rows if r['sender']}
+        return len(senders) >= 2 or bool(rows and rows[-1]['sender'] and rows[-1]['sender'] != stable)
+
     def vision_ready(self) -> bool:
         """现在接的模型能不能看图（插件心跳时取，决定要不要下载图片）。"""
         try: return bool(self.media.vision_ready())
@@ -492,6 +530,11 @@ class BridgeService:
             if burst > 1:
                 situation += f'\n对方刚才连着发了 {burst} 条（按顺序合在一起给你）：像真人那样一起回一次，挑想接的接，不用每条都回。'
             angry = controller.relationships.upset(character.id, person)
+            profile = controller.relationships.profile(character.id, person) if person else None
+            cold = bool(profile) and not profile['is_owner'] and profile['affinity'] < 25
+            if cold and not angry:
+                # 负责人 2026-11-09 22:32：她还会正常地跟本来就不招她喜欢的人聊。没好感的人找她，可以敷衍或者不理
+                situation += f'\n你对他没什么好感：回得短、冷淡，不陪聊、不主动找话题；不想理他就只回复{SILENCE}。'
             if angry:
                 # 负责人 2026-11-09：吵架时别一两句就让步。气头上可以冷着他、干脆不回（他会看到你没理他）
                 situation += f'\n你现在还在气头上：可以冷淡、回得很短，不想理他就只回复{SILENCE}。'
@@ -501,7 +544,7 @@ class BridgeService:
                               +SILENCE+'（表示看到了，不发消息）；别描述、点评或追问这张图。')
             if '头像' in original_text and not avatar_info:
                 situation += '\n他问到头像，但你这次没看清他的头像：别说看不到、读取不了头像，也别编头像内容；顺着话含糊带过，或者把话题岔开。'
-            result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only or angry, person=person)
+            result = self._reply(controller, character, mode, situation, platform, purpose, message_id, text, request=payload, may_skip=sticker_only or angry or cold, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']
             return result
@@ -540,6 +583,10 @@ class BridgeService:
             # 只发了一张表情包：她看懂了、记下了，但不为一张图插话
             self.maybe_remember(character.id, mode['channel'])
             return observed
+        addressed = self.maybe_addressed(mode['channel'], stable, text)
+        if addressed:
+            last_check = float(self.database.get_setting('bridge_addressed_at:'+mode['channel'], 0) or 0)
+            if self.clock()-last_check < self.ADDRESSED_GAP: addressed = ''
         if not self.lock.acquire(blocking=False):
             return observed
         try:
@@ -547,6 +594,18 @@ class BridgeService:
             now = self.classify(platform, sender_id, group_id) if not self.closed else None
             if now is None: return observed
             mode = now
+            if addressed and self.quota.check_silent('qq') != 'stop':
+                self.database.set_setting('bridge_addressed_at:'+mode['channel'], self.clock())
+                situation = (f'【场合】你在{mode["where"]}群聊里。这条消息没有 @ 你，但看上下文：{addressed}。每条消息前面是说话人的昵称和编号（#数字），'
+                             '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+
+                             '先看清楚他是不是在跟你说话、在说你：是的话就像群友那样接（按你们的关系，该冷淡就冷淡、该怼就怼）；'
+                             f'看下来不是对你说的、或者你不想理，就只回复{SILENCE}。'
+                             '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else ''))
+                result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
+                if result.get('reason') == 'chime': result['reason'] = 'addressed'
+                if stickers['known']: result['stickers_known'] = stickers['known']
+                if stickers['statuses']: result['stickers_status'] = stickers['statuses']
+                return result
             if self.quota.check_silent('qq') == 'stop' or not self._chime_ok(mode['channel'], person):
                 self.maybe_remember(character.id, mode['channel'])
                 return observed
@@ -620,9 +679,13 @@ class BridgeService:
         if may_skip and not (reply or outgoing):
             self.database.drop_reply(turn,character.id)   # 对方只发了表情包、她选择不接：没发出去的话不算她说过
             return {'reply':'','silent':True,'reason':'sticker_seen'}
-        if mode['group'] and (reply or outgoing):self.database.set_setting('bridge_last_spoke:'+mode['channel'],self.clock())
+        if mode['group'] and (reply or outgoing):
+            self.database.set_setting('bridge_last_spoke:'+mode['channel'],self.clock())
+            self.note_partner(mode['channel'],stable)
         if not private:self.maybe_remember(character.id,mode['channel'])
         result={'reply':reply,'silent':not (reply or outgoing),'reason':('chime' if chime else 'ok') if reply or outgoing else 'empty_reply'}
+        # 群里好几个人在说话时，回复引用对方那条消息（插件 0.9.4 起支持），别人才分得清她在回谁
+        if mode['group'] and (reply or outgoing) and self.busy_group(mode['channel'],stable):result['quote']=True
         # 多段回复：插件按顺序分几条消息发出去，每条之间按打字速度等一会儿（QQ 的分句规则，见 expression/segments.py）；
         # 旧插件只看 reply，不受影响。只有一条时也换成整理后的写法。
         from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays

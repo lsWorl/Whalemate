@@ -70,6 +70,10 @@ def astrbot_config(root: Path, ws_port: int, ws_token: str, dashboard_port: int)
     conf['platform'] = platforms
     dashboard = conf.setdefault('dashboard', {})
     dashboard.update({'host': '127.0.0.1', 'port': int(dashboard_port)})
+    # 2026-11-09 实测两次：群里只 @ 她、不带字时，AstrBot 自己的模型（没配）抢先在群里回"LLM 请求失败：未找到任何可用的对话模型"。
+    # 这套 AstrBot 是桌宠自己装、只给她用的，回复全由桌宠大脑来：关掉 AstrBot 自带的大模型聊天（provider_settings.enable），
+    # 插件照常收消息。接入用户已有的 AstrBot 时（attach_existing）不改他的 cmd_config.json。
+    conf.setdefault('provider_settings', {})['enable'] = False
     write_json(path, conf)
 
 

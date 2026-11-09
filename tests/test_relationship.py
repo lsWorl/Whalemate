@@ -10,7 +10,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from aicompanion.bridge.service import BridgeService
+from aicompanion.bridge.service import SILENCE, BridgeService
 from aicompanion.controllers.chat_controller import ChatController
 from aicompanion.domain.cancellation import CancellationToken
 from aicompanion.domain.character import DEFAULT_CHARACTER
@@ -150,6 +150,17 @@ class ScoringTests(Base):
         text, instruction = seen[0]
         self.assertIn('P1：不熟', text); self.assertIn('P2：很熟', text)
         self.assertIn('按"说话人和她的关系"判断', instruction)
+
+    def test_cold_to_people_she_dislikes_and_bites_back_when_insulted(self):
+        """负责人 2026-11-09 22:32：被羞辱时反击力度不够；还会正常和本来就没好感的人聊。"""
+        from aicompanion.relationship.service import AUTONOMY
+        disliked = self.person('111'); self.rel.adjust(CID, disliked, affinity=15)
+        stranger = self.person('222')
+        self.assertIn('没什么好感', self.rel.prompt(CID, disliked, 'group'))
+        self.assertIn('不热络', self.rel.prompt(CID, stranger, 'group'))
+        self.assertNotIn('没什么好感', self.rel.prompt(CID, stranger, 'group'))
+        for words in ('嘴毒', '拿他自己的话噎回去', '这话我听着不太舒服', '怼的是他说的话和做的事'):
+            self.assertIn(words, AUTONOMY)
 
     def test_8_no_daily_cap_but_diminishing_and_elastic(self):
         p = self.person(); start = self.score(p)[0]; gains = []
@@ -386,6 +397,12 @@ class BehaviourTests(BridgeFixture):
         kinds = [e['kind'] for e in self.rel.events(CID, owner) if e['applied']]
         self.assertEqual(kinds.count('quarrel'), 1); self.assertIn('apology', kinds)          # 当场记过的情绪不重复扣，道歉照常算
         self.assertGreater(self.score(owner)[0], before[0])
+
+    def test_she_may_ignore_someone_she_dislikes(self):
+        guy = self.rel.resolve(PersonRef('qq', '90000', '20002', 'tangle'), CID); self.rel.adjust(CID, guy, affinity=10)
+        self.model.replies.append(SILENCE)
+        result = self.ask('20002', '在吗', group='30003', name='tangle')
+        self.assertTrue(result['silent']); self.assertIn('没什么好感', self.model.prompts[-1])
 
     def test_17_relationship_enters_unified_context_desktop_and_qq_owner_are_one(self):
         self.desktop('在吗', '在')
