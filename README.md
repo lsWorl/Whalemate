@@ -38,6 +38,15 @@ cancellation and the Android client are not implemented; use headphones for call
 .\.venv\Scripts\python.exe main.py
 ```
 
+鲸娘桌宠现支持用户指定的 Aboutme 大肥鱼完整帧动画。第三方素材需本机安装：
+
+~~~powershell
+.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt
+.\.venv\Scripts\python.exe tools\install_aboutme_pet.py
+~~~
+
+未安装时显示基线立绘；应用启动不会联网下载。来源、使用范围与离线重装见 [Aboutme 接入说明](docs/aboutme-pet.md)。
+
 By default, the app uses `LLM_PROVIDER=mock`, so it can run without an API key.
 
 “干活”功能的可复现安装（DeepSeek Harness 与官方 MCP SDK）：

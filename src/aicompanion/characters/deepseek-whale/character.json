@@ -36,19 +36,19 @@
         "跳": "jump",
         "转圈": "spin",
         "歪头": "tilt",
-        "摇摆": "sway",
+        "摇摆": "self_hug",
         "喝奶茶": "milk_tea",
         "伸懒腰": "stretch",
         "行礼": "curtsy",
         "好奇": "curious",
         "捂脸": "shy_peek",
         "小跳": "happy_hops",
-        "抱住自己": "self_hug",
         "鼓脸": "pout_stomp",
         "偷笑": "giggle"
       }
     },
-    "animation": "animation-original/animations.json"
+    "animation": "animation-aboutme/animations.json",
+    "animation_optional": true
   },
   "provider": {
     "label": "DeepSeek",

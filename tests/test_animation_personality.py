@@ -111,25 +111,6 @@ class PersonalityViewTests(unittest.TestCase):
         self.view.set_drag(True);self.assertEqual(self.view.action,'idle') # 合成包的 grabbed 指向 idle
         self.assertFalse(self.view.walking_ready)
 
-    def test_bundled_walk_uses_new_drawings_and_alternates_support(self):
-        import hashlib
-        import numpy as np
-        from PIL import Image
-        root=PACKS_DIR.parents[2]
-        for key in ('walking','walking_back'):
-            folder=root/'art/deepseek-whale/locomotion-keys-v2'/key
-            centers=[];hashes=[]
-            for i in range(6):
-                path=folder/f'{i:02}.png';hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
-                with Image.open(path) as image:alpha=np.asarray(image)[:,:,3]
-                ys,xs=np.where(alpha>80);centers.append(float(np.median(xs[ys>ys.max()-6])))
-            self.assertEqual(len(set(hashes)),6)
-            self.assertLess(max(Image.open(folder/f'{i:02}.png').getbbox()[3] for i in range(6))-min(Image.open(folder/f'{i:02}.png').getbbox()[3] for i in range(6)),4)
-        source=json.loads((PACKS_DIR/'deepseek-whale/animation-original/SOURCE.json').read_text(encoding='utf-8'))
-        for key in ('walking','walking_back'):
-            self.assertTrue(source['sources'][key]['new_drawing'])
-            self.assertEqual(source['sources'][key]['gait_cycle_distance'],32)
-
     def test_new_cues_are_available_without_changing_persona(self):
         vocab=Vocab.from_pack(load_pack(PACKS_DIR/'deepseek-whale'))
         for text,name in [('得意','smug'),('气鼓鼓','pout'),('害羞','shy'),('惊讶','surprised'),

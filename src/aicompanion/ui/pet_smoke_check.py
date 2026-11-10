@@ -328,13 +328,13 @@ def schedule_pet_smoke_check(window, database, output):
         def check_walking():
             view=pet.view;view.perform('expression','neutral')
             pet.machine.snapshot=type(pet.machine.snapshot)();pet.machine.shown='idle';pet._apply_state()
-            start=(pet.x(),pet.y());reference=view.using_reference
+            start=(pet.x(),pet.y());reference=not view.supports_vertical_walk
             routes=[(-60,0),(60,0)] if reference else [(-60,-40),(0,30),(50,0)]
             state['walk_routes']=[];state['walk_frame_indices']=[]
             def walk_next(index):
                 if index==len(routes):
                     if reference:
-                        state['walk_mode']='reference_left_right'
+                        state['walk_mode']='aboutme_left_right' if view.using_aboutme else 'reference_left_right'
                         state['walk_flow']=(len(state['walk_routes'])==2 and [r['gait'] for r in state['walk_routes']]==['walking_left','walking_right']
                             and all(r['moved_x'] and not r['moved_y'] and r['target_reached'] for r in state['walk_routes'])
                             and len(set(state['walk_frame_indices']))>=3)
@@ -365,7 +365,9 @@ def schedule_pet_smoke_check(window, database, output):
 
         def check_reference(index=0):
             keys=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle']
-            if not pet.view.using_reference:state['reference_flow']=True;check_walking();return
+            aboutme=pet.view.using_aboutme
+            if aboutme:keys=list(pet.view.pack.actions)
+            if not (pet.view.using_reference or aboutme):state['reference_flow']=True;check_walking();return
             if index==0:state['reference_actions']=[]
             if index==len(keys):state['reference_flow']=state['reference_actions']==keys;check_walking();return
             key=keys[index];pet.view.face(-1 if key=='walking_left' else 1);pet.view.play_action(key)
@@ -373,8 +375,11 @@ def schedule_pet_smoke_check(window, database, output):
             def ready():
                 if pet.view._loaded==key and not pet.view.transitioning:
                     clip=pet.view.pack.actions[key]
-                    expected=(240,24) if key.startswith('walking') else (120,12)
-                    if (clip.count,clip.fps)!=expected:state['errors'].append('新动作规格不符：'+key)
+                    if aboutme:
+                        if clip.fps!=12 or clip.count not in (59,80,120,180):state['errors'].append('Aboutme 动作规格不符：'+key)
+                    else:
+                        expected=(240,24) if key.startswith('walking') else (120,12)
+                        if (clip.count,clip.fps)!=expected:state['errors'].append('新动作规格不符：'+key)
                     state['reference_actions'].append(key);QTimer.singleShot(80,lambda:check_reference(index+1))
                 elif time.monotonic()>deadline:state['errors'].append('新动作加载超时：'+key);finish_checks()
                 else:QTimer.singleShot(25,ready)
@@ -410,7 +415,8 @@ def schedule_pet_smoke_check(window, database, output):
         def next_target(index):
             if index>=len(targets):
                 expected=[['idle','working'],['working','idle']]  # 思考与待机同组直接混合，避免多余的待机绕行。
-                state['pose_transition_flow']=all(pair in state['pose_transitions_finished'][transition_start:] for pair in expected)
+                state['pose_transition_flow']=(state['pose_transition_targets']==targets if pet.view.using_aboutme
+                    else all(pair in state['pose_transitions_finished'][transition_start:] for pair in expected))
                 if reference_before:
                     pet._animation_variant(True);state['animation_version_rollback']=pet.view.using_reference
                 else:state['animation_version_rollback']=True

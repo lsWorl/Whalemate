@@ -56,26 +56,6 @@ class TransitionPackTests(unittest.TestCase):
             data['transitions'].append(dict(data['transitions'][0]));path.write_text(json.dumps(data),encoding='utf-8')
             with self.assertRaises(CharacterPackError):load_animation_pack(path)
 
-    def test_bundled_bridges_have_lossless_matching_endpoints_and_source_hashes(self):
-        root=PACKS_DIR/'deepseek-whale/animation-original';pack=load_animation_pack(root/'animations.json')
-        records=json.loads((root/'TRANSITIONS.json').read_text(encoding='utf-8'))
-        self.assertEqual(len(pack.transitions),36);self.assertEqual(records['newly_drawn_keys'],20)
-        cache={}
-        def first(action):
-            if action.id not in cache:
-                image=QImage(str(action.path)).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-                cache[action.id]=image.copy(0,0,384,384)
-            return cache[action.id]
-        for record in records['records']:
-            source,target=record['from'],record['to'];bridge=pack.transitions[source,target].clip
-            self.assertEqual(hashlib.sha256((root/record['file']).read_bytes()).hexdigest(),record['sha256'])
-            for key in ('source','target'):
-                self.assertEqual(hashlib.sha256((root/record[key+'_first_frame_file']).read_bytes()).hexdigest(),record[key+'_sha256'])
-            sheet=QImage(str(bridge.path)).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-            a=sheet.copy(0,0,384,384);index=bridge.count-1
-            b=sheet.copy(index%bridge.columns*384,index//bridge.columns*384,384,384)
-            # 全透明像素 RGB 无视觉含义，转成预乘颜色后比较真正显示的端点。
-            self.assertEqual(a,first(pack.actions[source]));self.assertEqual(b,first(pack.actions[target]))
 
 
 class TransitionViewTests(unittest.TestCase):

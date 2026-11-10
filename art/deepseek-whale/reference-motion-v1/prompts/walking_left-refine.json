@@ -1,6 +1,0 @@
-{
-  "mode": "built-in image_gen",
-  "identity_reference": "../user-identity-reference.png",
-  "edit_target": "../walking_left-first.png",
-  "prompt": "Use case: identity-preserve. Image1 is the ONLY identity/costume reference. Image2 is the edit target: its six walking keys. Correct ONLY the facing direction of all SIX girls in image2: rotate each head and upper torso to a clear FRONT THREE-QUARTER view looking LEFT, about45 degrees yaw, with nose visibly pointing left and the far eye narrower than the near eye. Still show both eyes; do NOT use rear view or full profile. Keep their exact walking leg and arm phases, body height, cell positions, and original reference outfit details, long dark blue/cyan curls, whale tail, oval blue halo and bows. Keep the face identical to image1; do not change age or head size. Lower any lifted shoes so all footsteps are tiny, low to the contact line, no kicking or high knees. Every pose is walking left, not frontal side stepping. Same six-cell 3x2 layout. Preserve transparent alpha outside the characters; no text, shadow, glow, floor, mist, gradients or background. Preserve the small round gold shoe buckles of image1. No other changes."
-}

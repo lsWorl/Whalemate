@@ -159,9 +159,9 @@ class DesktopPetWindow(QWidget):
         for key in effects:
             if key in ('poke', 'poke_angry', 'pat', 'thrown', 'dizzy'): self.interacted.emit('poke' if key == 'poke_angry' else key)
             self.say_line(key)
-        if getattr(self.view,'using_reference',False):
+        if getattr(self.view,'using_reference',False) or getattr(self.view,'using_aboutme',False):
             key='pout_stomp' if 'poke_angry' in effects else ('click_wave' if 'poke' in effects else ('happy_hops' if 'pat' in effects else None))
-            if key:self.view.play_action(key)
+            if key:self.view.play_action(self.view.pack.poses.get(key,key))
         self._apply_state()
 
     def say_line(self, key, force=False):
@@ -315,7 +315,7 @@ class DesktopPetWindow(QWidget):
             self._walk_position=clamp_target(self._walk_position,bounds,size)
         remaining=math.hypot(self._walk_target[0]-self._walk_position[0],self._walk_target[1]-self._walk_position[1])
         pace=42.
-        if getattr(self.view,'using_reference',False):
+        if getattr(self.view,'using_reference',False) or getattr(self.view,'using_aboutme',False):
             clip=self.view.pack.actions.get('walking_right')
             if clip:pace=clip.cycle_distance*clip.fps/clip.count
         distance,self._walk_speed=braking_step(self._walk_speed,remaining,dt,self.scale,pace)
@@ -628,12 +628,15 @@ class DesktopPetWindow(QWidget):
             seen=set()
             for key in preferred+[k for k in self.view.pack.actions if k not in preferred]:
                 entry=self.view.pack.actions[key]
-                if entry.path in seen:continue
-                seen.add(entry.path);actions.addAction(entry.name,lambda checked=False,k=key:self.view.play_action(k))
+                identity=(entry.path,key if key in ('walking_left','walking_right') else '')
+                if identity in seen:continue
+                seen.add(identity)
+                label=entry.name+({'walking_left':'（向左）','walking_right':'（向右，镜像）'}.get(key,''))
+                actions.addAction(label,lambda checked=False,k=key:self.view.play_action(k))
         if self.pack is not None and self.pack.renderer.get('rig'):
             looks = menu.addMenu('形象'); group=QActionGroup(looks)
             choices=[('rig','原分层骨骼'),('sprites','原立绘')]
-            if self.pack.renderer.get('animation'): choices.insert(0,('spritesheet','自绘逐帧（原鲸娘）'))
+            if self.pack.renderer.get('animation'): choices.insert(0,('spritesheet','Aboutme 大肥鱼' if self.pack.renderer.get('animation_optional') else '逐帧动画'))
             for kind,label in choices:
                 action=looks.addAction(label); action.setCheckable(True); group.addAction(action)
                 action.setChecked(self.view_kind==kind)

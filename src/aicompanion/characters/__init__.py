@@ -149,7 +149,8 @@ def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '
     if avatar_mode == 'illustration': return 'png', LIVE2D_ASSETS/'Emilia/emilia-fanart.png'
     if pack and pack.ready and pack.renderer_kind == 'sprites':
         animation = pack.renderer.get('animation')
-        if animation and animation_enabled:
+        if (animation and animation_enabled and (not pack.renderer.get('animation_optional')
+                or (pack.root/_safe_name(animation, '动画清单')).is_file())):
             return 'spritesheet', pack.root/_safe_name(animation, '动画清单')
         return 'sprites', pack.sprite_manifest_path()
     if pack and pack.ready and pack.renderer_kind == 'webengine': return 'mesh', pack.webengine_asset()

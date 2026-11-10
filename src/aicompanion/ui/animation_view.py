@@ -107,10 +107,13 @@ class AnimationAvatar(QWidget):
     def using_reference(self):return self._reference_pack is not None and self.pack is self._reference_pack
 
     @property
+    def using_aboutme(self):return self.pack.source=='aboutme'
+
+    @property
     def has_animation_variants(self):return self._reference_pack is not None
 
     @property
-    def supports_vertical_walk(self):return not self.using_reference
+    def supports_vertical_walk(self):return not self.using_reference and 'walking_back' in self.pack.poses
 
     def set_animation_variant(self,reference):
         pack=self._reference_pack if reference and self._reference_pack is not None else self._original_pack
@@ -318,7 +321,7 @@ class AnimationAvatar(QWidget):
 
     def _walking_key(self):
         explicit='walking_left' if self.walking<0 else 'walking_right'
-        if self.using_reference and explicit in self.pack.poses:return self.pack.poses[explicit]
+        if (self.using_reference or self.using_aboutme) and explicit in self.pack.poses:return self.pack.poses[explicit]
         vertical=self._walk_vertical
         if abs(vertical)<math.sin(math.pi/8):pose='walking'
         elif abs(vertical)>math.sin(math.pi*3/8):pose='walking_back' if vertical<0 else 'walking_front'
@@ -333,6 +336,9 @@ class AnimationAvatar(QWidget):
 
     def plan_walking(self,distance):
         clip=self.pack.actions[self._walking_key()]
+        if self.using_aboutme:
+            # 上游移动片段没有半步相位标注；保留原速，不擅自拉伸脚步来凑终点。
+            self._gait_cycle_distance=clip.cycle_distance;self._gait_distance=0.;return
         half_steps=max(1,round(max(0.,distance)/clip.cycle_distance*clip.gait_cycles*2))
         # 在双脚着地的半周期结束路线，停下时不再截断悬空的脚。
         self._gait_cycle_distance=max(.01,distance/(half_steps*.5/clip.gait_cycles))
@@ -380,7 +386,7 @@ class AnimationAvatar(QWidget):
 
     def perform(self,kind,name):
         if self.pose in ('grabbed','falling'): return
-        if kind=='motion' and name=='jump' and not self.using_reference: self.hop(); return
+        if kind=='motion' and name=='jump' and not (self.using_reference or self.using_aboutme): self.hop(); return
         mapping={'wave':'wave','nod':'patted','shake':'poked','happy':'patted','love':'patted',
                  'smug':'smug','shy':'shy','surprised':'surprised',
                  'pout':'pout','bow':'curtsy','tilt':'curious','sway':'self_hug','jump':'happy_hops',
@@ -397,7 +403,8 @@ class AnimationAvatar(QWidget):
 
     def play_action(self,key):
         if key not in self.pack.actions or self.pose in ('grabbed','falling'): return
-        if key in ('walking','walking_left','walking_right'):self.face(-1 if self.pack.actions[key].facing=='left' else 1)
+        if key in ('walking_left','walking_right') and self.using_aboutme:self.face(-1 if key=='walking_left' else 1)
+        elif key in ('walking','walking_left','walking_right'):self.face(-1 if self.pack.actions[key].facing=='left' else 1)
         self._cue=key; action=self.pack.actions[key]
         self._cue_duration=action.count/action.fps;self._cue_started=False
         self._cue_until=time.monotonic()+self._cue_duration+1.5; self._select()

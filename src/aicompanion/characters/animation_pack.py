@@ -51,6 +51,8 @@ class AnimationPack:
     transitions: dict[tuple[str, str], Transition] = field(default_factory=dict)
     replacement_path: Path | None = None
 
+    source: str = ''
+
     def transition_route(self, source, target):
         if source in self.actions and target in self.actions:
             group=self.actions[source].blend_group
@@ -147,7 +149,9 @@ def load_animation_pack(path):
             directory=path.parent.parent/name
             if directory.resolve().parent!=path.parent.parent.resolve():raise CharacterPackError('替换动画包越界。')
             replacement=local_file(directory,'animations.json')
-        return AnimationPack(size,actions,poses,local_file(path.parent,data['poster']),head,transitions,replacement)
+        source=data.get('source','')
+        if not isinstance(source,str) or len(source)>80:raise CharacterPackError('动画来源标记无效。')
+        return AnimationPack(size,actions,poses,local_file(path.parent,data['poster']),head,transitions,replacement,source)
     except (OSError,ValueError,TypeError,KeyError) as error:
         if isinstance(error,CharacterPackError): raise
         raise CharacterPackError('无法读取动画清单或帧规格。') from error
