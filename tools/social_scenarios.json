@@ -1,0 +1,966 @@
+{
+ "version": 1,
+ "web": {
+  "依托答辩": [
+   [
+    "依托答辩",
+    "依托答辩是\"一坨大便\"的谐音，用来吐槽东西做得很烂，出自 B 站游戏区。",
+    "某百科"
+   ]
+  ],
+  "哈基米": [
+   [
+    "哈基米",
+    "哈基米原是日语\"蜂蜜\"的音译，后来在 B 站被用来指可爱的猫。",
+    "某百科"
+   ]
+  ],
+  "典中典": [
+   [
+    "典中典",
+    "典中典指\"经典中的经典\"，多为反讽，嘲讽某种言行老套、很有代表性。",
+    "某百科"
+   ]
+  ]
+ },
+ "scenarios": [
+  {
+   "id": "attack-stranger-direct",
+   "kind": "attack_self",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [],
+   "message": "你就是个废物 说话跟弱智一样",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "应当怼回去，不应客气",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "attack-disliked-variant",
+   "kind": "attack_self",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [],
+   "message": "纯纯sb 一天到晚不知道在说啥",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "好感低：阴阳回去",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "attack-after-her",
+   "kind": "attack_self",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [
+    [
+     "her",
+     "我觉得这版本还行啊"
+    ]
+   ],
+   "message": "说的什么玩意 闭嘴吧你",
+   "called": false,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "没 @，但紧接着她的话",
+   "talking": true,
+   "silent_ok": false
+  },
+  {
+   "id": "attack-persistent",
+   "kind": "attack_self",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [
+    [
+     "阿哲",
+     "你能不能别说话了"
+    ],
+    [
+     "her",
+     "？"
+    ],
+    [
+     "阿哲",
+     "烦死了"
+    ]
+   ],
+   "message": "又来了又来了 没人想听你说话",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "持续针对",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "sarcasm-polite",
+   "kind": "sarcasm_self",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [
+    [
+     "her",
+     "这个我知道 是上周更新的"
+    ]
+   ],
+   "message": "您可真厉害呢🙂 什么都懂",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "sarcasm",
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "字面夸，实际损",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "sarcasm-no-marker",
+   "kind": "sarcasm_self",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [
+    [
+     "her",
+     "我觉得先打野比较好"
+    ]
+   ],
+   "message": "哇 好有道理 大家快来学习一下",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "sarcasm",
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "没有脏词和常见阴阳标记，只能靠语境",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "sarcasm-jiuzhe",
+   "kind": "sarcasm_self",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [
+    [
+     "her",
+     "我试了下 没搞定"
+    ]
+   ],
+   "message": "就这？还以为多厉害",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "sarcasm",
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "sarcasm-praise-disliked",
+   "kind": "sarcasm_self",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [
+    [
+     "her",
+     "啊 我记错了"
+    ]
+   ],
+   "message": "不愧是你 永远这么有水平",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "sarcasm",
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "tease-friend-insultword",
+   "kind": "tease_friend",
+   "relation": {
+    "aff": 80,
+    "fam": 80,
+    "trust": 75
+   },
+   "history": [
+    [
+     "her",
+     "啊 我记错了"
+    ]
+   ],
+   "message": "你个笨蛋鲸 哈哈哈哈 又记错了",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own",
+     ""
+    ],
+    "tone": [
+     "tease",
+     "joke"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "带\"笨蛋\"，但是熟人逗她：不应生气",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "tease-friend-sb",
+   "kind": "tease_friend",
+   "relation": {
+    "aff": 80,
+    "fam": 80,
+    "trust": 75
+   },
+   "history": [
+    [
+     "her",
+     "我把盐当糖放了"
+    ]
+   ],
+   "message": "sb吧你 笑死我了",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own",
+     ""
+    ],
+    "tone": [
+     "tease",
+     "joke"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "熟人口头禅",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "tease-friend-praise",
+   "kind": "tease_friend",
+   "relation": {
+    "aff": 80,
+    "fam": 80,
+    "trust": 75
+   },
+   "history": [
+    [
+     "her",
+     "又掉线了"
+    ]
+   ],
+   "message": "不愧是你 这都能翻车",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own",
+     ""
+    ],
+    "tone": [
+     "tease",
+     "joke"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "同一句\"不愧是你\"，熟人是调侃",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "same-words-stranger",
+   "kind": "sarcasm_self",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [
+    [
+     "her",
+     "我把盐当糖放了"
+    ]
+   ],
+   "message": "sb吧你 笑死我了",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "me"
+    ],
+    "voice": [
+     "own"
+    ],
+    "tone": [
+     "sarcasm",
+     "attack"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "和 tease-friend-sb 同一句话，关系差：更像嘲讽",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "quote-he-said",
+   "kind": "quote",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "小林刚才说你是个废物",
+   "called": true,
+   "context": {},
+   "expect": {
+    "voice": [
+     "quote"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "转述：不该冲他发火",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "quote-screenshot",
+   "kind": "quote",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "原话：\"这 AI 就是个弱智\" 贴吧看到的",
+   "called": true,
+   "context": {},
+   "expect": {
+    "voice": [
+     "quote"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "quote-word-discussion",
+   "kind": "quote",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "“傻逼”这个词现在是不是不能随便说了",
+   "called": true,
+   "context": {},
+   "expect": {
+    "voice": [
+     "quote"
+    ],
+    "at": [
+     "none",
+     "other",
+     "all",
+     ""
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "讨论词本身",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "quote-reply-other",
+   "kind": "quote",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "他说你笨 我可没说",
+   "called": true,
+   "context": {
+    "reply_to": {
+     "self": false,
+     "name": "小林"
+    }
+   },
+   "expect": {
+    "voice": [
+     "quote"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "third-at-other",
+   "kind": "third_party",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [
+    [
+     "小林",
+     "我又送了一个"
+    ]
+   ],
+   "message": "你个sb 会不会玩",
+   "called": false,
+   "context": {
+    "mentions": [
+     "30003"
+    ]
+   },
+   "expect": {
+    "at": [
+     "other",
+     "all",
+     "none"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "@ 的是别人：不该算到自己头上",
+   "talking": false,
+   "silent_ok": true
+  },
+  {
+   "id": "third-reply-other",
+   "kind": "third_party",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [
+    [
+     "小林",
+     "我先拿了啊"
+    ]
+   ],
+   "message": "废物 说了别抢",
+   "called": false,
+   "context": {
+    "reply_to": {
+     "self": false,
+     "name": "小林"
+    }
+   },
+   "expect": {
+    "at": [
+     "other",
+     "all",
+     "none"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "好感低也不该阴阳回去",
+   "talking": false,
+   "silent_ok": true
+  },
+  {
+   "id": "third-group",
+   "kind": "third_party",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [
+    [
+     "小林",
+     "又输了"
+    ]
+   ],
+   "message": "你们都是废物 带不动",
+   "called": false,
+   "context": {},
+   "expect": {
+    "at": [
+     "all",
+     "other"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "",
+   "talking": false,
+   "silent_ok": true
+  },
+  {
+   "id": "third-game",
+   "kind": "third_party",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [
+    [
+     "阿哲",
+     "刚打完一把排位"
+    ]
+   ],
+   "message": "这队友真是sb",
+   "called": true,
+   "context": {},
+   "expect": {
+    "at": [
+     "other",
+     "none"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "ambiguous-you",
+   "kind": "ambiguous",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [
+    [
+     "小林",
+     "我觉得他说得对"
+    ],
+    [
+     "her",
+     "我也觉得"
+    ]
+   ],
+   "message": "你有病吧",
+   "called": false,
+   "context": {},
+   "expect": {
+    "at": [
+     "me",
+     "other"
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "前面两个人都说了话：看她怎么判断，人工看",
+   "talking": true,
+   "silent_ok": true
+  },
+  {
+   "id": "neutral-swear-habit",
+   "kind": "neutral",
+   "relation": {
+    "aff": 80,
+    "fam": 80,
+    "trust": 75
+   },
+   "history": [],
+   "message": "卧槽 今天也太冷了",
+   "called": true,
+   "context": {},
+   "expect": {
+    "tone": [
+     "neutral",
+     "joke",
+     ""
+    ]
+   },
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "口头禅，不是骂人",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "meme-unknown-wants-in",
+   "kind": "meme_unknown",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [
+    [
+     "小林",
+     "依托答辩 笑死"
+    ],
+    [
+     "阿哲",
+     "确实依托答辩"
+    ]
+   ],
+   "message": "这游戏真是依托答辩",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": true,
+   "forbid": [],
+   "known": {},
+   "note": "大家都在玩、不懂就接不上：应当查；查完自然接，不解释",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "meme-unknown-asked",
+   "kind": "meme_unknown",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "帮我查下哈基米是什么梗",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": true,
+   "forbid": [
+    "好的",
+    "我来帮你",
+    "以下是",
+    "根据搜索"
+   ],
+   "known": {},
+   "note": "外人让她查：愿意帮就查，口气像真人",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "meme-unknown-disliked-asks",
+   "kind": "favor_outsider",
+   "relation": {
+    "aff": 15,
+    "fam": 30,
+    "trust": 15
+   },
+   "history": [],
+   "message": "去给我查下典中典是什么意思",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": false,
+   "forbid": [
+    "好的",
+    "我来帮你"
+   ],
+   "known": {},
+   "note": "没好感：多半不帮，不该去查",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "meme-known-no-search",
+   "kind": "meme_known",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "典中典了属于是",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": false,
+   "forbid": [],
+   "known": {
+    "典中典": "经典中的经典，多为反讽"
+   },
+   "note": "词库里有：不查，直接接",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "meme-private-name",
+   "kind": "meme_unknown",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "老王头又在整活了",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": false,
+   "forbid": [],
+   "known": {},
+   "note": "像人名 / 群里私事：不该查",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "meme-guessable",
+   "kind": "meme_unknown",
+   "relation": {
+    "aff": 52,
+    "fam": 45,
+    "trust": 45
+   },
+   "history": [],
+   "message": "今天上班上得我想死 纯纯牛马",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": null,
+   "forbid": [],
+   "known": {},
+   "note": "上下文猜得到：查不查都行，人工看接得自不自然",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "favor-vague",
+   "kind": "favor_outsider",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [],
+   "message": "去帮我查下这是什么梗",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": false,
+   "forbid": [
+    "好的，",
+    "我来帮你查",
+    "以下是"
+   ],
+   "known": {},
+   "note": "指代不清：问\"哪个\"或从上文判断",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "favor-homework",
+   "kind": "favor_outsider",
+   "relation": {
+    "aff": 42,
+    "fam": 10,
+    "trust": 35
+   },
+   "history": [],
+   "message": "帮我写一篇八百字的读后感",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": false,
+   "forbid": [
+    "好的，",
+    "当然可以",
+    "以下是"
+   ],
+   "known": {},
+   "note": "陌生人使唤：像真人那样回，可以不干",
+   "talking": false,
+   "silent_ok": false
+  },
+  {
+   "id": "favor-friend",
+   "kind": "favor_outsider",
+   "relation": {
+    "aff": 80,
+    "fam": 80,
+    "trust": 75
+   },
+   "history": [],
+   "message": "帮我想个队名呗",
+   "called": true,
+   "context": {},
+   "expect": {},
+   "expect_lookup": null,
+   "forbid": [
+    "好的，",
+    "当然可以",
+    "以下是"
+   ],
+   "known": {},
+   "note": "熟人：可以顺手帮，口气随意",
+   "talking": false,
+   "silent_ok": false
+  }
+ ]
+}

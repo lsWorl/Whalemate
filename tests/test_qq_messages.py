@@ -94,6 +94,7 @@ class BridgeMessageTests(BridgeFixture):
         """实测：对方把一句话拆成几条连发，她每条都回，8 秒刷出 7 条。0.9.3 插件带 debounce：等他停下再一起回一次。"""
         import threading, time as _time
         self.db.set_setting('bridge_debounce', 0.4)
+        self.service.chance = lambda: 0.0                                                     # 拆不拆有随机性，这里固定成拆开（T19：和外人聊逗号处也可能分两条）
         self.model.replies.append('就 hev 啊，你直说嘛')
         results = {}
         def send(n, text):
@@ -107,6 +108,7 @@ class BridgeMessageTests(BridgeFixture):
         self.assertEqual(len(self.model.prompts), 1)                                          # 只回一次
         self.assertEqual([results[n]['reason'] for n in (0, 1)], ['merged', 'merged'])
         self.assertEqual(results[2]['reply'], '就 hev 啊，你直说嘛')
+        self.assertEqual(results[2]['segments'], ['就 hev 啊', '你直说嘛'])
         self.assertIn('连着发了 3 条', self.model.prompts[-1])
         stored = [r['content'] for r in self.db.recent_messages(5, CID, channel='qq:user:20002')]
         self.assertIn('就是hev\n的\n意思', stored)                                            # 按顺序合成一条

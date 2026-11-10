@@ -64,25 +64,69 @@ def split_segments(text: str, limit: int = MAX_SEGMENTS) -> list[str]:
     return parts
 
 
-def _qq_pieces(line: str) -> list[str]:
-    """QQ 的一行：引号外的"。"和夹在中文之间的空格处断开，"，"保留，去掉句末句号和逗号。"""
+def _qq_pieces(line: str, casual: bool = False) -> list[tuple[str, str]]:
+    """QQ 的一行：引号外的"。"和夹在中文之间的空格处断开，"，"保留，去掉句末句号和逗号。
+    返回（碎句，它前面的断点）。casual（和外人聊）时"，"也算一个可能的断点，句尾的顿号、分号、单个英文句点也去掉。"""
     line = re.sub(r'。{2,}', '…', line.strip())
-    parts, current, depth = [], '', 0
+    parts, current, depth, mark = [], '', 0, ''
+    def cut(ch):
+        nonlocal current, mark
+        parts.append((current, mark)); current = ''; mark = ch
     for i, ch in enumerate(line):
         if ch in OPEN and not (ch == '"' and depth):
             depth += 1; current += ch; continue
         if ch in CLOSE and depth:
             depth -= 1; current += ch; continue
         if depth == 0 and ch == '。':
-            parts.append(current); current = ''; continue
+            cut('。'); continue
+        if casual and depth == 0 and current.strip():
+            # 和外人聊不用逗号、分号：这些地方都是可能另起一条的断点。英文逗号只在前面是中文时才算（"1,000""a, b" 不拆）
+            if ch in '，；;' or (ch == ',' and re.match('[%s]' % CJK, current.rstrip()[-1:])):
+                cut('，'); continue
+            # 问号、感叹号后面还有话：标点留在前半句，后半句另算一段
+            if ch in '？！?!' and line[i+1:i+2] and line[i+1] not in '？！?!…~～"”」』）)':
+                current += ch; cut('？'); continue
         if depth == 0 and ch in ' \u3000' and current.strip():
             rest = line[i+1:].lstrip(' \u3000')
             prev = current.rstrip()[-1:]
             if rest and not (re.match(r'[A-Za-z0-9]', prev) or re.match(r'[A-Za-z0-9]', rest[0])):
-                parts.append(current); current = ''; continue
+                cut(' '); continue
         current += ch
-    parts.append(current)
-    return [re.sub(r'[，,\s]+$', '', p).strip() for p in parts if p.strip()]
+    parts.append((current, mark))
+    tail = r'(?:[，,、；;\s]|(?<=[%s])\.(?!\.))+$' % CJK if casual else r'[，,\s]+$'
+    return [(re.sub(tail, '', p).strip(), m) for p, m in parts if re.sub(tail, '', p).strip()]
+
+
+CASUAL_GLUE = 10    # 和外人聊：合在一条里的两小段加起来不超过这么多字，就直接连着写、不加逗号（"嗯知道了"）
+
+
+def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_FLOOD_LIMIT, casual: bool = False) -> list[str]:
+    """QQ 上分几条发。换行处一定分开（她自己想分开发）；一行里拆出来的碎句按聊天节奏决定拆还是合。
+
+    casual（负责人 2026-11-10 13:51 / 18:44："尽量不要用标点符号，切成多次对话回复"，实测留着逗号仍然显得标点多）：
+    和外人聊完全不用逗号、句号、分号——这些地方要么另起一条，要么两小段很短时直接连着写（"嗯知道了"）。
+    问号、感叹号、省略号、"？？？"这类带情绪的照留；顿号留着（"苹果、香蕉"拆开没法读）。
+    条数由调用方按她对这个人的态度截（冷淡一句、不熟最多三条），这里只在超过 limit 时把多出来的并进最后一条。
+    像文档的长回复（讲解、代码、列表）不动，标点照常。"""
+    text = str(text or '').replace('\r\n', '\n')
+    if is_long_form(text): return [text.strip()] if text.strip() else []
+    keep_apart = max(0.1, min(0.9, burst))
+    segments = []
+    for line in text.split('\n'):
+        merged = []
+        for piece, mark in _qq_pieces(line, casual):
+            if casual:
+                # 不留逗号：两小段很短（合起来不超过 CASUAL_GLUE 个字）才可能直接连着写，否则就是另一条消息。
+                # 逗号处更愿意连着写（概率减半），句号 / 问号处按聊天节奏
+                short = bool(merged) and len(merged[-1])+len(piece) <= CASUAL_GLUE and not re.search(r'[A-Za-z0-9？！?!…]$', merged[-1])
+                apart = keep_apart*0.5 if mark == '，' else keep_apart
+                if short and chance() >= apart: merged[-1] += piece
+                else: merged.append(piece)
+            elif merged and chance() >= keep_apart: merged[-1] = merged[-1]+'，'+piece
+            else: merged.append(piece)
+        segments.extend(merged)
+    if len(segments) > limit: segments = segments[:limit-1]+[('' if casual else '，').join(segments[limit-1:])]
+    return segments
 
 
 def chat_burst(reply: str, *, peer_burst: int = 1, closeness: float = 0.4) -> float:
@@ -95,22 +139,6 @@ def chat_burst(reply: str, *, peer_burst: int = 1, closeness: float = 0.4) -> fl
     # 2026-11-09 实测：对方连发时她也跟着连发，越聊越刷屏。对方连发不再让她多拆（连发的几条已在桥接里合并成一次回复）
     value += 0.25*(closeness-0.4)
     return round(max(0.1, min(0.9, value)), 2)
-
-
-def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_FLOOD_LIMIT) -> list[str]:
-    """QQ 上分几条发。换行处一定分开（她自己想分开发）；一行里拆出来的碎句按聊天节奏决定拆还是合。"""
-    text = str(text or '').replace('\r\n', '\n')
-    if is_long_form(text): return [text.strip()] if text.strip() else []
-    keep_apart = max(0.1, min(0.9, burst))
-    segments = []
-    for line in text.split('\n'):
-        merged = []
-        for piece in _qq_pieces(line):
-            if merged and chance() >= keep_apart: merged[-1] = merged[-1]+'，'+piece
-            else: merged.append(piece)
-        segments.extend(merged)
-    if len(segments) > limit: segments = segments[:limit-1]+['，'.join(segments[limit-1:])]
-    return segments
 
 
 def typing_delays(segments: list[str], chance=random.random, burst: float = 0.5) -> list[float]:

@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.4'
+PLUGIN_VERSION = '0.9.5'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -102,6 +102,22 @@ class AICompanionBridge(Star):
         for part in (getattr(event, 'get_messages', lambda: [])() or []):
             if type(part).__name__ == 'At' and str(getattr(part, 'qq', '') or '') == me: return True
         return False
+
+    def message_context(self, event) -> dict:
+        """@ 了谁（不含她自己）、有没有 @ 全体、引用回复的是她的消息还是别人的（只取编号和昵称，不取被引用的内容）。"""
+        me = str(getattr(event, 'get_self_id', lambda: '')() or '')
+        mentions, at_all, reply = [], False, None
+        for part in (getattr(event, 'get_messages', lambda: [])() or []):
+            kind = type(part).__name__
+            qq = str(getattr(part, 'qq', '') or '')
+            if kind == 'AtAll' or (kind == 'At' and qq == 'all'): at_all = True
+            elif kind == 'At' and qq and qq != me and re.fullmatch(r'\d{5,12}', qq): mentions.append(qq)
+            elif kind == 'Reply' and reply is None:
+                sender = str(getattr(part, 'sender_id', '') or '')
+                reply = {'self': bool(me) and sender == me, 'name': str(getattr(part, 'sender_nickname', '') or '')[:20]}
+        context = {'mentions': mentions[:10], 'at_all': at_all}
+        if reply: context['reply_to'] = reply
+        return context
 
     def mentions_anyone(self, event) -> bool:
         if any(seg.get('type') == 'at' for seg in self.raw_segments(event)): return True
@@ -522,6 +538,8 @@ class AICompanionBridge(Star):
         payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
         # 0.9.3：允许桌宠把同一个人连发的几条合在一起回一次（前面的请求会静默返回 merged）
         payload['debounce']=True
+        # 0.9.5：这条 @ 了谁、引用的是谁的消息——桌宠判断"是不是在说她、是不是在转述别人"要用
+        payload['context']=self.message_context(event)
         try:
             await self.attach_avatar(event, payload)
             await self.attach_images(event, payload)

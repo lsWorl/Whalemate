@@ -105,7 +105,15 @@ class ExpressionStream:
         feel = re.sub(r'[^\w\u4e00-\u9fff]', '', str(attrs.get('feel', '')))[:6]
         try: toward = max(-3.0, min(3.0, float(attrs.get('toward', ''))))
         except ValueError: toward = None
-        if self.mind is None: self.mind = {'intent': intent, 'willing': willing, 'feel': feel, 'toward': toward}
+        # T18：这句冲谁、谁的话、什么语气（她自己的判断，由关系系统确定性记分）
+        pick = lambda key, allowed: (str(attrs.get(key, '')).strip().lower() if str(attrs.get(key, '')).strip().lower() in allowed else '')
+        at = pick('at', ('me', 'other', 'all', 'none'))
+        voice = pick('voice', ('own', 'quote'))
+        tone = pick('tone', ('joke', 'tease', 'sarcasm', 'attack', 'neutral'))
+        # T20：她想当场查一个没见过的梗（只留词本身：去掉引号、控制字符，最多 16 字）
+        lookup = re.sub(r'[\x00-\x1f<>]', '', str(attrs.get('lookup', ''))).strip().strip('"“”「」『』《》')[:16]
+        if self.mind is None: self.mind = {'intent': intent, 'willing': willing, 'feel': feel, 'toward': toward, 'at': at, 'voice': voice, 'tone': tone,
+                                           'lookup': lookup}
         self.diagnose('mind')
 
     def _marker(self, raw):
