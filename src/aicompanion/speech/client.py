@@ -17,9 +17,13 @@ from aicompanion.speech.translation import JapaneseSpeechTranslator
 class SpeechClient:
     """识别和合成各自分流，千问、智谱与聊天服务的凭据不会混用。"""
 
-    def __init__(self,settings,translation_source=None):
+    def __init__(self,settings,translation_source=None,tts_source=None):
         self.settings = settings
         self.qwen = QwenSpeechClient(settings)
+        # Breeze Blue 等在“模型”页配置的语音合成：tts_source() 返回当前角色的 TtsTarget（含音色），没配置返回 None
+        from aicompanion.speech.breeze_client import BreezeSpeechClient
+        self.breeze = BreezeSpeechClient()
+        self.tts_source = tts_source
         # 日语配音的翻译跟随当前角色的聊天模型（由界面提供，计划书 v4 功能一）
         self.translator = JapaneseSpeechTranslator(settings,source=translation_source)
         self.asr_provider = getattr(settings, 'asr_provider', 'zhipu')
@@ -86,9 +90,18 @@ class SpeechClient:
     def synthesize(self,text,voice,cancellation,provider='cloud',mood='calm',style='',language='zh',role_style=''):
         if language not in ('zh','ja'):
             raise ValueError('不支持的朗读语言。')
+        if provider == 'breeze':
+            target = self.tts_source() if self.tts_source else None
+            if target is None:
+                raise ValueError('还没有在“模型”页配置 Breeze Blue 音色和 Key。')
+            # 日语台词：先翻译；Breeze 多语言模型能直接读日文，语言代码以模型配置为准
+            if language=='ja':
+                text=self.translator.translate(text,cancellation,role_style)
+                cancellation.check()
+            return self.breeze.synthesize(target,text,cancellation,mood,style)
         if language=='ja':
             if provider!='qwen':
-                raise ValueError('日语配音请使用千问语音，避免中文引擎误读日文。')
+                raise ValueError('日语配音请使用千问或 Breeze Blue 语音，避免中文引擎误读日文。')
             # 翻译和合成使用同一取消令牌；打断后不能继续把过期译文送去合成。
             text=self.translator.translate(text,cancellation,role_style)
             cancellation.check()

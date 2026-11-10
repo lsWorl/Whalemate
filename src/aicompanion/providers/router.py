@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from aicompanion.providers.credentials import CredentialStore
 from aicompanion.providers.models import (DEFAULT_MAX_OUTPUT_WHEN_THINKING, DEFAULT_THINKING, PURPOSE_KIND,
@@ -38,6 +38,22 @@ class SearchTarget:
     backend: str          # deepseek / wikipedia
     base_url: str = ''
     api_key: str = ''
+
+
+@dataclass(frozen=True)
+class TtsTarget:
+    """语音合成的冻结配置。cache_id 不含 Key，换音色、模型、参数或 Key 都会变，语音缓存据此区分。"""
+    provider_kind: str
+    base_url: str
+    api_key: str = field(repr=False)
+    model_id: str
+    voice: str
+    language: str
+    speed: float
+    volume: float
+    instructions: str
+    cache_id: str
+    label: str
 
 
 @dataclass(frozen=True)
@@ -138,6 +154,25 @@ class ModelRouter:
             if binding.backend == 'wikipedia':
                 return SearchTarget('wikipedia')
         return SearchTarget('wikipedia')
+
+    def tts_target(self, character_id: str) -> TtsTarget | None:
+        """这个角色的语音合成配置（音色可以按角色单独设置）。没配置或没有 Key 返回 None。"""
+        if self.offline: return None
+        config = self.store.load()
+        for binding in (config.binding('tts', character_id), config.binding('tts', None)):
+            if not (binding and binding.model in config.models and binding.voice): continue
+            model = config.models[binding.model]
+            provider = config.providers.get(model.provider)
+            if not provider: continue
+            key = self.credentials.get(provider.credential)
+            if not key: return None
+            revision = self.credentials.revision(provider.credential)
+            cache_id = '|'.join((provider.kind, provider.base_url, model.model_id, binding.voice, binding.language,
+                                 f'{binding.speed:g}', f'{binding.volume:g}', binding.instructions, revision))
+            return TtsTarget(provider.kind, provider.base_url.rstrip('/'), key, model.model_id, binding.voice, binding.language,
+                             binding.speed, binding.volume, binding.instructions, cache_id,
+                             f'{provider.label} · {model.model_id} · {binding.voice}')
+        return None
 
     def agent_target(self, character_id: str | None = None) -> AgentTarget | None:
         """办事用的 Harness 路由、模型和只含选定凭据的环境变量。没配置或没有 Key 返回 None。"""

@@ -65,7 +65,8 @@ class MainWindow(QMainWindow):
         self.call_active=False; self.call_epoch=0; self.asr_worker=None; self.memory_worker=None
         self.user_speaking=False; self.asr_failures=0
         self.last_interaction=monotonic(); self.first_history_id=None; self.mood='calm'
-        self.speech_client=SpeechClient(settings,translation_source=self._translation_client)
+        self.speech_client=SpeechClient(settings,translation_source=self._translation_client,
+                                        tts_source=lambda:self.controller.router.tts_target(self.controller.character.id))
         self.speech=SpeechOutput(self.speech_client,self); self.microphone=self.qt_microphone=Microphone(self)
         # P4：外放打断。回声门控的耦合系数跨会话保存；Chromium 回声消除后端按需创建
         self.web_microphone=None; self.voice_stats={'barge_ins':0,'cancelled':0,'latencies':[]}
@@ -830,8 +831,13 @@ class MainWindow(QMainWindow):
         self.speech.provider=self.database.get_setting('tts_provider',self.settings.tts_provider)
         self.speech.language=self.database.get_setting(f'speech_language:{character_id}',self.settings.speech_language)
         self.speech.role_style=self.database.get_setting(f'japanese_style:{character_id}','')
-        self.speech.voice=(self.database.get_setting(f'qwen_voice:{character_id}',self.settings.qwen_tts_voice)
-            if self.speech.provider=='qwen' else self.controller.character.voice or self.database.get_setting('tts_voice','tongtong'))
+        if self.speech.provider=='breeze':
+            # 音色来自“模型”页（可按角色设置）；cache_id 含音色、模型、参数和 Key 修订，换任何一项都不会命中旧缓存
+            target=self.controller.router.tts_target(character_id)
+            self.speech.voice=target.cache_id if target else ''
+        else:
+            self.speech.voice=(self.database.get_setting(f'qwen_voice:{character_id}',self.settings.qwen_tts_voice)
+                if self.speech.provider=='qwen' else self.controller.character.voice or self.database.get_setting('tts_voice','tongtong'))
         self.speech.style=self.database.get_setting(f'qwen_style:{character_id}','')
         mood=self.database.get_setting(f'qwen_mood:{character_id}','auto')
         self.speech.mood=self.database.load_emotion(character_id).mood if mood=='auto' else mood

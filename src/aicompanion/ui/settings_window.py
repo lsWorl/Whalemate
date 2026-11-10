@@ -45,7 +45,7 @@ class SettingsWindow(QDialog):
         self.tabs.addTab(role_scroll,'角色')
         voice=QWidget(); voice_form=QFormLayout(voice)
         self.provider=QComboBox()
-        for label,value in [('本地朗读','system'),('智谱语音','cloud'),('千问动漫声线','qwen')]: self.provider.addItem(label,value)
+        for label,value in [('本地朗读','system'),('智谱语音','cloud'),('千问动漫声线','qwen'),('Breeze Blue（在“模型”页选音色）','breeze')]: self.provider.addItem(label,value)
         self.provider.setCurrentIndex(max(0,self.provider.findData(self.database.get_setting('tts_provider',settings.tts_provider))))
         self.voice=QComboBox(); self.voice.setEditable(True)
         self._voice_provider_changed()
@@ -184,13 +184,18 @@ class SettingsWindow(QDialog):
                 self.voice.addItem('原创动漫女声（备选）',self.settings.qwen_original_tts_voice)
             self.voice.addItem('灵希：可爱甜美','longanlingxi')
             self.voice.addItem('风悦：自然亲切','longanfengyue')
+        elif self.provider.currentData()=='breeze':
+            # 音色在“模型”页的“语音合成”里按角色设置，这里只显示当前生效的
+            target=self.controller.router.tts_target(self.controller.character.id)
+            current=target.cache_id if target else ''
+            self.voice.addItem(target.label if target else '未配置：请到“模型”页设置音色',current)
         else:
             current=self.controller.character.voice or self.database.get_setting('tts_voice','tongtong')
             self.voice.addItem('彤彤','tongtong')
         index=self.voice.findData(current)
         if index>=0: self.voice.setCurrentIndex(index)
         else: self.voice.setEditText(current)
-        self.voice.setEnabled(self.provider.currentData()!='system')
+        self.voice.setEnabled(self.provider.currentData() not in ('system','breeze'))
 
     def _recognition_provider_changed(self,*args):
         provider=self.asr_provider.currentData()
@@ -246,7 +251,7 @@ class SettingsWindow(QDialog):
         name=self.name.text().strip()
         if not name or not self._validate_model_input(): return
         character=CharacterProfile(name,self.description.toPlainText(),self.style.toPlainText(),uuid4().hex,self.model.text().strip(),
-            '' if self.provider.currentData()=='qwen' else self.selected_voice())
+            '' if self.provider.currentData() in ('qwen','breeze') else self.selected_voice())
         self.database.add_character(character)
         if self.provider.currentData()=='qwen':
             self.database.set_setting(f'qwen_voice:{character.id}',self.selected_voice())
@@ -294,7 +299,7 @@ class SettingsWindow(QDialog):
         if not self.name.text().strip() or not self._validate_model_input(): return
         character=replace(self.controller.character,name=self.name.text().strip(),description=self.description.toPlainText(),
                           speaking_style=self.style.toPlainText(),model_path=self.model.text().strip(),
-                          voice=self.controller.character.voice if self.provider.currentData()=='qwen' else self.selected_voice())
+                          voice=self.controller.character.voice if self.provider.currentData() in ('qwen','breeze') else self.selected_voice())
         self.database.update_character(character); self.controller.character=character
         if self.provider.currentData()=='qwen':
             self.database.set_setting(f'qwen_voice:{character.id}',self.selected_voice())

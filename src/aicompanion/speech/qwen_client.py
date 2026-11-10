@@ -3,7 +3,6 @@ import base64
 import io
 import json
 import re
-import socket
 import wave
 from urllib.error import HTTPError, URLError
 from http.client import HTTPException
@@ -49,7 +48,7 @@ def voice_instruction(mood='calm', style='', language='zh'):
     return instruction[:1000]
 
 
-def validate_wav(raw):
+def validate_wav(raw, source='千问'):
     # 播放与口型共用单声道 PCM；拒绝错误 JSON、空音频和不受支持的编码。
     try:
         with wave.open(io.BytesIO(raw), 'rb') as wav:
@@ -70,7 +69,7 @@ def validate_wav(raw):
                     fixed.writeframes(pcm)
                 raw = normalized.getvalue()
     except (wave.Error, EOFError, ValueError) as error:
-        raise RuntimeError('千问未返回完整的单声道 16-bit WAV 音频。') from error
+        raise RuntimeError(f'{source}未返回完整的单声道 16-bit WAV 音频。') from error
     return raw
 
 
@@ -80,26 +79,11 @@ class QwenSpeechClient:
         self.opener = build_opener(SpeechRedirectHandler())
 
     def _read(self, request, cancellation, timeout=20):
-        cancellation.check()
-        abort = None
+        from aicompanion.net import ResponseTooLarge, fetch
         try:
-            with self.opener.open(request, timeout=timeout) as response:
-                sock = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
-                if sock:
-                    abort = lambda: sock.shutdown(socket.SHUT_RDWR)
-                    cancellation.register(abort)
-                chunks, size = [], 0
-                while True:
-                    cancellation.check()
-                    chunk = response.read(65536)
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    if size > MAX_AUDIO_BYTES:
-                        raise RuntimeError('千问音频超过大小限制，请缩短回复。')
-                    chunks.append(chunk)
-                cancellation.check()
-                return b''.join(chunks)
+            return fetch(request, cancellation, timeout, MAX_AUDIO_BYTES, opener=self.opener)
+        except ResponseTooLarge as error:
+            raise RuntimeError('千问音频超过大小限制，请缩短回复。') from error
         except HTTPError as error:
             # 不输出请求头、签名下载地址或完整响应，避免诊断日志泄露凭据。
             try:
@@ -111,9 +95,6 @@ class QwenSpeechClient:
         except (URLError, OSError, HTTPException) as error:
             cancellation.check()
             raise RuntimeError('千问语音连接中断或超时，请稍后重试。') from error
-        finally:
-            if abort:
-                cancellation.unregister(abort)
 
     def _post(self, path, payload, cancellation, timeout=20):
         if not self.settings.qwen_api_key:
