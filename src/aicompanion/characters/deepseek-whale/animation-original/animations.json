@@ -1,0 +1,177 @@
+{
+  "format": "AICompanionAnimationPack",
+  "version": 1,
+  "size": [
+    384,
+    384
+  ],
+  "poster": "poster.png",
+  "actions": {
+    "idle": {
+      "image": "idle.webp",
+      "name": "待机呼吸",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 12,
+      "frameCount": 96,
+      "fps": 24,
+      "facing": "right"
+    },
+    "talking": {
+      "image": "talking.webp",
+      "name": "自然说话",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 6,
+      "frameCount": 48,
+      "fps": 24,
+      "facing": "right"
+    },
+    "thinking": {
+      "image": "thinking.webp",
+      "name": "托腮思考",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 12,
+      "frameCount": 96,
+      "fps": 24,
+      "facing": "right"
+    },
+    "working": {
+      "image": "working.webp",
+      "name": "敲键盘",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "wait": {
+      "image": "wait.webp",
+      "name": "等待确认",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "celebrate": {
+      "image": "celebrate.webp",
+      "name": "举手庆祝",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "sleepy": {
+      "image": "sleepy.webp",
+      "name": "抱鲸犯困",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "error": {
+      "image": "error.webp",
+      "name": "出错发晕",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "grabbed": {
+      "image": "grabbed.webp",
+      "name": "被拎起来",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "poked": {
+      "image": "poked.webp",
+      "name": "气鼓鼓",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "patted": {
+      "image": "patted.webp",
+      "name": "开心眯眼",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "walking": {
+      "image": "walking.webp",
+      "name": "轻步走动",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "wave": {
+      "image": "wave.webp",
+      "name": "举手回应",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    }
+  },
+  "poses": {
+    "idle": "idle",
+    "talking": "talking",
+    "thinking": "thinking",
+    "working": "working",
+    "wait": "wait",
+    "celebrate": "celebrate",
+    "sleepy": "sleepy",
+    "error": "error",
+    "grabbed": "grabbed",
+    "poked": "poked",
+    "patted": "patted",
+    "walking": "walking",
+    "wave": "wave",
+    "falling": "grabbed",
+    "dizzy": "error"
+  },
+  "head": [
+    0.25,
+    0.16,
+    0.5,
+    0.42
+  ]
+}

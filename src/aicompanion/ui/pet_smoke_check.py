@@ -9,11 +9,12 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication
 
 from aicompanion.ui.sprite_view import SpriteAvatar
+from aicompanion.ui.animation_view import AnimationAvatar
 try:
     from aicompanion.body.rig_view import RigAvatar
 except ImportError:  # pragma: no cover
     RigAvatar = SpriteAvatar
-NATIVE = (SpriteAvatar, RigAvatar)
+NATIVE = (SpriteAvatar, RigAvatar, AnimationAvatar)
 
 
 def schedule_pet_smoke_check(window, database, output):
@@ -28,6 +29,9 @@ def schedule_pet_smoke_check(window, database, output):
     pet.show_user = lambda text: (state.update(user_bubbles=state['user_bubbles']+1), original_user(text))[1]
     pet.show_activity = lambda kind='thinking': (state['activities'].append(kind), original_activity(kind))[1]
     rig = isinstance(pet.view, RigAvatar)
+    animation = isinstance(pet.view, AnimationAvatar)
+    animation_frames=[]
+    if animation: pet.view.frameAdvanced.connect(animation_frames.append)
     state['renderer'] = type(pet.view).__name__
     if rig:
         # 骨骼渲染要等 WebEngine 页面和贴图加载；时间线整体后移。
@@ -51,7 +55,14 @@ def schedule_pet_smoke_check(window, database, output):
         image = pet.grab().toImage()
         state['corner_alpha'] = image.pixelColor(1, 1).alpha()
         state['center_alpha'] = image.pixelColor(image.width()//2, int(image.height()*.55)).alpha()
-        if rig:
+        if animation:
+            # 动画透明区域随帧改变，不裁剪窗口；输入穿透使用当前帧 alpha。
+            state['mask_active']=pet.mask().isEmpty()
+            state['mask_excludes_corner']=not pet.view.hit(pet.view.rect().topLeft())
+            state['animation_body_hit']=pet.view.hit(pet.view.rect().center())
+            state['animation_background_decode']=pet.view.decoder.thread() is not QApplication.instance().thread()
+            state['animation_frame_count']=len(set(animation_frames))
+        elif rig:
             # 骨骼形象不裁剪窗口；穿透靠光标探测。直接问网页：角落不命中、身体命中。
             state['mask_active'] = pet.mask().isEmpty()
             pet.view.page().runJavaScript('JSON.stringify(rigApi.gpu())', lambda raw: state.update(webgl=raw))
@@ -112,6 +123,14 @@ def schedule_pet_smoke_check(window, database, output):
         pet.summon(); state['summoned'] = pet.isVisible()
         pet.save_geometry(); state['geometry_saved'] = bool(database.get_setting('desktop_pet_geometry'))
     later(17500, scale_and_hide)
+    def appearance():
+        if not animation: return
+        before=window.controller.character.id
+        pet.set_appearance('sprites')
+        state['animation_switch_to_original']=isinstance(pet.view,SpriteAvatar)
+        pet.set_appearance('spritesheet')
+        state['animation_switch_back']=isinstance(pet.view,AnimationAvatar) and window.controller.character.id==before
+    later(18000,appearance)
 
     def switch_role():
         window._switch_to('emilia')
@@ -325,6 +344,11 @@ def schedule_pet_smoke_check(window, database, output):
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
+        if animation:
+            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back'])
+            if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True
+            required.append('animation_advances')
+            state['animation_advances']=not state.get('failed_animation_frames',False)
 
         required.append('qq_media_settings_ready')
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])

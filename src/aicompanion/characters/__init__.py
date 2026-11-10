@@ -138,16 +138,20 @@ def load_sprite_manifest(path: Path) -> dict:
     return data
 
 
-def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '') -> tuple[str, Path | str | None]:
+def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '', *, animation_enabled: bool = True) -> tuple[str, Path | str | None]:
     """决定角色用哪种方式显示，返回 (方式, 资源)。
 
-    方式：'sprites'（原生立绘）、'mesh'（艾米莉娅网格动画）、'png'（静态立绘预览）、
+    方式：'spritesheet'（透明逐帧动画）、'sprites'（原生立绘）、'mesh'（艾米莉娅网格动画）、'png'（静态立绘预览）、
     'cubism'（用户导入的 Live2D 模型）、'placeholder'（无可用形象）。
     """
     if avatar_mode == 'live2d' and model_path: return 'cubism', model_path
     if avatar_mode == 'animated-illustration': return 'mesh', LIVE2D_ASSETS/'Emilia/emilia.animation.json'
     if avatar_mode == 'illustration': return 'png', LIVE2D_ASSETS/'Emilia/emilia-fanart.png'
-    if pack and pack.ready and pack.renderer_kind == 'sprites': return 'sprites', pack.sprite_manifest_path()
+    if pack and pack.ready and pack.renderer_kind == 'sprites':
+        animation = pack.renderer.get('animation')
+        if animation and animation_enabled:
+            return 'spritesheet', pack.root/_safe_name(animation, '动画清单')
+        return 'sprites', pack.sprite_manifest_path()
     if pack and pack.ready and pack.renderer_kind == 'webengine': return 'mesh', pack.webengine_asset()
     if model_path: return 'cubism', model_path
     return 'placeholder', None

@@ -75,8 +75,8 @@ class RendererChoiceTests(unittest.TestCase):
     def test_choices(self):
         from aicompanion.characters import choose_renderer
         whale, emilia = load_pack(PACKS_DIR/'deepseek-whale'), load_pack(PACKS_DIR/'emilia')
-        self.assertEqual(choose_renderer(whale, None)[0], 'sprites')
-        self.assertEqual(choose_renderer(whale, 'live2d', '')[0], 'sprites')      # 旧默认值不再指向 Haru
+        self.assertEqual(choose_renderer(whale, None)[0], 'spritesheet')
+        self.assertEqual(choose_renderer(whale, 'live2d', '')[0], 'spritesheet')      # 旧默认值不再指向 Haru
         self.assertEqual(choose_renderer(whale, 'live2d', 'x.model3.json'), ('cubism', 'x.model3.json'))
         kind, path = choose_renderer(emilia, None)
         self.assertEqual(kind, 'mesh'); self.assertTrue(path.is_file())
