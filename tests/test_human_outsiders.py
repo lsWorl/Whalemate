@@ -13,8 +13,11 @@ NEVER = lambda: 0.99      # 每个断点都合
 
 
 class Search:
-    def __init__(self, hits=()): self.hits = list(hits); self.queries = []; self.timeout = 20
-    def search(self, query, count=5): self.queries.append(query); return self.hits
+    """假搜索：记下查了什么；不联网。"""
+    def __init__(self, hits=(), kind='deepseek', page=''): self.hits = list(hits); self.queries = []; self.fetched = []; self.timeout = 20; self.kind = kind; self.page = page
+    def search(self, query, count=5): self.queries.append(query); return list(self.hits)
+    def backend(self): return self.kind
+    def fetch(self, url): self.fetched.append(url); return self.page
 
 
 class FavorCueTests(unittest.TestCase):
@@ -36,24 +39,32 @@ class FavorCueTests(unittest.TestCase):
 class FavorBehaviourTests(BridgeFixture):
     def setUp(self):
         super().setUp(); self.db.set_setting('community_web', True)
-        self.web = Search([Hit('急急国王', 'https://example.org/jj', '网络用语，形容一个人非常着急。\n出自某游戏主播。', '某百科')])
-        self.service.web_search = self.web
+        self.web = Search([Hit('急急国王', 'https://example.org/jj', '急急国王是网络用语，形容一个人非常着急，出自某游戏主播的直播。', '某百科')])
+        self.service.web_search = self.web; self.service.lookup_background = False
 
     def guy(self): return self.rel.resolve(PersonRef('qq', '90000', '20002', 'tangle'), CID)
 
-    def say(self, text, reply='嗯', sender='20002', group='30003', name='tangle'):
-        self.model.replies.append(reply)
+    def say(self, text, *replies, sender='20002', group='30003', name='tangle'):
+        self.model.replies.extend(replies or ('嗯',))
         return self.service.handle(dict(platform='qq', sender_id=sender, sender_name=name, group_id=group, text=text, called=True,
                                         expression_version=1, bot_account_id='90000'))
 
     def test_outsider_asking_her_to_look_something_up_gets_a_human_answer(self):
-        result = self.say('帮我查下急急国王是什么梗', '好像是说人很急的意思')
-        prompt = self.model.prompts[-1]
-        self.assertIn('你不是他的助手，也不是搜索引擎', prompt); self.assertIn('别用助手腔', prompt)
-        self.assertIn('你顺手搜了一下"急急国王"', prompt); self.assertIn('形容一个人非常着急', prompt)
-        self.assertNotIn('https://example.org/jj', prompt)                                     # 链接不给她，免得贴出来
+        """她愿意帮：自己决定去查（<mind lookup>），查完用自己的话说。"""
+        learned = '{"meaning":"形容人很着急","tone":"调侃","circle":"游戏","usage":"调侃催促的人","source":"1","change":"same"}'
+        result = self.say('帮我查下急急国王是什么梗', '<mind lookup="急急国王"/>', learned, '好像是说人很急的意思')
+        first, second = self.model.prompts[0], self.model.prompts[-1]
+        self.assertIn('你不是他的助手，也不是搜索引擎', first); self.assertIn('别用助手腔', first); self.assertIn('【遇到不懂的梗】', first)
+        self.assertNotIn('你顺手搜了一下', first)                                              # 她没决定查之前不替她搜
+        self.assertIn('你顺手搜了一下"急急国王"', second); self.assertIn('形容一个人非常着急', second)
+        self.assertNotIn('https://example.org/jj', second)                                     # 链接不给她，免得贴出来
         self.assertEqual(self.web.queries, ['急急国王 梗 意思']); self.assertEqual(self.web.timeout, 8)
         self.assertEqual(result['reply'], '好像是说人很急的意思')
+
+    def test_she_can_refuse_without_any_search(self):
+        self.rel.adjust(CID, self.guy(), affinity=15)
+        result = self.say('帮我查下急急国王是什么梗', '自己查')
+        self.assertIn('没好感就不帮', self.model.prompts[-1]); self.assertEqual(self.web.queries, []); self.assertEqual(result['reply'], '自己查')
 
     def test_vague_request_has_nothing_to_search_and_she_may_ask_which(self):
         self.say('去帮我查下这是什么梗', '哪个')
@@ -65,24 +76,6 @@ class FavorBehaviourTests(BridgeFixture):
         self.assertNotIn('你不是他的助手', self.model.prompts[-1])
         self.say('帮我查下急急国王是什么梗', '好嘞', sender='10001', group='', name='爹')      # 和爹私聊
         self.assertNotIn('你不是他的助手', self.model.prompts[-1]); self.assertEqual(self.web.queries, [])
-
-    def test_she_does_not_search_for_people_she_dislikes_or_is_angry_with(self):
-        self.rel.adjust(CID, self.guy(), affinity=15)
-        self.say('帮我查下急急国王是什么梗', '自己查')
-        self.assertIn('没好感就不帮', self.model.prompts[-1]); self.assertEqual(self.web.queries, [])
-
-    def test_known_terms_switch_and_private_things_are_not_searched(self):
-        Lexicon(self.db).learn('绷不住', '忍不住笑', origin='web', source_name='百科', source_url='https://example.org/a')
-        self.say('绷不住是什么梗'); self.assertEqual(self.web.queries, [])                      # 词库里有，不用搜
-        self.say('13812345678是什么意思'); self.say('tangle是什么梗'); self.assertEqual(self.web.queries, [])   # 号码、人名不外传
-        self.db.set_setting('community_web', False)
-        self.say('帮我查下急急国王是什么梗'); self.assertEqual(self.web.queries, [])            # 联网关了
-        self.assertIn('你不是他的助手', self.model.prompts[-1])
-
-    def test_nothing_found_means_say_so_not_make_it_up(self):
-        self.web.hits = []
-        self.say('帮我查下急急国王是什么梗', '没听过')
-        self.assertIn('没搜到什么靠谱的', self.model.prompts[-1]); self.assertIn('别编', self.model.prompts[-1])
 
     def test_ordinary_chat_gets_no_favor_block(self):
         self.say('今天吃啥'); self.assertNotIn('你不是他的助手', self.model.prompts[-1])

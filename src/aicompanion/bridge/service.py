@@ -278,32 +278,33 @@ class BridgeService:
             return ''
 
     web_search = None       # 测试注入假搜索；平时按需用聊天接口的密钥建一个
+    lookup_background = True
 
     def favor_prompt(self, mode, person, text: str, name: str = '') -> str:
-        """外人让她帮忙办事（"去帮我查下这是什么梗"）：给大脑"像真人那样回"的说明；问的是说得出名字、词库里没有的梗时顺手搜一下。
-        爹不走这里（爹让她办事照常）；没好感或还在气头上的人，她不会替他搜。"""
+        """外人让她帮忙办事（"去帮我查下这是什么梗"）：给大脑"像真人那样回"的说明。爹不走这里（爹让她办事照常）。
+        要不要替他查由她自己决定（T20 的 <mind lookup>）。"""
         try:
             from aicompanion.bridge import favor
             if mode['owner'] or not favor.wants_favor(text): return ''
             out = favor.RULE
-            term = favor.asked_term(text)
-            if not term:
-                return out+(favor.WHICH if favor.MEME_ASK.search(text) else '')
-            from aicompanion.community.learner import local_scope
-            from aicompanion.community.lexicon import Lexicon
-            from aicompanion.community.search import WebSearch, searchable
-            rel = self.controller.relationships; cid = self.controller.character.id
-            profile = rel.profile(cid, person) if person else None
-            if profile and (profile['affinity'] < 25 or rel.upset(cid, person)): return out
-            if any(hit['term'] == term for hit in Lexicon(self.database).match(term, local_scope(mode['channel']))): return out   # 已经懂的词，提示里本来就带着
-            if not self.database.get_setting('community_web', True): return out
-            # 他明说要查的词：不要求"至少两个人用过"，但号码、链接、人名（他的昵称、她的名字）照样不拿去搜
-            if not searchable(term, speakers=2, names=(name, self.controller.character.name)+self.HER_NAMES): return out
-            web = self.web_search or WebSearch(self.database, self.controller.llm_client)
-            web.timeout = 8
-            return out+favor.looked_up(term, web.search(term+' 梗 意思', 3))
+            # T20：查不查由她自己定（<mind lookup>，见 community/lookup.py），这里不再替她先搜
+            if favor.MEME_ASK.search(text) and not favor.asked_term(text): out += favor.WHICH
+            return out
         except Exception:
             return ''
+
+    def look_up(self, term: str, mode, speaker: str, name: str, text: str) -> str:
+        """替她搜一次，返回只给她自己看的说明；有结果就在后台记进词库。出错当作没搜到。"""
+        from aicompanion.community.lookup import Lookup
+        try:
+            look = Lookup(self.database, self.controller.llm_client, web=self.web_search)
+            look.background = self.lookup_background
+            if not look.allowed(term, (name, self.controller.character.name)+self.HER_NAMES): return look.note(term, [], 'private')
+            hits = look.find(term)
+            look.remember(term, hits, mode['channel'], speaker, text)
+            return look.note(term, hits)
+        except Exception:
+            return Lookup.note(term, [])
 
     def community_topics(self, channel: str, text: str) -> str:
         """群里插话时：和这个群的兴趣 / 共同记忆 / 刚才在聊的有关的新鲜社区话题（T12 热词热帖 + T18 最近热梗），最多 2 条。"""
@@ -711,7 +712,7 @@ class BridgeService:
         finally:
             self.lock.release()
 
-    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None,may_skip=False,person=None):
+    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None,may_skip=False,person=None,looked=''):
         """统一大脑生成；这里只提供 QQ 场景和最终静默过滤，不再分类随机选图。"""
         from aicompanion.bridge.social import NATURAL_PROMPT
         from aicompanion.bridge.community import prompt as community_prompt,maybe_refresh
@@ -730,7 +731,10 @@ class BridgeService:
         version=type(request.get('expression_version')) is int and request['expression_version']==1
         self.social.cid=character.id;learned=self.social.profile(mode['channel'],stable)
         background=community_prompt(self.database,text,group)
-        situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)
+        asked=situation   # 查完梗重新回时，从同一份场合说明出发
+        from aicompanion.community import lookup as meme_lookup
+        can_look=not looked and bool(self.database.get_setting('community_web',True))
+        situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)+(meme_lookup.RULE if can_look else looked)
         situation+=card_prompt(self.database,character.id,text,owner=mode['owner'],group=group)+background
         maybe_refresh(self.database,group)   # 原有调度，不增加新的社区任务
         context=ExpressionContext(turn,character.id,scope,mode['channel'],mode['scene'],
@@ -748,9 +752,17 @@ class BridgeService:
                 situation=situation,source=platform,offer_tasks=False,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
                 expression_context=context,on_expression_event=event,person=person):pass
         except Exception:
-            return {'reply':'','silent':True,'reason':'error'}
+            failed=True   # 只写了 <mind lookup/>、没有正文时生成会报"没有有效内容"：先看是不是要查梗
+        else:failed=False
         if self.closed or controller.character.id!=character.id:
             controller.expression.cancel(turn,character.id);return {'reply':'','silent':True,'reason':'closed'}
+        # T20：她这一轮只写了 <mind lookup="词"/>——想查一个不懂的梗。搜一次，把结果只给她自己看，同一轮重新回一次（只查一次）
+        term=meme_lookup.tidy((getattr(controller,'last_mind',('',{}))[1] or {}).get('lookup','')) if getattr(controller,'last_mind',('',))[0]==turn else ''
+        if term and can_look:
+            self.database.drop_reply(turn,character.id);controller.expression.cancel(turn,character.id)   # 第一遍不算她说过的话
+            return self._reply(controller,character,mode,asked,platform,purpose,message_id,text,chime=chime,request=request,may_skip=may_skip,person=person,
+                               looked=self.look_up(term,mode,stable,str(request.get('sender_name') or ''),text))
+        if failed:return {'reply':'','silent':True,'reason':'error'}
         expression=delivered[-1];attachments=expression.attachments
         wire=expression.wire();wire['attachments']=[]
         for attachment in attachments:
