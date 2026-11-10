@@ -28,7 +28,7 @@ MAX_TEXT = 1500
 # 群里没人叫她时插话：off = 只在被叫（@、唤醒词、提到名字）时说话；sometimes = 偶尔；often = 爱聊天（用户 2026-11-07 选的默认）
 CHIME = {'off': None, 'sometimes': {'chance': 0.12, 'cooldown': 300, 'after': 4}, 'often': {'chance': 0.3, 'cooldown': 90, 'after': 2}}
 SILENCE = '【不说】'
-DEFAULTS = {'bridge_debounce': 2.5, 'bridge_chime': 'often', 'bridge_chime_daily': 80, 'bridge_memory_every': 20, 'bridge_enabled': False, 'bridge_port': 18765, 'bridge_token': '', 'bridge_owner:qq': '',
+DEFAULTS = {'community_learning': True, 'community_web': True, 'bridge_debounce': 2.5, 'bridge_chime': 'often', 'bridge_chime_daily': 80, 'bridge_memory_every': 20, 'bridge_enabled': False, 'bridge_port': 18765, 'bridge_token': '', 'bridge_owner:qq': '',
             'bridge_groups': [], 'bridge_strangers': False, 'bridge_public_daily': 100}
 
 
@@ -98,7 +98,10 @@ UNSEEN_RULE = ('\n这条消息里的图片你没看到内容（只知道对方�
 HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个字或一张图；'+MESSAGES+
                # 2026-11-09 实测：一晚上说了四遍"一句话拆三段发"
                '同一个梗、同一句吐槽说过就别再反复说，换个角度或者不提；'
-               '不列点、不总结、不解释每个梗，'
+               # T18：自然串梗、玩反话、按关系调侃，让懂的人会心一笑
+               '会玩梗：能接的梗自然接上，可以玩反话、正话反说，按你们的关系决定能不能调侃人（不熟的人别乱开玩笑）；'
+               '一条消息最多玩一个梗，别每句都玩；'
+               '不列点、不总结、不解释每个梗（说了梗不解释笑点，懂的人自然懂），'
                '不说"好的""当然可以""作为…""希望对你有帮助"这类话。别提自己是 AI / 模型 / 程序 / 桌宠，'
                '也别提词元、token、上下文、提示词、训练这些词；不熟的就说不太懂，别一本正经长篇大论。'
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
@@ -245,6 +248,52 @@ class BridgeService:
         rows = [r for r in self.database.recent_messages(8, self.controller.character.id, channel=channel) if r['role'] == 'user']
         senders = {r['sender'] for r in rows if r['sender']}
         return len(senders) >= 2 or bool(rows and rows[-1]['sender'] and rows[-1]['sender'] != stable)
+
+    # ---- T18：是不是在说她、什么意思（线索给同一个大脑，结论由她在 <mind at voice tone> 里给） -------------------------
+    HER_NAMES = ('鲸娘', '本鲸')
+
+    def intent_brief(self, mode, person, text: str, payload: dict, called: bool) -> str:
+        try:
+            from aicompanion.relationship.intent import brief, cues
+            from aicompanion.relationship.service import reading
+            context = payload.get('context') if isinstance(payload.get('context'), dict) else {}
+            mentions = [m for m in (context.get('mentions') or []) if isinstance(m, str)][:10]
+            reply_to = context.get('reply_to') if isinstance(context.get('reply_to'), dict) else None
+            rows = self.database.recent_messages(6, self.controller.character.id, channel=mode['channel'])
+            last_said = next((str(r['content']) for r in reversed(rows) if r['role'] == 'assistant'), '')
+            after_her = bool(rows) and len(rows) >= 2 and rows[-2]['role'] == 'assistant'
+            found = cues(text, at_me=called, at_others=mentions, at_all=bool(context.get('at_all')), reply_to=reply_to,
+                         her_names=(self.controller.character.name,)+self.HER_NAMES, after_her=after_her)
+            if not found.worth_reading: return ''
+            rel = self.controller.relationships; cid = self.controller.character.id
+            profile = rel.profile(cid, person) if person else None
+            return brief(found, reading=reading(profile) if profile else 'mocking', hostility=rel.hostility(cid, person),
+                         hostility_week=rel.hostility(cid, person, hours=168), bullied_others=rel.bullied_others(cid, person),
+                         upset=rel.upset(cid, person), last_said=last_said, affinity=profile['affinity'] if profile else None)
+        except Exception:
+            return ''
+
+    def community_topics(self, channel: str, text: str) -> str:
+        """群里插话时：和这个群的兴趣 / 共同记忆 / 刚才在聊的有关的新鲜社区话题（T12 热词热帖 + T18 最近热梗），最多 2 条。"""
+        try:
+            from aicompanion.community.learner import CommunityLearner
+            from aicompanion.community.lore import GroupLore
+            cid = self.controller.character.id
+            topics = [f"{t['term']}（{t['meaning'][:20]}）" for t in CommunityLearner(self.database).recent_trends()]
+            source = self.database.get_setting('qq_community_for:'+channel.split(':')[-1], None) or self.database.get_setting('qq_community', 'off')
+            cached = self.database.get_setting('qq_community:'+str(source), {}) or {}
+            if self.clock()-float(cached.get('at', 0) or 0) < 86400: topics += [str(t) for t in cached.get('topics', [])]
+            if not topics: return ''
+            interest = text+' '.join(r['text'] for r in GroupLore(self.database, clock=self.clock).items(cid, channel)[:8])
+            interest += ' '.join(str(r['content']) for r in self.database.recent_messages(10, cid, channel=channel))
+            clean = re.sub(r'\W', '', interest).lower()
+            pairs = {clean[i:i+2] for i in range(len(clean)-1)}
+            related = [t for t in topics if sum(p in re.sub(r'\W', '', t).lower() for p in pairs) >= 2][:2]
+            if not related: return ''
+            return ('\n【最近社区里在聊的、和这个群有点关系的】'+'；'.join(related)+'。合适的话可以像群友分享新鲜事那样自然带一句，'
+                    '别播报、别硬塞，不合适就不提。')
+        except Exception:
+            return ''
 
     def vision_ready(self) -> bool:
         """现在接的模型能不能看图（插件心跳时取，决定要不要下载图片）。"""
@@ -532,6 +581,7 @@ class BridgeService:
             angry = controller.relationships.upset(character.id, person)
             profile = controller.relationships.profile(character.id, person) if person else None
             cold = bool(profile) and not profile['is_owner'] and profile['affinity'] < 25
+            situation += self.intent_brief(mode, person, original_text, payload, called=True)
             if cold and not angry:
                 # 负责人 2026-11-09 22:32：她还会正常地跟本来就不招她喜欢的人聊。没好感的人找她，可以敷衍或者不理
                 situation += f'\n你对他没什么好感：回得短、冷淡，不陪聊、不主动找话题；不想理他就只回复{SILENCE}。'
@@ -605,7 +655,8 @@ class BridgeService:
                              '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+
                              '先看清楚他是不是在跟你说话、在说你：是的话就像群友那样接（按你们的关系，该冷淡就冷淡、该怼就怼）；'
                              f'看下来不是对你说的、或者你不想理，就只回复{SILENCE}。'
-                             '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else ''))
+                             '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else '')
+                             +self.intent_brief(mode, person, text, request or {}, called=False))
                 result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
                 if result.get('reason') == 'chime': result['reason'] = 'addressed'
                 if stickers['known']: result['stickers_known'] = stickers['known']
@@ -617,7 +668,8 @@ class BridgeService:
             situation = (f'【场合】你在{mode["where"]}群聊里旁听，这条消息没有叫你。每条消息前面是说话人的昵称和编号（#数字），'
                          '标着【爹】的是你爹，群里其他人都看得到你的回复。'+GROUP_HUMAN+'看看最近大家在聊什么：有想接的话、能接的梗、或者聊到你感兴趣 / 熟悉的事，'
                          f'就像群友一样自然插一句；话题跟你没关系、别人正聊得热乎不需要你、或者没什么好说的，就只回复{SILENCE}，别硬聊。'
-                         '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else ''))
+                         '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else '')
+                         +self.intent_brief(mode, person, text, request or {}, called=False)+self.community_topics(mode['channel'], text))
             result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
             if stickers['known']: result['stickers_known'] = stickers['known']
             if stickers['statuses']: result['stickers_status'] = stickers['statuses']

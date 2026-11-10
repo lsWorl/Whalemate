@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -152,4 +152,27 @@ CREATE TABLE IF NOT EXISTS person_notes (
  first_at REAL NOT NULL, last_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_person_notes_person ON person_notes(character_id, person_id);
+-- T18 社区知识：词 / 梗、词义（Graphiti 式双时间线：valid_from / valid_to 是词义有效期，learned_at / expired_at 是她知道 / 不再采用的时间）
+CREATE TABLE IF NOT EXISTS lexicon_terms (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, term TEXT NOT NULL UNIQUE, circle TEXT NOT NULL DEFAULT '', is_jargon INTEGER NOT NULL DEFAULT 1,
+ inferred_at_count INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lexicon_senses (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, term_id INTEGER NOT NULL REFERENCES lexicon_terms(id) ON DELETE CASCADE,
+ meaning TEXT NOT NULL, usage TEXT NOT NULL DEFAULT '', tone TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '',
+ origin TEXT NOT NULL, source_name TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '', confidence REAL NOT NULL DEFAULT 0.5,
+ valid_from REAL NOT NULL, valid_to REAL, learned_at REAL NOT NULL, expired_at REAL, superseded_by INTEGER, reinforced INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_lexicon_senses_term ON lexicon_senses(term_id, valid_to);
+CREATE TABLE IF NOT EXISTS lexicon_sightings (
+ term_id INTEGER NOT NULL REFERENCES lexicon_terms(id) ON DELETE CASCADE, channel TEXT NOT NULL, speakers TEXT NOT NULL DEFAULT '[]',
+ count INTEGER NOT NULL DEFAULT 0, contexts TEXT NOT NULL DEFAULT '[]', first_at REAL NOT NULL, last_at REAL NOT NULL,
+ PRIMARY KEY(term_id, channel)
+);
+-- T18 群里的共同经历 / 内部梗 / 叫法（跟群走）
+CREATE TABLE IF NOT EXISTS group_lore (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, channel TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL,
+ weight REAL NOT NULL, mentions INTEGER NOT NULL DEFAULT 1, first_at REAL NOT NULL, last_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_group_lore_channel ON group_lore(character_id, channel);
 """

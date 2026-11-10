@@ -9,6 +9,7 @@ import re
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 from aicompanion.bridge.service import SILENCE, BridgeService
 from aicompanion.controllers.chat_controller import ChatController
@@ -36,6 +37,13 @@ class Base(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.db = Database(Path(self.temp.name)/'synthetic.sqlite3'); self.db.initialize()
         self.character = replace(DEFAULT_CHARACTER, id=CID, name='鲸娘'); self.db.add_character(self.character)
         self.clock = Clock(); self.rel = RelationshipService(self.db, clock=self.clock, today=self.clock.today)
+        # Codex 审查 906cd6b P2：每批关系分析都会检查社区周更，而联网默认开着。测试里默认关掉联网（社区测试自己再打开），
+        # 并把真正的联网出口换成"一碰就失败"：只有显式注入假 opener 的测试能"搜到"东西，以后默认值再变也不会访问真实百科。
+        self.db.set_setting('community_web', False)
+        def offline(*_a, **_k):
+            def refuse(*_x, **_y): raise AssertionError('单元测试不允许访问外网')
+            return type('Offline', (), {'open': staticmethod(refuse)})()
+        guard = mock.patch('aicompanion.community.search.build_opener', offline); guard.start(); self.addCleanup(guard.stop)
     def tearDown(self): self.temp.cleanup()
     def person(self, user='111', bot='90000', name='小明'): return self.rel.resolve(PersonRef('qq', bot, user, name), CID)
     def score(self, pid): p = self.rel.profile(CID, pid); return (round(p['affinity'], 2), round(p['familiarity'], 2), round(p['trust'], 2))

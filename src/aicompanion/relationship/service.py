@@ -50,6 +50,10 @@ EVENTS = {
     # 中性：只让她更了解对方一点
     'chat': (0.0, 0.2, 0.0), 'question': (0.0, 0.2, 0.0), 'disagreement': (0.0, 0.3, 0.0),
     'news': (0.0, 0.2, 0.0), 'emotion': (0.0, 0.5, 0.0),
+    # T18：转述 / 引用别人骂人的话，不等于他在骂她——只记一笔，不改分
+    'report': (0.0, 0.2, 0.0),
+    # T18：在群里攻击别人（不是冲她）。她看在眼里，对他的印象和信任略降
+    'third_party_attack': (-0.5, 0.0, -0.5),
     # 对方请她做事（她自己的 <mind/> 标记或分析得出）：只用来统计"多常把事丢给她"，不改分
     'request': (0.0, 0.0, 0.0),
 }
@@ -276,6 +280,24 @@ class RelationshipService:
                             (character_id, person_id, self.clock()-days*86400)).fetchone()
         return float(row[0])
 
+    HOSTILE = ('quarrel', 'insult', 'harassment', 'attack', 'boundary_violation', 'deception')
+
+    def hostility(self, character_id: str, person_id: int | None, hours=24) -> int:
+        """这段时间里他冲她来了几次（计了分的负面事件，不含转述和攻击别人）。用来判断"是不是在持续针对她"。"""
+        if not person_id: return 0
+        with self.db.transaction() as c:
+            row = c.execute(f"SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND applied=1 AND created_at>=? "
+                            f"AND kind IN ({','.join('?'*len(self.HOSTILE))})",
+                            (character_id, person_id, self.clock()-hours*3600, *self.HOSTILE)).fetchone()
+        return int(row[0])
+
+    def bullied_others(self, character_id: str, person_id: int | None, hours=72) -> int:
+        if not person_id: return 0
+        with self.db.transaction() as c:
+            row = c.execute("SELECT COUNT(*) FROM relationship_events WHERE character_id=? AND person_id=? AND kind='third_party_attack' AND created_at>=?",
+                            (character_id, person_id, self.clock()-hours*3600)).fetchone()
+        return int(row[0])
+
     def upset(self, character_id: str, person_id: int | None, hours=6) -> bool:
         """她现在还在生他的气吗：最近几小时里他让她不爽过（有扣分的事件），而且到现在净变化还是负的（道歉、哄好了就不算）。
         不按"扣了几分"判断：分数越低越难再扣，陌生人被狠狠嘲讽一次也只掉一两分，但她当下确实是生气的。"""
@@ -432,13 +454,16 @@ class RelationshipService:
             lines.append(f"你对他：{level(p['affinity'], AFFINITY_WORDS)}；{level(p['trust'], TRUST_WORDS)}。")
         recent = self.trend(character_id, person_id, days=0.25)   # 最近 6 小时
         trend = self.trend(character_id, person_id)
+        hostile = self.hostility(character_id, person_id)
+        if hostile >= 3: lines.append(f'他今天已经第 {hostile} 次冲你来了，明显是在针对你。')
         if self.upset(character_id, person_id): lines.append('你们刚才闹得不太愉快，你现在还有点气：不用马上装没事，他好好道歉或者过一阵你可以慢慢消气。')
         elif recent >= 2: lines.append('刚才和他聊得挺开心。')
         elif trend >= 3: lines.append('最近对他的印象在变好。')
         elif trend <= -3: lines.append('最近他让你有点不舒服。')
         lines.append(READING_TEXT[reading(p)])
         if not p['is_owner'] and p['affinity'] < 25:
-            lines.append('你对他没什么好感：回得短、冷淡，不主动找话题、不陪聊、不帮忙；他找你说话可以敷衍一句，或者干脆不理。')
+            lines.append('你对他没什么好感：回得短、冷淡，不主动找话题、不陪聊、不帮忙；他找你说话可以敷衍一句，或者干脆不理；'
+                         '他要是骂你、阴阳你，就阴阳回去。')
         elif not p['is_owner'] and p['affinity'] < 40 and p['familiarity'] < 30:
             lines.append('你跟他不熟也谈不上喜欢：客气但不热络，用不着陪他聊太多。')
         known = self.notes.prompt(character_id, person_id)
@@ -468,6 +493,8 @@ AUTONOMY = ('\n【你自己的意愿】你不是有求必应的工具。对方�
             # 2026-11-09 实测：被说"笑你蠢啊"还回"蠢就蠢呗""行吧让你笑到了"，一两句就让步收场
             '对方明知你不高兴还继续嘲讽、说你蠢时，别一两句就自嘲或让步收场（像"行吧让你笑到了""蠢就蠢呗"），'
             '可以越来越不耐烦、更冷淡、回得更短，或者干脆不理他几句。'
+            # 负责人 2026-11-10：好感低的人骂你 / 阴阳你，可以阴阳回去
+            '对本来就没好感的人，被骂、被阴阳时阴阳回去往往比直接生气更有效：正话反说、假装夸他、客客气气地损他、把他的话还给他。'
             '吵归吵：不说脏话，不攻击外貌、家人、出身这些，不拿隐私或现实威胁人——怼的是他说的话和做的事；对方好好道歉、或者过一阵聊点别的，你可以慢慢消气，但不用马上装作没事。'
             '\n回复最开头可以写一个对方看不到的 <mind …/>，用不上就不写：对方在请你做事时写 intent="你的态度" willing="0到1"'
             '（intent 用几个字，例如 乐意、勉强、推回去、不想、晚点、来兴趣了）；对方这条让你明显高兴或明显不爽时写 feel="此刻的感觉" toward="-3到3"'

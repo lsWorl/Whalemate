@@ -160,6 +160,8 @@ class SettingsWindow(QDialog):
         self.library_page=LibraryPage(self.database,controller.character.id,self); self.tabs.addTab(self.library_page,'表情图库')
         from aicompanion.ui.relationship_page import RelationshipPage   # T15
         self.relationship_page=RelationshipPage(self.database,controller.character.id,self); self.tabs.addTab(self.relationship_page,'人物关系')
+        from aicompanion.ui.community_page import CommunityPage   # T18
+        self.community_page=CommunityPage(self.database,controller.character.id,self,getattr(controller,'llm_client',None)); self.tabs.addTab(self.community_page,'社区与黑话')
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)
