@@ -17,7 +17,7 @@ GROUP = 'qq:group:30003'
 class DataTests(unittest.TestCase):
     def test_entries_are_well_formed(self):
         terms = [t for t, *_ in seed.entries()]
-        self.assertGreaterEqual(len(terms), 300); self.assertEqual(len(terms), len(set(terms)), '有重复的词')
+        self.assertGreaterEqual(len(terms), 480); self.assertEqual(len(terms), len(set(terms)), '有重复的词')
         for names, circle, tone, meaning, usage, version in SEED:
             self.assertIn(circle, ('B站', '游戏', '二次元', '抽象', '网络'), names)
             self.assertIn(tone, TONES, names); self.assertTrue(1 <= version <= SEED_VERSION, names)
@@ -27,10 +27,18 @@ class DataTests(unittest.TestCase):
         circles = {c: sum(1 for _t, circle, *_ in seed.entries() if circle == c) for c in ('B站', '游戏', '二次元', '抽象')}
         for circle, count in circles.items(): self.assertGreaterEqual(count, 40, circle)       # 四个圈子都有一定数量
 
+    def test_second_batch_covers_mihoyo_and_abstract_memes(self):
+        """负责人 2026-11-10 18:44：二游、抽象梗多加，比如米哈游相关的。"""
+        new = {t: circle for t, circle, *_ in seed.entries(1)}
+        self.assertGreaterEqual(len(new), 150)
+        for term in ('原来你也玩原神', '原神怎么你了', '不如原神', '应急食品', '米孝子', '圣遗物', '歪七七', '大保底', '崩铁', '绝区零', '粥游',
+                     '糖完了', '🍬完了', '小糖人', '难绷', '典孝急', '你先别急', '这位更是重量级', '汗流浃背了吧', '已读乱回', 'fw', '哈气', '曼波'):
+            self.assertIn(term, new, term)
+
     def test_everyday_words_are_not_seeded(self):
         """和日常用语大面积重合的词不收，免得平常聊天也被当成梗。"""
         terms = {t for t, *_ in seed.entries()}
-        for word in ('确实', '启动', '建议', '毕业', '钓鱼', '离谱', '包的', '更新', '直播', '谢谢'):
+        for word in ('确实', '启动', '建议', '毕业', '钓鱼', '离谱', '包的', '更新', '直播', '谢谢', '节奏', '流水', '文案', '这一块', '小学生', '旅行者'):
             self.assertNotIn(word, terms)
 
 
@@ -43,6 +51,22 @@ class InstallTests(Base):
         self.assertLess(sense['confidence'], 0.75)                                               # 比联网查到的低
         self.assertEqual(Lexicon(self.db).info('蚌埠住了')['circle'], '抽象')                    # 别的写法也各自能匹配
         self.assertEqual(self.db.get_setting(seed.SETTING), SEED_VERSION)
+
+    def test_upgrade_from_first_batch_only_adds_the_new_terms(self):
+        lexicon = Lexicon(self.db)
+        for term, circle, tone, meaning, usage in seed.entries():
+            if term in {t for t, *_ in seed.entries(1)}: continue                               # 模拟只装过第 1 版的库
+            lexicon.learn(term, meaning, origin='seed', usage=usage, tone=tone, circle=circle, source_name='预置词库', confidence=seed.CONFIDENCE)
+        self.db.set_setting(seed.SETTING, 1); lexicon.delete('依托答辩')                        # 用户删过一个第 1 版的词
+        self.assertEqual(seed.install(self.db), len(list(seed.entries(1))))
+        self.assertIsNone(lexicon.info('依托答辩')); self.assertTrue(lexicon.senses('原来你也玩原神'))
+        self.assertEqual(self.db.get_setting(seed.SETTING), SEED_VERSION)
+
+    def test_short_latin_terms_only_match_as_whole_words(self):
+        seed.install(self.db); lexicon = Lexicon(self.db)
+        self.assertEqual(lexicon.match('please stop, I want to open the printf docs'), [])        # op / nt 不在英文单词里乱认
+        self.assertEqual([h['term'] for h in lexicon.match('你就是个fw')], ['fw'])
+        self.assertEqual([h['term'] for h in lexicon.match('fw一个 nt')], ['fw', 'nt'])
 
     def test_existing_general_meaning_is_kept_and_deleted_terms_stay_deleted(self):
         lexicon = Lexicon(self.db)

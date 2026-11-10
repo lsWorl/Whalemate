@@ -46,6 +46,7 @@ class RelationshipPage(QWidget):
         layout.addWidget(QLabel('她记得的关于这个人的事（越靠前越清楚；不对的可以让她忘掉）：'))
         self.notes = QListWidget(); self.notes.setMaximumHeight(140); layout.addWidget(self.notes)
         forget = QPushButton('忘掉选中的这条'); forget.clicked.connect(self.forget); layout.addWidget(forget)
+        again = QPushButton('让她重新理这个人（她说了不理、正冷着他时用）'); again.clicked.connect(self.make_up); layout.addWidget(again)
         self.status = QLabel(); self.status.setWordWrap(True); layout.addWidget(self.status)
         self.refresh()
 
@@ -74,6 +75,13 @@ class RelationshipPage(QWidget):
         if not p: return
         for d in DIMENSIONS: self.spins[d].setValue(p[d])
         lines = []
+        try:
+            # T22：她现在对这个人的态度（由好感、今天冲她来的次数、她有没有说过不理他决定），让好感度的作用看得见
+            from aicompanion.bridge.stance import Stance
+            lines.append('现在的态度：'+Stance(self.db).describe(self.character_id, pid, p, self.service.hostility(self.character_id, pid),
+                                                               self.service.upset(self.character_id, pid)))
+        except Exception:
+            pass
         if p['nicknames']: lines.append('用过的昵称：'+'、'.join(p['nicknames']))
         held = [NAMES[d] for d, at in p['manual'].items() if time.time()-float(at or 0) < 72*3600]
         if held: lines.append('手动调整过（72 小时内不自动改）：'+'、'.join(held))
@@ -89,6 +97,13 @@ class RelationshipPage(QWidget):
                          f"（把握 {e['confidence']:.1f}）{change}" + (" · "+'，'.join(NOTES.get(n, n) for n in e['note'].split(',')) if e['note'] else '')
                          + (f" · {e['evidence']}" if e['evidence'] else ''))
         self.details.setPlainText('\n'.join(lines))
+
+    def make_up(self):
+        """她说了不理某个人、正在冷着他：手动让她重新理这个人。"""
+        pid = self.selected()
+        if not pid: return
+        from aicompanion.bridge.stance import Stance
+        Stance(self.db).clear(self.character_id, pid); self.status.setText('好，她会重新理这个人。'); self.select()
 
     def forget(self):
         item = self.notes.currentItem()

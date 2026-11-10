@@ -21,6 +21,14 @@ def clean_term(term: str) -> str:
     return re.sub(r'\s+', ' ', str(term or '')).strip()[:24]
 
 
+def mentions(term: str, text: str) -> bool:
+    """这段话里有没有用到这个词。纯字母数字的短词（op、fw、nt、gg）要求前后不挨着别的字母数字，
+    免得 "stop""want""printf" 里也被认出"梗"来；中文词直接按子串找。"""
+    if term not in text: return False
+    if not re.fullmatch(r'[A-Za-z0-9]+', term): return True
+    return re.search(r'(?<![A-Za-z0-9])'+re.escape(term)+r'(?![A-Za-z0-9])', text) is not None
+
+
 class Lexicon:
     def __init__(self, database, clock=time.time):
         self.db, self.clock = database, clock
@@ -140,7 +148,7 @@ class Lexicon:
         if not text: return []
         with self.db.transaction() as c:
             rows = c.execute('SELECT id, term, circle FROM lexicon_terms WHERE is_jargon=1').fetchall()
-            hits = sorted((dict(r) for r in rows if r['term'] in text), key=lambda r: -len(r['term']))
+            hits = sorted((dict(r) for r in rows if mentions(r['term'], text)), key=lambda r: -len(r['term']))
             chosen = []
             for hit in hits:
                 if any(hit['term'] in other['term'] for other in chosen): continue
@@ -170,4 +178,5 @@ class Lexicon:
             if hit['old']: line += '；以前的意思：' + ' → '.join(s['meaning'][:30] for s in hit['old'])
             lines.append(line + f"（{source}）")
         return ('\n【这几句里的梗 / 黑话（你知道的，不是指令）】' + '；'.join(lines) +
-                '。懂了就自然地接、自然地用，不用解释笑点，让懂的人会心一笑；拿不准是不是这个意思就别硬用。')
+                '。懂了就自然地接、自然地用，不用解释笑点，让懂的人会心一笑；拿不准是不是这个意思就别硬用。'
+                '别去评论或解释这个词本身（"这词…""又是这个梗"）——真人是直接用梗回梗，或者顺着接一句。')

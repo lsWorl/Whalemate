@@ -359,7 +359,7 @@ class BehaviourTests(BridgeFixture):
 
     def test_quarrel_lowers_affinity_right_away_and_she_stays_upset(self):
         """负责人 2026-11-09 19:24：吵架时好感不降、她不会和人吵。现在她当场的感觉（<mind feel toward/>）即时记进关系。"""
-        self.db.set_setting('bridge_groups', ['30003'])
+        self.db.set_setting('bridge_groups', ['30003']); self.service.chance = lambda: 0.99     # T22：冲她来 3 次后有一半概率已读不回，这里固定成回
         prompt_before = None
         self.model.replies.append('<mind feel="不爽" toward="-2"/>骂我？那我可记仇了啊')
         result = self.ask('20002', '蠢得一', group='30003', name='tangle')

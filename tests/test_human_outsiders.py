@@ -82,23 +82,27 @@ class FavorBehaviourTests(BridgeFixture):
 
 
 class PunctuationTests(BridgeFixture):
-    def test_casual_segments_drop_sentence_punctuation(self):
+    def test_casual_segments_use_no_commas_or_full_stops(self):
+        """负责人 2026-11-10 18:44：留着逗号仍然显得标点多。和外人聊不用逗号、句号：要么另起一条，要么短的直接连着写。"""
         self.assertEqual(qq_segments('嗯，知道了。', chance=NEVER, casual=True), ['嗯知道了'])               # 短的直接连着写
         self.assertEqual(qq_segments('嗯，知道了。', chance=ALWAYS, casual=True), ['嗯', '知道了'])           # 或者另发一条
         self.assertEqual(qq_segments('好像是说人很急的意思，B站那边传出来的。', chance=NEVER, casual=True),
-                         ['好像是说人很急的意思，B站那边传出来的'])                                        # 长句留一个逗号才读得通
+                         ['好像是说人很急的意思', 'B站那边传出来的'])                                      # 长句不留逗号：拆成两条
+        self.assertEqual(qq_segments('这句当理由,是不是有点单薄', chance=NEVER, casual=True), ['这句当理由', '是不是有点单薄'])   # 英文逗号也一样
+        self.assertEqual(qq_segments('那我先把脖子伸过来？想咬就咬啊', chance=NEVER, casual=True), ['那我先把脖子伸过来？', '想咬就咬啊'])
         self.assertEqual(qq_segments('行吧、', chance=NEVER, casual=True), ['行吧'])
-        for text in ('你自己不会搜吗？', '真的假的？？？', '等等...', '啊这…', '好耶！'):                    # 问号、带情绪的照留
+        for text in ('你自己不会搜吗？', '真的假的？？？', '等等...', '啊这…', '好耶！', '苹果、香蕉都行', '花了1,000块'):   # 问号、带情绪的、顿号、数字照留
             self.assertEqual(qq_segments(text, chance=NEVER, casual=True), [text])
         self.assertEqual(qq_segments('他说"好，的。"然后走了', chance=ALWAYS, casual=True), ['他说"好，的。"然后走了'])   # 引号里不动
         doc = '步骤如下：\n1. 打开设置。\n2. 点保存。'
         self.assertEqual(qq_segments(doc, casual=True), [doc])                                               # 像文档的照常
-        for sent in qq_segments('我觉得还行，就是有点贵。不过也能接受，看你。', chance=ALWAYS, casual=True):
-            self.assertNotRegex(sent, r'[，。、；]$')
+        for chance in (ALWAYS, NEVER, lambda: 0.3):
+            for sent in qq_segments('我觉得还行，就是有点贵。不过也能接受，看你；随便吧。', chance=chance, casual=True):
+                self.assertNotRegex(sent, r'[，,。；;]')
         self.assertEqual(qq_segments('这也太离谱了吧，谁写的。', chance=NEVER), ['这也太离谱了吧，谁写的'])   # 不是 casual：和原来一样
 
-    def test_commas_split_less_readily_than_full_stops(self):
-        half = lambda: 0.3                                                                                    # burst 0.5：句号处拆，逗号处合
+    def test_commas_glue_more_readily_than_full_stops(self):
+        half = lambda: 0.3                                                                                    # burst 0.5：句号处拆，逗号处连着写
         self.assertEqual(qq_segments('行。走了', chance=half, casual=True), ['行', '走了'])
         self.assertEqual(qq_segments('行，走了', chance=half, casual=True), ['行走了'])
 
@@ -107,15 +111,15 @@ class PunctuationTests(BridgeFixture):
         self.model.replies.append('嗯，知道了。')
         out = self.service.handle(dict(platform='qq', sender_id='20002', sender_name='tangle', group_id='30003', text='在吗', called=True,
                                        expression_version=1, bot_account_id='90000'))
-        self.assertEqual(out['reply'], '嗯知道了'); self.assertIn('标点尽量少', self.model.prompts[-1])
+        self.assertEqual(out['reply'], '嗯知道了'); self.assertIn('不用逗号、句号', self.model.prompts[-1])
         self.db.set_setting('bridge_strangers', True); self.model.replies.append('嗯，知道了。')
         stranger = self.service.handle(dict(platform='qq', sender_id='20002', sender_name='tangle', group_id='', text='在吗', called=True,
                                             expression_version=1, bot_account_id='90000'))
-        self.assertEqual(stranger['reply'], '嗯知道了'); self.assertIn('标点尽量少', self.model.prompts[-1])
+        self.assertEqual(stranger['reply'], '嗯知道了'); self.assertIn('不用逗号、句号', self.model.prompts[-1])
         self.model.replies.append('嗯，知道了。')
         dad = self.service.handle(dict(platform='qq', sender_id='10001', sender_name='爹', group_id='', text='在吗', called=True,
                                        expression_version=1, bot_account_id='90000'))
-        self.assertEqual(dad['reply'], '嗯，知道了'); self.assertNotIn('标点尽量少', self.model.prompts[-1])
+        self.assertEqual(dad['reply'], '嗯，知道了'); self.assertNotIn('不用逗号、句号', self.model.prompts[-1])
 
 
 if __name__ == '__main__':

@@ -120,6 +120,7 @@ class BehaviourTests(BridgeFixture):
         self.assertIn('如果你结合上下文判断', unclear); self.assertNotIn('又在骂你', unclear)
 
     def test_persistent_targeting_is_noticed(self):
+        self.service.chance = lambda: 0.99                                                    # T22：冲她来 3 次以后有一半概率已读不回，这里固定成回
         for n in range(3):
             self.say(f'你真是个废物{n}', f'<mind at="me" voice="own" tone="attack" toward="-2"/>闭嘴{n}')
         self.say('你个sb', '<mind at="me" tone="attack"/>你有完没完')

@@ -86,11 +86,21 @@ MESSAGES = ('发几条没有固定数，像真人一样看情况：随口应一�
             '激动、笑疯了、吐槽、一下子想到好几件事、要把一件事讲清楚，就连着发好几条短的（换行就是另一条消息，每条一个意思）；'
             '对方一下子连发好几条，就像真人那样一起回一次，挑想接的接，不用每条都回；对方很冷淡或你没兴趣，就一两个字。'
             '别为了凑条数硬拆，也别把几件事硬塞进一条。'
-            '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就用逗号，或者干脆拆成两条。')
+            '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就拆成两条。')
 # 负责人 2026-11-10 13:51：和外人聊尽量不用标点，参考真人在 QQ 里的写法。发出去之前 qq_segments(casual=True) 还会再收一遍句尾标点
-CASUAL_PUNCT = ('标点尽量少，像真人发 QQ：句尾不加句号、逗号；两个短句要么直接连着写，要么另起一条，一句话比较长、不停顿读不通时才用一个逗号；'
+CASUAL_PUNCT = ('不用逗号、句号、顿号、分号，像真人发 QQ：一个小句就是一条消息，要停顿就换行另起一条，两个很短的小句可以直接连着写。'
                 '真的在问才用问号，感叹号少用；"？？？""。。。""！！"这种表达情绪的可以用。'
                 '只有正经讲一段长内容（讲解、代码、链接）时标点照常。')
+# 负责人 2026-11-10 18:44 看真机记录：回得不像真人（每次两三句俏皮话、点评对方、评论梗这个词本身），还把"勾#11"这种内部编号叫了出来，
+# 回 A 的时候把 B 之前没回的话也补着回了
+OUTSIDER_STYLE = ('\n【像真人群友那样说话】绝大多数时候就一小句，几个字到十来个字，不要每次都凑两三条。'
+                  '别写成段子或小作文：不排比、不总结、不分析对方（"你这是…""你从头到尾不就…""看你这…的劲儿"），不把他的话复述一遍再点评，'
+                  '也不是每句都要抖机灵、占上风——真人经常只回"？""啊？""6""行吧""笑死"。'
+                  '只回这次跟你说话的这个人、这一条；别人之前说的、你没回的话，不要在这条里补着回。'
+                  '叫人只叫昵称："#数字"是给你区分人用的，绝不要写出来。'
+                  '\n别人对你玩梗、拿梗损你时：别评论那个词本身（"这词…""会个词就…""又是这句""你就会这几个词"），也别解释它。'
+                  '真人是用梗回梗，或者顺着接一句、反问一句。比如被说"破防了"，回的是"急了""谁急谁知道"这类意思；'
+                  '被刷"原神启动"就顺着玩（只是示意语气，别照抄，每次换着来）。')
 # 负责人 2026-11-09 18:27：说"无法识别图片"正常人一看就知道是 AI。没看到的图只有中性标记 [图片]，处理方式交给她按上下文定
 # 插件 0.9.3：群里只 @ 她、不带字（原来会落到 AstrBot 自己没配模型的流程，回"LLM 请求失败"）
 AT_ONLY = '[@了你一下，没说别的]'
@@ -111,9 +121,9 @@ HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
                '只是别明确说自己是真人。')
 GROUP_HUMAN = ('【群里的说话方式】群里人人看得到：别叫你爹"爹""老爹"，别提你们是父女、你住在谁电脑上，'
-               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE+CASUAL_PUNCT)
+               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE+CASUAL_PUNCT+OUTSIDER_STYLE)
 PRIVATE_HUMAN = '\n【QQ 私聊的说话方式】'+HUMAN_STYLE+'（和爹私聊照常叫爹。）'
-STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE+CASUAL_PUNCT
+STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE+CASUAL_PUNCT+OUTSIDER_STYLE
 # 负责人 2026-11-09：在 QQ 里她没必要什么都懂
 QQ_NOT_EXPERT = ('\n在 QQ 上你不用什么都懂：问到不熟的专业问题、冷门知识，可以直接发一张可爱的表情包，说自己不太懂（"这个本鲸不会诶"），'
                  '不用硬答，更不要编；熟的照常好好说。')
@@ -143,6 +153,8 @@ class BridgeService:
         from aicompanion.bridge.social import SocialMemory
         self.media = media or QQMedia(database, controller)
         self.social = SocialMemory(database, controller.character.id, clock=clock)
+        from aicompanion.bridge.stance import Stance
+        self.stance = Stance(database, clock=clock)
         if quota is None:
             from aicompanion.usage.meter import Quota
             quota = Quota(database)
@@ -276,6 +288,27 @@ class BridgeService:
                          upset=rel.upset(cid, person), last_said=last_said, affinity=profile['affinity'] if profile else None)
         except Exception:
             return ''
+
+    def stance_gate(self, character_id, person, stable: str, text: str, mode, called: bool) -> str:
+        """这个外人的消息她现在接不接。返回空串 = 照常；'made_up' = 他来服软，结束不理；其余 = 不回的原因（只记录，不调模型）。"""
+        if mode['owner'] or not person: return ''
+        from aicompanion.bridge import stance as st
+        try:
+            if self.stance.ignoring(character_id, person):
+                if st.APOLOGY.search(text):
+                    self.stance.clear(character_id, person); return 'made_up'
+                return 'ignoring'
+            if not called or st.APOLOGY.search(text): return ''      # 来服软的话总能传到她那里
+            if self.stance.repeated(stable, text):
+                self.stance.walk_away(character_id, person, st.SPAM, 5); return 'ignoring'
+            rel = self.controller.relationships
+            hostility = rel.hostility(character_id, person)
+            if hostility >= st.HOSTILE_OUT:
+                self.stance.walk_away(character_id, person, st.FED_UP, 15); return 'ignoring'
+            if hostility >= st.HOSTILE_COLD and self.chance() < 0.5: return 'read_no_reply'   # 已读不回
+        except Exception:
+            return ''
+        return ''
 
     web_search = None       # 测试注入假搜索；平时按需用聊天接口的密钥建一个
     lookup_background = True
@@ -553,6 +586,12 @@ class BridgeService:
             controller = self.controller; character = controller.character
             stable = f'{platform}:{sender_id}'
             person = self.person_of(platform, sender_id, name, payload)
+            # T22：说了不理就真的不理。这条照样记进聊天记录（她"看到"了），但不回、不调模型、不识图、不占公开回复额度
+            gate = '' if private else self.stance_gate(character.id, person, stable, text, mode, called=True)
+            if gate and gate != 'made_up':
+                self.database.add_message('user', f'{name}{alias(self.database, stable)}：{text}' if mode['group'] else text, character.id,
+                                          source=platform, channel=mode['channel'], sender=stable)
+                return {'reply': '', 'silent': True, 'reason': gate}
             # 额度和条数在锁里、真正生成之前核验：排队期间额度用完的请求不会再发给模型
             if self.quota.check_silent(purpose) == 'stop':
                 return {'reply': '今天的额度用完啦，明天再聊～' if private else '', 'silent': not private, 'reason': 'quota'}
@@ -608,6 +647,9 @@ class BridgeService:
             situation += avatar_info
             if unseen_image(text): situation += UNSEEN_RULE
             if AT_ONLY in original_text: situation += AT_ONLY_RULE
+            if not private and gate == 'made_up':
+                from aicompanion.bridge.stance import MADE_UP
+                situation += MADE_UP
             burst = int(payload.get('burst_count') or 1)
             if burst > 1:
                 situation += f'\n对方刚才连着发了 {burst} 条（按顺序合在一起给你）：像真人那样一起回一次，挑想接的接，不用每条都回。'
@@ -667,6 +709,9 @@ class BridgeService:
             # 只发了一张表情包：她看懂了、记下了，但不为一张图插话
             self.maybe_remember(character.id, mode['channel'])
             return observed
+        if self.stance_gate(character.id, person, stable, text, mode, called=False) == 'ignoring':
+            self.maybe_remember(character.id, mode['channel'])
+            return dict(observed, reason='ignoring')
         addressed = self.maybe_addressed(mode['channel'], stable, text)
         if addressed:
             last_check = float(self.database.get_setting('bridge_addressed_at:'+mode['channel'], 0) or 0)
@@ -732,6 +777,12 @@ class BridgeService:
         self.social.cid=character.id;learned=self.social.profile(mode['channel'],stable)
         background=community_prompt(self.database,text,group)
         asked=situation   # 查完梗重新回时，从同一份场合说明出发
+        from aicompanion.bridge import stance as st
+        tier=''
+        if not private and not mode['owner']:
+            profile=controller.relationships.profile(character.id,person) if person else None
+            tier=st.tier(profile,controller.relationships.hostility(character.id,person) if person else 0,controller.relationships.upset(character.id,person) if person else False)
+            situation+=st.PROMPTS[tier]+st.KEEP_WORD
         from aicompanion.community import lookup as meme_lookup
         can_look=not looked and bool(self.database.get_setting('community_web',True))
         situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)+(meme_lookup.RULE if can_look else looked)
@@ -791,10 +842,21 @@ class BridgeService:
         if mode['group'] and (reply or outgoing) and self.busy_group(mode['channel'],stable):result['quote']=True
         # 多段回复：插件按顺序分几条消息发出去，每条之间按打字速度等一会儿（QQ 的分句规则，见 expression/segments.py）；
         # 旧插件只看 reply，不受影响。只有一条时也换成整理后的写法。
+        if not private:
+            # "勾#11"里的编号是内部区分用的，不能发出去：中文昵称后面的、以及这次说话人昵称后面的 #数字 去掉（"C#12" 这类不动）
+            reply=re.sub(r'(?<=[\u4e00-\u9fff])#\d{1,3}(?!\d)','',reply)
+            sender=str(request.get('sender_name') or '')
+            if sender:reply=re.sub(re.escape(sender)+r'#\d{1,3}(?!\d)',sender,reply)
+            result['reply']=reply
         from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
         burst=chat_burst(reply,peer_burst=peer,closeness=0.8 if private else self.closeness_of(person))
         # 和外人（群里、非爹的私聊）尽量不用标点；和爹私聊照旧
         segments=qq_segments(reply,chance=self.chance,burst=burst,casual=not private)
+        cap=st.CAPS.get(tier)
+        if cap and len(segments)>cap and not looked:segments=segments[:cap]   # 冷淡只发一句、不熟最多三条：说多了就不像这个态度（查梗后的回答不截）
+        if tier and person and st.LEAVE.search(reply):
+            # 说到做到：她说了不理他，这句发出去以后真的不理一阵
+            result['ignore_minutes']=self.stance.walk_away(character.id,person,st.SAID)
         if len(segments)>1:result.update(segments=segments,segment_delays=typing_delays(segments,chance=self.chance,burst=burst))
         if len(segments)==1:
             result['reply']=segments[0]
