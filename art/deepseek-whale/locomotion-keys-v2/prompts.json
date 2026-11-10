@@ -1,0 +1,257 @@
+{
+  "mode": "built-in image_gen",
+  "actions": [
+    {
+      "id": "walking",
+      "source": "art/deepseek-whale/locomotion-keys-v2/walking-sheet.png",
+      "prompt": "Use case: identity-preserve. Make a production sprite sheet of SIX frames, precise 3 columns x 2 rows, for the SAME original whale daughter desktop pet. Preserve her blue-cyan long hair, blue fin ears and tail, loop ahoge, lace headband, navy LONG-SLEEVE maid dress, white whale-emblem apron on front, white tights and navy shoes, exact chibi face and proportions. Fixed camera and character scale, generous 12% TRANSPARENT alpha margins per cell, six fully separate full bodies, no floor, no labels or effects. This is SLOW RELAXED LOW-STEP WALKING, not marching, running, knee lifting or skipping. KNEES STAY ALMOST STRAIGHT beneath skirt in EVERY frame. BOTH SHOES stay VERY CLOSE to the imaginary ground in EVERY frame; maximum vertical difference between the soles is only 8 pixels for a 500-pixel-tall character. Short strides, heels gently roll off ground, elbows relaxed DOWN BESIDE WAIST with tiny opposite arm swing. NEVER bend a calf back at right angles, NEVER raise a knee toward waist, NEVER lift a shoe near the skirt. Body stays upright, weight bob only 1-2 pixels. Six chronological phases: right heel slightly forward/left toe slightly behind; right leg supports while left shoe skims ground; left shoe swings just forward barely above floor; left heel slightly forward/right toe slightly behind; left leg supports while right shoe skims floor; right shoe swings forward almost touching floor. Keep right and left legs distinguishable and alternate support. All six equally spaced. VIEW: FRONT 3/4 facing viewer RIGHT, face and front apron emblem visible. Reference image supplies identity, not the walking pose.",
+      "generated_file": "exec-56a1f747-d344-422b-b0a2-c813258a66ac.png",
+      "alignment": [
+        {
+          "source_box": [
+            129,
+            9,
+            424,
+            454
+          ],
+          "component_pixels": 75633,
+          "foot_anchor": [
+            143.0,
+            443.0
+          ],
+          "placement": [
+            89,
+            36
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            642,
+            9,
+            936,
+            455
+          ],
+          "component_pixels": 75419,
+          "foot_anchor": [
+            142.0,
+            445.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1153,
+            9,
+            1449,
+            456
+          ],
+          "component_pixels": 75056,
+          "foot_anchor": [
+            143.0,
+            446.0
+          ],
+          "placement": [
+            89,
+            34
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            129,
+            521,
+            424,
+            970
+          ],
+          "component_pixels": 75187,
+          "foot_anchor": [
+            144.0,
+            448.0
+          ],
+          "placement": [
+            89,
+            33
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            642,
+            521,
+            936,
+            968
+          ],
+          "component_pixels": 75484,
+          "foot_anchor": [
+            142.0,
+            446.0
+          ],
+          "placement": [
+            90,
+            34
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1153,
+            521,
+            1448,
+            968
+          ],
+          "component_pixels": 75993,
+          "foot_anchor": [
+            143.0,
+            446.0
+          ],
+          "placement": [
+            89,
+            34
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        }
+      ]
+    },
+    {
+      "id": "walking_back",
+      "source": "art/deepseek-whale/locomotion-keys-v2/walking_back-sheet.png",
+      "prompt": "Use case: identity-preserve. Make a production sprite sheet of SIX frames, precise 3 columns x 2 rows, for the SAME original whale daughter desktop pet. Preserve her blue-cyan long hair, blue fin ears and tail, loop ahoge, lace headband, navy LONG-SLEEVE maid dress, white whale-emblem apron on front, white tights and navy shoes, exact chibi face and proportions. Fixed camera and character scale, generous 12% TRANSPARENT alpha margins per cell, six fully separate full bodies, no floor, no labels or effects. This is SLOW RELAXED LOW-STEP WALKING, not marching, running, knee lifting or skipping. KNEES STAY ALMOST STRAIGHT beneath skirt in EVERY frame. BOTH SHOES stay VERY CLOSE to the imaginary ground in EVERY frame; maximum vertical difference between the soles is only 8 pixels for a 500-pixel-tall character. Short strides, heels gently roll off ground, elbows relaxed DOWN BESIDE WAIST with tiny opposite arm swing. NEVER bend a calf back at right angles, NEVER raise a knee toward waist, NEVER lift a shoe near the skirt. Body stays upright, weight bob only 1-2 pixels. Six chronological phases: right heel slightly forward/left toe slightly behind; right leg supports while left shoe skims ground; left shoe swings just forward barely above floor; left heel slightly forward/right toe slightly behind; left leg supports while right shoe skims floor; right shoe swings forward almost touching floor. Keep right and left legs distinguishable and alternate support. All six equally spaced. VIEW: REAR 3/4 facing away to upper right, back of hair and tied apron bow, back of shoes, face and front emblem hidden. Reference supplies character identity and rear clothing only; REPLACE its exaggerated raised feet with the low steps specified above.",
+      "generated_file": "exec-f4ec56b5-d4f3-4a3b-b6a6-685545f77e41.png",
+      "alignment": [
+        {
+          "source_box": [
+            132,
+            28,
+            381,
+            449
+          ],
+          "component_pixels": 60517,
+          "foot_anchor": [
+            135.0,
+            419.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            644,
+            28,
+            893,
+            450
+          ],
+          "component_pixels": 60545,
+          "foot_anchor": [
+            135.0,
+            420.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1157,
+            28,
+            1405,
+            449
+          ],
+          "component_pixels": 60261,
+          "foot_anchor": [
+            134.0,
+            420.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            132,
+            540,
+            381,
+            961
+          ],
+          "component_pixels": 60368,
+          "foot_anchor": [
+            135.0,
+            420.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            645,
+            540,
+            893,
+            962
+          ],
+          "component_pixels": 60750,
+          "foot_anchor": [
+            134.0,
+            420.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1158,
+            540,
+            1405,
+            962
+          ],
+          "component_pixels": 60592,
+          "foot_anchor": [
+            134.0,
+            420.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        }
+      ]
+    }
+  ],
+  "references": {
+    "walking": [
+      "src/aicompanion/characters/deepseek-whale/animation-original/poster.png"
+    ],
+    "walking_back": [
+      "art/deepseek-whale/locomotion-keys-v2/rear-identity-reference.png"
+    ]
+  }
+}

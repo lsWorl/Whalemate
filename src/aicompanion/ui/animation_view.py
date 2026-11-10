@@ -10,8 +10,8 @@ from aicompanion.characters.animation_pack import load_animation_pack
 
 # 保留本批 384 像素原帧，避免高 DPI 显示时二次放大变软；过渡时只预载下一段，隐藏后释放。
 FRAME_HEIGHT = 384
-FADE = .24
-ENTRY_FADE = .06
+FADE = .22
+ENTRY_FADE = .10
 URGENT_FADE = .10
 
 
@@ -76,11 +76,11 @@ class AnimationAvatar(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setAutoFillBackground(False)
         self.pose='idle'; self.action='idle'; self.mood='calm'; self.mouth=0.; self.voice_active=False
-        self.dragging=False; self.walking=0; self.direction=1 if self.pack.actions[self.pack.poses['idle']].facing=='right' else -1; self._cue=None; self._cue_until=0.; self._cue_duration=0.; self._cue_started=False
+        self.dragging=False; self.walking=0; self._walk_vertical=0.; self._gait_distance=0.; self.direction=1 if self.pack.actions[self.pack.poses['idle']].facing=='right' else -1; self._cue=None; self._cue_until=0.; self._cue_duration=0.; self._cue_started=False
         self._sheet=QImage(); self._frame=self.poster; self._previous=QImage(); self._display=self.poster
         self._frame_facing=self.pack.actions[self.pack.poses['idle']].facing
-        self._bridge=None; self._bridge_sheet=QImage(); self._bridge_started=0.; self._bridge_index=-1
-        self._queue=[]; self._ready_next=None; self._fade_duration=FADE
+        self._gait_loaded=False; self._bridge=None; self._bridge_sheet=QImage(); self._bridge_started=0.; self._bridge_index=-1
+        self._queue=[]; self._ready_next=None; self._fade_duration=FADE; self._outgoing=None
         self._loaded=None; self._requested=None; self._loading=None; self._index=-1
         self._started=time.monotonic(); self._fade_started=0.; self._closed=False
         self._hop_started=-1.; self._hop_duration=0.; self._hop_height=0.
@@ -106,10 +106,10 @@ class AnimationAvatar(QWidget):
         now=time.monotonic()
         if self.pose in ('grabbed','falling') or self.dragging:
             key=self.pack.poses.get('grabbed','idle')
-        elif self.pose=='idle' and self.walking:
-            key=self.pack.poses.get('walking','idle')
         elif self._cue is not None and now<self._cue_until and self.pose not in ('error','wait','dizzy'):
             key=self._cue
+        elif self.pose=='idle' and self.walking:
+            key=self._walking_key()
         else:
             key=self.pack.poses.get(self.pose,self.pack.poses['idle'])
         self.action=key
@@ -118,7 +118,7 @@ class AnimationAvatar(QWidget):
             source=self._loaded if self._bridge is None and self._previous.isNull() else None
             if self._bridge is not None or not self._previous.isNull():
                 self._frame=self._display.copy(); self._sheet=QImage(); self._loaded=None
-                self._previous=QImage(); self._bridge=None; self._bridge_sheet=QImage()
+                self._previous=QImage(); self._outgoing=None; self._bridge=None; self._bridge_sheet=QImage()
             self._queue=[]; self._ready_next=None; self._requested=key
             if self._loaded!=key:
                 urgent=self.pose in ('grabbed','falling') or self.dragging
@@ -149,18 +149,29 @@ class AnimationAvatar(QWidget):
     def _consume_ready(self,now):
         if self._ready_next is None:return
         (clip,transition),image=self._ready_next; self._ready_next=None
+        outgoing=None
+        if self._bridge is None and self._loaded is not None and self._previous.isNull() and not self._sheet.isNull():
+            old=self.pack.actions[self._loaded]
+            gait=self._gait_loaded or (self.walking and self._loaded==self._walking_key())
+            elapsed=max(0.,self._gait_distance/old.cycle_distance if gait else now-self._started)
+            outgoing=(old,self._sheet,self._started,elapsed,gait)
         previous=self._display.copy()
         if self._frame_facing!=clip.facing:previous=previous.mirrored(True,False)
         was_bridge=self._bridge is not None
-        self._previous=previous; self._frame_facing=clip.facing
+        self._previous=previous; self._outgoing=outgoing; self._frame_facing=clip.facing
         self._fade_started=now
         if transition is not None:
-            self._sheet=QImage(); self._loaded=None; self._bridge=transition; self._bridge_sheet=image
+            self._sheet=QImage(); self._loaded=None; self._gait_loaded=False; self._bridge=transition; self._bridge_sheet=image
             self._bridge_started=now; self._bridge_index=-1; self._fade_duration=ENTRY_FADE
             self.transitionStarted.emit(transition.source,transition.target)
         else:
             self._bridge=None; self._bridge_sheet=QImage(); self._sheet=image; self._loaded=clip.id
-            self._started=now; self._index=-1
+            phase=0.
+            if outgoing and outgoing[0].blend_group and outgoing[0].blend_group==clip.blend_group:
+                old,_,_,elapsed,_=outgoing;phase=(elapsed*old.fps%old.count)/old.count
+            self._started=now-phase*clip.count/clip.fps; self._index=-1
+            self._gait_loaded=bool(self.walking and clip.id==self._walking_key())
+            if self._gait_loaded:self._gait_distance=0.
             if self._cue==clip.id and not self._cue_started:
                 self._cue_until=now+self._cue_duration;self._cue_started=True
             self._fade_duration=ENTRY_FADE if was_bridge else (URGENT_FADE if self.pose in ('grabbed','falling') or self.dragging else FADE)
@@ -175,8 +186,14 @@ class AnimationAvatar(QWidget):
         if self._previous.isNull():self._display=self._frame;return
         progress=min(1.,max(0.,(now-self._fade_started)/self._fade_duration))
         amount=progress*progress*(3-2*progress)
+        if self._outgoing is not None:
+            clip,sheet,started,elapsed,gait=self._outgoing
+            index=clip.frame_at(elapsed if gait else now-started)
+            w=sheet.width()//clip.columns;h=sheet.height()//clip.rows
+            self._previous=sheet.copy(index%clip.columns*w,index//clip.columns*h,w,h)
+            if clip.facing!=self._frame_facing:self._previous=self._previous.mirrored(True,False)
         self._display=mix_frames(self._previous,self._frame,amount)
-        if progress>=1:self._previous=QImage()
+        if progress>=1:self._previous=QImage();self._outgoing=None
 
     @property
     def transitioning(self):return self._bridge is not None or not self._previous.isNull()
@@ -197,7 +214,9 @@ class AnimationAvatar(QWidget):
                 self.transitionFinished.emit(finished.source,finished.target)
                 self._ensure_loading();return
         elif self._loaded is not None:
-            clip=self.pack.actions[self._loaded];index=clip.frame_at(now-self._started)
+            clip=self.pack.actions[self._loaded]
+            gait=self._gait_loaded or (self.walking and self._loaded==self._walking_key())
+            index=clip.frame_at(self._gait_distance/clip.cycle_distance) if gait else clip.frame_at(now-self._started)
             if index!=self._index:
                 self._index=index;self._take_frame(self._sheet,clip,index);changed=True
         if self._hop_started>=0 and now-self._hop_started>=self._hop_duration:
@@ -266,10 +285,29 @@ class AnimationAvatar(QWidget):
     def set_drag(self,active,velocity_x=0.):
         self.dragging=bool(active); self._select()
 
-    def set_walking(self,direction):
-        self.walking=int(direction)
-        if direction: self.face(direction)
+    def _walking_key(self):
+        pose='walking_back' if self._walk_vertical<-.15 else 'walking'
+        return self.pack.poses.get(pose,self.pack.poses.get('walking','idle'))
+
+    @property
+    def walking_ready(self):
+        return bool(self.walking and self._loaded==self._walking_key() and not self.transitioning)
+
+    def set_walking_vector(self,dx,dy):
+        length=math.hypot(dx,dy)
+        self.walking=(1 if dx>=0 else -1) if length else 0
+        self._walk_vertical=dy/length if length else 0.
+        if abs(dx)>1e-6:self.face(dx)
         self._select()
+
+    def step_walking(self,distance):
+        # 路线实际走多远才推进多少步态；加载、等待、暂停时脚不会原地空转。
+        if self.walking_ready:
+            self._gait_distance+=max(0.,distance);self.advance()
+
+    def set_walking(self,direction):
+        self.set_walking_vector(direction,0)
+
 
     @property
     def hopping(self): return self._hop_started>=0 and 0<=time.monotonic()-self._hop_started<self._hop_duration
@@ -285,10 +323,14 @@ class AnimationAvatar(QWidget):
         if self.pose in ('grabbed','falling'): return
         if kind=='motion' and name=='jump': self.hop(); return
         mapping={'wave':'wave','nod':'patted','shake':'poked','happy':'patted','love':'patted',
-                 'smug':'patted','shy':'patted','surprised':'poked','sleep':'sleepy','dizzy':'error','drag':'grabbed'}
+                 'smug':'smug','shy':'shy','surprised':'surprised',
+                 'pout':'pout','milk_tea':'milk_tea','stretch':'stretch','sleep':'sleepy','dizzy':'error','drag':'grabbed'}
         pose=mapping.get(name)
+        fallback={'smug':'patted','shy':'patted','surprised':'poked','pout':'poked','milk_tea':'idle','stretch':'idle'}
+        if pose not in self.pack.poses:pose=fallback.get(pose,pose)
+        if name=='neutral':self._cue=None;self._select();return
         if pose in self.pack.poses:
-            self._cue=self.pack.poses[pose]; self._cue_duration=2.2;self._cue_started=False
+            self._cue=self.pack.poses[pose]; self._cue_duration=max(2.2,self.pack.actions[self._cue].count/self.pack.actions[self._cue].fps);self._cue_started=False
             self._cue_until=time.monotonic()+3.7; self._select()
         elif kind=='motion': self.bounce(.8)
 
@@ -304,10 +346,10 @@ class AnimationAvatar(QWidget):
 
     def hideEvent(self,event):
         self.timer.stop(); self._sheet=QImage(); self._loaded=None; self._previous=QImage()
-        self._bridge=None; self._bridge_sheet=QImage(); self._ready_next=None; self._queue=[]
+        self._bridge=None; self._bridge_sheet=QImage(); self._outgoing=None; self._ready_next=None; self._queue=[]
         super().hideEvent(event)
 
     def shutdown(self):
         if self._closed: return
         self._closed=True; self.timer.stop(); self.thread.quit(); self.thread.wait()
-        self._sheet=QImage(); self._previous=QImage(); self._bridge_sheet=QImage(); self._ready_next=None; self._queue=[]
+        self._sheet=QImage(); self._previous=QImage(); self._bridge_sheet=QImage(); self._outgoing=None; self._ready_next=None; self._queue=[]

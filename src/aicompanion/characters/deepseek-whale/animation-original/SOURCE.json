@@ -5,7 +5,7 @@
   "foreign_images_included": false,
   "foreign_audio_included": false,
   "new_art_mode": "built-in image_gen",
-  "newly_drawn_keys": 18,
+  "newly_drawn_keys": 66,
   "interpolation": "offline bidirectional pyramidal Horn-Schunck, premultiplied alpha",
   "runtime_dependencies_added": false,
   "build_numpy_version": "2.5.4",
@@ -519,11 +519,147 @@
       "max_displacement_px": 3.5
     },
     "walking": {
-      "kind": "original_art_with_small_continuous_warp",
-      "source": "art/deepseek-whale/originals/idle.png",
-      "source_sha256": "74db2a4a42c920a8715b68e96b1c5ec7b5286a6ae416844cb42442362f2d4d07",
-      "new_drawing": false,
-      "max_displacement_px": 3.5
+      "kind": "imagegen_keys_and_low_step_layer_motion",
+      "source": "art/deepseek-whale/locomotion-keys-v2/walking-sheet.png",
+      "source_sha256": "2e13663d4545aa17d63ae10e53d9696e85bb0b0bd0cf512d0b6dde229d3b80d8",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            129,
+            9,
+            424,
+            454
+          ],
+          "component_pixels": 75633,
+          "foot_anchor": [
+            143.0,
+            443.0
+          ],
+          "placement": [
+            89,
+            36
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            642,
+            9,
+            936,
+            455
+          ],
+          "component_pixels": 75419,
+          "foot_anchor": [
+            142.0,
+            445.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1153,
+            9,
+            1449,
+            456
+          ],
+          "component_pixels": 75056,
+          "foot_anchor": [
+            143.0,
+            446.0
+          ],
+          "placement": [
+            89,
+            34
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            129,
+            521,
+            424,
+            970
+          ],
+          "component_pixels": 75187,
+          "foot_anchor": [
+            144.0,
+            448.0
+          ],
+          "placement": [
+            89,
+            33
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            642,
+            521,
+            936,
+            968
+          ],
+          "component_pixels": 75484,
+          "foot_anchor": [
+            142.0,
+            446.0
+          ],
+          "placement": [
+            90,
+            34
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1153,
+            521,
+            1448,
+            968
+          ],
+          "component_pixels": 75993,
+          "foot_anchor": [
+            143.0,
+            446.0
+          ],
+          "placement": [
+            89,
+            34
+          ],
+          "scale": 0.7173154362416108,
+          "horizontal_anchor": "head"
+        }
+      ],
+      "frame_keys": [
+        0,
+        4,
+        8,
+        12,
+        16,
+        20,
+        24
+      ],
+      "walking": true,
+      "gait_cycle_distance": 32,
+      "interpolation": "single_cel_flow_warp",
+      "leg_motion": {
+        "kind": "separated_low_step_legs",
+        "cut_y": 301,
+        "max_horizontal_px": 10,
+        "max_lift_px": 5,
+        "cycle_distance_at_300px": 32,
+        "near_straight_knee": true
+      }
     },
     "wave": {
       "kind": "original_art_with_small_continuous_warp",
@@ -531,6 +667,953 @@
       "source_sha256": "9bdefac219d239c9fc765156bf0ef0e79ed846d41bff2707ba078ddf2d80553a",
       "new_drawing": false,
       "max_displacement_px": 3.5
+    },
+    "smug": {
+      "kind": "imagegen_keys_with_bidirectional_interpolation",
+      "source": "art/deepseek-whale/personality-keys-v1/smug-sheet.png",
+      "source_sha256": "0cc428c41e8ffedb25787a53c259ca7224a3b0599488951ff3e4435174991de1",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            57,
+            56,
+            389,
+            522
+          ],
+          "component_pixels": 92192,
+          "foot_anchor": [
+            158.5,
+            465.0
+          ],
+          "placement": [
+            83,
+            35
+          ],
+          "scale": 0.685128205128205,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            478,
+            54,
+            817,
+            523
+          ],
+          "component_pixels": 94339,
+          "foot_anchor": [
+            149.0,
+            467.0
+          ],
+          "placement": [
+            90,
+            34
+          ],
+          "scale": 0.685128205128205,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            894,
+            54,
+            1227,
+            522
+          ],
+          "component_pixels": 94004,
+          "foot_anchor": [
+            149.0,
+            467.0
+          ],
+          "placement": [
+            90,
+            34
+          ],
+          "scale": 0.685128205128205,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            68,
+            681,
+            403,
+            1149
+          ],
+          "component_pixels": 94390,
+          "foot_anchor": [
+            148.0,
+            467.0
+          ],
+          "placement": [
+            91,
+            34
+          ],
+          "scale": 0.685128205128205,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            478,
+            681,
+            816,
+            1149
+          ],
+          "component_pixels": 92831,
+          "foot_anchor": [
+            150.5,
+            467.0
+          ],
+          "placement": [
+            89,
+            34
+          ],
+          "scale": 0.685128205128205,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            887,
+            680,
+            1222,
+            1149
+          ],
+          "component_pixels": 93272,
+          "foot_anchor": [
+            160.0,
+            468.0
+          ],
+          "placement": [
+            82,
+            33
+          ],
+          "scale": 0.685128205128205,
+          "horizontal_anchor": "feet"
+        }
+      ],
+      "frame_keys": [
+        0,
+        20,
+        25,
+        29,
+        35,
+        54,
+        72
+      ],
+      "walking": false,
+      "gait_cycle_distance": null
+    },
+    "pout": {
+      "kind": "imagegen_keys_with_bidirectional_interpolation",
+      "source": "art/deepseek-whale/personality-keys-v1/pout-sheet.png",
+      "source_sha256": "16e122fd810449c4974d76bf4e714967f742c29fd388f906cc881a878086e691",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            57,
+            48,
+            401,
+            558
+          ],
+          "component_pixels": 107094,
+          "foot_anchor": [
+            164.0,
+            509.0
+          ],
+          "placement": [
+            90,
+            36
+          ],
+          "scale": 0.6244206426484907,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            458,
+            49,
+            812,
+            559
+          ],
+          "component_pixels": 109179,
+          "foot_anchor": [
+            174.0,
+            509.0
+          ],
+          "placement": [
+            83,
+            36
+          ],
+          "scale": 0.6244206426484907,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            870,
+            48,
+            1224,
+            559
+          ],
+          "component_pixels": 109500,
+          "foot_anchor": [
+            172.0,
+            510.0
+          ],
+          "placement": [
+            85,
+            36
+          ],
+          "scale": 0.6244206426484907,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            51,
+            666,
+            406,
+            1182
+          ],
+          "component_pixels": 110915,
+          "foot_anchor": [
+            171.5,
+            515.0
+          ],
+          "placement": [
+            85,
+            32
+          ],
+          "scale": 0.6244206426484907,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            462,
+            665,
+            816,
+            1182
+          ],
+          "component_pixels": 110616,
+          "foot_anchor": [
+            170.0,
+            516.0
+          ],
+          "placement": [
+            86,
+            32
+          ],
+          "scale": 0.6244206426484907,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            874,
+            665,
+            1225,
+            1182
+          ],
+          "component_pixels": 109805,
+          "foot_anchor": [
+            169.5,
+            516.0
+          ],
+          "placement": [
+            86,
+            32
+          ],
+          "scale": 0.6244206426484907,
+          "horizontal_anchor": "feet"
+        }
+      ],
+      "frame_keys": [
+        0,
+        20,
+        25,
+        29,
+        35,
+        54,
+        72
+      ],
+      "walking": false,
+      "gait_cycle_distance": null
+    },
+    "shy": {
+      "kind": "imagegen_keys_with_bidirectional_interpolation",
+      "source": "art/deepseek-whale/personality-keys-v1/shy-sheet.png",
+      "source_sha256": "474f40e82301a7e8dd03616d2403fdf547d8c06baff5f08d69334cd045a85782",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            70,
+            56,
+            400,
+            545
+          ],
+          "component_pixels": 97223,
+          "foot_anchor": [
+            154.5,
+            487.0
+          ],
+          "placement": [
+            92,
+            38
+          ],
+          "scale": 0.6497264437689969,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            472,
+            54,
+            798,
+            545
+          ],
+          "component_pixels": 96657,
+          "foot_anchor": [
+            152.5,
+            489.0
+          ],
+          "placement": [
+            93,
+            36
+          ],
+          "scale": 0.6497264437689969,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            876,
+            51,
+            1203,
+            545
+          ],
+          "component_pixels": 97107,
+          "foot_anchor": [
+            153.0,
+            492.0
+          ],
+          "placement": [
+            93,
+            34
+          ],
+          "scale": 0.6497264437689969,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            69,
+            677,
+            398,
+            1170
+          ],
+          "component_pixels": 98042,
+          "foot_anchor": [
+            155.0,
+            492.0
+          ],
+          "placement": [
+            91,
+            34
+          ],
+          "scale": 0.6497264437689969,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            469,
+            676,
+            800,
+            1170
+          ],
+          "component_pixels": 97565,
+          "foot_anchor": [
+            157.0,
+            493.0
+          ],
+          "placement": [
+            90,
+            34
+          ],
+          "scale": 0.6497264437689969,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            877,
+            676,
+            1207,
+            1171
+          ],
+          "component_pixels": 97931,
+          "foot_anchor": [
+            152.5,
+            494.0
+          ],
+          "placement": [
+            93,
+            33
+          ],
+          "scale": 0.6497264437689969,
+          "horizontal_anchor": "feet"
+        }
+      ],
+      "frame_keys": [
+        0,
+        20,
+        25,
+        29,
+        35,
+        54,
+        72
+      ],
+      "walking": false,
+      "gait_cycle_distance": null
+    },
+    "surprised": {
+      "kind": "imagegen_keys_with_bidirectional_interpolation",
+      "source": "art/deepseek-whale/personality-keys-v1/surprised-sheet.png",
+      "source_sha256": "e516576257ef5d6f6448492c7865f1dc9105540e0a191712fd0e23dfc37d4514",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            57,
+            44,
+            389,
+            540
+          ],
+          "component_pixels": 98126,
+          "foot_anchor": [
+            160.5,
+            495.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.6438554216867469,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            481,
+            47,
+            819,
+            540
+          ],
+          "component_pixels": 98680,
+          "foot_anchor": [
+            141.5,
+            492.0
+          ],
+          "placement": [
+            101,
+            37
+          ],
+          "scale": 0.6438554216867469,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            896,
+            49,
+            1229,
+            541
+          ],
+          "component_pixels": 97618,
+          "foot_anchor": [
+            139.0,
+            490.0
+          ],
+          "placement": [
+            103,
+            39
+          ],
+          "scale": 0.6438554216867469,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            61,
+            670,
+            397,
+            1170
+          ],
+          "component_pixels": 100060,
+          "foot_anchor": [
+            157.0,
+            499.0
+          ],
+          "placement": [
+            91,
+            33
+          ],
+          "scale": 0.6438554216867469,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            468,
+            670,
+            809,
+            1170
+          ],
+          "component_pixels": 100449,
+          "foot_anchor": [
+            159.5,
+            499.0
+          ],
+          "placement": [
+            89,
+            33
+          ],
+          "scale": 0.6438554216867469,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            883,
+            670,
+            1222,
+            1170
+          ],
+          "component_pixels": 100599,
+          "foot_anchor": [
+            159.0,
+            499.0
+          ],
+          "placement": [
+            90,
+            33
+          ],
+          "scale": 0.6438554216867469,
+          "horizontal_anchor": "feet"
+        }
+      ],
+      "frame_keys": [
+        0,
+        20,
+        25,
+        29,
+        35,
+        54,
+        72
+      ],
+      "walking": false,
+      "gait_cycle_distance": null
+    },
+    "milk_tea": {
+      "kind": "imagegen_keys_with_bidirectional_interpolation",
+      "source": "art/deepseek-whale/personality-keys-v1/milk_tea-sheet.png",
+      "source_sha256": "ea51a965ab64a65e096cd54deb7ba178bf50d8e329ad0fe5818a65bd004c265a",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            60,
+            53,
+            401,
+            561
+          ],
+          "component_pixels": 101471,
+          "foot_anchor": [
+            162.5,
+            507.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.6299410609037328,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            466,
+            54,
+            812,
+            561
+          ],
+          "component_pixels": 102959,
+          "foot_anchor": [
+            165.5,
+            506.0
+          ],
+          "placement": [
+            88,
+            35
+          ],
+          "scale": 0.6299410609037328,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            875,
+            53,
+            1220,
+            561
+          ],
+          "component_pixels": 102417,
+          "foot_anchor": [
+            165.5,
+            507.0
+          ],
+          "placement": [
+            88,
+            35
+          ],
+          "scale": 0.6299410609037328,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            63,
+            667,
+            406,
+            1177
+          ],
+          "component_pixels": 102812,
+          "foot_anchor": [
+            162.5,
+            509.0
+          ],
+          "placement": [
+            90,
+            33
+          ],
+          "scale": 0.6299410609037328,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            467,
+            667,
+            812,
+            1177
+          ],
+          "component_pixels": 102753,
+          "foot_anchor": [
+            165.5,
+            509.0
+          ],
+          "placement": [
+            88,
+            33
+          ],
+          "scale": 0.6299410609037328,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            878,
+            667,
+            1221,
+            1177
+          ],
+          "component_pixels": 102626,
+          "foot_anchor": [
+            164.5,
+            509.0
+          ],
+          "placement": [
+            88,
+            33
+          ],
+          "scale": 0.6299410609037328,
+          "horizontal_anchor": "feet"
+        }
+      ],
+      "frame_keys": [
+        0,
+        20,
+        25,
+        29,
+        35,
+        54,
+        72
+      ],
+      "walking": false,
+      "gait_cycle_distance": null
+    },
+    "stretch": {
+      "kind": "imagegen_keys_with_bidirectional_interpolation",
+      "source": "art/deepseek-whale/personality-keys-v1/stretch-sheet.png",
+      "source_sha256": "2c092040deb24d421c336f4576a23091f340dbc9b4dc31963e0ec6d7add1c4ab",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            50,
+            41,
+            377,
+            543
+          ],
+          "component_pixels": 97810,
+          "foot_anchor": [
+            160.5,
+            501.0
+          ],
+          "placement": [
+            90,
+            34
+          ],
+          "scale": 0.6380895522388059,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            477,
+            46,
+            801,
+            544
+          ],
+          "component_pixels": 97477,
+          "foot_anchor": [
+            149.5,
+            496.0
+          ],
+          "placement": [
+            97,
+            38
+          ],
+          "scale": 0.6380895522388059,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            874,
+            56,
+            1225,
+            543
+          ],
+          "component_pixels": 97196,
+          "foot_anchor": [
+            166.5,
+            486.0
+          ],
+          "placement": [
+            86,
+            44
+          ],
+          "scale": 0.6380895522388059,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            65,
+            666,
+            388,
+            1171
+          ],
+          "component_pixels": 97554,
+          "foot_anchor": [
+            146.0,
+            504.0
+          ],
+          "placement": [
+            99,
+            32
+          ],
+          "scale": 0.6380895522388059,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            475,
+            668,
+            803,
+            1171
+          ],
+          "component_pixels": 99662,
+          "foot_anchor": [
+            152.0,
+            502.0
+          ],
+          "placement": [
+            95,
+            34
+          ],
+          "scale": 0.6380895522388059,
+          "horizontal_anchor": "feet"
+        },
+        {
+          "source_box": [
+            883,
+            665,
+            1205,
+            1171
+          ],
+          "component_pixels": 98390,
+          "foot_anchor": [
+            158.5,
+            505.0
+          ],
+          "placement": [
+            91,
+            32
+          ],
+          "scale": 0.6380895522388059,
+          "horizontal_anchor": "feet"
+        }
+      ],
+      "frame_keys": [
+        0,
+        20,
+        25,
+        29,
+        35,
+        54,
+        72
+      ],
+      "walking": false,
+      "gait_cycle_distance": null
+    },
+    "walking_back": {
+      "kind": "imagegen_keys_and_low_step_layer_motion",
+      "source": "art/deepseek-whale/locomotion-keys-v2/walking_back-sheet.png",
+      "source_sha256": "7cb1a11621d4bc8df2b267a30dc3956bdec4690d7bddb3d6bd8a1c23fa316e74",
+      "keyframes": 6,
+      "new_drawing": true,
+      "alignment": [
+        {
+          "source_box": [
+            132,
+            28,
+            381,
+            449
+          ],
+          "component_pixels": 60517,
+          "foot_anchor": [
+            135.0,
+            419.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            644,
+            28,
+            893,
+            450
+          ],
+          "component_pixels": 60545,
+          "foot_anchor": [
+            135.0,
+            420.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1157,
+            28,
+            1405,
+            449
+          ],
+          "component_pixels": 60261,
+          "foot_anchor": [
+            134.0,
+            420.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            132,
+            540,
+            381,
+            961
+          ],
+          "component_pixels": 60368,
+          "foot_anchor": [
+            135.0,
+            420.0
+          ],
+          "placement": [
+            89,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            645,
+            540,
+            893,
+            962
+          ],
+          "component_pixels": 60750,
+          "foot_anchor": [
+            134.0,
+            420.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        },
+        {
+          "source_box": [
+            1158,
+            540,
+            1405,
+            962
+          ],
+          "component_pixels": 60592,
+          "foot_anchor": [
+            134.0,
+            420.0
+          ],
+          "placement": [
+            90,
+            35
+          ],
+          "scale": 0.7607117437722419,
+          "horizontal_anchor": "head"
+        }
+      ],
+      "frame_keys": [
+        0,
+        4,
+        8,
+        12,
+        16,
+        20,
+        24
+      ],
+      "walking": true,
+      "gait_cycle_distance": 32,
+      "interpolation": "single_cel_flow_warp",
+      "leg_motion": {
+        "kind": "separated_low_step_legs",
+        "cut_y": 295,
+        "max_horizontal_px": 10,
+        "max_lift_px": 5,
+        "cycle_distance_at_300px": 32,
+        "near_straight_knee": true
+      }
     }
   },
   "files": [
@@ -591,13 +1674,49 @@
     },
     {
       "file": "walking.webp",
-      "bytes": 2154654,
-      "sha256": "cd156e3d2e1778821fd7c890d2b62dcc00ab74f1fe788914d4536bab58baec07"
+      "bytes": 741910,
+      "sha256": "554ad65b89b654dca60ac6684c9edfcc001e9fdf64af6d7b04c5035bb7cb485e"
     },
     {
       "file": "wave.webp",
       "bytes": 2652822,
       "sha256": "89147585b3de2b16d74b049797a209e20133ae50e438c9220dfe759483725797"
+    },
+    {
+      "file": "smug.webp",
+      "bytes": 2432272,
+      "sha256": "5ae7a648caa9924e8be84b057d73f7b1ba3897c494362b5b3299117e3de68665"
+    },
+    {
+      "file": "pout.webp",
+      "bytes": 2276276,
+      "sha256": "df84164ca622612b0df76e432e2f02d11e22cee5023110949c0e317c66523fab"
+    },
+    {
+      "file": "shy.webp",
+      "bytes": 2207242,
+      "sha256": "dd60e761653802fe136e588fd433eeff6adcab06f8e8da638d502293147ed542"
+    },
+    {
+      "file": "surprised.webp",
+      "bytes": 2305848,
+      "sha256": "47e21f7f4375edff81d2dc7ddb51e7dc9ced4e393843f1f2a6c6e1c4910796f3"
+    },
+    {
+      "file": "milk_tea.webp",
+      "bytes": 2218816,
+      "sha256": "c5cdc9a988389b02a505fa2e49dfa093c12f49311ed35397d9952d10f8f60f50"
+    },
+    {
+      "file": "stretch.webp",
+      "bytes": 2261070,
+      "sha256": "d2f0aae6506c5acc064a860a984258a0ec0ca37c056c9c769240f65dcdd44b0b"
+    },
+    {
+      "file": "walking_back.webp",
+      "bytes": 640672,
+      "sha256": "2ba54a2eeddd2de5c80e29060c62536ded422583b8ff887cb77920075dc26d09"
     }
-  ]
+  ],
+  "personality_keys_mode": "built-in image_gen"
 }

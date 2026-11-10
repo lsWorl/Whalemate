@@ -7,11 +7,12 @@ import re
 from pathlib import Path
 import numpy as np
 from PIL import Image,ImageFilter
-from animation_inbetween import components
+from animation_inbetween import components,optical_flow,interpolate
 from pose_bridge import prepare,pose_interpolate
 
 ROOT=Path(__file__).resolve().parents[1]
 ART=ROOT/'art/deepseek-whale/transition-keys-v1'
+ART2=ROOT/'art/deepseek-whale/transition-keys-v2'
 OUT=ROOT/'src/aicompanion/characters/deepseek-whale/animation-original'
 SIZE=384;FPS=24
 
@@ -19,14 +20,14 @@ SIZE=384;FPS=24
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def painted_keys(pose):
-    image=Image.open(ART/(pose+'-sheet.png')).convert('RGBA')
+def painted_keys(pose,art=ART):
+    image=Image.open(art/(pose+'-sheet.png')).convert('RGBA')
     parts=[item for item in components(np.asarray(image)[:,:,3]>40) if item[1]>1000]
     if len(parts)!=4:raise ValueError('站坐过渡必须包含四个完整独立主体。')
     parts.sort(key=lambda p:((p[0][1]+p[0][3])/2>image.height/2,(p[0][0]+p[0][2])/2))
     # 全部使用同一尺度，坐下后头会降低，不把坐姿重新放大到与站姿等高。
     scale=SIZE*.835/max(item[0][3]-item[0][1] for item in parts)
-    frames=[];records=[];folder=ART/pose;folder.mkdir(exist_ok=True)
+    frames=[];records=[];folder=art/pose;folder.mkdir(exist_ok=True)
     for i,(box,area,mask) in enumerate(parts):
         if box[0]<2 or box[1]<2 or box[2]>image.width-2 or box[3]>image.height-2:raise ValueError('中间姿势碰到图纸边缘。')
         keep=np.asarray(Image.fromarray(mask).filter(ImageFilter.MaxFilter(5)))
@@ -49,16 +50,20 @@ def first_frame(entry):
     with Image.open(path) as image:return image.crop((0,0,SIZE,SIZE)).convert('RGBA')
 
 
-def bridge_frames(keys,count):
-    geometry={};result=[]
+def bridge_frames(keys,count,flow=False):
+    geometry={};flows={};result=[]
     for i in range(count):
         progress=i/(count-1);progress=progress*progress*(3-2*progress)
         position=progress*(len(keys)-1);a=min(len(keys)-2,int(position));fraction=position-a
         if fraction<=1e-8:frame=keys[a].copy()
         elif fraction>=1-1e-8:frame=keys[a+1].copy()
         else:
-            if a not in geometry:geometry[a]=prepare(keys[a],keys[a+1])
-            frame=pose_interpolate(keys[a],keys[a+1],fraction,geometry[a])
+            if flow:
+                if a not in flows:flows[a]=(optical_flow(keys[a],keys[a+1],48),optical_flow(keys[a+1],keys[a],48))
+                frame=interpolate(keys[a],keys[a+1],fraction,*flows[a])
+            else:
+                if a not in geometry:geometry[a]=prepare(keys[a],keys[a+1])
+                frame=pose_interpolate(keys[a],keys[a+1],fraction,geometry[a],soft=True)
         result.append(frame)
     return result
 
@@ -86,25 +91,28 @@ def main():
     for target,entry in actions.items():
         if not re.fullmatch(r'[A-Za-z0-9_-]+',target):raise ValueError('动作 ID 不能用作文件路径。')
         if target in ('idle','grabbed'):continue
-        end=first_frame(entry);keys=[start,end];kind='single_cel_contour_warp';count=8
+        end=first_frame(entry);keys=[start,end];kind='contour_aligned_soft_blend';count=8;painted=None
         if target in ('working','sleepy'):
-            middle,alignment[target]=painted_keys(target);keys=[start,*middle,end];kind='four_new_painted_inbetweens';count=14
-        frames=bridge_frames(keys,count)
+            middle,alignment[target]=painted_keys(target);keys=[start,*middle,end];kind='four_new_painted_inbetweens';count=14;painted=ART/(target+'-sheet.png')
+        if target in ('milk_tea','stretch','walking_back') and (ART2/(target+'-sheet.png')).is_file():
+            middle,alignment[target]=painted_keys(target,ART2);keys=[start,*middle,end]
+            kind='four_new_painted_inbetweens_soft_flow';count=18;painted=ART2/(target+'-sheet.png')
+        frames=bridge_frames(keys,count,flow=kind.endswith('soft_flow'))
         for source,dest,clip_frames in [('idle',target,frames),(target,'idle',list(reversed(frames)))]:
             name=f'transition-{source}-to-{dest}';clip=save_clip(name,clip_frames)
             transitions.append({'from':source,'to':dest,'name':f'{actions[source]["name"]} → {actions[dest]["name"]}',**clip})
             records.append({'from':source,'to':dest,'kind':kind,'file':clip['image'],'sha256':digest(OUT/clip['image']),
                 'source_first_frame_file':actions[source]['image'],'source_sha256':digest(OUT/actions[source]['image']),
                 'target_first_frame_file':actions[dest]['image'],'target_sha256':digest(OUT/actions[dest]['image']),
-                'painted_sheet':(ART/(target+'-sheet.png')).relative_to(ROOT).as_posix() if kind=='four_new_painted_inbetweens' else None,
-                'painted_sheet_sha256':digest(ART/(target+'-sheet.png')) if kind=='four_new_painted_inbetweens' else None})
-        if target in ('working','sleepy','thinking'):
+                'painted_sheet':painted.relative_to(ROOT).as_posix() if painted else None,
+                'painted_sheet_sha256':digest(painted) if painted else None})
+        if target in ('working','sleepy','thinking','milk_tea','stretch','walking_back'):
             gif_preview('idle-to-'+target,[start]*12+frames+[end]*12+list(reversed(frames)))
         print('过渡',target,'双向',len(frames),'帧',flush=True)
     manifest['transitions']=transitions;path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-    (OUT/'TRANSITIONS.json').write_text(json.dumps({'newly_drawn_keys':8,'from_current_endpoints':True,
-        'endpoints_lossless':True,'fps':FPS,'inbetween_method':'single_cel_contour_warp','records':records},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-    (ART/'alignment.json').write_text(json.dumps(alignment,indent=2)+'\n',encoding='utf-8')
+    (OUT/'TRANSITIONS.json').write_text(json.dumps({'newly_drawn_keys':8+12 if ART2.is_dir() else 8,'from_current_endpoints':True,
+        'endpoints_lossless':True,'fps':FPS,'inbetween_method':'contour_aligned_soft_blend_or_painted_soft_flow','records':records},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    (ART2/'alignment.json' if ART2.is_dir() else ART/'alignment.json').write_text(json.dumps(alignment,indent=2)+'\n',encoding='utf-8')
     print('过渡清单已保存',len(transitions),flush=True)
 
 

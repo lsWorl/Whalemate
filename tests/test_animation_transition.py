@@ -59,7 +59,7 @@ class TransitionPackTests(unittest.TestCase):
     def test_bundled_bridges_have_lossless_matching_endpoints_and_source_hashes(self):
         root=PACKS_DIR/'deepseek-whale/animation-original';pack=load_animation_pack(root/'animations.json')
         records=json.loads((root/'TRANSITIONS.json').read_text(encoding='utf-8'))
-        self.assertEqual(len(pack.transitions),22);self.assertEqual(records['newly_drawn_keys'],8)
+        self.assertEqual(len(pack.transitions),36);self.assertEqual(records['newly_drawn_keys'],20)
         cache={}
         def first(action):
             if action.id not in cache:

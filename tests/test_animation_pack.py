@@ -30,7 +30,7 @@ class AnimationPackTests(unittest.TestCase):
     def test_bundled_assets_are_own_original_art_and_all_states_resolve(self):
         path=PACKS_DIR/'deepseek-whale/animation-original/animations.json';pack=load_animation_pack(path)
         source=json.loads((path.parent/'SOURCE.json').read_text(encoding='utf-8'))
-        self.assertEqual(source['newly_drawn_keys'],18)
+        self.assertEqual(source['newly_drawn_keys'],66)
         self.assertFalse(source['foreign_images_included'])
         self.assertFalse(source['foreign_audio_included'])
         self.assertEqual(set(source['sources']),set(pack.actions))
@@ -43,7 +43,7 @@ class AnimationPackTests(unittest.TestCase):
             origin=project/record['source']
             self.assertTrue(record['source'].startswith('art/deepseek-whale/'))
             self.assertEqual(hashlib.sha256(origin.read_bytes()).hexdigest(),record['source_sha256'])
-        self.assertEqual(sum(a.count for a in pack.actions.values()),960)
+        self.assertEqual(sum(a.count for a in pack.actions.values()),1368)
         self.assertEqual(pack.actions['error'].count,72)
         self.assertEqual(pack.actions['idle'].fps,24)
 
@@ -64,7 +64,7 @@ class AnimationPackTests(unittest.TestCase):
     def test_malformed_specs_paths_and_missing_pose_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path,data=make_pack(Path(directory))
-            for update in ({'frameCount':3},{'fps':True},{'frameWidth':0},{'rows':64,'columns':32,'frameWidth':1024,'frameHeight':1024},
+            for update in ({'blendGroup':[]},{'cycleDistance':True},{'cycleDistance':0},{'cycleDistance':float('inf')},{'frameCount':3},{'fps':True},{'frameWidth':0},{'rows':64,'columns':32,'frameWidth':1024,'frameHeight':1024},
                            {'image':'../outside.webp'},{'image':'https://example.invalid/a.webp'}):
                 bad=json.loads(json.dumps(data));bad['actions']['idle'].update(update)
                 path.write_text(json.dumps(bad),encoding='utf-8')

@@ -16,7 +16,8 @@
       "rows": 12,
       "frameCount": 96,
       "fps": 24,
-      "facing": "right"
+      "facing": "right",
+      "blendGroup": "standing"
     },
     "talking": {
       "image": "talking.webp",
@@ -27,7 +28,8 @@
       "rows": 6,
       "frameCount": 48,
       "fps": 24,
-      "facing": "right"
+      "facing": "right",
+      "blendGroup": "standing"
     },
     "thinking": {
       "image": "thinking.webp",
@@ -38,7 +40,8 @@
       "rows": 12,
       "frameCount": 96,
       "fps": 24,
-      "facing": "right"
+      "facing": "right",
+      "blendGroup": "standing"
     },
     "working": {
       "image": "working.webp",
@@ -126,18 +129,20 @@
       "rows": 9,
       "frameCount": 72,
       "fps": 24,
-      "facing": "right"
+      "facing": "right",
+      "blendGroup": "standing"
     },
     "walking": {
       "image": "walking.webp",
-      "name": "轻步走动",
+      "name": "迈步行走",
       "frameWidth": 384,
       "frameHeight": 384,
       "columns": 8,
-      "rows": 9,
-      "frameCount": 72,
+      "rows": 3,
+      "frameCount": 24,
       "fps": 24,
-      "facing": "right"
+      "facing": "right",
+      "cycleDistance": 32
     },
     "wave": {
       "image": "wave.webp",
@@ -148,7 +153,90 @@
       "rows": 9,
       "frameCount": 72,
       "fps": 24,
+      "facing": "right",
+      "blendGroup": "standing"
+    },
+    "smug": {
+      "image": "smug.webp",
+      "name": "叉腰得意",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right",
+      "blendGroup": "standing"
+    },
+    "pout": {
+      "image": "pout.webp",
+      "name": "抱臂气鼓鼓",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right",
+      "blendGroup": "standing"
+    },
+    "shy": {
+      "image": "shy.webp",
+      "name": "害羞揪袖",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right",
+      "blendGroup": "standing"
+    },
+    "surprised": {
+      "image": "surprised.webp",
+      "name": "惊讶后仰",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right",
+      "blendGroup": "standing"
+    },
+    "milk_tea": {
+      "image": "milk_tea.webp",
+      "name": "捧奶茶偷闲",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
       "facing": "right"
+    },
+    "stretch": {
+      "image": "stretch.webp",
+      "name": "伸懒腰",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 9,
+      "frameCount": 72,
+      "fps": 24,
+      "facing": "right"
+    },
+    "walking_back": {
+      "image": "walking_back.webp",
+      "name": "背身迈步",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 3,
+      "frameCount": 24,
+      "fps": 24,
+      "facing": "right",
+      "cycleDistance": 32
     }
   },
   "poses": {
@@ -161,12 +249,19 @@
     "sleepy": "sleepy",
     "error": "error",
     "grabbed": "grabbed",
-    "poked": "poked",
+    "poked": "pout",
     "patted": "patted",
     "walking": "walking",
     "wave": "wave",
     "falling": "grabbed",
-    "dizzy": "error"
+    "dizzy": "error",
+    "smug": "smug",
+    "pout": "pout",
+    "shy": "shy",
+    "surprised": "surprised",
+    "milk_tea": "milk_tea",
+    "stretch": "stretch",
+    "walking_back": "walking_back"
   },
   "head": [
     0.25,
@@ -412,7 +507,7 @@
     {
       "from": "idle",
       "to": "walking",
-      "name": "待机呼吸 → 轻步走动",
+      "name": "待机呼吸 → 迈步行走",
       "image": "transition-idle-to-walking.webp",
       "frameWidth": 384,
       "frameHeight": 384,
@@ -425,7 +520,7 @@
     {
       "from": "walking",
       "to": "idle",
-      "name": "轻步走动 → 待机呼吸",
+      "name": "迈步行走 → 待机呼吸",
       "image": "transition-walking-to-idle.webp",
       "frameWidth": 384,
       "frameHeight": 384,
@@ -458,6 +553,188 @@
       "columns": 4,
       "rows": 2,
       "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "smug",
+      "name": "待机呼吸 → 叉腰得意",
+      "image": "transition-idle-to-smug.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "smug",
+      "to": "idle",
+      "name": "叉腰得意 → 待机呼吸",
+      "image": "transition-smug-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "pout",
+      "name": "待机呼吸 → 抱臂气鼓鼓",
+      "image": "transition-idle-to-pout.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "pout",
+      "to": "idle",
+      "name": "抱臂气鼓鼓 → 待机呼吸",
+      "image": "transition-pout-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "shy",
+      "name": "待机呼吸 → 害羞揪袖",
+      "image": "transition-idle-to-shy.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "shy",
+      "to": "idle",
+      "name": "害羞揪袖 → 待机呼吸",
+      "image": "transition-shy-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "surprised",
+      "name": "待机呼吸 → 惊讶后仰",
+      "image": "transition-idle-to-surprised.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "surprised",
+      "to": "idle",
+      "name": "惊讶后仰 → 待机呼吸",
+      "image": "transition-surprised-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 2,
+      "frameCount": 8,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "milk_tea",
+      "name": "待机呼吸 → 捧奶茶偷闲",
+      "image": "transition-idle-to-milk_tea.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 5,
+      "frameCount": 18,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "milk_tea",
+      "to": "idle",
+      "name": "捧奶茶偷闲 → 待机呼吸",
+      "image": "transition-milk_tea-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 5,
+      "frameCount": 18,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "stretch",
+      "name": "待机呼吸 → 伸懒腰",
+      "image": "transition-idle-to-stretch.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 5,
+      "frameCount": 18,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "stretch",
+      "to": "idle",
+      "name": "伸懒腰 → 待机呼吸",
+      "image": "transition-stretch-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 5,
+      "frameCount": 18,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "idle",
+      "to": "walking_back",
+      "name": "待机呼吸 → 背身迈步",
+      "image": "transition-idle-to-walking_back.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 5,
+      "frameCount": 18,
+      "fps": 24,
+      "facing": "right"
+    },
+    {
+      "from": "walking_back",
+      "to": "idle",
+      "name": "背身迈步 → 待机呼吸",
+      "image": "transition-walking_back-to-idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 4,
+      "rows": 5,
+      "frameCount": 18,
       "fps": 24,
       "facing": "right"
     }

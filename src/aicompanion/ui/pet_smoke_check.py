@@ -325,18 +325,67 @@ def schedule_pet_smoke_check(window, database, output):
             finally: QTimer.singleShot(1500, window.request_exit)
         if not animation:
             finish_checks();return
+        def check_walking():
+            view=pet.view;view.perform('expression','neutral')
+            pet.machine.snapshot=type(pet.machine.snapshot)();pet.machine.shown='idle';pet._apply_state()
+            start=(pet.x(),pet.y());routes=[(-60,-40),(0,30),(50,0)]
+            state['walk_routes']=[];state['walk_frame_indices']=[]
+            def walk_next(index):
+                if index==len(routes):
+                    state['walk_2d_flow']=(len(state['walk_routes'])==3 and
+                        state['walk_routes'][0]['gait']=='walking_back' and
+                        all(r['moved_x'] or r['moved_y'] for r in state['walk_routes']) and
+                        state['walk_routes'][0]['moved_x'] and state['walk_routes'][0]['moved_y'] and
+                        len(set(state['walk_frame_indices']))>=3)
+                    finish_checks();return
+                dx,dy=routes[index];before=(pet.x(),pet.y());pet.walk_to(before[0]+dx,before[1]+dy)
+                target=pet._walk_target;deadline=time.monotonic()+4.;gait=[None]
+                def wait_walk():
+                    if view.walking_ready:
+                        gait[0]=view._loaded;state['walk_frame_indices'].append(view._index)
+                    if pet._walk_target is None:
+                        state['walk_routes'].append({'gait':gait[0],
+                            'moved_x':pet.x()!=before[0],'moved_y':pet.y()!=before[1],
+                            'target_reached':target is not None and (pet.x(),pet.y())==tuple(round(v) for v in target)})
+                        pet.grab().save(str(output/f'pet-walk-{index}.png'))
+                        if not state['walk_routes'][-1]['target_reached']:state['errors'].append('行走目标未到达')
+                        QTimer.singleShot(40,lambda:walk_next(index+1))
+                    elif time.monotonic()>=deadline:
+                        state['errors'].append('二维行走超时');pet.stop_walking();finish_checks()
+                    else:QTimer.singleShot(25,wait_walk)
+                QTimer.singleShot(25,wait_walk)
+            walk_next(0)
+
+        def check_personality(index=0):
+            keys=['smug','pout','shy','surprised','milk_tea','stretch']
+            if index==0:state['personality_actions']=[]
+            if index==len(keys):
+                state['personality_flow']=state['personality_actions']==keys
+                check_walking();return
+            key=keys[index];pet.view.perform('motion' if key in ('milk_tea','stretch') else 'expression',key)
+            deadline=time.monotonic()+3.
+            def wait_action():
+                if pet.view._loaded==key and not pet.view.transitioning:
+                    state['personality_actions'].append(key)
+                    pet.grab().save(str(output/f'pet-personality-{key}.png'))
+                    QTimer.singleShot(150,lambda:check_personality(index+1))
+                elif time.monotonic()>=deadline:
+                    state['errors'].append('性格动作未按时显示：'+key);finish_checks()
+                else:QTimer.singleShot(25,wait_action)
+            QTimer.singleShot(25,wait_action)
+
         # 实际播放站→坐→托腮→待机，包含两段衔接；不只核对 pose 字符串。
         targets=['idle','working','thinking','idle'];state['pose_transition_targets']=[]
         transition_start=len(state['pose_transitions_finished'])
         # 前面的聊天特意播放挥手；本段单独验证姿态，清掉上一段的短时表演。
-        pet.stop_walking();pet._stop_fall()
+        pet.stop_walking();pet._stop_fall();pet._life_timer.stop()
         pet.view._cue=None;pet.view._cue_until=0.;pet.view.set_drag(False)
 
         def next_target(index):
             if index>=len(targets):
-                expected=[['idle','working'],['working','idle'],['idle','thinking'],['thinking','idle']]
+                expected=[['idle','working'],['working','idle']]  # 思考与待机同组直接混合，避免多余的待机绕行。
                 state['pose_transition_flow']=all(pair in state['pose_transitions_finished'][transition_start:] for pair in expected)
-                finish_checks();return
+                check_personality();return
             pose=targets[index]
             pet.machine.snapshot=type(pet.machine.snapshot)()
             pet.dispatch('force_pose',pose=pose,seconds=8.)
@@ -386,7 +435,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
         if animation:
-            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back','pose_transition_flow'])
+            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back','pose_transition_flow','personality_flow','walk_2d_flow'])
             if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True
             required.append('animation_advances')
             state['animation_advances']=not state.get('failed_animation_frames',False)

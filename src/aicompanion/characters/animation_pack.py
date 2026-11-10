@@ -20,6 +20,8 @@ class Animation:
     count: int
     fps: int
     facing: str = 'left'
+    blend_group: str = ''
+    cycle_distance: float = 70.
 
     def frame_at(self, elapsed):
         return int(max(0, elapsed)*self.fps)%self.count
@@ -42,6 +44,9 @@ class AnimationPack:
     transitions: dict[tuple[str, str], Transition] = field(default_factory=dict)
 
     def transition_route(self, source, target):
+        if source in self.actions and target in self.actions:
+            group=self.actions[source].blend_group
+            if group and group==self.actions[target].blend_group:return []
         direct=self.transitions.get((source,target))
         if direct is not None:return [direct]
         # 经过待机最多两段；不无限遍历动作图，避免积压一长串过期动作。
@@ -75,7 +80,10 @@ def animation_entry(root,key,entry,size):
     if facing not in ('left','right'):raise CharacterPackError('动画朝向无效。')
     image=local_file(root,entry['image'])
     if image.suffix.lower()!='.webp':raise CharacterPackError('动画图集必须为 WebP。')
-    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing)
+    group=entry.get('blendGroup','');distance=entry.get('cycleDistance',70.)
+    if not isinstance(group,str) or len(group)>32 or type(distance) not in (int,float) or not math.isfinite(distance) or not 8<=distance<=300:
+        raise CharacterPackError('动画混合组或步幅无效。')
+    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing,group,float(distance))
 
 
 def load_animation_pack(path):

@@ -1,0 +1,57 @@
+{
+  "mode": "built-in image_gen",
+  "reference_images": [
+    "art/deepseek-whale/animation-keys-v1/idle-sheet.png",
+    "src/aicompanion/characters/deepseek-whale/animation-original/poster.png"
+  ],
+  "actions": [
+    {
+      "id": "smug",
+      "name": "叉腰得意",
+      "source": "art/deepseek-whale/personality-keys-v1/smug-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent desktop-pet animation keyframe sprite sheet. Reference image is the EXACT existing original whale girl; preserve her face, head/body proportions, blue-cyan long wavy hair, loop ahoge, fin ears, white lace headband, NAVY LONG SLEEVED maid dress with white apron and blue whale emblem, white tights, navy Mary Jane shoes and blue whale tail on viewer right. Same delicate chibi anime illustration and linework. Create ONE sheet of SIX full-body animation keyframes in a precise 3-column x 2-row grid, reading left to right then top to bottom. EXACTLY six clearly separated characters, each centered in its own cell with 12% transparent margin on ALL sides. Fixed camera, identical character scale, stable feet and head size; both shoes visible; no cropping; no panels, labels, text or background, no separate floating effects/objects. Real transparent alpha. A playful self-satisfied daughter, proud after being praised. Both hands on hips, chin slightly up, mischievous closed-mouth smirk, confident blue eyes. Small shoulders tilt and tail swish. Sequence six subtle contiguous poses within this same hands-on-hips stance: centered smug, slight lean right, wink, wink closing, open eyes slight lean left, return close to first. Keep hands on hips throughout; only small movements for a seamless loop. No rude gestures.",
+      "edit_prompt": null,
+      "generated_file": "exec-87a69009-2d58-44cc-a167-b9d04c942816.png"
+    },
+    {
+      "id": "pout",
+      "name": "抱臂气鼓鼓",
+      "source": "art/deepseek-whale/personality-keys-v1/pout-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent desktop-pet animation keyframe sprite sheet. Reference image is the EXACT existing original whale girl; preserve her face, head/body proportions, blue-cyan long wavy hair, loop ahoge, fin ears, white lace headband, NAVY LONG SLEEVED maid dress with white apron and blue whale emblem, white tights, navy Mary Jane shoes and blue whale tail on viewer right. Same delicate chibi anime illustration and linework. Create ONE sheet of SIX full-body animation keyframes in a precise 3-column x 2-row grid, reading left to right then top to bottom. EXACTLY six clearly separated characters, each centered in its own cell with 12% transparent margin on ALL sides. Fixed camera, identical character scale, stable feet and head size; both shoes visible; no cropping; no panels, labels, text or background, no separate floating effects/objects. Real transparent alpha. A tsundere daughter pretending to be cross: BOTH arms crossed in front of chest, cheeks puffed, pouty mouth, eyebrows slightly lowered, looking sideways. Endearing mild annoyance rather than rage. Six contiguous loop keys: center crossed arms, tiny head turn right, cheeks puff further eyes half closed, eyes closed huff and small shoulder lift, eyes reopen turn toward viewer, almost centered first stance. Feet stay grounded, hands remain tucked in crossed arms. Tail gently flicks.",
+      "edit_prompt": null,
+      "generated_file": "exec-fd4c9d2a-0a8d-4f79-ba65-c8964cd5c302.png"
+    },
+    {
+      "id": "shy",
+      "name": "害羞揪袖",
+      "source": "art/deepseek-whale/personality-keys-v1/shy-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent desktop-pet animation keyframe sprite sheet. Reference image is the EXACT existing original whale girl; preserve her face, head/body proportions, blue-cyan long wavy hair, loop ahoge, fin ears, white lace headband, NAVY LONG SLEEVED maid dress with white apron and blue whale emblem, white tights, navy Mary Jane shoes and blue whale tail on viewer right. Same delicate chibi anime illustration and linework. Create ONE sheet of SIX full-body animation keyframes in a precise 3-column x 2-row grid, reading left to right then top to bottom. EXACTLY six clearly separated characters, each centered in its own cell with 12% transparent margin on ALL sides. Fixed camera, identical character scale, stable feet and head size; both shoes visible; no cropping; no panels, labels, text or background, no separate floating effects/objects. Real transparent alpha. Bashful after a compliment: shoulders slightly tucked, hands together at collar/chest shyly pinching the long sleeve cuffs, soft blush, eyes glancing aside, shy small smile. Six subtle continuous keys in that same stance: look viewer, glance down right, closed eyes blush with shoulders a little lifted, eyes halfway reopen, glance left, return almost first. Keep both hands joined at chest, full body and feet stationary, no floating hearts.",
+      "edit_prompt": null,
+      "generated_file": "exec-71ec1da9-3a4d-462c-b13c-fb9e9c4dbed2.png"
+    },
+    {
+      "id": "surprised",
+      "name": "惊讶后仰",
+      "source": "art/deepseek-whale/personality-keys-v1/surprised-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent desktop-pet animation keyframe sprite sheet. Reference image is the EXACT existing original whale girl; preserve her face, head/body proportions, blue-cyan long wavy hair, loop ahoge, fin ears, white lace headband, NAVY LONG SLEEVED maid dress with white apron and blue whale emblem, white tights, navy Mary Jane shoes and blue whale tail on viewer right. Same delicate chibi anime illustration and linework. Create ONE sheet of SIX full-body animation keyframes in a precise 3-column x 2-row grid, reading left to right then top to bottom. EXACTLY six clearly separated characters, each centered in its own cell with 12% transparent margin on ALL sides. Fixed camera, identical character scale, stable feet and head size; both shoes visible; no cropping; no panels, labels, text or background, no separate floating effects/objects. Real transparent alpha. A comically surprised curious daughter: both long sleeved hands lifted close to cheeks with palms slightly outward, body tilts backward only a little, wide blue eyes and small rounded open mouth. Six continuous keys with SMALL variations: wide eyes hands cheeks, slight backward lean, blink, eyes half open, open eyes recover tiny forward, return almost first. Maintain raised hands stance and exact full-body scale. No floating exclamation marks or symbols; keep shoes planted.",
+      "edit_prompt": null,
+      "generated_file": "exec-371e6108-eb83-42a5-bba0-f232a84fdf9a.png"
+    },
+    {
+      "id": "milk_tea",
+      "name": "捧奶茶偷闲",
+      "source": "art/deepseek-whale/personality-keys-v1/milk_tea-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent desktop-pet animation keyframe sprite sheet. Reference image is the EXACT existing original whale girl; preserve her face, head/body proportions, blue-cyan long wavy hair, loop ahoge, fin ears, white lace headband, NAVY LONG SLEEVED maid dress with white apron and blue whale emblem, white tights, navy Mary Jane shoes and blue whale tail on viewer right. Same delicate chibi anime illustration and linework. Create ONE sheet of SIX full-body animation keyframes in a precise 3-column x 2-row grid, reading left to right then top to bottom. EXACTLY six clearly separated characters, each centered in its own cell with 12% transparent margin on ALL sides. Fixed camera, identical character scale, stable feet and head size; both shoes visible; no cropping; no panels, labels, text or background, no separate floating effects/objects. Real transparent alpha. A mischievous little daughter taking a milk tea break: holding ONE small transparent cup with brown milk tea and dark boba, a simple lid and straw, BOTH hands wrapped around the cup at chest height, straw reaches lips. Six continuous subtle keys: happily hold sip eyes open, sip eyes half closed, contented closed eyes, open eyes glance right as if caught slacking, small cheeky smile, return almost initial sip. Cup always stays held and connected to hands, no detached props; preserve apron whale emblem visible below cup.",
+      "edit_prompt": null,
+      "generated_file": "exec-90904fcd-5aa0-445d-949f-f67135f9c22d.png"
+    },
+    {
+      "id": "stretch",
+      "name": "伸懒腰",
+      "source": "art/deepseek-whale/personality-keys-v1/stretch-sheet.png",
+      "prompt": "Use case: identity-preserve. Asset type: transparent desktop-pet animation keyframe sprite sheet. Reference image is the EXACT existing original whale girl; preserve her face, head/body proportions, blue-cyan long wavy hair, loop ahoge, fin ears, white lace headband, NAVY LONG SLEEVED maid dress with white apron and blue whale emblem, white tights, navy Mary Jane shoes and blue whale tail on viewer right. Same delicate chibi anime illustration and linework. Create ONE sheet of SIX full-body animation keyframes in a precise 3-column x 2-row grid, reading left to right then top to bottom. EXACTLY six clearly separated characters, each centered in its own cell with 12% transparent margin on ALL sides. Fixed camera, identical character scale, stable feet and head size; both shoes visible; no cropping; no panels, labels, text or background, no separate floating effects/objects. Real transparent alpha. A sleepy daughter stretching after hard work: both long-sleeved arms raised above head with hands loosely joined, head gently tilted, eyes comfortably half closed or closed, relieved small smile. Six continuous subtle keys ALL in raised-arm stretch stance: arms raised center, lean slightly right, eyes close stretch, lean center, lean slightly left eyes half reopen, return almost first. Feet remain planted; allow ample top margin over raised hands and loop ahoge, preserve same body/head proportions, no cropping.",
+      "edit_prompt": null,
+      "generated_file": "exec-0ace3bf7-5a52-4a89-8634-32891a2c25db.png"
+    }
+  ]
+}

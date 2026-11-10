@@ -4,7 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| T20 | 原鲸娘自绘补帧与流畅动画 | Codex | 草稿待审图 / 审码（PR #25；22 段过渡，688 项检查：681 通过 / 7 跳过） | docs/tasks/T20-original-whale-animation.md；用户撤回 #22 的外观替换，保留原设计，借鉴逐帧 / 后台解码；不引入 Aboutme 图片或声音 |
+| T20 | 原鲸娘自绘补帧与流畅动画 | Codex | 草稿待审图 / 审码（Codex，PR #25；20 动作 / 36 段过渡，低步幅二维行走；699 通过 / 7 跳过） | docs/tasks/T20-original-whale-animation.md；用户撤回 #22 的外观替换，保留原设计，借鉴逐帧 / 后台解码；不引入 Aboutme 图片或声音 |
 | T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 已合入（PR #13）；负责人真机试用中 | docs/tasks/T14-smart-expression-design.md |
 | T17 | 收集别人发的表情包、向群友学发图习惯、聊天短句分条 | Claude 实现；Codex 审计 | 已合入（PR #16、#17、#18） | docs/tasks/T17-sticker-learning.md |
 | T15 | 自主社交人格与人物关系系统 | Claude 实现；Codex 审查 | 进行中（Claude，`task/t15-relationship`） | docs/tasks/T15-relationship.md；人物身份、好感 / 熟悉 / 信任、关系事件确定性打分、自主意愿进同一个大脑、人物关系页；schema 6→7；`ui/settings_window.py` 只加一行挂页面 |

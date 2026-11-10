@@ -32,6 +32,13 @@ class AnimationBuildTests(unittest.TestCase):
         self.assertAlmostEqual(float((xx*weights).sum()/weights.sum()),21.5,delta=.4)
         self.assertTrue(all(np.isfinite(x).all() for x in (*f,*g)))
 
+    def test_single_cel_walking_keeps_opaque_shoes_instead_of_two_ghosts(self):
+        a,b=self.rectangle(),self.rectangle(20)
+        zeros=np.zeros((48,48),dtype=np.float32)
+        frame=np.asarray(interpolate(a,b,.5,(zeros,zeros),(zeros,zeros),single_cel=True))
+        self.assertTrue(np.array_equal(frame,np.asarray(b)))
+        self.assertEqual(set(np.unique(frame[:,:,3])),{0,255})
+
     def test_identical_keys_remain_still_and_crisp(self):
         a=self.rectangle();flow=optical_flow(a,a)
         self.assertLess(float(np.abs(flow[0]).max()),1e-6)
@@ -76,6 +83,38 @@ class AnimationBuildTests(unittest.TestCase):
             build.gif_preview('tiny',[self.rectangle(),self.rectangle(1)])
             path=Path(directory)/'output/transitions/tiny.gif'
             self.assertTrue(path.read_bytes().startswith(b'GIF'))
+
+    def test_low_step_layers_keep_lift_small_and_alternate_feet(self):
+        from low_step_walk import low_step_frames
+        image=Image.new('RGBA',(128,192));draw=ImageDraw.Draw(image)
+        draw.rectangle((30,25,98,140),fill=(50,80,240,255))
+        draw.rectangle((38,141,52,177),fill=(250,230,220,255))
+        draw.rectangle((76,141,90,177),fill=(250,230,220,255))
+        frames,record=low_step_frames([image]*24)
+        self.assertLessEqual(record['max_lift_px'],5)
+        self.assertFalse(np.array_equal(np.asarray(frames[0]),np.asarray(frames[6])))
+        self.assertFalse(np.array_equal(np.asarray(frames[6]),np.asarray(frames[18])))
+        for frame in frames:
+            self.assertTrue(np.array_equal(np.asarray(frame)[:record['cut_y']],np.asarray(image)[:record['cut_y']]))
+            self.assertGreaterEqual(frame.getbbox()[3],173)
+
+    def test_walking_head_anchor_does_not_follow_alternating_support_foot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image=Image.new('RGBA',(360,280));draw=ImageDraw.Draw(image)
+            for i in range(6):
+                x=i%3*120;y=i//3*140
+                draw.rectangle((x+45,y+20,x+75,y+80),fill=(245,170,140,255))
+                leg=45 if i%2 else 68
+                draw.rectangle((x+leg,y+75,x+leg+7,y+110),fill=(30,60,230,255))
+            path=Path(directory)/'walk.png';image.save(path)
+            anchored,_=extract_keys(path,96,horizontal_anchor='head')
+            foot,_=extract_keys(path,96)
+            def head_center(frame):
+                rgba=np.asarray(frame);mask=(rgba[:,:,0]>200)&(rgba[:,:,3]>200)
+                return float(np.where(mask)[1].mean())
+            heads=[head_center(f) for f in anchored];feet=[head_center(f) for f in foot]
+            self.assertLess(max(heads)-min(heads),1.1)
+            self.assertGreater(max(feet)-min(feet),10)
 
     def test_source_character_cut_by_outer_canvas_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

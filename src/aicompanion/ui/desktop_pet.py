@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import random
+import math
 import time
 from dataclasses import replace
 from datetime import datetime
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QVBoxLayout, QWidget
 from aicompanion.brain.focus import focus_until, in_quiet_hours, is_focused, set_focus
 from aicompanion.pet.behavior import LinePacer, greeting_key
 from aicompanion.pet.state import PetStateMachine
+from aicompanion.pet.locomotion import advance_walk,clamp_target,braking_step
 from aicompanion.ui import desktop_integration as desktop
 from aicompanion.ui.pet_bubble import ACTIVITY, BubbleStack, QuickInput
 from aicompanion.ui.pet_geometry import fit_pet_geometry
@@ -60,7 +62,7 @@ class DesktopPetWindow(QWidget):
         self._walk_timer = QTimer(self); self._walk_timer.setInterval(16); self._walk_timer.timeout.connect(self._walk_step)
         self._fall_timer = QTimer(self); self._fall_timer.setInterval(16); self._fall_timer.timeout.connect(self._fall_step)
         self._velocity = [0.0, 0.0]; self._fall_last = 0.0; self._thrown = False; self._greet_on_land = False
-        self._walk_target = None; self._walk_last = 0.0; self._next_wander = time.monotonic()+self.rng.uniform(60, 150)
+        self._walk_target = None; self._walk_speed=0.; self._walk_position = None; self._walk_last = 0.0; self._next_wander = time.monotonic()+self.rng.uniform(60, 150)
         # 骨骼形象：不裁剪窗口，按光标是否在角色身上切换"是否接收鼠标"（与 Coopanion 相同思路）
         self._input_transparent = None
         self._input_timer = QTimer(self); self._input_timer.setInterval(30); self._input_timer.timeout.connect(self._update_input)
@@ -78,6 +80,7 @@ class DesktopPetWindow(QWidget):
         old = self.view
         if old is view and kind == self.view_kind: self.pack = pack; return
         if old is not None:
+            self.stop_walking()
             self.layout_.removeWidget(old)
             if self.view_kind == 'webengine':
                 try:
@@ -252,7 +255,7 @@ class DesktopPetWindow(QWidget):
         self._guard_desktop()
         self._maybe_wander()
 
-    # ---- 走动：闲着时偶尔沿屏幕底边走几步 ---------------------------------------------
+    # ---- 走动：有支撑脚的二维桌面散步 ---------------------------------------------
     def _maybe_wander(self):
         if not hasattr(self.view, 'set_walking') or self._walk_target is not None or not self.isVisible(): return
         if not self.database.get_setting('pet_wander', True) or self.database.get_setting('pet_quiet_mode', False) or is_focused(self.database): return
@@ -262,30 +265,51 @@ class DesktopPetWindow(QWidget):
         if self.machine.shown != 'idle' or self._press_pos is not None: return
         screen = self.screen().availableGeometry() if self.screen() else None
         if screen is None: return
-        distance = self.rng.choice([-1, 1])*self.rng.uniform(80, 260)
-        target = max(screen.left(), min(self.x()+distance, screen.right()-self.width()))
-        if abs(target-self.x()) < 40: return
-        self.walk_to(target)
+        dx = self.rng.choice([-1, 1])*self.rng.uniform(80, 220)
+        dy = self.rng.choice([-1, 1])*self.rng.uniform(45, 110) if hasattr(self.view,'set_walking_vector') else 0
+        target = clamp_target((self.x()+dx,self.y()+dy),
+                              (screen.x(),screen.y(),screen.width(),screen.height()),(self.width(),self.height()))
+        if abs(target[0]-self.x())+abs(target[1]-self.y()) < 40: return
+        self.walk_to(*target)
 
-    def walk_to(self, x):
-        self._walk_target = int(x); self._walk_last = time.monotonic()
-        self.view.set_walking(1 if x > self.x() else -1); self._walk_timer.start()
+    def walk_to(self, x, y=None):
+        if self.view is None or not hasattr(self.view,'set_walking') or self._fall_timer.isActive():return
+        screen=self.screen().availableGeometry() if self.screen() else None
+        if screen is None:return
+        self._walk_target=clamp_target((x,self.y() if y is None else y),
+            (screen.x(),screen.y(),screen.width(),screen.height()),(self.width(),self.height()))
+        self._walk_position=(float(self.x()),float(self.y()));self._walk_last=time.monotonic();self._walk_speed=0.
+        dx,dy=self._walk_target[0]-self.x(),self._walk_target[1]-self.y()
+        if abs(dx)+abs(dy)<.5:self.stop_walking();return
+        if hasattr(self.view,'set_walking_vector'):self.view.set_walking_vector(dx,dy)
+        else:self.view.set_walking(1 if dx>=0 else -1)
+        self._walk_timer.start()
 
     def stop_walking(self):
         if self._walk_target is None: return
-        self._walk_target = None; self._walk_timer.stop()
+        self._walk_target = None; self._walk_position=None; self._walk_speed=0.; self._walk_timer.stop()
         if hasattr(self.view, 'set_walking'): self.view.set_walking(0)
         self.save_geometry()
 
     def _walk_step(self):
-        if self._walk_target is None or self._press_pos is not None or self._fall_timer.isActive() or self.machine.shown not in ('idle', 'talking'):
+        if (self._walk_target is None or self._press_pos is not None or self._fall_timer.isActive()
+                or self.machine.shown!='idle' or self.machine.snapshot.pose(time.monotonic())!='idle' or not self.isVisible()):
             self.stop_walking(); return
-        now = time.monotonic(); dt = min(0.05, now-self._walk_last); self._walk_last = now
-        step = 70*dt*self.scale   # 每秒约 70 像素
-        remaining = self._walk_target-self.x()
-        if abs(remaining) <= step: self.move(self._walk_target, self.y()); self.stop_walking(); return
-        self.move(self.x()+round(step if remaining > 0 else -step), self.y())
-        self.bubble.move_anchor(self._head_point())
+        now=time.monotonic();dt=max(0.,min(.05,now-self._walk_last));self._walk_last=now
+        # 开始 / 转身的过渡还没播完就先停脚，避免窗口已经滑走而角色还站着。
+        if hasattr(self.view,'walking_ready') and not self.view.walking_ready:self._walk_speed=0.;return
+        screen=self.screen().availableGeometry() if self.screen() else None
+        if screen is not None:
+            bounds=(screen.x(),screen.y(),screen.width(),screen.height());size=(self.width(),self.height())
+            self._walk_target=clamp_target(self._walk_target,bounds,size)
+            self._walk_position=clamp_target(self._walk_position,bounds,size)
+        remaining=math.hypot(self._walk_target[0]-self._walk_position[0],self._walk_target[1]-self._walk_position[1])
+        distance,self._walk_speed=braking_step(self._walk_speed,remaining,dt,self.scale)
+        position,distance,arrived=advance_walk(self._walk_position,self._walk_target,distance)
+        self._walk_position=position
+        if hasattr(self.view,'step_walking'):self.view.step_walking(distance/self.scale)
+        self.move(round(position[0]),round(position[1]));self.bubble.move_anchor(self._head_point())
+        if arrived:self.stop_walking()
 
     def set_focus(self, minutes):
         """专注模式：不主动说话、不走动、不主动搭话；你找她时照常回应。"""
@@ -498,6 +522,7 @@ class DesktopPetWindow(QWidget):
         QTimer.singleShot(1200, self._hide_by_user)
 
     def _hide_by_user(self):
+        self.stop_walking()
         self._user_hidden = True; self.bubble.fade_out(); self.quick.hide(); self.hide(); self.visibility_changed.emit(False)
 
     def showEvent(self, event):
@@ -567,6 +592,11 @@ class DesktopPetWindow(QWidget):
             autostart = options.addAction('开机自动启动'); autostart.setCheckable(True); autostart.setChecked(desktop.autostart_enabled())
             autostart.toggled.connect(desktop.set_autostart)
         if self.view_kind=='spritesheet':
+            walk=menu.addMenu('走几步')
+            for label,dx,dy in [('向左',-1,0),('向右',1,0),('向上',0,-1),('向下',0,1),
+                                ('左上',-1,-1),('右上',1,-1),('左下',-1,1),('右下',1,1)]:
+                walk.addAction(label,lambda checked=False,x=dx,y=dy:self.walk_to(self.x()+x*120*self.scale,self.y()+y*90*self.scale))
+            walk.addSeparator();walk.addAction('停下来',self.stop_walking)
             actions=menu.addMenu('动画动作')
             for key,entry in self.view.pack.actions.items():
                 actions.addAction(entry.name,lambda checked=False,k=key:self.view.play_action(k))

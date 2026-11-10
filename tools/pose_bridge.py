@@ -35,7 +35,7 @@ def prepare(first,second):
     return anchors(first),anchors(second),row_bounds(first),row_bounds(second)
 
 
-def pose_interpolate(first,second,t,geometry=None):
+def pose_interpolate(first,second,t,geometry=None,soft=False):
     if t<=0:return first.copy()
     if t>=1:return second.copy()
     aa,bb,ab,bc=geometry or prepare(first,second)
@@ -50,4 +50,6 @@ def pose_interpolate(first,second,t,geometry=None):
     a=sample(rgba_float(first),xa-xx,y_a[:,None]-yy)
     b=sample(rgba_float(second),xb-xx,y_b[:,None]-yy)
     # 逐格动画保留一张原画的线条，避免脸、手指和蕾丝双影；几何位置仍连续移动。
-    return rgba_image(a if t<.5 else b)
+    if not soft:return rgba_image(a if t<.5 else b)
+    weight=np.clip((t-.30)/.40,0,1);weight=weight*weight*(3-2*weight)
+    return rgba_image(a*(1-weight)+b*weight)

@@ -106,7 +106,10 @@ def main():
     (OUT/'SOURCE.json').write_text(json.dumps(provenance,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (KEYS/'alignment.json').write_text(json.dumps({p:sources[p]['alignment'] for p in ('idle','talking','thinking')},indent=2)+'\n',encoding='utf-8')
     print('13 动作编译完成；18 张新绘关键帧，其他沿用原画。',flush=True)
-    if (ROOT/'art/deepseek-whale/transition-keys-v1/working-sheet.png').is_file():
+    if (ROOT/'art/deepseek-whale/personality-keys-v1/smug-sheet.png').is_file():
+        from build_personality_animation import main as build_personality
+        build_personality()
+    elif (ROOT/'art/deepseek-whale/transition-keys-v1/working-sheet.png').is_file():
         from build_pose_transitions import main as build_transitions
         build_transitions()
 

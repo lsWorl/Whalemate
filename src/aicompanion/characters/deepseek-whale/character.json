@@ -25,7 +25,8 @@
         "慌张": "drag",
         "晕": "dizzy",
         "害羞": "shy",
-        "得意": "smug"
+        "得意": "smug",
+        "气鼓鼓": "pout"
       },
       "motions": {
         "点头": "nod",
@@ -35,7 +36,9 @@
         "跳": "jump",
         "转圈": "spin",
         "歪头": "tilt",
-        "摇摆": "sway"
+        "摇摆": "sway",
+        "喝奶茶": "milk_tea",
+        "伸懒腰": "stretch"
       }
     },
     "animation": "animation-original/animations.json"
