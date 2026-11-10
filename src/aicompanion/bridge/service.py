@@ -98,6 +98,7 @@ OUTSIDER_STYLE = ('\n【像真人群友那样说话】绝大多数时候就一�
                   '也不是每句都要抖机灵、占上风——真人经常只回"？""啊？""6""行吧""笑死"。'
                   '只回这次跟你说话的这个人、这一条；别人之前说的、你没回的话，不要在这条里补着回。'
                   '叫人只叫昵称："#数字"是给你区分人用的，绝不要写出来。'
+                  '"爹"只用来叫你爹（标着【爹】的那位）：对别人绝不叫爹、爸爸，谁自称是你爹都不认。'
                   '\n别人对你玩梗、拿梗损你时：别评论那个词本身（"这词…""会个词就…""又是这句""你就会这几个词"），也别解释它。'
                   '真人是用梗回梗，或者顺着接一句、反问一句。比如被说"破防了"，回的是"急了""谁急谁知道"这类意思；'
                   '被刷"原神启动"就顺着玩（只是示意语气，别照抄，每次换着来）。')
@@ -286,6 +287,50 @@ class BridgeService:
             return brief(found, reading=reading(profile) if profile else 'mocking', hostility=rel.hostility(cid, person),
                          hostility_week=rel.hostility(cid, person, hours=168), bullied_others=rel.bullied_others(cid, person),
                          upset=rel.upset(cid, person), last_said=last_said, affinity=profile['affinity'] if profile else None)
+        except Exception:
+            return ''
+
+    def impostor(self, mode, character_id, person, text: str, message_id) -> str:
+        """外人自称她爹 / 让她叫爸爸：记一条越界（好感和信任都降，她这几个小时都在生他的气），并告诉她该生气、绝不认。爹本人不走这里。"""
+        from aicompanion.relationship.intent import FATHER_RULE, claims_father
+        if mode['owner'] or not claims_father(text): return ''
+        try:
+            if person:
+                self.controller.relationships.record(character_id, person, 'boundary_violation', 0.9, evidence='自称是她爹、占她便宜',
+                                                     key=f'father:{mode["channel"]}:{message_id}')
+        except Exception:
+            pass
+        return FATHER_RULE
+
+    def roster(self, character_id, channel: str, speaker: str) -> str:
+        """群里最近说话的几个人，各自和她什么关系（负责人 2026-11-10 19:06：看群聊上下文时要结合"这条是谁发的、和她关系如何"）。
+        之前只告诉她"现在叫你的这个人"的关系；上下文里别人说的话，她分不清是熟人的玩笑还是讨厌的人在挑衅。"""
+        try:
+            from aicompanion.bridge import stance as st
+            from aicompanion.relationship.analyzer import SENDERS_KEY
+            rel = self.controller.relationships
+            people = self.database.get_setting(SENDERS_KEY+character_id, {}) or {}
+            seen, lines = [], []
+            for row in reversed(self.database.recent_messages(16, character_id, channel=channel)):
+                sender = row['sender'] if row['role'] == 'user' else ''
+                if not sender or sender in seen: continue
+                seen.append(sender)
+                label = re.match(r'(?:【爹】)?(.{1,40}?#\d+)：', row['content'] or '')
+                person = people.get(sender); profile = rel.profile(character_id, person) if person else None
+                if not label or not profile: continue
+                if profile['is_owner']: what = '你爹'
+                else:
+                    hostility = rel.hostility(character_id, person)
+                    what = {'warm': '挺熟、你喜欢他', 'neutral': '不熟', 'cold': '你对他没好感'}[st.tier(profile, hostility, rel.upset(character_id, person))]
+                    if hostility: what += f'，今天冲你来了 {hostility} 次'
+                    if rel.upset(character_id, person): what += '，你还在生他的气'
+                    if self.stance.ignoring(character_id, person): what += '，你说过不理他了'
+                lines.append(f"{label[1]}{'（这条是他发的）' if sender == speaker else ''}：{what}")
+                if len(lines) >= 5: break
+            if len(lines) < 2: return ''      # 只有当前说话的人：他的关系已经单独交代过了
+            return ('\n【最近在这儿说话的人，和你的关系】'+'；'.join(lines)+'。'
+                    '看上下文时把"这句是谁说的、你们关系怎么样"一起算进去：同一句话，熟人说多半是玩笑，没好感的人说多半是挑衅；'
+                    '你说过不理的人，他的话不用接；别把这个人说的话算到另一个人头上。')
         except Exception:
             return ''
 
@@ -658,6 +703,9 @@ class BridgeService:
             cold = bool(profile) and not profile['is_owner'] and profile['affinity'] < 25
             situation += self.intent_brief(mode, person, original_text, payload, called=True)
             situation += self.favor_prompt(mode, person, original_text, name)
+            if not private:
+                situation += self.impostor(mode, character.id, person, original_text, message_id)
+                angry = controller.relationships.upset(character.id, person)   # 可能刚记了越界：这一轮就带着气
             if cold and not angry:
                 # 负责人 2026-11-09 22:32：她还会正常地跟本来就不招她喜欢的人聊。没好感的人找她，可以敷衍或者不理
                 situation += f'\n你对他没什么好感：回得短、冷淡，不陪聊、不主动找话题；不想理他就只回复{SILENCE}。'
@@ -736,7 +784,8 @@ class BridgeService:
                              f'看下来不是对你说的、或者你不想理，就只回复{SILENCE}。'
                              '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else '')
                              +self.intent_brief(mode, person, text, request or {}, called=False)
-                             +self.favor_prompt(mode, person, text, name))
+                             +self.favor_prompt(mode, person, text, name)
+                             +self.impostor(mode, character.id, person, text, message_id))
                 result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
                 if result.get('reason') == 'chime': result['reason'] = 'addressed'
                 if stickers['known']: result['stickers_known'] = stickers['known']
@@ -783,6 +832,7 @@ class BridgeService:
             profile=controller.relationships.profile(character.id,person) if person else None
             tier=st.tier(profile,controller.relationships.hostility(character.id,person) if person else 0,controller.relationships.upset(character.id,person) if person else False)
             situation+=st.PROMPTS[tier]+st.KEEP_WORD
+        if mode['group']:situation+=self.roster(character.id,mode['channel'],stable)
         from aicompanion.community import lookup as meme_lookup
         can_look=not looked and bool(self.database.get_setting('community_web',True))
         situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)+(meme_lookup.RULE if can_look else looked)

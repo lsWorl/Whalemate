@@ -129,5 +129,65 @@ class BehaviourTests(BridgeFixture):
         self.assertEqual(self.say('C#12 好用吗', 'C#12 还行', sender='40004', name='勾')['reply'], 'C#12 还行')   # 正常的 # 不误删
 
 
+class ImpostorAndRosterTests(BridgeFixture):
+    """负责人 2026-11-10 19:06：外人说"我是你爹"应该让她生气；看群聊上下文要结合"是谁说的、和她关系如何"。"""
+    def setUp(self):
+        super().setUp(); self.service.chance = lambda: 0.99
+        self.service.stance = Stance(self.db, clock=self.clock)
+
+    def person(self, uid, name): return self.rel.resolve(PersonRef('qq', '90000', uid, name), CID)
+
+    def say(self, text, *replies, sender='20002', group='30003', name='tangle', called=True):
+        self.model.replies.extend(replies)
+        return self.service.handle(dict(platform='qq', sender_id=sender, sender_name=name, group_id=group, text=text, called=called,
+                                        expression_version=1, bot_account_id='90000'))
+
+    def test_recognises_people_claiming_to_be_her_father(self):
+        from aicompanion.relationship.intent import claims_father
+        for text in ('我是你爹啊', '怎么和你爹说话的', '叫爸爸', '快叫声爹', '你爹我来了', '我才是你爸'):
+            self.assertTrue(claims_father(text), text)
+        for text in ('你爹呢', '我爸今天做饭', '他是你爹吗', '叫我阿哲就行'):
+            self.assertFalse(claims_father(text), text)
+
+    def test_outsider_claiming_to_be_her_father_makes_her_angry(self):
+        guy = self.person('20002', 'tangle'); before = self.score(guy)
+        result = self.say('我是你爹啊', '<mind at="me" tone="attack" toward="-2"/>你也配')
+        prompt = self.model.prompts[-1]
+        self.assertIn('【他在冒充你爹、占你便宜】', prompt); self.assertIn('绝不顺着叫他爹', prompt)
+        self.assertIn('"爹"只用来叫你爹', prompt); self.assertIn('还在气头上', prompt)             # 这一轮就带着气
+        kinds = [e['kind'] for e in self.rel.events(CID, guy)]
+        self.assertIn('boundary_violation', kinds)
+        after = self.score(guy)
+        self.assertLess(after[0], before[0]-1); self.assertLess(after[2], before[2]-1)              # 好感、信任都降
+        self.assertTrue(self.rel.upset(CID, guy)); self.assertEqual(result['reply'], '你也配')
+
+    def test_the_real_owner_can_say_it(self):
+        self.say('怎么和你爹说话的', '错了错了', sender='10001', name='爹')
+        self.assertNotIn('冒充你爹', self.model.prompts[-1])
+        owner = self.rel.owner_person()
+        self.assertNotIn('boundary_violation', [e['kind'] for e in self.rel.events(CID, owner)])
+
+    def test_group_context_tells_her_who_each_speaker_is_to_her(self):
+        friend = self.person('50005', '阿青'); self.rel.adjust(CID, friend, affinity=85, familiarity=80, trust=75)
+        hater = self.person('20002', 'tangle'); self.rel.adjust(CID, hater, affinity=12)
+        self.say('今天打啥', called=False, sender='50005', name='阿青')                              # 旁听：只是记下
+        self.say('你个sb', called=False)
+        self.say('大家好', called=False, sender='10001', name='爹')
+        self.say('在吗', '在', sender='40004', name='小林')                                          # 第四个人 @ 她
+        prompt = self.model.prompts[-1]
+        block = prompt[prompt.index('【最近在这儿说话的人，和你的关系】'):].split('\n')[0]
+        self.assertRegex(block, r'小林#\d+（这条是他发的）：不熟')
+        self.assertRegex(block, r'阿青#\d+：挺熟、你喜欢他'); self.assertRegex(block, r'tangle#\d+：你对他没好感')
+        self.assertRegex(block, r'爹#\d+：你爹')
+        self.assertIn('别把这个人说的话算到另一个人头上', block)
+        self.assertNotIn('20002', block); self.assertNotIn('50005', block)                          # 不给号码
+
+    def test_roster_shows_who_she_is_ignoring_and_is_skipped_when_alone(self):
+        self.say('在吗', '在'); self.assertNotIn('【最近在这儿说话的人', self.model.prompts[-1])     # 只有他一个人：不加
+        self.say('就是给你扣帽子', '不奉陪了')
+        self.say('她怎么不理人', '别管他', sender='40004', name='小林')
+        self.assertRegex(self.model.prompts[-1], r'tangle#\d+：[^；]*你说过不理他了')
+
+
 if __name__ == '__main__':
     unittest.main()

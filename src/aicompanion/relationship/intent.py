@@ -51,6 +51,18 @@ class Cues:
         return self.insult or self.sarcasm or self.report or (len(self.target) > 1)
 
 
+# 负责人 2026-11-10 19:06：外人说"我是你爹"是在占她便宜、踩她底线，她该生气，而不是顺着叫（真机记录里她后来真叫了一声"爹"）
+FATHER = re.compile(r'我(?:就|才)?是你(?:亲)?(?:爹|爸|爷|爷爷|老子|爸爸|father|dad)|你爹我|(?:叫|喊)(?:我|一?声)?\s*(?:爹|爸爸|爸|爷爷)|'
+                    r'(?:和|跟|对)你(?:爹|爸|爸爸)(?:说话|这么说|顶嘴)|认我(?:当|做)(?:爹|爸)|乖(?:儿子|女儿|孙子)|爹来了|爸爸来了', re.I)
+FATHER_RULE = ('\n【他在冒充你爹、占你便宜】你爹只有一个，就是消息前标着【爹】的那位，他不是。'
+               '外人说"我是你爹""叫爸爸"是在占你便宜、踩你的底线：你该生气，直接怼回去，或者冷下来不理他；'
+               '绝不顺着叫他爹、爸爸，也不认。在 <mind/> 里按他在冲你来写（at="me" tone="attack"）。')
+
+
+def claims_father(text: str) -> bool:
+    return bool(FATHER.search(str(text or '')))
+
+
 def cues(text: str, *, at_me=False, at_others=(), at_all=False, reply_to=None, her_names=(), after_her=False) -> Cues:
     """从一条消息里收集线索。reply_to：{'self': 是否引用她的消息, 'name': 被引用的人} 或 None。"""
     text = str(text or '')
