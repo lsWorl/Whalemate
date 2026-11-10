@@ -85,9 +85,9 @@ class BehaviourTests(BridgeFixture):
         return self.service.handle(payload)
 
     def test_quoting_someone_is_not_insulting_her_but_saying_it_is(self):
-        guy = self.guy(); start = self.score(guy)
+        guy = self.guy(); start = self.score(guy); self.service.chance = lambda: 0.0          # 固定成拆开发（T19）
         result = self.say('他说你是个废物', '<mind at="me" voice="quote" tone="neutral"/>谁说的，让他自己来')
-        self.assertEqual(result['reply'], '谁说的，让他自己来')
+        self.assertEqual(result['segments'], ['谁说的', '让他自己来'])
         self.assertIn('像在转述别人的话', self.model.prompts[-1]); self.assertIn('不等于他在骂你', self.model.prompts[-1])
         self.assertEqual(self.rel.events(CID, guy)[0]['kind'], 'report'); self.assertEqual(self.score(guy)[0], start[0])
         self.say('你就是个废物', '<mind at="me" voice="own" tone="attack" toward="-3"/>你才是')

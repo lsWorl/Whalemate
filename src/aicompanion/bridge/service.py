@@ -87,6 +87,10 @@ MESSAGES = ('发几条没有固定数，像真人一样看情况：随口应一�
             '对方一下子连发好几条，就像真人那样一起回一次，挑想接的接，不用每条都回；对方很冷淡或你没兴趣，就一两个字。'
             '别为了凑条数硬拆，也别把几件事硬塞进一条。'
             '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就用逗号，或者干脆拆成两条。')
+# 负责人 2026-11-10 13:51：和外人聊尽量不用标点，参考真人在 QQ 里的写法。发出去之前 qq_segments(casual=True) 还会再收一遍句尾标点
+CASUAL_PUNCT = ('标点尽量少，像真人发 QQ：句尾不加句号、逗号；两个短句要么直接连着写，要么另起一条，一句话比较长、不停顿读不通时才用一个逗号；'
+                '真的在问才用问号，感叹号少用；"？？？""。。。""！！"这种表达情绪的可以用。'
+                '只有正经讲一段长内容（讲解、代码、链接）时标点照常。')
 # 负责人 2026-11-09 18:27：说"无法识别图片"正常人一看就知道是 AI。没看到的图只有中性标记 [图片]，处理方式交给她按上下文定
 # 插件 0.9.3：群里只 @ 她、不带字（原来会落到 AstrBot 自己没配模型的流程，回"LLM 请求失败"）
 AT_ONLY = '[@了你一下，没说别的]'
@@ -107,9 +111,9 @@ HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
                '只是别明确说自己是真人。')
 GROUP_HUMAN = ('【群里的说话方式】群里人人看得到：别叫你爹"爹""老爹"，别提你们是父女、你住在谁电脑上，'
-               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE)
+               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE+CASUAL_PUNCT)
 PRIVATE_HUMAN = '\n【QQ 私聊的说话方式】'+HUMAN_STYLE+'（和爹私聊照常叫爹。）'
-STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE
+STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE+CASUAL_PUNCT
 # 负责人 2026-11-09：在 QQ 里她没必要什么都懂
 QQ_NOT_EXPERT = ('\n在 QQ 上你不用什么都懂：问到不熟的专业问题、冷门知识，可以直接发一张可爱的表情包，说自己不太懂（"这个本鲸不会诶"），'
                  '不用硬答，更不要编；熟的照常好好说。')
@@ -270,6 +274,34 @@ class BridgeService:
             return brief(found, reading=reading(profile) if profile else 'mocking', hostility=rel.hostility(cid, person),
                          hostility_week=rel.hostility(cid, person, hours=168), bullied_others=rel.bullied_others(cid, person),
                          upset=rel.upset(cid, person), last_said=last_said, affinity=profile['affinity'] if profile else None)
+        except Exception:
+            return ''
+
+    web_search = None       # 测试注入假搜索；平时按需用聊天接口的密钥建一个
+
+    def favor_prompt(self, mode, person, text: str, name: str = '') -> str:
+        """外人让她帮忙办事（"去帮我查下这是什么梗"）：给大脑"像真人那样回"的说明；问的是说得出名字、词库里没有的梗时顺手搜一下。
+        爹不走这里（爹让她办事照常）；没好感或还在气头上的人，她不会替他搜。"""
+        try:
+            from aicompanion.bridge import favor
+            if mode['owner'] or not favor.wants_favor(text): return ''
+            out = favor.RULE
+            term = favor.asked_term(text)
+            if not term:
+                return out+(favor.WHICH if favor.MEME_ASK.search(text) else '')
+            from aicompanion.community.learner import local_scope
+            from aicompanion.community.lexicon import Lexicon
+            from aicompanion.community.search import WebSearch, searchable
+            rel = self.controller.relationships; cid = self.controller.character.id
+            profile = rel.profile(cid, person) if person else None
+            if profile and (profile['affinity'] < 25 or rel.upset(cid, person)): return out
+            if any(hit['term'] == term for hit in Lexicon(self.database).match(term, local_scope(mode['channel']))): return out   # 已经懂的词，提示里本来就带着
+            if not self.database.get_setting('community_web', True): return out
+            # 他明说要查的词：不要求"至少两个人用过"，但号码、链接、人名（他的昵称、她的名字）照样不拿去搜
+            if not searchable(term, speakers=2, names=(name, self.controller.character.name)+self.HER_NAMES): return out
+            web = self.web_search or WebSearch(self.database, self.controller.llm_client)
+            web.timeout = 8
+            return out+favor.looked_up(term, web.search(term+' 梗 意思', 3))
         except Exception:
             return ''
 
@@ -582,6 +614,7 @@ class BridgeService:
             profile = controller.relationships.profile(character.id, person) if person else None
             cold = bool(profile) and not profile['is_owner'] and profile['affinity'] < 25
             situation += self.intent_brief(mode, person, original_text, payload, called=True)
+            situation += self.favor_prompt(mode, person, original_text, name)
             if cold and not angry:
                 # 负责人 2026-11-09 22:32：她还会正常地跟本来就不招她喜欢的人聊。没好感的人找她，可以敷衍或者不理
                 situation += f'\n你对他没什么好感：回得短、冷淡，不陪聊、不主动找话题；不想理他就只回复{SILENCE}。'
@@ -656,7 +689,8 @@ class BridgeService:
                              '先看清楚他是不是在跟你说话、在说你：是的话就像群友那样接（按你们的关系，该冷淡就冷淡、该怼就怼）；'
                              f'看下来不是对你说的、或者你不想理，就只回复{SILENCE}。'
                              '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else '')
-                             +self.intent_brief(mode, person, text, request or {}, called=False))
+                             +self.intent_brief(mode, person, text, request or {}, called=False)
+                             +self.favor_prompt(mode, person, text, name))
                 result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
                 if result.get('reason') == 'chime': result['reason'] = 'addressed'
                 if stickers['known']: result['stickers_known'] = stickers['known']
@@ -747,7 +781,8 @@ class BridgeService:
         # 旧插件只看 reply，不受影响。只有一条时也换成整理后的写法。
         from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
         burst=chat_burst(reply,peer_burst=peer,closeness=0.8 if private else self.closeness_of(person))
-        segments=qq_segments(reply,chance=self.chance,burst=burst)
+        # 和外人（群里、非爹的私聊）尽量不用标点；和爹私聊照旧
+        segments=qq_segments(reply,chance=self.chance,burst=burst,casual=not private)
         if len(segments)>1:result.update(segments=segments,segment_delays=typing_delays(segments,chance=self.chance,burst=burst))
         if len(segments)==1:
             result['reply']=segments[0]

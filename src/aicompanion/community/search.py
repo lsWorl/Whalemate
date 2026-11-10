@@ -54,6 +54,7 @@ class WebSearch:
         self.db, self.client, self.clock = database, client, clock
         self.today = today or date.today
         self.open = opener or build_opener(NoRedirect()).open
+        self.timeout = 20       # 聊天里顺手搜一下时会调短，不让对方干等
 
     @property
     def enabled(self) -> bool:
@@ -72,8 +73,8 @@ class WebSearch:
         day = self.today().isoformat()
         return {k: int(self.db.get_setting(f'community_{k}_count:{day}', 0) or 0) for k in ('search', 'fetch')}
 
-    def _json(self, request: Request, timeout=20) -> dict:
-        with self.open(request, timeout=timeout) as response:
+    def _json(self, request: Request, timeout=None) -> dict:
+        with self.open(request, timeout=timeout or self.timeout) as response:
             raw = response.read(MAX_RESPONSE+1)
         if len(raw) > MAX_RESPONSE: raise SearchError('响应太大')
         return json.loads(raw)
