@@ -1,0 +1,159 @@
+{
+  "format": "AICompanionAnimationPack",
+  "version": 1,
+  "size": [
+    384,
+    384
+  ],
+  "poster": "poster.png",
+  "head": [
+    0.32,
+    0.27,
+    0.36,
+    0.23
+  ],
+  "actions": {
+    "walking_left": {
+      "name": "向左自然行走",
+      "image": "walking_left.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left",
+      "cycleDistance": 256,
+      "strideCycles": 8
+    },
+    "walking_right": {
+      "name": "向右自然行走",
+      "image": "walking_right.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right",
+      "cycleDistance": 256,
+      "strideCycles": 8
+    },
+    "click_wave": {
+      "name": "点击回应·元气挥手",
+      "image": "click_wave.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "curtsy": {
+      "name": "女仆礼仪·屈膝礼",
+      "image": "curtsy.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "curious": {
+      "name": "好奇·歪头观察",
+      "image": "curious.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "shy_peek": {
+      "name": "害羞·捂脸偷看",
+      "image": "shy_peek.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "happy_hops": {
+      "name": "开心·连续小跳",
+      "image": "happy_hops.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "self_hug": {
+      "name": "撒娇·抱住自己",
+      "image": "self_hug.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "pout_stomp": {
+      "name": "生气·鼓起脸颊",
+      "image": "pout_stomp.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "giggle": {
+      "name": "撒娇式笑场·捂嘴偷笑",
+      "image": "giggle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    },
+    "idle": {
+      "name": "统一标准站姿",
+      "image": "idle.webp",
+      "frameWidth": 384,
+      "frameHeight": 384,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "right"
+    }
+  },
+  "poses": {
+    "idle": "idle",
+    "talking": "idle",
+    "thinking": "curious",
+    "walking": "walking_right",
+    "walking_left": "walking_left",
+    "walking_right": "walking_right",
+    "click_wave": "click_wave",
+    "curtsy": "curtsy",
+    "curious": "curious",
+    "shy_peek": "shy_peek",
+    "happy_hops": "happy_hops",
+    "self_hug": "self_hug",
+    "pout_stomp": "pout_stomp",
+    "giggle": "giggle"
+  },
+  "transitions": []
+}

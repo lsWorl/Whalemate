@@ -1,0 +1,232 @@
+{
+  "mode": "built-in image_gen keys plus offline single-cel flow interpolation",
+  "identity_reference": "art/deepseek-whale/reference-motion-v1/user-identity-reference.png",
+  "identity_sha256": "503b064b7d936756e05281c7600766229eb7459f0e471736a271b24e32ea7b37",
+  "requested_actions": 10,
+  "frames_per_action": 120,
+  "fps": 12,
+  "duration_seconds": 10,
+  "not_1200_hand_drawn_frames": true,
+  "automatic_validation": {
+    "walking_left": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 55,
+      "safe_margin_passed": true,
+      "image_sha256": "2508ae6d5137082b62cdc9618ae0b1421f2556caa17a97b1bab9b14abb61838a",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "walking_right": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 54,
+      "safe_margin_passed": true,
+      "image_sha256": "a4ff94fa8f4c06d2820140ec2fe6aca42879daa29a7d8ade0163fffd7dae9a33",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "click_wave": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "a75b65ba85cfcc278ac23ee3773bfad0ef63a1a70c0168c947a695ec0300a67e",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "curtsy": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 55,
+      "safe_margin_passed": true,
+      "image_sha256": "4b6e179b18de292dcd5db95a49d217a37c28fcdc34f140936c01b3600a92b62a",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "curious": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "0f337b0b89c7a29e7369724077a6ded417c062a3ca80d3bda4d04bfeab0a4c48",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "shy_peek": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "a082dc66cfab14691591a0cd09abc6f6888ac072771e2c655987164dd2501fb0",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "happy_hops": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "bc1d2eb4882e7cc823ac1b5ef1a491056a26e0200b7b4af5d207c1051ad37314",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "self_hug": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "fc46d60c0347ca0a1ce93ada961ccd8dc4b336087151f7c8522eba46a9f98860",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "pout_stomp": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "8f454bfc27152043643a22d9447c0f840bb8e91d3ec630dd8f41ec9639bad538",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "giggle": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 56,
+      "safe_margin_passed": true,
+      "image_sha256": "5b3a5e3b351e78db8064d67078daa380a60ac4d4c79f112abcaf7f33f5f28d2b",
+      "encoded_endpoints_rgba_preserved": true
+    },
+    "idle": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000,
+      "first_last_identical": true,
+      "min_margin_px": 58,
+      "safe_margin_passed": true,
+      "image_sha256": "b8daabbf8ae145f1ffce2e150a26bb54b5c2a7246e12883d1f325d7d69df81cc",
+      "encoded_endpoints_rgba_preserved": true
+    }
+  },
+  "alignment": {
+    "walking_left": {
+      "face_scale": 0.5768609865470853,
+      "face_height_ratio_to_standard": 1.012484473357334,
+      "keys": 6,
+      "shared_standard_endpoints": false
+    },
+    "walking_right": {
+      "face_scale": 0.5736454849498328,
+      "face_height_ratio_to_standard": 0.9782373168778558,
+      "keys": 6,
+      "shared_standard_endpoints": false
+    },
+    "click_wave": {
+      "face_scale": 0.5755704697986578,
+      "face_height_ratio_to_standard": 1.239814727289914,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "curtsy": {
+      "face_scale": 0.5556803455723542,
+      "face_height_ratio_to_standard": 0.9309767894624768,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "curious": {
+      "face_scale": 0.5503315508021391,
+      "face_height_ratio_to_standard": 1.0098265170344707,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "shy_peek": {
+      "face_scale": 0.56113413304253,
+      "face_height_ratio_to_standard": 1.0967996272802207,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "happy_hops": {
+      "face_scale": 0.5679470198675497,
+      "face_height_ratio_to_standard": 1.0138305920882174,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "self_hug": {
+      "face_scale": 0.5642105263157895,
+      "face_height_ratio_to_standard": 0.9340149081624248,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "pout_stomp": {
+      "face_scale": 0.56113413304253,
+      "face_height_ratio_to_standard": 1.018456796760205,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    },
+    "giggle": {
+      "face_scale": 0.5550809061488674,
+      "face_height_ratio_to_standard": 1.0517546125367814,
+      "keys": 6,
+      "shared_standard_endpoints": true
+    }
+  },
+  "input_files": [
+    {
+      "file": "click_wave-sheet.png",
+      "sha256": "c249bebe1d6177d978499816a2854d2a93b9ee85c27aa93a51927940f14b0daa"
+    },
+    {
+      "file": "curious-sheet.png",
+      "sha256": "9fecea38dea9417c3d573bc4b97263cbb5b7af25e0c6f1350001c5db2a8e7a66"
+    },
+    {
+      "file": "curtsy-sheet.png",
+      "sha256": "1e1b7d3b189d3dd46b127e3c77812ea6fea48e0e877e61c5f17473bf6bb198ef"
+    },
+    {
+      "file": "giggle-sheet.png",
+      "sha256": "e210224b418fdad841b909bed0687381c56e6105fb1e95ff9a013dba09361714"
+    },
+    {
+      "file": "happy_hops-sheet.png",
+      "sha256": "83b5e78b37aa7afe5ca533f3c19a47649ef4ab333c7a74750e539628c4893918"
+    },
+    {
+      "file": "pout_stomp-sheet.png",
+      "sha256": "a05230d90a553e52cd816242749ce058b70d1ef2bd29593d50d4b3cb0cb7e851"
+    },
+    {
+      "file": "self_hug-sheet.png",
+      "sha256": "f0306a21e8defb4bef6e2063d1c1982e1a05a5872a08e1a549e57b9327d481e1"
+    },
+    {
+      "file": "shy_peek-sheet.png",
+      "sha256": "d41c55923250e8782552a35707640511d7f18b0aed05f9a6fed0e4328ce8c056"
+    },
+    {
+      "file": "walking_left-sheet.png",
+      "sha256": "ae4389804809541885d728a70448448ca594ecbcbea96c24aa115ad9d445d674"
+    },
+    {
+      "file": "walking_right-sheet.png",
+      "sha256": "60d5379f0e58b3d8a83ea7e15313ad28e5e6ccd538e153c76f22ec164bc2d9cd"
+    }
+  ],
+  "manual_review_required": [
+    "五官与服装细节一致性",
+    "肢体结构与遮挡",
+    "插值中间帧是否自然",
+    "头发裙摆尾巴惯性是否可信"
+  ]
+}

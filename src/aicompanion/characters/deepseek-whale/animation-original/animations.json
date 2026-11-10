@@ -738,5 +738,6 @@
       "fps": 24,
       "facing": "right"
     }
-  ]
+  ],
+  "replacementPack": "animation-reference-v1"
 }

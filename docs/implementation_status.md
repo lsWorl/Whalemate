@@ -1123,3 +1123,16 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 第一轮 702 项检查 / Smoke 与原迈步录屏已通过，但用户随后要求低抬脚与更流畅切换，因此仅保留在 output/personality-first-check 作为历史，最终证据以上述新录屏和完整检查为准。普通光流大幅迈步曾有重影，改为清晰单原画 / 低幅腿层后未沿用该草稿。
 - 素材与完整提示词：art/deepseek-whale/personality-keys-v1/prompts.json；locomotion-keys-v2/prompts.json；transition-keys-v2/prompts.json。来源 / 参数 / 哈希在 SOURCE.json 与 TRANSITIONS.json；离线重建用 tools/build_original_animation.py（串联新动作与过渡），未增加运行依赖。新离线脚本 / 桌面行走 / 播放器 / 动画解析器 / 测试 / Smoke 为本轮代码范围，不改 Agent、main_window.py、存储结构或现用语音。
 - 待验收：用户对低步幅、脚步与路线配合、相位混合、大姿势衔接的真机观感；另一方在最新提交审查；长期、多屏、高 DPI、低性能机器。艺术验收不能被单元测试替代，PR #25 继续草稿，不标记可合并。
+
+## 2026-11-10 · T20 唯一参考十动作与旧版回退（Codex，草稿待验收）
+
+- 只以用户本轮上传的 user-identity-reference.png 为本批角色造型来源，使用内置 image_gen 绘制左右行走与八个互动：元气挥手、屈膝礼、歪头观察、捂脸偷看、三次小跳、自抱晃动、鼓脸跺脚、捂嘴偷笑。每组六张关键姿态，另绘统一站姿；左行走单独细化三分之四朝向。首稿保留审计，不参与运行。完整提示词与输入关系在 art/deepseek-whale/reference-motion-v1/prompts.json。
+- 本批每项 384×384、12 FPS、120 帧、精确10秒，共1200帧；另有120帧标准站姿。正常站姿头顶约18%、脚底约85%、人物高度约67%；屈膝 / 跳跃保持同一人物尺度而允许姿态高度变化。全部帧实际最小边距54px（14.1%），超过10%要求；所有八个互动首末共用同一标准站姿，行走首末同一相位。
+- 不是1200张手绘或视频模型输出。小段光流与单原画采样补间不交叉叠出第二张脸 / 第二双手；八个步态周期中只在两周期使用闭眼关键姿态；三次小跳在2～6秒中完成，分段接续连续。WebP无损编码使用exact=True，已对编码后RGBA首尾比较；来源 / 图集SHA和构图记录在新包SOURCE.json。
+- 新运行包 animation-reference-v1 的11个图集共68.44MiB。原 animation-original 的20动作图集保留不覆盖，通过replacementPack在表达层合成，默认共30动作、保留22段旧大姿势过渡。其他旧动作解码时等比构图适配到新版站姿，不改变角色身份或记忆。
+- 已按用户选择接入：点击 / 摸头、挥手 / 害羞 / 生气、鞠躬 / 歪头 / 摇摆 / 小跳及新增词汇映射对应动作。右键动画菜单优先列十项新动作，去除兼容别名重复。右键“动画版本 → 旧版动画（回退）”可切换；版本偏好按角色保存，实际来回切换通过。
+- 新模式使用独立左向 / 右向原画，原地动画不把窗口位移烘进素材；桌面走动由实际距离推进，八周期换算不再受帧数 / fps改变影响，路线以半个步态周期规划停步。新模式不再整图镜像待机、衣服或鲸鱼图案；转向 / 重设路线保留当前显示画面，加载完成后才继续移动。本批按最新规格提供左右行走；旧二维走动留在回退模式。先前未提交的二维基准图实验已归档 output/walking-fix/superseded，不进入新素材包。
+- 最终 tools/run_checks.bat 退出0：716项，709通过 / 7跳过，60.459秒。Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0；十个新动作逐一实际加载，全部120帧 / 12FPS；左右实走均到达；新→旧→新回退与旧版站坐过渡仍通过，原聊天、拖拽、透明、八姿态和外观切回检查保留。设置和测试均为临时库，未读取.env或真实用户库。
+- 最终实际播放器录屏：90帧、84ms截图间隔，左右各120px均到达、各实际推进60个图集帧；using_reference=true、无错误。含PNG录制开销的主进程工作集采样峰值371.7MiB、最低207.3MiB，不含启动器 / 控制台，也不作为长期峰值或350MB目标验收。文件：output/reference-motion-v1/runtime-walking.gif、live-walk-report.json。
+- 交付：output/reference-motion-v1/all-actions.gif、walking-pair.gif、各动作GIF / 透明动态WebP、frames/<动作>/000..119.png，共1200张PNG；DeepSeek-10-actions-12fps.zip为161.1MiB。完整离线重建 tools/build_original_animation.py 已串联本批构建；不增加依赖，不改Agent、main_window.py、数据库结构或现用声音。角色卡逐字段核对，voice / persona与上一提交一致，仅renderer.vocab扩展。
+- 待验收：用户对脸型 / 发型 / 服装细微一致性、肢体遮挡与插值自然程度的审图；这仍是有限关键姿态补间，不能由帧数 / 边距测试证明完整物理惯性。另一方最新提交代码审查，以及长期、多屏、高DPI、低性能机器和不含录制开销的内存验证未完成。PR #25继续草稿，不标记可合并。

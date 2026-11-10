@@ -328,15 +328,22 @@ def schedule_pet_smoke_check(window, database, output):
         def check_walking():
             view=pet.view;view.perform('expression','neutral')
             pet.machine.snapshot=type(pet.machine.snapshot)();pet.machine.shown='idle';pet._apply_state()
-            start=(pet.x(),pet.y());routes=[(-60,-40),(0,30),(50,0)]
+            start=(pet.x(),pet.y());reference=view.using_reference
+            routes=[(-60,0),(60,0)] if reference else [(-60,-40),(0,30),(50,0)]
             state['walk_routes']=[];state['walk_frame_indices']=[]
             def walk_next(index):
                 if index==len(routes):
-                    state['walk_2d_flow']=(len(state['walk_routes'])==3 and
-                        state['walk_routes'][0]['gait']=='walking_back' and
-                        all(r['moved_x'] or r['moved_y'] for r in state['walk_routes']) and
-                        state['walk_routes'][0]['moved_x'] and state['walk_routes'][0]['moved_y'] and
-                        len(set(state['walk_frame_indices']))>=3)
+                    if reference:
+                        state['walk_mode']='reference_left_right'
+                        state['walk_flow']=(len(state['walk_routes'])==2 and [r['gait'] for r in state['walk_routes']]==['walking_left','walking_right']
+                            and all(r['moved_x'] and not r['moved_y'] and r['target_reached'] for r in state['walk_routes'])
+                            and len(set(state['walk_frame_indices']))>=3)
+                    else:
+                        state['walk_mode']='legacy_2d'
+                        state['walk_flow']=(len(state['walk_routes'])==3 and state['walk_routes'][0]['gait']=='walking_back'
+                            and all(r['moved_x'] or r['moved_y'] for r in state['walk_routes'])
+                            and state['walk_routes'][0]['moved_x'] and state['walk_routes'][0]['moved_y']
+                            and len(set(state['walk_frame_indices']))>=3)
                     finish_checks();return
                 dx,dy=routes[index];before=(pet.x(),pet.y());pet.walk_to(before[0]+dx,before[1]+dy)
                 target=pet._walk_target;deadline=time.monotonic()+4.;gait=[None]
@@ -356,16 +363,32 @@ def schedule_pet_smoke_check(window, database, output):
                 QTimer.singleShot(25,wait_walk)
             walk_next(0)
 
+        def check_reference(index=0):
+            keys=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle']
+            if not pet.view.using_reference:state['reference_flow']=True;check_walking();return
+            if index==0:state['reference_actions']=[]
+            if index==len(keys):state['reference_flow']=state['reference_actions']==keys;check_walking();return
+            key=keys[index];pet.view.face(-1 if key=='walking_left' else 1);pet.view.play_action(key)
+            deadline=time.monotonic()+4.
+            def ready():
+                if pet.view._loaded==key and not pet.view.transitioning:
+                    clip=pet.view.pack.actions[key]
+                    if clip.count!=120 or clip.fps!=12:state['errors'].append('新动作规格不符：'+key)
+                    state['reference_actions'].append(key);QTimer.singleShot(80,lambda:check_reference(index+1))
+                elif time.monotonic()>deadline:state['errors'].append('新动作加载超时：'+key);finish_checks()
+                else:QTimer.singleShot(25,ready)
+            ready()
+
         def check_personality(index=0):
             keys=['smug','pout','shy','surprised','milk_tea','stretch']
             if index==0:state['personality_actions']=[]
             if index==len(keys):
                 state['personality_flow']=state['personality_actions']==keys
-                check_walking();return
+                check_reference();return
             key=keys[index];pet.view.perform('motion' if key in ('milk_tea','stretch') else 'expression',key)
             deadline=time.monotonic()+3.
             def wait_action():
-                if pet.view._loaded==key and not pet.view.transitioning:
+                if pet.view._loaded==pet.view.pack.poses.get(key,key) and not pet.view.transitioning:
                     state['personality_actions'].append(key)
                     pet.grab().save(str(output/f'pet-personality-{key}.png'))
                     QTimer.singleShot(150,lambda:check_personality(index+1))
@@ -375,6 +398,8 @@ def schedule_pet_smoke_check(window, database, output):
             QTimer.singleShot(25,wait_action)
 
         # 实际播放站→坐→托腮→待机，包含两段衔接；不只核对 pose 字符串。
+        reference_before=pet.view.using_reference
+        if reference_before:pet._animation_variant(False)
         targets=['idle','working','thinking','idle'];state['pose_transition_targets']=[]
         transition_start=len(state['pose_transitions_finished'])
         # 前面的聊天特意播放挥手；本段单独验证姿态，清掉上一段的短时表演。
@@ -385,6 +410,9 @@ def schedule_pet_smoke_check(window, database, output):
             if index>=len(targets):
                 expected=[['idle','working'],['working','idle']]  # 思考与待机同组直接混合，避免多余的待机绕行。
                 state['pose_transition_flow']=all(pair in state['pose_transitions_finished'][transition_start:] for pair in expected)
+                if reference_before:
+                    pet._animation_variant(True);state['animation_version_rollback']=pet.view.using_reference
+                else:state['animation_version_rollback']=True
                 check_personality();return
             pose=targets[index]
             pet.machine.snapshot=type(pet.machine.snapshot)()
@@ -435,7 +463,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
         if animation:
-            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back','pose_transition_flow','personality_flow','walk_2d_flow'])
+            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])
             if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True
             required.append('animation_advances')
             state['animation_advances']=not state.get('failed_animation_frames',False)

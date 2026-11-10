@@ -92,6 +92,9 @@ class DesktopPetWindow(QWidget):
                 except (RuntimeError, TypeError): pass
             old.hide()
         self.view, self.view_kind, self.pack = view, kind, pack
+        if getattr(view,'has_animation_variants',False):
+            identity=pack.id if pack is not None else self.active_id
+            view.set_animation_variant(self.database.get_setting(f'pet_reference_animation:{identity}',True))
         view.setParent(self)
         if kind == 'webengine':
             # WebEngine 必须在第一次显示前声明透明，否则 Windows 合成时会出现黑底。
@@ -146,6 +149,8 @@ class DesktopPetWindow(QWidget):
     def set_identity(self, name, model_label, characters, active_id):
         self.character_name, self.model_label = name, model_label
         self.characters, self.active_id = list(characters), active_id
+        if getattr(self.view,'has_animation_variants',False):
+            self.view.set_animation_variant(self.database.get_setting(f'pet_reference_animation:{active_id}',True))
 
     # ---- 状态与台词 ----------------------------------------------------------------
     def dispatch(self, event, **data):
@@ -154,6 +159,9 @@ class DesktopPetWindow(QWidget):
         for key in effects:
             if key in ('poke', 'poke_angry', 'pat', 'thrown', 'dizzy'): self.interacted.emit('poke' if key == 'poke_angry' else key)
             self.say_line(key)
+        if getattr(self.view,'using_reference',False):
+            key='pout_stomp' if 'poke_angry' in effects else ('click_wave' if 'poke' in effects else ('happy_hops' if 'pat' in effects else None))
+            if key:self.view.play_action(key)
         self._apply_state()
 
     def say_line(self, key, force=False):
@@ -266,7 +274,7 @@ class DesktopPetWindow(QWidget):
         screen = self.screen().availableGeometry() if self.screen() else None
         if screen is None: return
         dx = self.rng.choice([-1, 1])*self.rng.uniform(80, 220)
-        dy = self.rng.choice([-1, 1])*self.rng.uniform(45, 110) if hasattr(self.view,'set_walking_vector') else 0
+        dy = self.rng.choice([-1, 1])*self.rng.uniform(45, 110) if getattr(self.view,'supports_vertical_walk',hasattr(self.view,'set_walking_vector')) else 0
         target = clamp_target((self.x()+dx,self.y()+dy),
                               (screen.x(),screen.y(),screen.width(),screen.height()),(self.width(),self.height()))
         if abs(target[0]-self.x())+abs(target[1]-self.y()) < 40: return
@@ -276,6 +284,7 @@ class DesktopPetWindow(QWidget):
         if self.view is None or not hasattr(self.view,'set_walking') or self._fall_timer.isActive():return
         screen=self.screen().availableGeometry() if self.screen() else None
         if screen is None:return
+        if not getattr(self.view,'supports_vertical_walk',True):y=self.y()
         self._walk_target=clamp_target((x,self.y() if y is None else y),
             (screen.x(),screen.y(),screen.width(),screen.height()),(self.width(),self.height()))
         self._walk_position=(float(self.x()),float(self.y()));self._walk_last=time.monotonic();self._walk_speed=0.
@@ -283,6 +292,7 @@ class DesktopPetWindow(QWidget):
         if abs(dx)+abs(dy)<.5:self.stop_walking();return
         if hasattr(self.view,'set_walking_vector'):self.view.set_walking_vector(dx,dy)
         else:self.view.set_walking(1 if dx>=0 else -1)
+        if hasattr(self.view,'plan_walking'):self.view.plan_walking(math.hypot(dx,dy)/self.scale)
         self._walk_timer.start()
 
     def stop_walking(self):
@@ -310,6 +320,11 @@ class DesktopPetWindow(QWidget):
         if hasattr(self.view,'step_walking'):self.view.step_walking(distance/self.scale)
         self.move(round(position[0]),round(position[1]));self.bubble.move_anchor(self._head_point())
         if arrived:self.stop_walking()
+
+    def _animation_variant(self,reference):
+        self.stop_walking();self.view.set_animation_variant(reference)
+        self.database.set_setting(f'pet_reference_animation:{self.active_id}',reference)
+        self._mask_key=None;self._apply_state()
 
     def set_focus(self, minutes):
         """专注模式：不主动说话、不走动、不主动搭话；你找她时照常回应。"""
@@ -592,14 +607,24 @@ class DesktopPetWindow(QWidget):
             autostart = options.addAction('开机自动启动'); autostart.setCheckable(True); autostart.setChecked(desktop.autostart_enabled())
             autostart.toggled.connect(desktop.set_autostart)
         if self.view_kind=='spritesheet':
+            if getattr(self.view,'has_animation_variants',False):
+                versions=menu.addMenu('动画版本')
+                for label,reference in [('参考图十动作',True),('旧版动画（回退）',False)]:
+                    action=versions.addAction(label);action.setCheckable(True);action.setChecked(self.view.using_reference==reference)
+                    action.triggered.connect(lambda checked=False,r=reference:self._animation_variant(r))
             walk=menu.addMenu('走几步')
             for label,dx,dy in [('向左',-1,0),('向右',1,0),('向上',0,-1),('向下',0,1),
                                 ('左上',-1,-1),('右上',1,-1),('左下',-1,1),('右下',1,1)]:
+                if dy and not getattr(self.view,'supports_vertical_walk',True):continue
                 walk.addAction(label,lambda checked=False,x=dx,y=dy:self.walk_to(self.x()+x*120*self.scale,self.y()+y*90*self.scale))
             walk.addSeparator();walk.addAction('停下来',self.stop_walking)
             actions=menu.addMenu('动画动作')
-            for key,entry in self.view.pack.actions.items():
-                actions.addAction(entry.name,lambda checked=False,k=key:self.view.play_action(k))
+            preferred=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle'] if getattr(self.view,'using_reference',False) else []
+            seen=set()
+            for key in preferred+[k for k in self.view.pack.actions if k not in preferred]:
+                entry=self.view.pack.actions[key]
+                if entry.path in seen:continue
+                seen.add(entry.path);actions.addAction(entry.name,lambda checked=False,k=key:self.view.play_action(k))
         if self.pack is not None and self.pack.renderer.get('rig'):
             looks = menu.addMenu('形象'); group=QActionGroup(looks)
             choices=[('rig','原分层骨骼'),('sprites','原立绘')]

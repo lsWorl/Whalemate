@@ -113,5 +113,9 @@ def main():
         from build_pose_transitions import main as build_transitions
         build_transitions()
 
+    if (ROOT/'art/deepseek-whale/reference-motion-v1/giggle-sheet.png').is_file():
+        from build_reference_motion import main as build_reference
+        build_reference()
+
 
 if __name__=='__main__':main()

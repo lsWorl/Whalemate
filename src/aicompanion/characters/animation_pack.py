@@ -22,6 +22,9 @@ class Animation:
     facing: str = 'left'
     blend_group: str = ''
     cycle_distance: float = 70.
+    gait_cycles: int = 1
+    content_scale: float = 1.
+    content_offset: tuple[float,float] = (0.,0.)
 
     def frame_at(self, elapsed):
         return int(max(0, elapsed)*self.fps)%self.count
@@ -42,6 +45,7 @@ class AnimationPack:
     poster: Path
     head: tuple[float, float, float, float]
     transitions: dict[tuple[str, str], Transition] = field(default_factory=dict)
+    replacement_path: Path | None = None
 
     def transition_route(self, source, target):
         if source in self.actions and target in self.actions:
@@ -83,7 +87,13 @@ def animation_entry(root,key,entry,size):
     group=entry.get('blendGroup','');distance=entry.get('cycleDistance',70.)
     if not isinstance(group,str) or len(group)>32 or type(distance) not in (int,float) or not math.isfinite(distance) or not 8<=distance<=300:
         raise CharacterPackError('动画混合组或步幅无效。')
-    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing,group,float(distance))
+    cycles=integer(entry.get('strideCycles',1),1,32)
+    scale=entry.get('contentScale',1.);offset=entry.get('contentOffset',[0.,0.])
+    if (type(scale) not in (int,float) or not math.isfinite(scale) or not .5<=scale<=1
+            or not isinstance(offset,(tuple,list)) or len(offset)!=2
+            or any(type(v) not in (int,float) or not math.isfinite(v) or v<0 or v+scale>1.0001 for v in offset)):
+        raise CharacterPackError('动画构图缩放或偏移无效。')
+    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing,group,float(distance),cycles,float(scale),tuple(offset))
 
 
 def load_animation_pack(path):
@@ -120,7 +130,15 @@ def load_animation_pack(path):
         if (len(head)!=4 or any(type(v) not in (int,float) or not math.isfinite(v) or not 0<=v<=1 for v in head)
                 or head[2]<=0 or head[3]<=0 or head[0]+head[2]>1 or head[1]+head[3]>1):
             raise CharacterPackError('动画头部区域无效。')
-        return AnimationPack(size,actions,poses,local_file(path.parent,data['poster']),head,transitions)
+        replacement=None
+        if 'replacementPack' in data:
+            name=data['replacementPack']
+            if not isinstance(name,str) or not name or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in name):
+                raise CharacterPackError('替换动画包名称无效。')
+            directory=path.parent.parent/name
+            if directory.resolve().parent!=path.parent.parent.resolve():raise CharacterPackError('替换动画包越界。')
+            replacement=local_file(directory,'animations.json')
+        return AnimationPack(size,actions,poses,local_file(path.parent,data['poster']),head,transitions,replacement)
     except (OSError,ValueError,TypeError,KeyError) as error:
         if isinstance(error,CharacterPackError): raise
         raise CharacterPackError('无法读取动画清单或帧规格。') from error

@@ -20,7 +20,7 @@ class PersonalityViewTests(unittest.TestCase):
 
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();path,data=make_pack(Path(self.temp.name))
-        for key in ('patted','poked','smug','pout','shy','surprised','milk_tea','stretch','walking','walking_back'):
+        for key in ('patted','poked','smug','pout','shy','surprised','milk_tea','stretch','walking','walking_back','walking_front','walking_front_diagonal','walking_back_diagonal'):
             data['actions'][key]=dict(data['actions']['idle']);data['poses'][key]=key
         for key,entry in data['actions'].items():
             if not key.startswith('walking'):entry['blendGroup']='standing'
@@ -57,8 +57,8 @@ class PersonalityViewTests(unittest.TestCase):
         self.view.perform('expression','neutral');self.assertEqual(self.view.action,'idle')
 
     def test_direction_selects_rear_gait_only_for_upward_routes(self):
-        for vector,key,direction in [((1,-1),'walking_back',1),((-1,-1),'walking_back',-1),
-                                     ((0,-1),'walking_back',-1),((0,1),'walking',-1),((1,0),'walking',1)]:
+        for vector,key,direction in [((1,-1),'walking_back_diagonal',1),((-1,-1),'walking_back_diagonal',-1),
+                                     ((0,-1),'walking_back',-1),((0,1),'walking_front',-1),((1,0),'walking',1)]:
             self.view.set_walking_vector(*vector);self.assertEqual(self.view.action,key)
             self.assertEqual(self.view.direction,direction)
         self.view.set_walking(0);self.assertEqual(self.view.action,'idle')
@@ -73,8 +73,37 @@ class PersonalityViewTests(unittest.TestCase):
             self.view.advance();self.assertEqual(self.view._index,0)
         with patch('aicompanion.ui.animation_view.time.monotonic',return_value=200):
             self.view.advance();self.assertEqual(self.view._index,0)
-            self.view.step_walking(70/12);self.assertEqual(self.view._index,1)
-            self.view.step_walking(70/12);self.assertEqual(self.view._index,0)
+            self.view.step_walking(70/2);self.assertEqual(self.view._index,1)
+            self.view.step_walking(70/2);self.assertEqual(self.view._index,0)
+
+    def test_turn_keeps_previous_picture_in_screen_coordinates(self):
+        self.view.direction=1
+        picture=QImage(64,64,QImage.Format.Format_ARGB32_Premultiplied);picture.fill('red')
+        picture.setPixelColor(5,10,'blue');self.view._display=picture
+        self.view.set_walking_vector(-100,0)
+        self.assertEqual(self.view.direction,-1)
+        self.assertEqual(self.view._display.mirrored(True,False),picture)
+        self.assertFalse(self.view.walking_ready)
+
+    def test_retarget_keeps_old_foot_position_until_new_gait_is_ready(self):
+        self.view.set_walking_vector(100,0)
+        clip=self.view.pack.actions['walking']
+        self.view._loaded='walking';self.view._sheet=QImage(str(clip.path))
+        self.view._gait_loaded=True;self.view._previous=QImage();self.view._gait_distance=35
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100):self.view.advance()
+        picture=self.view._display.copy()
+        self.view.set_walking_vector(100,-100);self.view.plan_walking(140)
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100.1):self.view.advance()
+        self.assertEqual(self.view._display,picture)
+        self.assertFalse(self.view.walking_ready)
+
+    def test_route_plan_finishes_with_both_feet_down(self):
+        self.view.set_walking_vector(100,0)
+        self.view.plan_walking(93)
+        clip=self.view.pack.actions['walking']
+        self.view._gait_distance=93
+        cycles=self.view._gait_elapsed(clip)*clip.fps/clip.count
+        self.assertAlmostEqual(cycles*2,round(cycles*2))
 
     def test_expression_interrupts_walking_then_drag_interrupts_expression(self):
         self.view.set_walking_vector(1,1);self.view.perform('expression','shy')

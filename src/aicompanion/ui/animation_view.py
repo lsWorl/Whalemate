@@ -34,6 +34,14 @@ class Decoder(QObject):
                 raise ValueError('图集无法解码或没有透明通道。')
             if image.size()!=target: image=image.scaled(target,Qt.AspectRatioMode.IgnoreAspectRatio,Qt.TransformationMode.SmoothTransformation)
             image=image.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+            if action.content_scale!=1. or action.content_offset!=(0.,0.):
+                framed=QImage(target,QImage.Format.Format_ARGB32_Premultiplied);framed.fill(Qt.GlobalColor.transparent)
+                painter=QPainter(framed);painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                for i in range(action.count):
+                    x=i%action.columns*width;y=i//action.columns*height
+                    rect=QRectF(x+action.content_offset[0]*width,y+action.content_offset[1]*height,width*action.content_scale,height*action.content_scale)
+                    painter.drawImage(rect,image,QRectF(x,y,width,height))
+                painter.end();image=framed
             self.decoded.emit(action,image,'')
         except (OSError,ValueError,RuntimeError) as error:
             self.decoded.emit(action,QImage(),str(error))
@@ -68,7 +76,11 @@ class AnimationAvatar(QWidget):
 
     def __init__(self, manifest_path, parent=None):
         super().__init__(parent)
-        self.pack=load_animation_pack(manifest_path); self.native_size=self.pack.size
+        self._original_pack=load_animation_pack(manifest_path);self._reference_pack=None
+        if self._original_pack.replacement_path is not None:
+            from aicompanion.characters.animation_variants import with_reference_actions
+            self._reference_pack=with_reference_actions(self._original_pack,load_animation_pack(self._original_pack.replacement_path))
+        self.pack=self._reference_pack or self._original_pack; self.native_size=self.pack.size
         self.poster=QImage(str(self.pack.poster))
         if self.poster.isNull() or self.poster.size()!=QSize(*self.native_size):
             raise CharacterPackError('动画封面损坏或尺寸不符。')
@@ -79,7 +91,7 @@ class AnimationAvatar(QWidget):
         self.dragging=False; self.walking=0; self._walk_vertical=0.; self._gait_distance=0.; self.direction=1 if self.pack.actions[self.pack.poses['idle']].facing=='right' else -1; self._cue=None; self._cue_until=0.; self._cue_duration=0.; self._cue_started=False
         self._sheet=QImage(); self._frame=self.poster; self._previous=QImage(); self._display=self.poster
         self._frame_facing=self.pack.actions[self.pack.poses['idle']].facing
-        self._gait_loaded=False; self._bridge=None; self._bridge_sheet=QImage(); self._bridge_started=0.; self._bridge_index=-1
+        self._gait_cycle_distance=None; self._gait_loaded=False; self._bridge=None; self._bridge_sheet=QImage(); self._bridge_started=0.; self._bridge_index=-1
         self._queue=[]; self._ready_next=None; self._fade_duration=FADE; self._outgoing=None
         self._loaded=None; self._requested=None; self._loading=None; self._index=-1
         self._started=time.monotonic(); self._fade_started=0.; self._closed=False
@@ -90,6 +102,23 @@ class AnimationAvatar(QWidget):
         self.decoder.decoded.connect(self._decoded)
         self.thread.finished.connect(self.decoder.deleteLater); self.thread.start()
         self.timer=QTimer(self); self.timer.setInterval(16); self.timer.timeout.connect(self.advance)
+
+    @property
+    def using_reference(self):return self._reference_pack is not None and self.pack is self._reference_pack
+
+    @property
+    def has_animation_variants(self):return self._reference_pack is not None
+
+    @property
+    def supports_vertical_walk(self):return not self.using_reference
+
+    def set_animation_variant(self,reference):
+        pack=self._reference_pack if reference and self._reference_pack is not None else self._original_pack
+        if pack is self.pack:return
+        self.pack=pack;self.poster=QImage(str(pack.poster));self._cue=None;self.walking=0
+        self._queue=[];self._ready_next=None;self._loaded=None;self._requested=None;self._sheet=QImage()
+        self._bridge=None;self._bridge_sheet=QImage();self._previous=QImage();self._outgoing=None;self._gait_loaded=False
+        self._gait_cycle_distance=None;self._select();self.update()
 
     def set_state(self,mood='calm',mouth=0):
         self.mood=mood or 'calm'; self.mouth=max(0.,min(1.,float(mouth)))
@@ -138,7 +167,7 @@ class AnimationAvatar(QWidget):
     def _decoded(self,action,image,error):
         if self._loading==action.id:self._loading=None
         if self._closed or not self.isVisible():return
-        if not self._queue or action.id!=self._queue[0][0].id:
+        if not self._queue or action.id!=self._queue[0][0].id or action.path!=self._queue[0][0].path:
             self._ensure_loading(); return
         if error:
             self._queue=[]; self.failed.emit(error); return
@@ -153,10 +182,10 @@ class AnimationAvatar(QWidget):
         if self._bridge is None and self._loaded is not None and self._previous.isNull() and not self._sheet.isNull():
             old=self.pack.actions[self._loaded]
             gait=self._gait_loaded or (self.walking and self._loaded==self._walking_key())
-            elapsed=max(0.,self._gait_distance/old.cycle_distance if gait else now-self._started)
+            elapsed=max(0.,self._gait_elapsed(old) if gait else now-self._started)
             outgoing=(old,self._sheet,self._started,elapsed,gait)
         previous=self._display.copy()
-        if self._frame_facing!=clip.facing:previous=previous.mirrored(True,False)
+        if not self.using_reference and self._frame_facing!=clip.facing:previous=previous.mirrored(True,False)
         was_bridge=self._bridge is not None
         self._previous=previous; self._outgoing=outgoing; self._frame_facing=clip.facing
         self._fade_started=now
@@ -191,7 +220,7 @@ class AnimationAvatar(QWidget):
             index=clip.frame_at(elapsed if gait else now-started)
             w=sheet.width()//clip.columns;h=sheet.height()//clip.rows
             self._previous=sheet.copy(index%clip.columns*w,index//clip.columns*h,w,h)
-            if clip.facing!=self._frame_facing:self._previous=self._previous.mirrored(True,False)
+            if not self.using_reference and clip.facing!=self._frame_facing:self._previous=self._previous.mirrored(True,False)
         self._display=mix_frames(self._previous,self._frame,amount)
         if progress>=1:self._previous=QImage();self._outgoing=None
 
@@ -216,7 +245,7 @@ class AnimationAvatar(QWidget):
         elif self._loaded is not None:
             clip=self.pack.actions[self._loaded]
             gait=self._gait_loaded or (self.walking and self._loaded==self._walking_key())
-            index=clip.frame_at(self._gait_distance/clip.cycle_distance) if gait else clip.frame_at(now-self._started)
+            index=clip.frame_at(self._gait_elapsed(clip)) if gait else clip.frame_at(now-self._started)
             if index!=self._index:
                 self._index=index;self._take_frame(self._sheet,clip,index);changed=True
         if self._hop_started>=0 and now-self._hop_started>=self._hop_duration:
@@ -238,7 +267,7 @@ class AnimationAvatar(QWidget):
             t.translate(0,-math.sin(age*math.pi)*self._hop_height*rect.height())
         age=now-self._bounce_started
         squash=math.sin(age*25)*math.exp(-age*10)*.045*self._bounce_strength if 0<=age<.4 else 0.
-        mirror=self.direction!=(1 if self._frame_facing=='right' else -1)
+        mirror=not self.using_reference and self.direction!=(1 if self._frame_facing=='right' else -1)
         t.scale((-1 if mirror else 1)*(1+squash),1-squash)
         t.translate(-rect.center().x(),-rect.bottom())
         return t
@@ -286,8 +315,26 @@ class AnimationAvatar(QWidget):
         self.dragging=bool(active); self._select()
 
     def _walking_key(self):
-        pose='walking_back' if self._walk_vertical<-.15 else 'walking'
-        return self.pack.poses.get(pose,self.pack.poses.get('walking','idle'))
+        explicit='walking_left' if self.walking<0 else 'walking_right'
+        if self.using_reference and explicit in self.pack.poses:return self.pack.poses[explicit]
+        vertical=self._walk_vertical
+        if abs(vertical)<math.sin(math.pi/8):pose='walking'
+        elif abs(vertical)>math.sin(math.pi*3/8):pose='walking_back' if vertical<0 else 'walking_front'
+        else:pose='walking_back_diagonal' if vertical<0 else 'walking_front_diagonal'
+        fallback='walking_back' if vertical<-.15 else 'walking'
+        return self.pack.poses.get(pose,self.pack.poses.get(fallback,self.pack.poses.get('walking','idle')))
+
+    def _gait_elapsed(self,clip):
+        # cycleDistance 是一个完整步态周期，不受图集帧数或 fps 改变影响。
+        distance=self._gait_cycle_distance or clip.cycle_distance
+        return self._gait_distance/distance*clip.count/clip.fps
+
+    def plan_walking(self,distance):
+        clip=self.pack.actions[self._walking_key()]
+        half_steps=max(1,round(max(0.,distance)/clip.cycle_distance*clip.gait_cycles*2))
+        # 在双脚着地的半周期结束路线，停下时不再截断悬空的脚。
+        self._gait_cycle_distance=max(.01,distance/(half_steps*.5/clip.gait_cycles))
+        self._gait_distance=0.
 
     @property
     def walking_ready(self):
@@ -297,8 +344,18 @@ class AnimationAvatar(QWidget):
         length=math.hypot(dx,dy)
         self.walking=(1 if dx>=0 else -1) if length else 0
         self._walk_vertical=dy/length if length else 0.
-        if abs(dx)>1e-6:self.face(dx)
-        self._select()
+        direction=(1 if dx>=0 else -1) if abs(dx)>1e-6 else self.direction
+        if direction!=self.direction or (length and self._gait_loaded):
+            # 转向 / 重规划先冻结当前脚位；新的路线相位不能覆盖仍在显示的旧步态。
+            picture=self._display
+            if direction!=self.direction and not self.using_reference:picture=picture.mirrored(True,False)
+            self._frame=picture;self._display=picture
+            self._sheet=QImage();self._loaded=None;self._gait_loaded=False
+            self._previous=QImage();self._outgoing=None
+            self._bridge=None;self._bridge_sheet=QImage();self._ready_next=None;self._queue=[]
+            self._requested=None;self.direction=direction
+        if length:self._gait_cycle_distance=None;self._gait_distance=0.
+        self._select();self.update()
 
     def step_walking(self,distance):
         # 路线实际走多远才推进多少步态；加载、等待、暂停时脚不会原地空转。
@@ -321,10 +378,12 @@ class AnimationAvatar(QWidget):
 
     def perform(self,kind,name):
         if self.pose in ('grabbed','falling'): return
-        if kind=='motion' and name=='jump': self.hop(); return
+        if kind=='motion' and name=='jump' and not self.using_reference: self.hop(); return
         mapping={'wave':'wave','nod':'patted','shake':'poked','happy':'patted','love':'patted',
                  'smug':'smug','shy':'shy','surprised':'surprised',
-                 'pout':'pout','milk_tea':'milk_tea','stretch':'stretch','sleep':'sleepy','dizzy':'error','drag':'grabbed'}
+                 'pout':'pout','bow':'curtsy','tilt':'curious','sway':'self_hug','jump':'happy_hops',
+                 'curtsy':'curtsy','curious':'curious','shy_peek':'shy_peek','happy_hops':'happy_hops','self_hug':'self_hug','pout_stomp':'pout_stomp','giggle':'giggle',
+                 'milk_tea':'milk_tea','stretch':'stretch','sleep':'sleepy','dizzy':'error','drag':'grabbed'}
         pose=mapping.get(name)
         fallback={'smug':'patted','shy':'patted','surprised':'poked','pout':'poked','milk_tea':'idle','stretch':'idle'}
         if pose not in self.pack.poses:pose=fallback.get(pose,pose)
@@ -336,6 +395,7 @@ class AnimationAvatar(QWidget):
 
     def play_action(self,key):
         if key not in self.pack.actions or self.pose in ('grabbed','falling'): return
+        if key in ('walking','walking_left','walking_right'):self.face(-1 if self.pack.actions[key].facing=='left' else 1)
         self._cue=key; action=self.pack.actions[key]
         self._cue_duration=action.count/action.fps;self._cue_started=False
         self._cue_until=time.monotonic()+self._cue_duration+1.5; self._select()
