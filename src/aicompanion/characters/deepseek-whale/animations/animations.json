@@ -1,0 +1,177 @@
+{
+  "format": "AICompanionAnimationPack",
+  "version": 1,
+  "size": [
+    640,
+    360
+  ],
+  "poster": "poster.png",
+  "actions": {
+    "idle": {
+      "image": "idle.webp",
+      "name": "待机呼吸休闲",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "talking": {
+      "image": "talking.webp",
+      "name": "碎碎念-对屏碎碎念",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "thinking": {
+      "image": "thinking.webp",
+      "name": "工作状态-思考冒泡",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "working": {
+      "image": "working.webp",
+      "name": "工作状态-忙碌点按",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "wait": {
+      "image": "wait.webp",
+      "name": "工作状态-原地踱步张望",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "celebrate": {
+      "image": "celebrate.webp",
+      "name": "工作状态-雀跃庆祝",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "sleepy": {
+      "image": "sleepy.webp",
+      "name": "原地小憩沉眠",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "error": {
+      "image": "error.webp",
+      "name": "工作状态-垂头叹气冒汗",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 8,
+      "frameCount": 59,
+      "fps": 12,
+      "facing": "left"
+    },
+    "grabbed": {
+      "image": "grabbed.webp",
+      "name": "被鼠标拖拽悬空反馈",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "poked": {
+      "image": "poked.webp",
+      "name": "点击回应-傲娇生气",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "patted": {
+      "image": "patted.webp",
+      "name": "点击回应-挠痒咯咯笑",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "walking": {
+      "image": "walking.webp",
+      "name": "螃蟹走路",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    },
+    "wave": {
+      "image": "wave.webp",
+      "name": "点击回应-元气挥手",
+      "frameWidth": 640,
+      "frameHeight": 360,
+      "columns": 8,
+      "rows": 15,
+      "frameCount": 120,
+      "fps": 12,
+      "facing": "left"
+    }
+  },
+  "poses": {
+    "idle": "idle",
+    "talking": "talking",
+    "thinking": "thinking",
+    "working": "working",
+    "wait": "wait",
+    "celebrate": "celebrate",
+    "sleepy": "sleepy",
+    "error": "error",
+    "grabbed": "grabbed",
+    "poked": "poked",
+    "patted": "patted",
+    "walking": "walking",
+    "wave": "wave",
+    "falling": "grabbed",
+    "dizzy": "error"
+  },
+  "head": [
+    0.33,
+    0.15,
+    0.34,
+    0.48
+  ]
+}

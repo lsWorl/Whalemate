@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
             registry=CharacterRegistry(self.database,settings); registry.sync()
             controller.character=registry.active()
         self.registry=registry; self.default_llm_client=controller.llm_client
-        self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.renderer=None; self.model_label=''
+        self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.animation_avatars={}; self.animation_failures=set(); self.renderer=None; self.model_label=''
         self.tray_hint_shown=False; self.first_token=set()
         # 台词标注：每轮回复一个解析器；开语音时动作挂在句子上，等那句开始播放再执行
         self.vocab=Vocab(); self.cue_streams={}; self.pending_cues={}; self.sentence_cues={}
@@ -283,8 +283,12 @@ class MainWindow(QMainWindow):
         """根据角色包和设置选择显示方式，并放进常驻桌宠窗口。"""
         character=self.controller.character
         pack=self.registry.pack(character.id)
-        kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),character.model_path)
-        if kind=='sprites' and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
+        kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),character.model_path,
+            animation_enabled=bool(self.database.get_setting(f'pet_animation_enabled:{character.id}',True)))
+        animation_failed=kind=='spritesheet' and str(resource) in self.animation_failures
+        if animation_failed:
+            kind,resource='sprites',pack.sprite_manifest_path()
+        if kind=='sprites' and not animation_failed and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
             rig_path=self._rig_path(pack)
             if rig_path: kind,resource='rig',rig_path
         if (kind,str(resource))==self.renderer: return
@@ -298,7 +302,19 @@ class MainWindow(QMainWindow):
                 self.rig_avatars[str(resource)]=view
                 self.pet.set_view(view,'rig',pack)
             except Exception as error:
-                self._status('骨骼形象加载失败，改用立绘：'+str(error)); kind,resource=choose_renderer(pack,None,'')
+                self._status('骨骼形象加载失败，改用立绘：'+str(error)); kind,resource=choose_renderer(pack,None,'',animation_enabled=False)
+        if kind=='spritesheet':
+            try:
+                from aicompanion.ui.animation_view import AnimationAvatar
+                view=self.animation_avatars.get(str(resource))
+                if view is None:
+                    view=AnimationAvatar(resource)
+                    view.failed.connect(lambda message,v=view,r=str(resource): self._animation_failed(v,r,message))
+                    self.animation_avatars[str(resource)]=view
+                self.pet.set_view(view,'spritesheet',pack)
+            except (CharacterPackError,ValueError,OSError) as error:
+                self._status('动画加载失败，改用原立绘：'+str(error))
+                kind,resource='sprites',pack.sprite_manifest_path()
         if kind=='sprites':
             try:
                 view=self.sprite_avatars.get(str(resource)) or SpriteAvatar(resource)
@@ -318,6 +334,12 @@ class MainWindow(QMainWindow):
             self.pet.set_view(PlaceholderAvatar('未设置形象\n右键 → 设置'),'placeholder',pack)
         self.renderer=(kind,str(resource))
         self.avatar.set_state(self.mood)
+
+    def _animation_failed(self,view,resource,message):
+        self.animation_failures.add(resource)
+        if self.pet.view is view and not self.closing:
+            self._status('动画解码失败，改用原立绘：'+message)
+            self.renderer=None; self._apply_avatar()
 
     def _rig_path(self,pack):
         """骨骼形象来源，依次：AICOMPANION_RIG 指定的模型（自检、rig_studio 预览）→ 角色包自带的形象包 rig/rig.json
@@ -863,7 +885,7 @@ class MainWindow(QMainWindow):
             return
         event.ignore(); self.closing=True; self.pump.stop(); self.scheduler.stop(); self._end_call()
         self.pet.shutdown()
-        for view in list(self.sprite_avatars.values())+list(self.rig_avatars.values()): view.shutdown()
+        for view in list(self.sprite_avatars.values())+list(self.rig_avatars.values())+list(self.animation_avatars.values()): view.shutdown()
         if self.web_microphone: self.web_microphone.shutdown()
         self.agent.stop(); self.agent.shutdown()   # 关掉 DeepSeek Harness 运行时
         for worker in self.tasks: worker.cancellation.cancel()

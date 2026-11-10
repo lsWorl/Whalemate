@@ -1,0 +1,88 @@
+{
+  "repository": "https://github.com/hunmer/aboutme-pets",
+  "commit": "cb205c271517336b500981a2cca050a1759bceaa",
+  "upstream_repository": "https://github.com/PC2005-cloud/dsh-pet",
+  "upstream_commit": "b78e3fcf92ac78cee569aed7cc27eeb2a8d51757",
+  "license": "素材禁止商用；公开二创须署名上游；MIT 仅覆盖代码。",
+  "audio_included": false,
+  "files": [
+    {
+      "file": "idle.webp",
+      "source_path": "pets/dsh/spritesheet/待机呼吸休闲.webp",
+      "sha256": "f76ec34bd97005bd161de2f36cae43ca4de0ddef80afe4a11184963ed34f5a2f",
+      "bytes": 990292
+    },
+    {
+      "file": "talking.webp",
+      "source_path": "pets/dsh/spritesheet/碎碎念-对屏碎碎念.webp",
+      "sha256": "a222bf200729eb6b222e436df9e08504e5e741c8d5d7d64ed99123a4b1682b03",
+      "bytes": 995686
+    },
+    {
+      "file": "thinking.webp",
+      "source_path": "pets/dsh/spritesheet/工作状态-思考冒泡.webp",
+      "sha256": "f35408d7aa341f7b3b32a2202f949fb8d3630a8f89bc840f6ee3d5d93d6031b7",
+      "bytes": 995580
+    },
+    {
+      "file": "working.webp",
+      "source_path": "pets/dsh/spritesheet/工作状态-忙碌点按.webp",
+      "sha256": "98c02bd181e3769606c4ab918fef3168c2213ce6f57de79a64359b32161ecb30",
+      "bytes": 988292
+    },
+    {
+      "file": "wait.webp",
+      "source_path": "pets/dsh/spritesheet/工作状态-原地踱步张望.webp",
+      "sha256": "2be9d8bc9d836c718195336e3db6d8aecfc5c38d543fe1db53d7bbc5bdebf5a9",
+      "bytes": 986218
+    },
+    {
+      "file": "celebrate.webp",
+      "source_path": "pets/dsh/spritesheet/工作状态-雀跃庆祝.webp",
+      "sha256": "e7a7b7ffe95c5a0cc6b1c458cb0c1a62463c6c3ac2c647d9ad18b08da049314e",
+      "bytes": 998722
+    },
+    {
+      "file": "sleepy.webp",
+      "source_path": "pets/dsh/spritesheet/原地小憩沉眠.webp",
+      "sha256": "3d7483feb186f2ce34a957c305d8d5fea45f341ad30844764ca3f4fb99e6a20b",
+      "bytes": 996422
+    },
+    {
+      "file": "error.webp",
+      "source_path": "pets/dsh/spritesheet/工作状态-垂头叹气冒汗.webp",
+      "sha256": "e5195ea022fea2c4fc82a5fd2be610396e07334b13c643b84f16ab11908e7603",
+      "bytes": 996178
+    },
+    {
+      "file": "grabbed.webp",
+      "source_path": "pets/dsh/spritesheet/被鼠标拖拽悬空反馈.webp",
+      "sha256": "d8a5eeed69cf0ce1aaa473e02b6ac7d9796a8bc32e9216a09f3396e267ba8db1",
+      "bytes": 987672
+    },
+    {
+      "file": "poked.webp",
+      "source_path": "pets/dsh/spritesheet/点击回应-傲娇生气.webp",
+      "sha256": "a38cd60eed450192fe3a1bb86af61c2bd6f4223e638222622043fe9e3c9548b8",
+      "bytes": 999524
+    },
+    {
+      "file": "patted.webp",
+      "source_path": "pets/dsh/spritesheet/点击回应-挠痒咯咯笑.webp",
+      "sha256": "946ed19160b16d1bb47cf270783c38c002f918ea711f1eb3aade2a6b62748098",
+      "bytes": 993154
+    },
+    {
+      "file": "walking.webp",
+      "source_path": "pets/dsh/spritesheet/螃蟹走路.webp",
+      "sha256": "61cb1e1365eb9b21b434d1738ad9e89c4a20d773f6bf04ae8ccbdc5950e958ef",
+      "bytes": 990376
+    },
+    {
+      "file": "wave.webp",
+      "source_path": "pets/dsh/spritesheet/点击回应-元气挥手.webp",
+      "sha256": "9d24e9472f7480843369062f647f2be6fe3064fa1dfff7f7464e840769305073",
+      "bytes": 992866
+    }
+  ]
+}

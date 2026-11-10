@@ -11,7 +11,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from PySide6.QtCore import QPoint, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QCursor, QGuiApplication, QRegion
+from PySide6.QtGui import QAction, QActionGroup, QCursor, QGuiApplication, QRegion
 from PySide6.QtWidgets import QApplication, QMenu, QVBoxLayout, QWidget
 
 from aicompanion.brain.focus import focus_until, in_quiet_hours, is_focused, set_focus
@@ -74,7 +74,7 @@ class DesktopPetWindow(QWidget):
 
     # ---- 视图 --------------------------------------------------------------------
     def set_view(self, view, kind, pack=None):
-        """kind: 'sprites' | 'webengine' | 'placeholder'。旧视图由调用方负责回收。"""
+        """kind: 'spritesheet' | 'sprites' | 'rig' | 'webengine' | 'placeholder'。旧视图由调用方负责回收。"""
         old = self.view
         if old is view and kind == self.view_kind: self.pack = pack; return
         if old is not None:
@@ -105,6 +105,10 @@ class DesktopPetWindow(QWidget):
         self._apply_size(); self._update_mask()
 
     def _base_size(self):
+        if self.view_kind == 'spritesheet' and self.view is not None:
+            w,h=self.view.native_size
+            height=(self.pack.display_height if self.pack else 300)*self.scale
+            return round(height*w/h),round(height)
         if self.view_kind == 'rig':
             # 骨骼视口是正方形；左右已含张开手臂、尾巴和拎起摆动的余量。
             height = (self.pack.display_height if self.pack else 300)*self.scale*1.05
@@ -218,13 +222,15 @@ class DesktopPetWindow(QWidget):
             if pose: self.dispatch('force_pose', pose=pose, seconds=1.8)
 
     def _head_point(self):
+        if self.view is not None and hasattr(self.view,'head_point'):
+            return self.view.mapToGlobal(self.view.head_point())
         if self.view is not None and hasattr(self.view, 'content_rect'):
             rect = self.view.content_rect()
             return self.mapToGlobal(QPoint(round(rect.center().x()), round(rect.top()+rect.height()*0.04)))
         return self.mapToGlobal(QPoint(self.width()//2, 10))
 
     def _apply_state(self):
-        if self.view_kind not in ('sprites', 'rig') or self.view is None: return
+        if self.view_kind not in ('sprites', 'rig', 'spritesheet') or self.view is None: return
         self.view.set_pose(self.machine.current(time.monotonic()))
         if hasattr(self.view, 'set_gaze') and self.isVisible():
             # 眼神跟着鼠标：离得近才看，太远就自己东张西望。
@@ -446,12 +452,14 @@ class DesktopPetWindow(QWidget):
         self.scale = scale; self.database.set_setting('desktop_pet_scale', scale); self._apply_size(); self._update_mask()
 
     def _update_input(self):
-        if self.view_kind != 'rig' or self.view is None or not self.isVisible() or self.windowHandle() is None:
+        if self.view_kind not in ('rig','spritesheet') or self.view is None or not self.isVisible() or self.windowHandle() is None:
             if self._input_transparent: self._set_input_transparent(False)
             return
         # 按住、拖动、菜单打开时保持接收鼠标；否则光标在角色身上才接收
         if getattr(self, 'input_locked', False):   # 自检期间完全不接收鼠标，避免手动操作干扰结果
             self._set_input_transparent(True); return
+        if not self.database.get_setting('pet_click_through',True):
+            self._set_input_transparent(False); return
         busy = self._press_pos is not None or self._dragging or QApplication.activePopupWidget() is not None
         self._set_input_transparent(not (busy or self.view.cursor_hit))
 
@@ -462,7 +470,7 @@ class DesktopPetWindow(QWidget):
         self.windowHandle().setFlag(Qt.WindowType.WindowTransparentForInput, transparent)
 
     def _update_mask(self, *args):
-        if self.view_kind == 'rig':
+        if self.view_kind in ('rig','spritesheet'):
             self.clearMask(); return
         if self.view_kind in ('sprites', 'placeholder') and self.database.get_setting('pet_click_through', True) and self.view is not None:
             region = self.view.mask_region()
@@ -537,7 +545,7 @@ class DesktopPetWindow(QWidget):
             for character_id, name in self.characters:
                 action = roles.addAction(name, lambda checked=False, cid=character_id: self.character_requested.emit(cid))
                 action.setCheckable(True); action.setChecked(character_id == self.active_id)
-        if self.view_kind in ('sprites', 'rig'):
+        if self.view_kind in ('sprites', 'rig', 'spritesheet'):
             poses = menu.addMenu('做个动作')
             for label, pose in DEMO_POSES:
                 poses.addAction(label, lambda checked=False, p=pose: self.dispatch('force_pose', pose=p, seconds=2.5))
@@ -558,11 +566,18 @@ class DesktopPetWindow(QWidget):
         if desktop.IS_WINDOWS:
             autostart = options.addAction('开机自动启动'); autostart.setCheckable(True); autostart.setChecked(desktop.autostart_enabled())
             autostart.toggled.connect(desktop.set_autostart)
+        if self.view_kind=='spritesheet':
+            actions=menu.addMenu('动画动作')
+            for key,entry in self.view.pack.actions.items():
+                actions.addAction(entry.name,lambda checked=False,k=key:self.view.play_action(k))
         if self.pack is not None and self.pack.renderer.get('rig'):
-            looks = menu.addMenu('形象')
-            rig_on = looks.addAction('分层骨骼（会动的大肥鱼）'); rig_on.setCheckable(True)
-            rig_on.setChecked(bool(self.database.get_setting('rig_enabled', True)))
-            rig_on.toggled.connect(lambda on: (self.database.set_setting('rig_enabled', bool(on)), self.appearance_changed.emit()))
+            looks = menu.addMenu('形象'); group=QActionGroup(looks)
+            choices=[('rig','原分层骨骼'),('sprites','原立绘')]
+            if self.pack.renderer.get('animation'): choices.insert(0,('spritesheet','透明动画（大肥鱼）'))
+            for kind,label in choices:
+                action=looks.addAction(label); action.setCheckable(True); group.addAction(action)
+                action.setChecked(self.view_kind==kind)
+                action.triggered.connect(lambda checked=False,k=kind:self.set_appearance(k))
             if self.view_kind == 'rig':
                 schemes = looks.addMenu('配色')
                 current = self.database.get_setting('rig_scheme', 'deepseek')
@@ -577,6 +592,11 @@ class DesktopPetWindow(QWidget):
         menu.addAction('让她休息（隐藏到托盘）', self.rest)
         menu.addAction('退出应用', self.quit_requested.emit)
         menu.exec(QCursor.pos())
+
+    def set_appearance(self,kind):
+        self.database.set_setting(f'pet_animation_enabled:{self.active_id}',kind=='spritesheet')
+        if kind!='spritesheet': self.database.set_setting('rig_enabled',kind=='rig')
+        self.appearance_changed.emit()
 
     def _toggle(self, menu, label, key, default, callback=None):
         action = QAction(label, menu); action.setCheckable(True); action.setChecked(bool(self.database.get_setting(key, default)))

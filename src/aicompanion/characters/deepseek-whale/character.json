@@ -37,7 +37,8 @@
         "歪头": "tilt",
         "摇摆": "sway"
       }
-    }
+    },
+    "animation": "animations/animations.json"
   },
   "provider": {
     "label": "DeepSeek",
