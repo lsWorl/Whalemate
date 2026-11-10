@@ -30,7 +30,7 @@ class ServiceTests(unittest.TestCase):
         self.path.unlink();self.assertEqual(self.service.prepare(self.ctx,self.character),())
     def test_role_serious_and_no_memes(self):
         self.asset()
-        self.assertEqual(self.service.prepare(self.ctx,DEFAULT_CHARACTER),())
+        self.assertEqual(self.service.prepare(self.ctx,replace(DEFAULT_CHARACTER,id='other-role')),())
         self.assertEqual(self.service.prepare(replace(self.ctx,scene='emergency'),self.character,'需要帮助'),())
         self.assertEqual(self.service.prepare(replace(self.ctx,no_memes=True),self.character),())
     def test_unknown_relation_does_not_get_intimate(self):

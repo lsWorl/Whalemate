@@ -6,7 +6,6 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from PySide6.QtCore import QPoint
-from PySide6.QtGui import QImage
 
 from aicompanion.avatar.model_package import validate_model_package, ModelPackageError
 from aicompanion.ui.pet_geometry import fit_pet_geometry
@@ -119,23 +118,6 @@ class PetInteractionTests(unittest.TestCase):
         dialog.avatar_mode.currentData.return_value='live2d'; dialog.model.text.return_value=''
         self.assertTrue(SettingsWindow._validate_model_input(dialog))
 
-
-class AnimatedIllustrationTests(unittest.TestCase):
-    def test_generated_textures_are_registered_and_transparent(self):
-        root=Path(__file__).resolve().parents[1]/'src/aicompanion/assets/live2d/Emilia'
-        config=json.loads((root/'emilia.animation.json').read_text(encoding='utf-8'))
-        self.assertEqual(config['Engine'],'pixi-mesh-not-cubism')
-        for key,name in config['Textures'].items():
-            image=QImage(str(root/name))
-            with self.subTest(name=name):
-                self.assertEqual((image.width(),image.height()),tuple(config['Canvas']))
-                self.assertTrue(image.hasAlphaChannel())
-                # 全幅透明性由底图决定，生成的眼嘴纹理只在脸部遮罩内采样。
-                if key=='Base': self.assertEqual(image.pixelColor(0,0).alpha(),0)
-
-    def test_animation_manifest_is_not_accepted_as_cubism(self):
-        path=Path(__file__).resolve().parents[1]/'src/aicompanion/assets/live2d/Emilia/emilia.animation.json'
-        with self.assertRaises(ModelPackageError): validate_model_package(path)
 
 
 if __name__ == '__main__': unittest.main()

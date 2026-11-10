@@ -14,7 +14,7 @@ from aicompanion.ui.main_window import MainWindow
 
 app=QApplication([]); app.setQuitOnLastWindowClosed(False)
 temp=tempfile.TemporaryDirectory(); db=Database(Path(temp.name)/'smoke.sqlite3'); db.initialize()
-settings=Settings('AICompanion',db.database_path,'mock','https://example.invalid','', 'mock',.8,10)
+settings=Settings('AICompanion',db.database_path,offline=True)
 controller=ChatController(db,MemoryService(db),MockLLMClient()); window=MainWindow(controller,settings)
 window.show()
 if '--speech' in sys.argv:

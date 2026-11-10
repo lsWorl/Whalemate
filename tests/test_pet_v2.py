@@ -26,7 +26,7 @@ class CharacterPackTests(unittest.TestCase):
         self.assertEqual(errors, [])
         ids = [pack.id for pack in packs]
         self.assertEqual(ids[0], 'deepseek-whale')
-        self.assertIn('emilia', ids)
+        self.assertNotIn('emilia', ids)   # 爱蜜莉雅已删除（2026-11-11 负责人决定）
         self.assertFalse(next(p for p in packs if p.id == 'claude-reader').ready)
 
     def test_whale_sprites_complete(self):
@@ -74,15 +74,13 @@ class CharacterPackTests(unittest.TestCase):
 class RendererChoiceTests(unittest.TestCase):
     def test_choices(self):
         from aicompanion.characters import choose_renderer
-        whale, emilia = load_pack(PACKS_DIR/'deepseek-whale'), load_pack(PACKS_DIR/'emilia')
+        whale = load_pack(PACKS_DIR/'deepseek-whale')
         self.assertEqual(choose_renderer(whale, None)[0], 'sprites')
         self.assertEqual(choose_renderer(whale, 'live2d', '')[0], 'sprites')      # 旧默认值不再指向 Haru
         self.assertEqual(choose_renderer(whale, 'live2d', 'x.model3.json'), ('cubism', 'x.model3.json'))
-        kind, path = choose_renderer(emilia, None)
-        self.assertEqual(kind, 'mesh'); self.assertTrue(path.is_file())
-        self.assertEqual(choose_renderer(emilia, 'animated-illustration')[0], 'mesh')
-        self.assertTrue(choose_renderer(None, 'illustration')[1].is_file())
         self.assertEqual(choose_renderer(None, 'live2d', ''), ('placeholder', None))
+        # 爱蜜莉雅已删除：旧的立绘显示模式不再有效，没有形象包的角色显示占位
+        self.assertEqual(choose_renderer(None, 'animated-illustration'), ('placeholder', None))
 
     def test_no_haru_references_left(self):
         root = PACKS_DIR.parent
@@ -109,19 +107,31 @@ class RegistryTests(unittest.TestCase):
 
     def test_user_choice_survives_restart(self):
         CharacterRegistry(self.database, settings()).sync()
-        self.database.set_setting(ACTIVE_KEY, 'emilia')
+        from aicompanion.domain.character import CharacterProfile
+        self.database.add_character(CharacterProfile('自建角色', '用户自己写的设定', '简短', 'custom-1'))
+        self.database.set_setting(ACTIVE_KEY, 'custom-1')
         registry = CharacterRegistry(self.database, settings()); registry.sync()
-        self.assertEqual(registry.active().id, 'emilia')
+        self.assertEqual(registry.active().id, 'custom-1')
+
+    def test_placeholder_is_replaced_by_pack_persona_once(self):
+        # 数据库初始化写的是占位角色（与鲸娘同 ID）；同步后换成角色包的名字和人设，用户改过的不再覆盖
+        registry = CharacterRegistry(self.database, settings()); registry.sync()
+        whale = next(c for c in self.database.characters() if c.id == 'deepseek-whale')
+        self.assertEqual(whale.description, registry.pack('deepseek-whale').persona['description'])
+        from dataclasses import replace
+        self.database.update_character(replace(whale, description='我自己写的'))
+        CharacterRegistry(self.database, settings()).sync()
+        self.assertEqual(next(c for c in self.database.characters() if c.id == 'deepseek-whale').description, '我自己写的')
 
     def test_user_edits_and_history_are_kept(self):
         registry = CharacterRegistry(self.database, settings()); registry.sync()
         whale = next(c for c in self.database.characters() if c.id == 'deepseek-whale')
         from dataclasses import replace
         self.database.update_character(replace(whale, name='小鲸'))
-        self.database.add_message('user', 'hello', 'emilia')
+        self.database.add_message('user', 'hello', 'deepseek-whale')
         CharacterRegistry(self.database, settings()).sync()
         self.assertEqual(next(c for c in self.database.characters() if c.id == 'deepseek-whale').name, '小鲸')
-        self.assertEqual(self.database.recent_messages(5, 'emilia')[0]['content'], 'hello')
+        self.assertEqual(self.database.recent_messages(5, 'deepseek-whale')[0]['content'], 'hello')
 
 
 

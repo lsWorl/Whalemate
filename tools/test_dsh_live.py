@@ -1,7 +1,7 @@
 """DSH + 官方 MCP 的真实模型验收（会计费）；只读进程环境，不加载 .env，不访问 MyBlog。
 
 所有任务、日志范文、假密钥、回收区和 DSH 会话都位于本次新建的临时目录。
-缺少进程环境中的 LLM_API_KEY / DEEPSEEK_API_KEY 时退出 2，明确记录未执行。
+缺少进程环境中的 DEEPSEEK_API_KEY 时退出 2，明确记录未执行。
 """
 from __future__ import annotations
 
@@ -30,9 +30,16 @@ PERSONA = ('你是鲸娘，回复用一两句中文，如实说明做了什么�
 
 def credentials(environ=None):
     env = os.environ if environ is None else environ
-    key = env.get('LLM_API_KEY') or env.get('DEEPSEEK_API_KEY') or ''
-    base = env.get('LLM_BASE_URL') or env.get('DEEPSEEK_BASE_URL') or 'https://api.deepseek.com/v1'
+    key = env.get('DEEPSEEK_API_KEY') or ''
+    base = env.get('DEEPSEEK_BASE_URL') or ''
     return key, base
+
+
+def target(key, base, model='deepseek-flash'):
+    """与正式办事相同的入口：只把这把 Key（和自建地址）交给 Harness。"""
+    from aicompanion.providers.router import AgentTarget
+    env = (('DEEPSEEK_API_KEY', key),) + ((('DEEPSEEK_BASE_URL', base),) if base else ())
+    return AgentTarget('deepseek-official', model, env, f'DeepSeek · {model}')
 
 
 def redact(text, key):
@@ -75,7 +82,7 @@ def main() -> int:
         lines.append(line); print(line, flush=True)
         (OUT/'live.log').write_text('\n'.join(lines), encoding='utf-8')
 
-    missing = ('未提供测试凭据；请在运行脚本的进程环境中设置 LLM_API_KEY 或 DEEPSEEK_API_KEY。未读取 .env。'
+    missing = ('未提供测试凭据；请在运行脚本的进程环境中设置 DEEPSEEK_API_KEY。未读取 .env。'
                if not key else problem() or dependency_problem())
     if missing:
         report.update(skipped=True, reason=missing); save(); log(missing)
@@ -110,7 +117,7 @@ def main() -> int:
                 start = time.monotonic()
                 try:
                     result = agent.run(f'{PERSONA}\n当前工作区（唯一放开写的位置）：{fixture.workspace}。\n用户原话：{goal}',
-                                       fixture.workspace, api_key=key, base_url=base)
+                                       fixture.workspace, target(key, base))
                 finally:
                     if timer:
                         timer.cancel(); timer.join()

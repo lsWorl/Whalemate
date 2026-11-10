@@ -8,7 +8,7 @@ def schedule_smoke_check(window, database, output):
     state = {'page_loaded': False, 'avatar_ready': False}
     view = window.avatar
     if hasattr(view, 'loadFinished'):
-        # 艾米莉娅/Cubism 使用 WebEngine，需要等页面和模型加载完成。
+        # 外部 Cubism 模型使用 WebEngine，需要等页面和模型加载完成。
         view.loadFinished.connect(lambda ok: state.update(page_loaded=ok))
         view.bridge.loaded.connect(lambda status: state.update(avatar_ready=status in ('ready', 'animation-ready', 'illustration-ready')))
     else:

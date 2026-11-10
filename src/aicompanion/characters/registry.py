@@ -26,7 +26,7 @@ class CharacterRegistry:
             if not pack.ready: continue
             if pack.persona and pack.id not in existing:
                 self.database.add_character(CharacterProfile(pack.name, pack.persona['description'], pack.persona['speaking_style'], pack.id))
-            elif pack.persona and pack.id in existing: self._upgrade_persona(pack)
+            elif pack.persona and pack.id in existing: self._replace_placeholder(pack); self._upgrade_persona(pack)
             if pack.id not in existing and pack.id not in {c.id for c in self.database.characters()}: continue
             language = pack.voice.get('language')
             if language and self.database.get_setting(f'speech_language:{pack.id}') is None:
@@ -40,6 +40,15 @@ class CharacterRegistry:
             if self.pack(DEFAULT_CHARACTER_ID) and any(c.id == DEFAULT_CHARACTER_ID for c in self.database.characters()):
                 self.database.set_setting(ACTIVE_KEY, DEFAULT_CHARACTER_ID)
             self.database.set_setting(DEFAULT_KEY, True)
+
+    def _replace_placeholder(self, pack) -> None:
+        """数据库初始化写入的占位角色与角色包同 ID：还是占位文字时换成包里的名字和人设（用户改过的不动）。"""
+        from dataclasses import replace
+        from aicompanion.domain.character import DEFAULT_CHARACTER
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current and (current.description, current.speaking_style) == (DEFAULT_CHARACTER.description, DEFAULT_CHARACTER.speaking_style):
+            self.database.update_character(replace(current, name=pack.name, description=pack.persona['description'],
+                                                   speaking_style=pack.persona['speaking_style']))
 
     def _upgrade_persona(self, pack) -> None:
         """角色包人设升级：只在数据库里还是上一版原文（用户没改过）时替换；替换前把旧的存一份。"""

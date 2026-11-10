@@ -1116,3 +1116,12 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 验证：容器离线单测 784 项通过、38 项跳过（新增 `tests/test_breeze_tts.py` 12 项，含本机端口真实往返和跳转不跟随；`test_dsh` 新增子进程只带选定 Key、换 Key 重启运行时、未知路由失败三项）。
 - 没验证：Windows DPAPI；`tools\smoke_pet.py`（需 Windows）；真实 Breeze Blue / DeepSeek / MiniMax 接口与 Harness 的 MiniMax 路由；模型设置页尚未完成（V4-1c），在此之前只能通过代码或测试写入配置。**升级后旧 `.env` 的模型配置不再生效**，需在 V4-1c 的设置页重新配置。
 
+## 2026-11-11：删除爱蜜莉雅角色（Claude）
+
+- 负责人决定删除爱蜜莉雅。删除角色包 `characters/emilia`、同人立绘与网格动画资源（`assets/live2d/Emilia`、`emilia_rig.js`）、人设预设 `domain/personas.py`、专用自检 `ui/emilia_smoke_check.py` 与 `tools/verify_persona.py`；去掉 `--emilia-smoke-test`、`tools/smoke_pet.py --emilia`、`AVATAR_PREVIEW` / `CHARACTER_PRESET` 配置，以及设置页的两种艾米莉娅形象模式。网页渲染只保留用户导入的 Cubism 模型。
+- 默认角色改为鲸娘：`CharacterProfile` 默认 ID 和表结构的 `DEFAULT` 改为 `deepseek-whale`；数据库初始化写入同 ID 的占位角色，角色包同步时换成包里的名字与人设（用户改过的不动）。
+- **需要删除旧数据库重新生成**（开发测试阶段，负责人同意直接删库）：旧库里爱蜜莉雅的角色、聊天和记忆不再有入口。
+- 自检：桌宠自检的“切换角色”改为切到一个临时自建角色再切回；语音 / 通话自检不再等艾米莉娅形象加载。README、`.env.example` 同步（也去掉了 `LLM_*` 说明）。
+- 验证：容器离线单测 779 项通过、38 项跳过（删去爱蜜莉雅专属测试，新增占位角色被角色包人设替换且不覆盖用户编辑的测试；v5 旧库升级夹具保持原样）。
+- 没验证：Windows 上 `tools\run_checks.bat` 的桌宠自检、语音与通话自检；打包后的 `--pet-smoke-test`。
+

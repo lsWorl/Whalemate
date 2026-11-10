@@ -81,47 +81,47 @@ class LayerTests(RoutingBase):
         self.store.bind(Binding('chat', 'deepseek-flash', character_id='deepseek-whale'))
         whale = self.router.resolve('chat', 'deepseek-whale')
         self.assertEqual((whale.source, whale.model_id, whale.label), ('character', 'deepseek-flash', 'DeepSeek · deepseek-flash'))
-        self.assertEqual(self.router.resolve('chat', 'emilia').model_id, 'MiniMax-M3')
+        self.assertEqual(self.router.resolve('chat', 'other-role').model_id, 'MiniMax-M3')
         self.store.unbind('chat', 'deepseek-whale')                                          # 恢复继承
         self.assertEqual(self.router.resolve('chat', 'deepseek-whale').source, 'global')
 
     def test_snapshot_is_frozen(self):
         self.add_deepseek(); self.store.bind(Binding('chat', 'deepseek-flash'))
-        before = self.router.resolve('chat', 'emilia')
+        before = self.router.resolve('chat', 'other-role')
         self.add_minimax(); self.store.bind(Binding('chat', 'minimax-m3'))
         self.assertEqual(before.model_id, 'deepseek-flash')          # 已拿到的快照不受新设置影响
-        self.assertGreater(self.router.resolve('chat', 'emilia').config_revision, before.config_revision)
+        self.assertGreater(self.router.resolve('chat', 'other-role').config_revision, before.config_revision)
 
     def test_missing_key_does_not_fall_back(self):
         self.add_minimax()
         self.store.bind(Binding('chat', 'minimax-m3'))
         self.creds.delete('minimax-main')
         with self.assertRaises(ModelUnavailable):
-            self.router.client('chat', 'emilia')                     # 不偷偷换到别的服务，也不退回离线
-        self.assertFalse(self.router.ready('chat', 'emilia'))
+            self.router.client('chat', 'other-role')                     # 不偷偷换到别的服务，也不退回离线
+        self.assertFalse(self.router.ready('chat', 'other-role'))
 
     def test_offline_mode_never_builds_clients(self):
         self.add_deepseek(); self.store.bind(Binding('chat', 'deepseek-flash'))
         router = ModelRouter(self.db, SimpleNamespace(offline=True), credentials=self.creds, client_factory=self.factory)
-        client, _ = router.client('chat', 'emilia')
-        self.assertEqual(self.factory.made, []); self.assertEqual(router.label('emilia'), '离线模拟模型')
+        client, _ = router.client('chat', 'other-role')
+        self.assertEqual(self.factory.made, []); self.assertEqual(router.label('other-role'), '离线模拟模型')
         self.assertIsNone(router.agent_target())
 
     def test_vision_binding_is_independent(self):
         self.add_deepseek(); self.add_minimax()
         self.store.bind(Binding('chat', 'deepseek-flash')); self.store.bind(Binding('vision', 'minimax-m3'))
-        vision = self.router.resolve('vision', 'emilia', 'avatar')
+        vision = self.router.resolve('vision', 'other-role', 'avatar')
         self.assertEqual((vision.model_id, vision.credential, vision.temperature), ('MiniMax-M3', 'stored:minimax-main', 0.0))
-        self.assertEqual(self.router.resolve('chat', 'emilia').credential, 'stored:deepseek-main')   # 互不影响
+        self.assertEqual(self.router.resolve('chat', 'other-role').credential, 'stored:deepseek-main')   # 互不影响
 
 
 class CacheTests(RoutingBase):
     def test_key_change_rebuilds_client(self):
         self.add_deepseek('first'); self.store.bind(Binding('chat', 'deepseek-flash'))
-        first, _ = self.router.client('chat', 'emilia')
-        self.assertIs(self.router.client('chat', 'emilia')[0], first)       # 同样的配置复用实例
+        first, _ = self.router.client('chat', 'other-role')
+        self.assertIs(self.router.client('chat', 'other-role')[0], first)       # 同样的配置复用实例
         self.creds.save('deepseek-main', 'second')                            # 同地址同模型换 Key
-        second, resolved = self.router.client('chat', 'emilia')
+        second, resolved = self.router.client('chat', 'other-role')
         self.assertIsNot(second, first); self.assertEqual(second.secret, 'second')
         self.assertEqual(resolved.credential_revision, 'stored:2')
         self.assertNotIn(first, self.router._clients.values())               # 旧凭据的实例已丢弃
@@ -131,15 +131,15 @@ class CacheTests(RoutingBase):
         self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://api.deepseek.com', credential='env:MY_DS'))
         self.store.put_model(MODEL_PRESETS['deepseek-flash']); self.store.bind(Binding('chat', 'deepseek-flash'))
         self.env['MY_DS'] = 'one'
-        first, _ = self.router.client('chat', 'emilia')
+        first, _ = self.router.client('chat', 'other-role')
         self.env['MY_DS'] = 'rotated'
-        second, _ = self.router.client('chat', 'emilia')
+        second, _ = self.router.client('chat', 'other-role')
         self.assertIsNot(first, second); self.assertEqual(second.secret, 'rotated')
 
     def test_purpose_parameters_do_not_share_instances(self):
         self.add_minimax(); self.store.bind(Binding('chat', 'minimax-m3.1-flash')); self.store.bind(Binding('vision', 'minimax-m3.1-flash'))
-        chat, _ = self.router.client('chat', 'emilia', 'companion')
-        vision, _ = self.router.client('vision', 'emilia', 'vision')
+        chat, _ = self.router.client('chat', 'other-role', 'companion')
+        vision, _ = self.router.client('vision', 'other-role', 'vision')
         self.assertIsNot(chat, vision)
         self.assertEqual(vision.resolved.max_output, 4000)
 
@@ -149,10 +149,10 @@ class TargetTests(RoutingBase):
         self.add_deepseek('search-key'); self.add_minimax()
         self.store.bind(Binding('search', backend='deepseek', provider='deepseek'))
         self.store.bind(Binding('chat', 'minimax-m3'))                       # 聊天换成 MiniMax 也不改搜索
-        target = self.router.search_target('emilia')
+        target = self.router.search_target('other-role')
         self.assertEqual((target.backend, target.api_key), ('deepseek', 'search-key'))
-        self.store.bind(Binding('search', backend='wikipedia', character_id='emilia'))
-        self.assertEqual(self.router.search_target('emilia').backend, 'wikipedia')
+        self.store.bind(Binding('search', backend='wikipedia', character_id='other-role'))
+        self.assertEqual(self.router.search_target('other-role').backend, 'wikipedia')
         self.assertEqual(self.router.search_target('deepseek-whale').backend, 'deepseek')
 
     def test_agent_target_only_carries_selected_key(self):

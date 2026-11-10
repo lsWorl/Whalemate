@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS conversation_turns (
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id),
+    character_id TEXT NOT NULL DEFAULT 'deepseek-whale' REFERENCES characters(id),
     turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text',
     channel TEXT NOT NULL DEFAULT 'desktop', sender TEXT NOT NULL DEFAULT ''
 );
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL,
     importance INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id),
+    character_id TEXT NOT NULL DEFAULT 'deepseek-whale' REFERENCES characters(id),
     category TEXT NOT NULL DEFAULT 'legacy', fact_key TEXT NOT NULL DEFAULT '',
     confidence REAL NOT NULL DEFAULT 1, source_ids TEXT NOT NULL DEFAULT '[]',
     clarity REAL NOT NULL DEFAULT 1, recalled_at TEXT, scope TEXT NOT NULL DEFAULT 'pet'
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
 CREATE TABLE IF NOT EXISTS reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, due_at TEXT,
     status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id)
+    character_id TEXT NOT NULL DEFAULT 'deepseek-whale' REFERENCES characters(id)
 );
 CREATE INDEX IF NOT EXISTS ix_messages_character ON chat_messages(character_id, id);
 CREATE INDEX IF NOT EXISTS ix_messages_channel ON chat_messages(character_id, channel, id);

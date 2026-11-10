@@ -129,7 +129,7 @@ class QQExpressionTests(unittest.TestCase):
 
     def test_role_switch_and_expiry_reject_pending_old_image(self):
         answer=self.ask();delivery=answer['expression']['attachments'][0]['delivery_id']
-        old=self.controller.character;self.controller.character=DEFAULT_CHARACTER
+        old=self.controller.character;self.controller.character=replace(DEFAULT_CHARACTER,id='other-role')
         self.assertFalse(self.service.expression_claim({'delivery_id':delivery})['allowed'])
         self.controller.character=old
         with self.db.transaction() as c:c.execute('UPDATE expression_deliveries SET created_at=0 WHERE delivery_id=?',(delivery,))

@@ -17,19 +17,14 @@ class CharacterProfile:
     name: str
     description: str
     speaking_style: str
-    id: str = "emilia"
+    id: str = "deepseek-whale"
     model_path: str = ""
     voice: str = ""
 
 
+# 数据库初始化时写入的占位角色：与鲸娘角色包同一个 ID，角色包同步时用包里的人设替换这段占位文字。
 DEFAULT_CHARACTER = CharacterProfile(
-    name="Emilia",
-    description=(
-        "A gentle, emotionally expressive AI companion. She is warm, sincere, "
-        "a little shy, and pays attention to the user's feelings."
-    ),
-    speaking_style=(
-        "Speak naturally in Chinese. Keep replies caring, vivid, and concise. "
-        "Do not claim to be the copyrighted character Emilia; act as an original companion."
-    ),
+    name="大肥鱼",
+    description="桌面上的 AI 伙伴。（角色包尚未同步时的占位设定）",
+    speaking_style="用自然的中文聊天，简短、真诚。",
 )

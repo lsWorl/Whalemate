@@ -188,7 +188,7 @@ class QwenSpeechClient:
         output = self._post('/services/audio/tts/customization', {
             'model': 'voice-enrollment',
             'input': {'action': 'create_voice', 'target_model': self.settings.qwen_tts_model,
-                      'prefix': 'emiliajp', 'url': audio_url, 'language_hints': ['ja'],
+                      'prefix': 'companionjp', 'url': audio_url, 'language_hints': ['ja'],
                       'max_prompt_audio_length': 10.0, 'enable_preprocess': False},
         }, cancellation, timeout=60)
         voice = output.get('voice_id')

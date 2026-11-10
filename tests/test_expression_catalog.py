@@ -127,6 +127,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(self.cat.resolve(aid,old,approved=False)[0],png())
 
     def test_actual_v5_fixture_upgrade_keeps_custom_content_and_backup(self):
+        # 真实的 v5 旧库：默认角色当时是 emilia，夹具保持原样
         import sqlite3
         path=self.root/'actual-v5.sqlite3'
         with closing(sqlite3.connect(path)) as c, c:
@@ -139,7 +140,7 @@ class CatalogTests(unittest.TestCase):
         migrated=Database(path);migrated.initialize();migrated.initialize()
         self.assertEqual(migrated.characters()[0].name,'用户自定义名字')
         self.assertEqual(migrated.get_setting('qq_chat_card:emilia')['style'],'自定义风格')
-        self.assertEqual(migrated.recent_messages(channel='qq:group:30003')[0]['content'],'合成历史')
+        self.assertEqual(migrated.recent_messages(character_id='emilia',channel='qq:group:30003')[0]['content'],'合成历史')
         backup=next(self.root.glob('actual-v5.backup-*.sqlite3'))
         with closing(sqlite3.connect(backup)) as c:
             self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0],5)

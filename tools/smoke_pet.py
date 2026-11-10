@@ -13,7 +13,6 @@ from aicompanion.services.memory_service import MemoryService
 from aicompanion.storage.database import Database
 from aicompanion.ui.main_window import MainWindow
 from aicompanion.ui.pet_smoke_check import schedule_pet_smoke_check
-from aicompanion.ui.emilia_smoke_check import schedule_emilia_smoke_check
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +50,6 @@ def use_posepack(source: str, temp: Path) -> None:
 def main():
     parser = argparse.ArgumentParser(description='Offline desktop pet verification.')
     parser.add_argument('--preview', action='store_true', help='Show a temporary pet for up to 90 seconds.')
-    parser.add_argument('--emilia', action='store_true', help='Verify the original illustration mesh effect, not Cubism.')
     parser.add_argument('--rig', choices=('auto', 'placeholder', 'coopanion'), default='auto',
                         help='骨骼形象来源：auto = 仓库自带的十姿态鲸娘 → 本机 Coopanion 大肥鱼 → 合成的占位形象包')
     parser.add_argument('--posepack', metavar='DIR', help='用十姿态分层包（pose-layered-v2 目录）自检，优先于 --rig')
@@ -63,10 +61,8 @@ def main():
         if args.posepack: use_posepack(args.posepack, Path(temp))
         else: use_placeholder_rig(args.rig, Path(temp))
         database = Database(Path(temp)/'pet.sqlite3'); database.initialize()
-        settings = Settings('AICompanion', database.database_path, 'mock', 'https://example.invalid', '', 'mock', .8, 10)
+        settings = Settings('AICompanion', database.database_path, offline=True)
         registry = CharacterRegistry(database, settings); registry.sync()
-        if args.emilia:
-            database.set_setting('avatar_mode:emilia','animated-illustration'); registry.set_active('emilia')
         controller = ChatController(database, MemoryService(database), MockLLMClient())
         controller.character = registry.active()
         window = MainWindow(controller, settings, registry)
@@ -80,7 +76,6 @@ def main():
             # 预览里自动说一句话，展示用户气泡、思考图标、回复气泡和台词里的表情动作
             QTimer.singleShot(30000, lambda: window.submit('你好呀，今天过得怎么样？'))
             state = None
-        elif args.emilia: state=schedule_emilia_smoke_check(window,database,ROOT/'docs/emilia-smoke')
         else: state = schedule_pet_smoke_check(window, database, ROOT/'docs/pet-v2/smoke')
         code = app.exec()
         return code if state is None else 0 if state.get('passed') and code==0 else 1
