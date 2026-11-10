@@ -109,6 +109,7 @@ class AnimationViewTests(unittest.TestCase):
     def test_hit_test_uses_mirror_and_current_frame_alpha(self):
         self.view._frame=QImage(64,64,QImage.Format.Format_ARGB32);self.view._frame.fill(Qt.GlobalColor.transparent)
         painter=QPainter(self.view._frame);painter.fillRect(4,16,16,32,QColor('red'));painter.end()
+        self.view._display=self.view._frame
         self.assertTrue(self.view.hit(QPoint(16,64)));self.assertFalse(self.view.hit(QPoint(112,64)))
         self.view.face(1)
         self.assertFalse(self.view.hit(QPoint(16,64)));self.assertTrue(self.view.hit(QPoint(112,64)))

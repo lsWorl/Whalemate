@@ -31,7 +31,11 @@ def schedule_pet_smoke_check(window, database, output):
     rig = isinstance(pet.view, RigAvatar)
     animation = isinstance(pet.view, AnimationAvatar)
     animation_frames=[]
-    if animation: pet.view.frameAdvanced.connect(animation_frames.append)
+    if animation:
+        pet.view.frameAdvanced.connect(animation_frames.append)
+        state['pose_transitions_started']=[];state['pose_transitions_finished']=[]
+        pet.view.transitionStarted.connect(lambda a,b:state['pose_transitions_started'].append([a,b]))
+        pet.view.transitionFinished.connect(lambda a,b:state['pose_transitions_finished'].append([a,b]))
     state['renderer'] = type(pet.view).__name__
     if rig:
         # 骨骼渲染要等 WebEngine 页面和贴图加载；时间线整体后移。
@@ -316,8 +320,45 @@ def schedule_pet_smoke_check(window, database, output):
         # 表达检查结束后再做额度检查和退出（原来固定在 25.0s / 26.5s，表达检查变成"等到完成"后改成串联）
         if state.get('after_expression_ran'): return
         state['after_expression_ran'] = True
-        try: offer_and_quota()
-        finally: QTimer.singleShot(1500, window.request_exit)
+        def finish_checks():
+            try: offer_and_quota()
+            finally: QTimer.singleShot(1500, window.request_exit)
+        if not animation:
+            finish_checks();return
+        # 实际播放站→坐→托腮→待机，包含两段衔接；不只核对 pose 字符串。
+        targets=['idle','working','thinking','idle'];state['pose_transition_targets']=[]
+        transition_start=len(state['pose_transitions_finished'])
+        # 前面的聊天特意播放挥手；本段单独验证姿态，清掉上一段的短时表演。
+        pet.stop_walking();pet._stop_fall()
+        pet.view._cue=None;pet.view._cue_until=0.;pet.view.set_drag(False)
+
+        def next_target(index):
+            if index>=len(targets):
+                expected=[['idle','working'],['working','idle'],['idle','thinking'],['thinking','idle']]
+                state['pose_transition_flow']=all(pair in state['pose_transitions_finished'][transition_start:] for pair in expected)
+                finish_checks();return
+            pose=targets[index]
+            pet.machine.snapshot=type(pet.machine.snapshot)()
+            pet.dispatch('force_pose',pose=pose,seconds=8.)
+            deadline=time.monotonic()+3.
+            def wait_pose():
+                view=pet.view
+                if isinstance(view,AnimationAvatar) and view._loaded==pose and not view.transitioning:
+                    state['pose_transition_targets'].append(pose)
+                    if pose=='working':pet.grab().save(str(output/'pet-transition-working.png'))
+                    QTimer.singleShot(30,lambda:next_target(index+1))
+                elif time.monotonic()>=deadline:
+                    state['errors'].append('动作过渡未按时衔接：'+pose);finish_checks()
+                else:QTimer.singleShot(25,wait_pose)
+            QTimer.singleShot(25,wait_pose)
+        settled_deadline=time.monotonic()+3.
+        def wait_chat_done():
+            if not window.workers and not window.tasks and not window.speech.workers:
+                pet.view._cue=None;pet.view._cue_until=0.;pet.view.set_walking(0);next_target(0)
+            elif time.monotonic()>=settled_deadline:
+                state['errors'].append('聊天线程未释放，无法独立验收过渡');finish_checks()
+            else:QTimer.singleShot(25,wait_chat_done)
+        wait_chat_done()
     def safety_exit():
         # 兜底：表达检查本身出异常、串联没走到时，也要退出并留下报告，而不是一直挂着
         if not state.get('after_expression_ran'):
@@ -345,7 +386,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
         if animation:
-            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back'])
+            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back','pose_transition_flow'])
             if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True
             required.append('animation_advances')
             state['animation_advances']=not state.get('failed_animation_frames',False)

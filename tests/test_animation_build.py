@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 AVAILABLE=all(importlib.util.find_spec(x) is not None for x in ('numpy','PIL'))
 if AVAILABLE:
@@ -11,6 +12,7 @@ if AVAILABLE:
     from PIL import Image,ImageDraw
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
     from animation_inbetween import extract_keys,optical_flow,interpolate
+    from pose_bridge import pose_interpolate
 
 
 @unittest.skipUnless(AVAILABLE,'离线美术工具需要已有 Pillow / NumPy；运行桌宠不需要')
@@ -52,6 +54,28 @@ class AnimationBuildTests(unittest.TestCase):
             for frame in frames:
                 box=frame.getbbox();self.assertGreater(box[0],2);self.assertGreater(box[1],2)
                 self.assertLess(box[2],94);self.assertLess(box[3],94)
+
+    def test_pose_bridge_moves_one_opaque_face_to_intermediate_height(self):
+        def person(top):
+            image=Image.new('RGBA',(128,192));draw=ImageDraw.Draw(image)
+            draw.rectangle((40,top,86,top+40),fill=(250,190,170,255))
+            draw.rectangle((50,top+40,76,175),fill=(60,80,220,255))
+            return image
+        a,b=person(20),person(70)
+        middle=pose_interpolate(a,b,.5)
+        color=middle.getpixel((63,65))
+        self.assertGreater(color[0],235);self.assertGreater(color[3],245)
+        # 原来的头部位置已移开，不应在上方再叠出第二张脸。
+        self.assertEqual(middle.getpixel((63,25))[3],0)
+        self.assertTrue(np.array_equal(np.asarray(pose_interpolate(a,b,0)),np.asarray(a)))
+        self.assertTrue(np.array_equal(np.asarray(pose_interpolate(a,b,1)),np.asarray(b)))
+
+    def test_transition_preview_can_be_built_in_clean_workspace(self):
+        import build_pose_transitions as build
+        with tempfile.TemporaryDirectory() as directory,patch.object(build,'ROOT',Path(directory)):
+            build.gif_preview('tiny',[self.rectangle(),self.rectangle(1)])
+            path=Path(directory)/'output/transitions/tiny.gif'
+            self.assertTrue(path.read_bytes().startswith(b'GIF'))
 
     def test_source_character_cut_by_outer_canvas_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

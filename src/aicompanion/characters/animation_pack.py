@@ -1,6 +1,6 @@
 """透明逐帧动画清单；只解析本包文件，不执行脚本或解析网络地址。"""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import math
 from pathlib import Path
@@ -26,12 +26,27 @@ class Animation:
 
 
 @dataclass(frozen=True)
+class Transition:
+    source: str
+    target: str
+    clip: Animation
+
+
+@dataclass(frozen=True)
 class AnimationPack:
     size: tuple[int, int]
     actions: dict[str, Animation]
     poses: dict[str, str]
     poster: Path
     head: tuple[float, float, float, float]
+    transitions: dict[tuple[str, str], Transition] = field(default_factory=dict)
+
+    def transition_route(self, source, target):
+        direct=self.transitions.get((source,target))
+        if direct is not None:return [direct]
+        # 经过待机最多两段；不无限遍历动作图，避免积压一长串过期动作。
+        first=self.transitions.get((source,'idle')); second=self.transitions.get(('idle',target))
+        return [first,second] if first is not None and second is not None else []
 
 
 def local_file(root, value):
@@ -50,6 +65,19 @@ def integer(value, low, high):
     return value
 
 
+def animation_entry(root,key,entry,size):
+    width=integer(entry['frameWidth'],16,1024); height=integer(entry['frameHeight'],16,1024)
+    columns=integer(entry['columns'],1,32); rows=integer(entry['rows'],1,64)
+    count=integer(entry['frameCount'],1,600); fps=integer(entry['fps'],1,30)
+    if (width,height)!=size or count>columns*rows or (rows-1)*columns>=count or width*height*columns*rows>32_000_000:
+        raise CharacterPackError('动画帧数、画布或图集尺寸不一致。')
+    facing=entry.get('facing','left')
+    if facing not in ('left','right'):raise CharacterPackError('动画朝向无效。')
+    image=local_file(root,entry['image'])
+    if image.suffix.lower()!='.webp':raise CharacterPackError('动画图集必须为 WebP。')
+    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing)
+
+
 def load_animation_pack(path):
     path=Path(path)
     try:
@@ -61,18 +89,21 @@ def load_animation_pack(path):
         entries=data['actions']; poses=data['poses']
         if not isinstance(entries, dict) or not 1<=len(entries)<=128 or not isinstance(poses, dict):
             raise CharacterPackError('动画动作清单无效。')
-        actions={}
-        for key, entry in entries.items():
-            width=integer(entry['frameWidth'],16,1024); height=integer(entry['frameHeight'],16,1024)
-            columns=integer(entry['columns'],1,32); rows=integer(entry['rows'],1,64)
-            count=integer(entry['frameCount'],1,600); fps=integer(entry['fps'],1,30)
-            if (width,height)!=size or count>columns*rows or (rows-1)*columns>=count or width*height*columns*rows>32_000_000:
-                raise CharacterPackError('动画帧数、画布或图集尺寸不一致。')
-            facing=entry.get('facing','left')
-            if facing not in ('left','right'): raise CharacterPackError('动画朝向无效。')
-            image=local_file(path.parent,entry['image'])
-            if image.suffix.lower()!='.webp': raise CharacterPackError('动画图集必须为 WebP。')
-            actions[key]=Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing)
+        if any(not isinstance(key,str) or not key or len(key)>120 or key.startswith('@transition:') for key in entries):
+            raise CharacterPackError('动作 ID 为空、过长或使用了过渡保留前缀。')
+        actions={key:animation_entry(path.parent,key,entry,size) for key,entry in entries.items()}
+        transitions={}
+        transition_entries=data.get('transitions',[])
+        if not isinstance(transition_entries,list) or len(transition_entries)>256:
+            raise CharacterPackError('过渡动作清单无效。')
+        for entry in transition_entries:
+            source,target=entry['from'],entry['to']
+            if source not in actions or target not in actions or source==target or (source,target) in transitions:
+                raise CharacterPackError('过渡端点不存在、相同或重复。')
+            clip=animation_entry(path.parent,'@transition:'+json.dumps([source,target],ensure_ascii=False,separators=(',',':')),entry,size)
+            if clip.count<2 or clip.count/clip.fps>.75:
+                raise CharacterPackError('单段过渡应为 2 帧以上且不超过 0.75 秒。')
+            transitions[source,target]=Transition(source,target,clip)
         if any(not isinstance(p,str) or a not in actions for p,a in poses.items()):
             raise CharacterPackError('动画姿势指向不存在的动作。')
         if any(p not in poses for p in ('idle','talking','thinking')):
@@ -81,7 +112,7 @@ def load_animation_pack(path):
         if (len(head)!=4 or any(type(v) not in (int,float) or not math.isfinite(v) or not 0<=v<=1 for v in head)
                 or head[2]<=0 or head[3]<=0 or head[0]+head[2]>1 or head[1]+head[3]>1):
             raise CharacterPackError('动画头部区域无效。')
-        return AnimationPack(size,actions,poses,local_file(path.parent,data['poster']),head)
+        return AnimationPack(size,actions,poses,local_file(path.parent,data['poster']),head,transitions)
     except (OSError,ValueError,TypeError,KeyError) as error:
         if isinstance(error,CharacterPackError): raise
         raise CharacterPackError('无法读取动画清单或帧规格。') from error
