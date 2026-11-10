@@ -95,6 +95,13 @@ def main() -> int:
                 database.set_setting('qq_meme_root', str(settings.meme_directory))
         if '--emilia-smoke-test' in sys.argv:
             database.set_setting('avatar_mode:emilia','animated-illustration')
+        if not smoke_directory:
+            # T21：第一次启动时装入预置词库（常用梗），以后只补新版本新增的词；失败不影响启动
+            try:
+                from aicompanion.community.seed import install as install_seed_lexicon
+                install_seed_lexicon(database)
+            except Exception:
+                pass
         memory_service = MemoryService(database)
         llm_client = create_llm_client(settings)
         # 角色包同步到数据库（鲸娘等），并恢复上次选择的角色。

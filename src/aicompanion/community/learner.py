@@ -115,7 +115,9 @@ class CommunityLearner:
             self.lexicon.mark(term, is_jargon=bool((self.lexicon.info(term) or {}).get('is_jargon', 1)), inferred_at_count=total)
             return 'no_info'
         here = str(data.get('in_context') or '').strip()
-        is_jargon = not bool(data.get('same'))
+        # T21：已经有通用义的词（预置、联网、手动）本来就是梗；"带上下文和只看词本身意思一样"只说明模型也懂它，不能因此当成普通词
+        known = any(x['scope'] == '' for x in self.lexicon.senses(term, include_old=False))
+        is_jargon = known or not bool(data.get('same'))
         self.lexicon.mark(term, is_jargon=is_jargon, inferred_at_count=total)
         if not is_jargon: return 'plain_word'
         tone = str(data.get('tone') or ''); tone = tone if tone in TONES else ''

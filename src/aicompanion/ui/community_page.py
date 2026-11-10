@@ -8,7 +8,7 @@ from aicompanion.community.lexicon import Lexicon
 from aicompanion.community.lore import KINDS, GroupLore
 from aicompanion.community.search import WebSearch
 
-ORIGINS = {'web': '网上查到', 'wiki': '百科', 'observed': '群里的用法（推断）', 'manual': '手动', 'trend': '最近热梗'}
+ORIGINS = {'web': '网上查到', 'wiki': '百科', 'observed': '群里的用法（推断）', 'manual': '手动', 'trend': '最近热梗', 'seed': '预置'}
 
 
 def when(value):

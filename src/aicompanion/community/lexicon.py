@@ -13,7 +13,7 @@ import re
 import time
 
 TONES = {'褒', '贬', '中性', '反讽', '自嘲', '调侃'}
-ORIGINS = {'web', 'wiki', 'observed', 'manual', 'trend'}
+ORIGINS = {'web', 'wiki', 'observed', 'manual', 'trend', 'seed'}   # seed：T21 预置词库
 MAX_CONTEXTS = 6
 
 
@@ -161,7 +161,8 @@ class Lexicon:
         lines = []
         for hit in found:
             now = hit['now']
-            source = '群里的用法（推断）' if now['origin'] == 'observed' else (now['source_name'] or '网上') + ('' if not now['source_url'] else '')
+            source = ('群里的用法（推断）' if now['origin'] == 'observed' else '常见用法' if now['origin'] == 'seed'
+                      else (now['source_name'] or '网上'))
             line = f"「{hit['term']}」" + (f"（{hit['circle']}）" if hit['circle'] else '') + f"：{now['meaning']}"
             if now['tone']: line += f"；语气偏{now['tone']}"
             if now['usage']: line += f"；用法：{now['usage']}"
