@@ -23,8 +23,8 @@
       "frameCount": 120,
       "fps": 12,
       "facing": "left",
-      "cycleDistance": 256,
-      "strideCycles": 8
+      "cycleDistance": 280,
+      "strideCycles": 7
     },
     "walking_right": {
       "name": "向右自然行走",
@@ -36,8 +36,8 @@
       "frameCount": 120,
       "fps": 12,
       "facing": "right",
-      "cycleDistance": 256,
-      "strideCycles": 8
+      "cycleDistance": 280,
+      "strideCycles": 7
     },
     "click_wave": {
       "name": "点击回应·元气挥手",

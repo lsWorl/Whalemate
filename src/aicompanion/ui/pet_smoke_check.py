@@ -346,7 +346,7 @@ def schedule_pet_smoke_check(window, database, output):
                             and len(set(state['walk_frame_indices']))>=3)
                     finish_checks();return
                 dx,dy=routes[index];before=(pet.x(),pet.y());pet.walk_to(before[0]+dx,before[1]+dy)
-                target=pet._walk_target;deadline=time.monotonic()+4.;gait=[None]
+                target=pet._walk_target;deadline=time.monotonic()+(6. if reference else 4.);gait=[None]
                 def wait_walk():
                     if view.walking_ready:
                         gait[0]=view._loaded;state['walk_frame_indices'].append(view._index)

@@ -1,0 +1,13 @@
+{
+  "Source": "built-in image_gen whole-character cels",
+  "FrameWidth": 384,
+  "FrameHeight": 384,
+  "Columns": 8,
+  "Rows": 15,
+  "FrameCount": 120,
+  "SampleFps": 12,
+  "Alpha": "RGBA",
+  "SourceDurationSeconds": 10,
+  "PaintedCels": 17,
+  "StrideCycles": 7
+}

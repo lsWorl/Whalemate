@@ -1,5 +1,5 @@
 {
-  "mode": "built-in image_gen keys plus offline single-cel flow interpolation",
+  "mode": "built-in image_gen full-character cels for walking; existing keys for interactions",
   "identity_reference": "art/deepseek-whale/reference-motion-v1/user-identity-reference.png",
   "identity_sha256": "503b064b7d936756e05281c7600766229eb7459f0e471736a271b24e32ea7b37",
   "requested_actions": 10,
@@ -13,20 +13,18 @@
       "fps": 12,
       "duration_ms": 10000,
       "first_last_identical": true,
-      "min_margin_px": 55,
+      "min_margin_px": 58,
       "safe_margin_passed": true,
-      "image_sha256": "2508ae6d5137082b62cdc9618ae0b1421f2556caa17a97b1bab9b14abb61838a",
-      "encoded_endpoints_rgba_preserved": true
+      "image_sha256": "b444493fc8d831d7ccf78fb95c663d2eec0388a1039df46fbe2f5eb234a5c6d9"
     },
     "walking_right": {
       "frames": 120,
       "fps": 12,
       "duration_ms": 10000,
       "first_last_identical": true,
-      "min_margin_px": 54,
+      "min_margin_px": 58,
       "safe_margin_passed": true,
-      "image_sha256": "a4ff94fa8f4c06d2820140ec2fe6aca42879daa29a7d8ade0163fffd7dae9a33",
-      "encoded_endpoints_rgba_preserved": true
+      "image_sha256": "8cb4998a4e2cfbc376302cf9b408775c547effce7b19343e7ed6a449be294247"
     },
     "click_wave": {
       "frames": 120,
@@ -121,16 +119,18 @@
   },
   "alignment": {
     "walking_left": {
-      "face_scale": 0.5768609865470853,
-      "face_height_ratio_to_standard": 1.012484473357334,
-      "keys": 6,
-      "shared_standard_endpoints": false
+      "method": "whole_character_painted_cels",
+      "painted_cels": 17,
+      "cycles": 7,
+      "uniform_scale": true,
+      "floor_y": 326
     },
     "walking_right": {
-      "face_scale": 0.5736454849498328,
-      "face_height_ratio_to_standard": 0.9782373168778558,
-      "keys": 6,
-      "shared_standard_endpoints": false
+      "method": "whole_character_painted_cels",
+      "painted_cels": 17,
+      "cycles": 7,
+      "uniform_scale": true,
+      "floor_y": 326
     },
     "click_wave": {
       "face_scale": 0.5755704697986578,
@@ -213,14 +213,6 @@
     {
       "file": "shy_peek-sheet.png",
       "sha256": "d41c55923250e8782552a35707640511d7f18b0aed05f9a6fed0e4328ce8c056"
-    },
-    {
-      "file": "walking_left-sheet.png",
-      "sha256": "ae4389804809541885d728a70448448ca594ecbcbea96c24aa115ad9d445d674"
-    },
-    {
-      "file": "walking_right-sheet.png",
-      "sha256": "60d5379f0e58b3d8a83ea7e15313ad28e5e6ccd538e153c76f22ec164bc2d9cd"
     }
   ],
   "manual_review_required": [
@@ -228,5 +220,35 @@
     "肢体结构与遮挡",
     "插值中间帧是否自然",
     "头发裙摆尾巴惯性是否可信"
-  ]
+  ],
+  "walking_method": "whole_character_painted_cels",
+  "walking_identity_reference": "art/deepseek-whale/reference-motion-v1/user-identity-reference.png",
+  "walking_cel_sources": {
+    "walking_left": {
+      "sheets": [
+        {
+          "file": "art/deepseek-whale/walk-cels-v1/left-sheet.png",
+          "sha256": "decdca78d287cd98ea5c16acbb595fbc9315c2c6aae1c0e2d7f94c54bd25c70a",
+          "columns": 3,
+          "rows": 6
+        }
+      ],
+      "sequence": "art/deepseek-whale/walk-cels-v1/left/sequence.json",
+      "painted_cels": 17,
+      "whole_frame_only": true
+    },
+    "walking_right": {
+      "sheets": [
+        {
+          "file": "art/deepseek-whale/walk-cels-v1/right-sheet.png",
+          "sha256": "78f896f0ed104845fb721ddee3098b556583404355ae73d18a3a56a9f439b998",
+          "columns": 3,
+          "rows": 6
+        }
+      ],
+      "sequence": "art/deepseek-whale/walk-cels-v1/right/sequence.json",
+      "painted_cels": 17,
+      "whole_frame_only": true
+    }
+  }
 }

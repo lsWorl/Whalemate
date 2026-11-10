@@ -13,3 +13,10 @@
 2. idle / talking / thinking / 得意 / 气鼓鼓 / 害羞 / 惊讶 / 开心 / 挥手为相容站姿；直接实时混合，归一化相位延续。混合时旧图集继续按时钟推进，到期立即释放；打断时从当前显示图续接。
 3. 取奶茶、伸懒腰、转身分别补四张中间姿势，坐下工作 / 抱鲸仍使用上一轮补画。中间片段小段柔和混合，端点无损匹配实际循环。没有声称全部中间帧均为手绘或真实骨骼求解。
 4. 新动作、二维路线与艺术审查继续放在 PR #25；测试、性能和未验收项以任务主记录的最终追加段落为准。
+
+## 整帧行走的实现参考（2026-11-10）
+
+- 重新核对 [aboutme-pets 转换脚本](https://github.com/hunmer/aboutme-pets/blob/main/convert_video_pet_spritesheet.py)：它按12FPS从完整动作视频采样，以8列拼成透明WebP，并分别输出 FrameWidth / FrameHeight / Columns / Rows / FrameCount / SampleFps 等JSON元数据。
+- [预览页](https://github.com/hunmer/aboutme-pets/blob/main/index.html)按当前帧序号计算行列，截取完整画面绘制，并提供暂停、逐帧和进度滑杆。它不通过把手臂或脚拆开来产生动作。
+- 本轮采用同样的整帧图集组织和按帧播放思路，自己用原始用户参考绘制整个人物姿势。输入是整帧原画，不声称复现了对方的视频生成模型；没有下载 / 引用其人物贴图、音轨或复制实现代码。
+- [Toon Boom Walk Analysis](https://learn.toonboom.com/modules/walk-cycle-animation2/topic/walk-analysis)用于审图：触地、下沉、经过、抬升后交换两腿，两个触地姿势步幅相近。该知识用于绘图姿势，不要求继续采用本轮已撤下的分层骨骼实验。

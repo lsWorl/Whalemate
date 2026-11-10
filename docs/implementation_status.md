@@ -1144,3 +1144,15 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 最终tools/run_checks.bat退出0：803项，796通过 / 7跳过，103.802秒；Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0，十动作 / 左右走动 / 新旧回退均通过。新增关闭保护：最后保存一次位置，关闭后的移动 / 缩放与晚到回调不再写设置；首次同步日志中的两次临时库OperationalError在最终完整检查中未再出现，原日志保留审计。
 
 新基线录屏91帧，左右各120px到达、各推进60个图集帧，using_reference=true；短时主进程工作集峰值348.3MiB、最低204.4MiB（含PNG录制，不含启动器 / 控制台），不作为长期内存目标验收。最新报告与GIF仍在output/reference-motion-v1；同步前报告 / 录屏另存pre-baseline前缀。本批图集与动作逻辑不变；用户审图、另一方审查、长期 / 多屏 / DPI和低性能机器仍未验收。
+
+## 整帧行走替换与验证（Codex，2026-11-10）
+
+- 按用户最新要求撤下拆手脚 / IK 实验，改用完整人物原画帧。左右各一张3列6行清稿，使用其中17张独立完整姿势，按17×7+1组成120帧；末帧直接复用首帧。内置image_gen生成，原始用户图为唯一身份参考；全周期清稿统一脸型、服装与配饰，过程输入和完整提示词在art/deepseek-whale/walk-cels-v1。不是120张不同新画，不是视频生成模型输出。
+- 只整帧裁格、共同等比缩放、水平居中及接地线对齐，不切开手脚、不扭曲关节、不用光流生成行走中间帧。固定图纸含少量跨格留白，裁格外扩后只保留本格完整人物连通主体，避免切掉鞋尖或带入邻格碎片。运行两套仍384×384、10秒、12FPS、120帧，首尾编码后RGBA完全一致，左右最小安全边距58px。
+- 参考aboutme-pets的完整画面图集及逐动作JSON字段组织方式，新增walking_left.json / walking_right.json；项目仍沿用自己的播放器和聚合清单。导出链tools/build_walk_cels.py → build_reference_motion.py → build_original_animation.py已接通。运行每帧与17张整帧PNG逐像素对应，并记录序列和哈希。
+- 新模式桌面步速按图集距离/时长计算，当前300px显示宽度为28px/s；保持距离驱动、独立左/右方向及原有版本回退。八个互动WebP逐字节与2fe42f0一致，旧版资源保留。新包11个WebP共67.17MiB。分层实验与重复同侧迈步的草稿回收到output，不纳入PR。
+- 最终tools/run_checks.bat退出0：807项，800通过 / 7跳过，114.938秒。Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0；十动作加载、左右到达、新→旧→新回退、原聊天/拖拽/透明等检查均通过。新增整帧图集像素/比例/来源检查和图集周期匹配步速回归。测试与实测使用临时库和Mock，未读取.env或真实用户库。
+- 实际播放器录屏120帧、84ms截图间隔；左右各120px均到达，各推进52个图集索引，using_reference=true、无错误。含PNG录制开销的主进程工作集短时采样峰值395.4MiB、最低192.0MiB；不含启动器/控制台，不作为长期峰值或350MB目标通过。记录output/reference-motion-v1/runtime-walking.gif、live-walk-report.json。
+- 交付预览walking-pair.gif、可暂停/逐帧拖动的独立walking-preview.html、all-actions.gif、1200张PNG和DeepSeek-10-actions-12fps.zip（250.03MiB），均在output/reference-motion-v1。按帧播放与几何检查不能证明动画已自然；面部视角/服装细节一致性、两腿遮挡和脚底接触仍待用户审图。另一方最新提交审查、长期内存、多屏、高DPI与低性能机器未验证；PR #25保持草稿，不标记可合并。
+
+- 重建验证边界：本轮实际执行了左右整帧导出，并单独验证compile_action入口返回120帧与一致端点；未再次重导旧版全部原画/过渡素材。上面的“导出链接通”指代码已接入，非本轮全量重导出记录。

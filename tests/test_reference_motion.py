@@ -62,7 +62,7 @@ class ReferenceMotionTests(unittest.TestCase):
         self.assertEqual(merged.actions['working'].content_offset,(.1,.1124))
         self.assertEqual(merged.poster,new.poster)
         self.assertEqual(merged.poses['poked'],'click_wave')
-        self.assertEqual(merged.actions['walking_left'].gait_cycles,8)
+        self.assertEqual(merged.actions['walking_left'].gait_cycles,7)
         self.assertNotEqual(merged.actions['walking_left'].path,merged.actions['walking_right'].path)
 
     def test_decoder_applies_framing_to_each_cell_without_opaque_padding(self):

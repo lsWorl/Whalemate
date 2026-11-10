@@ -314,7 +314,11 @@ class DesktopPetWindow(QWidget):
             self._walk_target=clamp_target(self._walk_target,bounds,size)
             self._walk_position=clamp_target(self._walk_position,bounds,size)
         remaining=math.hypot(self._walk_target[0]-self._walk_position[0],self._walk_target[1]-self._walk_position[1])
-        distance,self._walk_speed=braking_step(self._walk_speed,remaining,dt,self.scale)
+        pace=42.
+        if getattr(self.view,'using_reference',False):
+            clip=self.view.pack.actions.get('walking_right')
+            if clip:pace=clip.cycle_distance*clip.fps/clip.count
+        distance,self._walk_speed=braking_step(self._walk_speed,remaining,dt,self.scale,pace)
         position,distance,arrived=advance_walk(self._walk_position,self._walk_target,distance)
         self._walk_position=position
         if hasattr(self.view,'step_walking'):self.view.step_walking(distance/self.scale)

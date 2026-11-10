@@ -86,6 +86,16 @@ class WindowWalkTests(unittest.TestCase):
         self.assertAlmostEqual(self.view.distance,math.hypot(120,80))
         self.assertEqual(self.view.vectors[0],(120.,80.));self.assertEqual(self.view.vectors[-1],(0,0))
 
+    def test_reference_walk_speed_follows_full_frame_clip_duration(self):
+        from types import SimpleNamespace
+        self.view.using_reference=True
+        self.view.pack=SimpleNamespace(actions={'walking_right':SimpleNamespace(cycle_distance=280.,fps=12,count=120)})
+        self.pet.walk_to(300,100);self.pet._walk_timer.stop();self.pet._walk_last=100.
+        for i in range(1,21):self.tick(100+i*.05)
+        self.assertAlmostEqual(self.pet._walk_speed,28.)
+        self.assertGreater(self.view.distance,25.)
+        self.assertLess(self.view.distance,28.)
+
     def test_pending_gait_does_not_slide_and_resume_does_not_jump(self):
         self.view.walking_ready=False;self.pet.walk_to(100,200);self.pet._walk_timer.stop()
         self.pet._walk_last=100.;self.tick(101.)

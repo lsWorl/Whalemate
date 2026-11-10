@@ -107,6 +107,9 @@ def jump_offset(t,amplitude=18):
 
 
 def compile_action(key,keys):
+    if key.startswith('walking'):
+        from build_walk_cels import available,build
+        if available():return build(key.removeprefix('walking_'))
     pairs={};frames=[];open_key=None
     if key.startswith('walking'):
         # 两次偶尔眨眼，不在每个迈步周期都闭眼。
@@ -157,7 +160,10 @@ def export(key,name,frames,write_png=False):
       'min_margin_px':min_margin,'safe_margin_passed':min_margin>=math.ceil(SIZE*.1),'image_sha256':digest(path)}
     facing='left' if key=='walking_left' else 'right'
     entry={'name':name,'image':path.name,'frameWidth':SIZE,'frameHeight':SIZE,'columns':columns,'rows':rows,'frameCount':COUNT,'fps':FPS,'facing':facing}
-    if key.startswith('walking'):entry.update(cycleDistance=256,strideCycles=8)
+    if key.startswith('walking'):
+        from build_walk_cels import available,CYCLE_DISTANCE,CYCLES,write_metadata
+        entry.update(cycleDistance=CYCLE_DISTANCE if available() else 256,strideCycles=CYCLES if available() else 8)
+        if available():write_metadata(key)
     return entry,record
 
 
@@ -174,6 +180,8 @@ def main(only=None,write_png=False):
         path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         path=OUT/'SOURCE.json';source=json.loads(path.read_text(encoding='utf-8'));source['automatic_validation'].update(validation);source['alignment']=reports
         source['input_files']=[{'file':p.name,'sha256':digest(p)} for p in sorted(ART.glob('*-sheet.png'))]
+        from build_walk_cels import available,annotate_source
+        if available():annotate_source(source)
         path.write_text(json.dumps(source,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         (PREVIEW/'partial-validation.json').write_text(json.dumps(validation,indent=2)+'\n',encoding='utf-8')
         print(json.dumps({'updated':list(actions),'failed':[k for k,r in validation.items() if not r['safe_margin_passed']]},ensure_ascii=False))
@@ -188,6 +196,8 @@ def main(only=None,write_png=False):
       'not_1200_hand_drawn_frames':True,'automatic_validation':validation,'alignment':reports,
       'input_files':[{'file':p.name,'sha256':digest(p)} for p in sorted(ART.glob('*-sheet.png'))],
       'manual_review_required':['五官与服装细节一致性','肢体结构与遮挡','插值中间帧是否自然','头发裙摆尾巴惯性是否可信']}
+    from build_walk_cels import available,annotate_source
+    if available():annotate_source(source)
     (OUT/'SOURCE.json').write_text(json.dumps(source,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     original=OUT.parent/'animation-original/animations.json'
     original_data=json.loads(original.read_text(encoding='utf-8'));original_data['replacementPack']=OUT.name
