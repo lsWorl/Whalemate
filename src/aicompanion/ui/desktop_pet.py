@@ -550,14 +550,15 @@ class DesktopPetWindow(QWidget):
     def moveEvent(self, event):
         super().moveEvent(event)
         # winId() 在构造早期就可能触发移动/缩放事件，此时计时器还没创建。
-        if hasattr(self, '_save_timer'): self._save_timer.start(400)
+        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400)
         self._move_confirm()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, '_save_timer'): self._save_timer.start(400); QTimer.singleShot(0, self._update_mask)
+        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400); QTimer.singleShot(0, self._update_mask)
 
     def save_geometry(self):
+        if self._shutting_down:return
         rect = self.geometry()
         self.database.set_setting('desktop_pet_geometry', [rect.x(), rect.y(), rect.width(), rect.height()])
 
@@ -666,9 +667,10 @@ class DesktopPetWindow(QWidget):
 
     # ---- 生命周期 ------------------------------------------------------------------
     def shutdown(self):
+        if self._shutting_down:return
         self.close_confirm()
-        self._shutting_down = True; self._save_timer.stop(); self._state_timer.stop(); self._life_timer.stop(); self._walk_timer.stop(); self._input_timer.stop(); self._fall_timer.stop()
         if self.isVisible(): self.save_geometry()
+        self._shutting_down = True; self._save_timer.stop(); self._state_timer.stop(); self._life_timer.stop(); self._walk_timer.stop(); self._input_timer.stop(); self._fall_timer.stop()
         self.bubble.close(); self.quick.close()
         if self.view_kind == 'webengine' and self.view is not None:
             try:

@@ -1136,3 +1136,11 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 最终实际播放器录屏：90帧、84ms截图间隔，左右各120px均到达、各实际推进60个图集帧；using_reference=true、无错误。含PNG录制开销的主进程工作集采样峰值371.7MiB、最低207.3MiB，不含启动器 / 控制台，也不作为长期峰值或350MB目标验收。文件：output/reference-motion-v1/runtime-walking.gif、live-walk-report.json。
 - 交付：output/reference-motion-v1/all-actions.gif、walking-pair.gif、各动作GIF / 透明动态WebP、frames/<动作>/000..119.png，共1200张PNG；DeepSeek-10-actions-12fps.zip为161.1MiB。完整离线重建 tools/build_original_animation.py 已串联本批构建；不增加依赖，不改Agent、main_window.py、数据库结构或现用声音。角色卡逐字段核对，voice / persona与上一提交一致，仅renderer.vocab扩展。
 - 待验收：用户对脸型 / 发型 / 服装细微一致性、肢体遮挡与插值自然程度的审图；这仍是有限关键姿态补间，不能由帧数 / 边距测试证明完整物理惯性。另一方最新提交代码审查，以及长期、多屏、高DPI、低性能机器和不含录制开销的内存验证未完成。PR #25继续草稿，不标记可合并。
+
+## 2026-11-10 · T20-动画同步最新基线与关闭保护（Codex，草稿）
+
+已rebase到collaboration-baseline 5286e1d，联合保留双方任务 / 实施记录；社交T20与动画T20编号重叠，动画清单使用T20-动画，分支和文件名沿用旧名。没有覆盖已合入社交 / 词库代码。
+
+最终tools/run_checks.bat退出0：803项，796通过 / 7跳过，103.802秒；Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0，十动作 / 左右走动 / 新旧回退均通过。新增关闭保护：最后保存一次位置，关闭后的移动 / 缩放与晚到回调不再写设置；首次同步日志中的两次临时库OperationalError在最终完整检查中未再出现，原日志保留审计。
+
+新基线录屏91帧，左右各120px到达、各推进60个图集帧，using_reference=true；短时主进程工作集峰值348.3MiB、最低204.4MiB（含PNG录制，不含启动器 / 控制台），不作为长期内存目标验收。最新报告与GIF仍在output/reference-motion-v1；同步前报告 / 录屏另存pre-baseline前缀。本批图集与动作逻辑不变；用户审图、另一方审查、长期 / 多屏 / DPI和低性能机器仍未验收。

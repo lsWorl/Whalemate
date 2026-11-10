@@ -105,6 +105,17 @@ class WindowWalkTests(unittest.TestCase):
             previous=self.pet.pos();self.tick(time.monotonic()+.05)
             self.assertIsNone(self.pet._walk_target);self.assertEqual(self.pet.pos(),previous)
 
+    def test_shutdown_saves_once_and_late_geometry_events_do_not_write(self):
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QMoveEvent,QResizeEvent
+        with patch.object(self.database,'set_setting',wraps=self.database.set_setting) as saved:
+            self.pet.shutdown()
+            self.pet.moveEvent(QMoveEvent(QPoint(110,110),QPoint(100,100)))
+            self.pet.resizeEvent(QResizeEvent(QSize(301,301),QSize(300,300)))
+            self.pet.save_geometry();self.pet.shutdown();self.app.processEvents()
+            self.assertEqual(saved.call_count,1)
+            self.assertFalse(self.pet._save_timer.isActive())
+
     def test_outside_destination_is_clamped_to_current_screen(self):
         self.pet.walk_to(-99999,99999);self.pet._walk_timer.stop()
         screen=self.pet.screen().availableGeometry()

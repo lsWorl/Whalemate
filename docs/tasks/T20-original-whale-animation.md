@@ -1,4 +1,4 @@
-# T20 原鲸娘自绘补帧与流畅动画
+# T20-动画 原鲸娘自绘补帧与流畅动画
 
 负责：Codex。状态：绘图与动作过渡实现、本轮完整检查通过，PR #25 草稿待用户审图和另一方代码审查。用户要求回退外观替换、保留原先的大肥鱼并由 Codex 补画，参考 Aboutme 的动画实现方式。
 
@@ -118,3 +118,12 @@
 - 最终实际播放器录屏：90帧、84ms截图间隔，左右各120px均到达、各实际推进60个图集帧；using_reference=true、无错误。含PNG录制开销的主进程工作集采样峰值371.7MiB、最低207.3MiB，不含启动器 / 控制台，也不作为长期峰值或350MB目标验收。文件：output/reference-motion-v1/runtime-walking.gif、live-walk-report.json。
 - 交付：output/reference-motion-v1/all-actions.gif、walking-pair.gif、各动作GIF / 透明动态WebP、frames/<动作>/000..119.png，共1200张PNG；DeepSeek-10-actions-12fps.zip为161.1MiB。完整离线重建 tools/build_original_animation.py 已串联本批构建；不增加依赖，不改Agent、main_window.py、数据库结构或现用声音。角色卡逐字段核对，voice / persona与上一提交一致，仅renderer.vocab扩展。
 - 待验收：用户对脸型 / 发型 / 服装细微一致性、肢体遮挡与插值自然程度的审图；这仍是有限关键姿态补间，不能由帧数 / 边距测试证明完整物理惯性。另一方最新提交代码审查，以及长期、多屏、高DPI、低性能机器和不含录制开销的内存验证未完成。PR #25继续草稿，不标记可合并。
+
+### 基线同步（2026-11-10，Codex）
+
+已rebase到最新collaboration-baseline（5286e1d），保留已合入的社交 / 词库及实施记录。目标分支另有社交任务T20，因此本动画任务在清单中标为T20-动画，继续沿用既有分支名和本说明文件，避免编号混淆。没有改写社交功能。完整复验已完成，结果如下。
+
+- 最新基线最终 tools/run_checks.bat 退出0：803项，796通过 / 7跳过，103.802秒；Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0。十动作加载、左右到达、新旧回退以及原有聊天 / 拖拽 / 透明等检查全部保留并通过。上面的716项结果为同步前证据，以本段为最终结果。
+- 首次同步后802项用例通过，但日志打印两次临时库清理后的save_geometry回调错误。已让关闭前最后保存一次、关闭后不再启动移动 / 缩放保存计时器，并忽略晚到保存回调；新增重复关闭和晚到事件回归。最终完整日志不再出现该Traceback / OperationalError。失败日志另存output/reference-motion-v1/rebase-before-close-guard-unittest.log，未改数据库实现。
+- 新基线最终真实录屏91帧，左右各120px到达 / 各推进60个图集帧，using_reference=true、无错误；含PNG录制开销的主进程工作集采样峰值348.3MiB、最低204.4MiB。它是短时采样，不代替长期内存验收；上面的371.7MiB为同步前采样，原报告已另存pre-baseline-live-walk-report.json。
+- 动画图集及动作逻辑与同步前一致；社区 / 词库代码保留最新基线版本，未作为本PR新增功能。另一方最新提交审查、用户真机审图以及长期 / 多屏 / DPI验收仍待完成。
