@@ -187,5 +187,10 @@ class HotkeyTest(unittest.TestCase):
         self.assertEqual(hotkey.label('nope'), hotkey.label(hotkey.DEFAULT_KEY))
         self.assertIn(hotkey.key_reader('F8')(), (True, False))
 
+    def test_default_is_push_to_talk(self):
+        # 负责人 2026-11-11：语音默认绑定按键，不按键不收音
+        from aicompanion.voice.turns import DEFAULT_MODE, MODES
+        self.assertEqual(DEFAULT_MODE, 'ptt'); self.assertIn(DEFAULT_MODE, MODES)
+
 
 if __name__ == '__main__': unittest.main()

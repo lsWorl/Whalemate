@@ -16,6 +16,8 @@ import math
 from aicompanion.voice.echo import EchoGate
 
 MODES = ('continuous', 'ptt', 'toggle')
+# 默认按住收音键说话（负责人 2026-11-11）：不按键就不收音，避免麦克风把她自己的声音或环境声当成在说话
+DEFAULT_MODE = 'ptt'
 START_FRAMES = 8          # 安静时：连续 160 ms 人声算开口
 BARGE_FRAMES = 10         # 她在说话时：连续 200 ms 超出回声才算插话
 END_SILENCE = 40          # 持续通话：静音 800 ms 算说完

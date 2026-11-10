@@ -287,7 +287,9 @@ class DshAgent:
                 try: conn.request('session/set_config_option', {'sessionId': self.session_id, 'configId': 'model', 'value': wanted}, 30)
                 except Exception as error:
                     # 不认识这个路由或模型时不退回 DSH 默认模型（那会用另一家的 Key 计费），直接报错
-                    raise RuntimeError(f'Harness 不支持 {route} / {model}，请在设置里换一个办事模型') from error
+                    scope = f'（{target.source}）' if target is not None and getattr(target, 'source', '') else ''
+                    raise RuntimeError(f'Harness 不支持办事模型 {model}{scope}。请到设置 → 模型，在对应的设置范围里把“办事”'
+                                       f'换成 Harness 支持的模型') from error
             if self.stopping: raise InterruptedError
             reply = conn.request('session/prompt', {'sessionId': self.session_id, 'prompt': [{'type': 'text', 'text': prompt}]}, PROMPT_TIMEOUT)
             reason = reply.get('stopReason') or 'end_turn'

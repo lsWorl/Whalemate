@@ -9,7 +9,7 @@ from dataclasses import replace
 
 from aicompanion.providers.models import (CAPABILITIES, MODEL_PRESETS, PROVIDER_PRESETS, Binding, ModelProfile,
                                           ProviderProfile)
-from aicompanion.providers.router import AGENT_ROUTES, ModelRouter
+from aicompanion.providers.router import AGENT_MODELS, AGENT_ROUTES, ModelRouter
 
 CAPABILITY_LABELS = {'chat': '聊天', 'vision': '识图', 'search': '搜索', 'agent': '办事', 'tts': '语音合成'}
 # 每种能力需要模型具备的标记；搜索不选模型，选的是账户
@@ -52,7 +52,7 @@ class ModelAdmin:
             raise ValueError('地址必须是 https://（本机调试可用 http://127.0.0.1）')
         if '@' in profile.base_url.split('//', 1)[-1].split('/', 1)[0]:
             raise ValueError('地址里不能带用户名或密码')
-        profile = replace(profile, id=self._new_id(preset or profile.label))
+        profile = replace(profile, id=self._new_id(preset or profile.label), label=self._unique_label(profile.label))
         credential = self._credential(profile.id, key, key_env)
         if not credential:
             raise ValueError('请填写 Key，或填写保存 Key 的环境变量名')
@@ -70,7 +70,7 @@ class ModelAdmin:
         """改名、改地址、换 Key。Key 留空表示不修改（防止误点保存清掉 Key）。"""
         config = self.store.load()
         profile = config.providers[provider_id]
-        if label: profile = replace(profile, label=label)
+        if label and label != profile.label: profile = replace(profile, label=self._unique_label(label, provider_id))
         if base_url:
             if not base_url.startswith('https://') and not base_url.startswith('http://127.0.0.1'):
                 raise ValueError('地址必须是 https://')
@@ -94,7 +94,8 @@ class ModelAdmin:
         rows = [m for m in config.models.values() if m.provider in config.providers]
         if need: rows = [m for m in rows if need in m.capabilities]
         if capability == 'agent':
-            rows = [m for m in rows if agent_route(config.providers[m.provider])]
+            # 只列 Harness 内置目录里真有的模型（例如 MiniMax-M3.1-Flash 不在目录里，选了也会失败）
+            rows = [m for m in rows if m.model_id in AGENT_MODELS.get(agent_route(config.providers[m.provider]) or '', ())]
         return rows
 
     def add_model(self, provider_id: str, model_id: str, capabilities=('chat',), label: str = '') -> ModelProfile:
@@ -115,8 +116,13 @@ class ModelAdmin:
         self.store.save(config)
 
     def model_label(self, model: ModelProfile) -> str:
-        provider = self.store.load().providers.get(model.provider)
-        return f'{provider.label if provider else "?"} · {model.label or model.model_id}'
+        """下拉框里显示的名字。账户重名时（例如两个 DeepSeek 账户）带上账户编号，避免出现两个一模一样的选项。"""
+        config = self.store.load()
+        provider = config.providers.get(model.provider)
+        name = provider.label if provider else '?'
+        if provider and sum(1 for p in config.providers.values() if p.label == provider.label) > 1:
+            name += f'（{provider.id}）'
+        return f'{name} · {model.label or model.model_id}'
 
     # ---- 能力选择 ----------------------------------------------------------------------------
     def binding(self, capability: str, character_id: str | None) -> Binding | None:
@@ -150,6 +156,8 @@ class ModelAdmin:
         if capability == 'agent':
             route = agent_route(config.providers[profile.provider])
             if route not in AGENT_ROUTES: raise ValueError('这个服务的办事（Harness）支持还没有验证')
+            if profile.model_id not in AGENT_MODELS[route]:
+                raise ValueError(f'Harness 不支持用 {profile.model_id} 办事，可选：' + '、'.join(AGENT_MODELS[route]))
             extra['route'] = route
         if capability == 'tts':
             voice = str(fields.get('voice', '')).strip()
@@ -184,6 +192,14 @@ class ModelAdmin:
             if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', name): raise ValueError('环境变量名不合法')
             return 'env:' + name
         return ''
+
+    def _unique_label(self, label: str, own_id: str = '') -> str:
+        """账户名称重复时自动加编号（DeepSeek → DeepSeek 2），下拉框里才分得清。"""
+        taken = {p.label for p in self.store.load().providers.values() if p.id != own_id}
+        if label not in taken: return label
+        n = 2
+        while f'{label} {n}' in taken: n += 1
+        return f'{label} {n}'
 
     def _new_id(self, seed: str) -> str:
         base = re.sub(r'[^a-z0-9-]+', '-', seed.lower()).strip('-') or 'account'

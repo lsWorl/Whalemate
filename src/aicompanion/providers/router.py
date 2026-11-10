@@ -26,6 +26,13 @@ AGENT_ROUTES = {
     'minimax': ('MINIMAX_API_KEY', None),
     'minimax-cn': ('MINIMAX_CN_API_KEY', None),
 }
+# 各路由在锁定的 DSH 0.2.1rc2 内置模型目录里实际有的模型（2026-11-11 从安装包读取）。
+# 不在目录里的模型（例如 MiniMax-M3.1-Flash）Harness 会拒绝，所以办事只能选这些。
+AGENT_MODELS = {
+    'deepseek-official': ('deepseek-flash', 'deepseek-v4-pro'),
+    'minimax': ('MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
+    'minimax-cn': ('MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
+}
 OFFLINE_LABEL = '离线模拟模型'
 
 
@@ -62,6 +69,7 @@ class AgentTarget:
     model_id: str
     env: tuple            # ((变量名, 值), ...)，只放本次选定的凭据
     label: str
+    source: str = ''      # 这份设置在哪里改：“全局默认”或“角色单独设置”，出错提示里告诉用户
 
 
 def thinking_params(kind: str, model: ModelProfile, purpose: str) -> tuple[dict, int | None]:
@@ -175,11 +183,14 @@ class ModelRouter:
         return None
 
     def agent_target(self, character_id: str | None = None) -> AgentTarget | None:
-        """办事用的 Harness 路由、模型和只含选定凭据的环境变量。没配置或没有 Key 返回 None。"""
+        """办事用的 Harness 路由、模型和只含选定凭据的环境变量。没配置、没有 Key 或模型不受支持时返回 None，
+        原因用 agent_problem() 取。"""
         if self.offline: return None
         config = self.store.load()
-        for binding in (config.binding('agent', character_id) if character_id else None, config.binding('agent', None)):
+        for source, binding in (('角色单独设置', config.binding('agent', character_id) if character_id else None),
+                                ('全局默认', config.binding('agent', None))):
             if binding and binding.model in config.models and binding.route in AGENT_ROUTES:
+                if config.models[binding.model].model_id not in AGENT_MODELS.get(binding.route, ()): return None
                 model = config.models[binding.model]
                 provider = config.providers.get(model.provider)
                 if not provider: continue
@@ -189,8 +200,29 @@ class ModelRouter:
                 env = [(key_env, key)]
                 if base_env and provider.base_url and provider.base_url.rstrip('/') != 'https://api.deepseek.com':
                     env.append((base_env, provider.base_url))
-                return AgentTarget(binding.route, model.model_id, tuple(env), f'{provider.label} · {model.model_id}')
+                return AgentTarget(binding.route, model.model_id, tuple(env), f'{provider.label} · {model.model_id}', source)
         return None
+
+    def agent_problem(self, character_id: str | None = None) -> str:
+        """办事用不了时给用户看的原因：说清是哪一层设置（全局默认 / 角色单独设置）、该去哪里改。"""
+        if self.offline: return '离线模式下不能办事。'
+        config = self.store.load()
+        for scope, binding in (('这个角色的单独设置', config.binding('agent', character_id) if character_id else None),
+                               ('全局默认', config.binding('agent', None))):
+            if not binding: continue
+            model = config.models.get(binding.model)
+            provider = config.providers.get(model.provider) if model else None
+            where = f'设置 → 模型，把“设置范围”选成“{"全局默认" if scope == "全局默认" else "这个角色"}”，'
+            if not model or not provider:
+                return f'办事模型（{scope}）已被删除。请到{where}重新选择“办事”。'
+            supported = AGENT_MODELS.get(binding.route, ())
+            if model.model_id not in supported:
+                return (f'办事模型 {model.model_id}（{scope}）Harness 不支持。请到{where}“办事”改选：'
+                        + '、'.join(supported) + '。')
+            if not self.credentials.get(provider.credential):
+                return f'办事用的账户“{provider.label}”（{scope}）没有可用的 Key，请到设置 → 模型修改。'
+            return ''
+        return '还没有配置办事模型：请到设置 → 模型，在“办事”里选择（全局默认对所有角色生效，也可以只给某个角色设置）。'
 
     # ---- 客户端 ------------------------------------------------------------------------------
     def client(self, capability: str, character_id: str, purpose: str = 'companion'):

@@ -73,9 +73,10 @@ class SettingsWindow(QDialog):
         self.asr_provider.addItem('本地识别（SenseVoice，离线、不计费）','local')
         # P4：收音方式、收音键、外放回声处理
         from aicompanion.voice.hotkey import KEYS, DEFAULT_KEY
+        from aicompanion.voice.turns import DEFAULT_MODE
         self.voice_mode=QComboBox()
-        for text,value in [('持续通话：直接开口，可随时打断她','continuous'),('按住说话：按住收音键说，松开发送','ptt'),('切换式：按一下开始，再按一下结束','toggle')]: self.voice_mode.addItem(text,value)
-        self.voice_mode.setCurrentIndex(max(0,self.voice_mode.findData(self.database.get_setting('voice_mode','continuous'))))
+        for text,value in [('按住说话：按住收音键说，松开发送（默认）','ptt'),('切换式：按一下开始，再按一下结束','toggle'),('持续通话：直接开口，可随时打断她','continuous')]: self.voice_mode.addItem(text,value)
+        self.voice_mode.setCurrentIndex(max(0,self.voice_mode.findData(self.database.get_setting('voice_mode',DEFAULT_MODE))))
         self.ptt_key=QComboBox()
         for value,(text,_code) in KEYS.items(): self.ptt_key.addItem(text,value)
         self.ptt_key.setCurrentIndex(max(0,self.ptt_key.findData(self.database.get_setting('ptt_key',DEFAULT_KEY))))

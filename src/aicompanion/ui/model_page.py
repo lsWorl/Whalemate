@@ -112,6 +112,11 @@ class ModelPage(QWidget):
         self.pickers = {}
         for cap in ('chat', 'vision', 'search', 'agent', 'tts'):
             box = QComboBox(); self.pickers[cap] = box; c.addRow(CAPABILITY_LABELS[cap], box)
+            box.currentIndexChanged.connect(lambda *_, cap=cap: self._auto_save(cap))
+            if cap == 'agent':
+                hint = QLabel('办事只列出 Harness 支持的模型。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
+                              '只想给某个角色换，请先把上面的“设置范围”切到那个角色再选。')
+                hint.setWordWrap(True); hint.setStyleSheet('color: gray'); c.addRow('', hint)
         self.voice = QLineEdit(); self.voice.setPlaceholderText('Breeze Blue 音色 ID，例如 voc_8rsb3nhb7645')
         self.language = QComboBox()
         for value, label in TTS_LANGUAGES: self.language.addItem(label, value)
@@ -121,13 +126,18 @@ class ModelPage(QWidget):
         tts_row = QHBoxLayout(); tts_row.addWidget(QLabel('语言')); tts_row.addWidget(self.language)
         tts_row.addWidget(QLabel('语速')); tts_row.addWidget(self.speed); tts_row.addWidget(QLabel('音量')); tts_row.addWidget(self.volume)
         c.addRow('音色', self.voice); c.addRow('', tts_row); c.addRow('语气', self.instructions)
+        # 选了就保存：切换范围、关闭设置都不会丢（实机反馈：退出后又变回“未设置”）
+        self._loading = False
+        for signal in (self.voice.editingFinished, self.instructions.editingFinished, self.language.currentIndexChanged,
+                       self.speed.valueChanged, self.volume.valueChanged):
+            signal.connect(lambda *_: self._auto_save('tts'))
         buttons = QHBoxLayout()
-        for text, slot in (('应用', self.apply), ('测试聊天', self.test_chat), ('试听语音', self.test_tts)):
+        for text, slot in (('测试聊天', self.test_chat), ('试听语音', self.test_tts)):
             button = QPushButton(text); button.clicked.connect(slot); buttons.addWidget(button)
         c.addRow(buttons)
         self.status = QLabel(); self.status.setWordWrap(True); c.addRow(self.status)
         layout.addWidget(choose)
-        note = QLabel('测试和试听会实际调用服务，产生少量费用。角色单独设置的项目优先；选“跟随全局”即恢复继承。'
+        note = QLabel('选择后自动保存，下一句就生效。测试和试听会实际调用服务，产生少量费用。角色单独设置的项目优先；选“跟随全局”即恢复继承。'
                       '没有配置聊天模型时，桌宠以离线模拟模式运行。')
         note.setWordWrap(True); layout.addWidget(note); layout.addStretch()
         self.refresh()
@@ -153,6 +163,12 @@ class ModelPage(QWidget):
     def _load_scope(self, character_id):
         """把这个范围（全局或某个角色）当前的选择填进下拉框。"""
         self._scope = character_id
+        self._loading = True
+        try: self._fill(character_id)
+        finally: self._loading = False
+        self._show_effective()
+
+    def _fill(self, character_id):
         inherit = '跟随全局' if character_id else '未设置'
         for cap, box in self.pickers.items():
             box.blockSignals(True); box.clear(); box.addItem(inherit, '')
@@ -172,7 +188,6 @@ class ModelPage(QWidget):
         self.language.setCurrentIndex(max(0, self.language.findData(tts.language if tts else 'zh')))
         self.speed.setValue(tts.speed if tts else 1.0); self.volume.setValue(tts.volume if tts else 1.0)
         self.instructions.setText(tts.instructions if tts else '')
-        self._show_effective()
 
     def _show_effective(self):
         cid = self._scope or self.current
@@ -227,18 +242,30 @@ class ModelPage(QWidget):
         self.refresh()
 
     # ---- 选择与测试 --------------------------------------------------------------------------
-    def apply(self) -> bool:
-        """保存当前范围的选择。出错时提示并返回 False，已有设置不变。"""
+    def _save_one(self, cap):
         cid = self._scope
-        try:
-            for cap in ('chat', 'vision', 'agent'):
-                self.admin.choose(cap, cid, self.pickers[cap].currentData() or '')
-            search = self.pickers['search'].currentData() or ''
-            backend, _, provider = search.partition(':')
+        if cap == 'search':
+            backend, _, provider = (self.pickers['search'].currentData() or '').partition(':')
             self.admin.choose('search', cid, backend=backend, provider=provider)
-            tts = self.pickers['tts'].currentData() or ''
-            self.admin.choose('tts', cid, tts, voice=self.voice.text(), language=self.language.currentData(),
-                              speed=self.speed.value(), volume=self.volume.value(), instructions=self.instructions.text())
+        elif cap == 'tts':
+            self.admin.choose('tts', cid, self.pickers['tts'].currentData() or '', voice=self.voice.text(),
+                              language=self.language.currentData(), speed=self.speed.value(), volume=self.volume.value(),
+                              instructions=self.instructions.text())
+        else:
+            self.admin.choose(cap, cid, self.pickers[cap].currentData() or '')
+
+    def _auto_save(self, cap):
+        """改一项存一项。不弹窗：例如选了语音合成但音色还没填，只在状态栏提示，填好音色后自动补存。"""
+        if self._loading: return
+        try: self._save_one(cap)
+        except Exception as error:
+            self.status.setText(f'{CAPABILITY_LABELS[cap]}还没有保存：{error}'); return
+        self._show_effective()
+
+    def apply(self) -> bool:
+        """保存当前范围的全部选择（关闭设置、测试前调用）。出错时提示并返回 False，出错那一项不变。"""
+        try:
+            for cap in ('chat', 'vision', 'search', 'agent', 'tts'): self._save_one(cap)
         except Exception as error:
             QMessageBox.warning(self, '设置没有保存', str(error)); return False
         self._show_effective()
@@ -248,7 +275,7 @@ class ModelPage(QWidget):
         return self.apply()
 
     def test_chat(self):
-        if not self.apply(): return
+        # 选择已自动保存；这里不再整体保存，免得没填完的语音设置挡住聊天测试
         cid = self._scope or self.current
         self.status.setText('正在测试聊天…')
         self.run(lambda token: self.admin.test_chat(cid, token),
@@ -256,7 +283,9 @@ class ModelPage(QWidget):
                  lambda error: self.status.setText('聊天测试失败：' + error))
 
     def test_tts(self):
-        if not self.apply(): return
+        try: self._save_one('tts')      # 音色可能刚输入还没离开输入框
+        except Exception as error:
+            self.status.setText('语音合成还没有保存：' + str(error)); return
         cid = self._scope or self.current
         self.status.setText('正在合成试听…')
 

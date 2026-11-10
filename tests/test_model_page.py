@@ -101,6 +101,31 @@ class AdminTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.admin.add_model(account.id, ' ')
         with self.assertRaises(ValueError): self.admin.add_model(account.id, 'x', ('teleport',))
 
+    def test_same_named_accounts_are_distinguishable(self):
+        a = self.admin.add_account('deepseek', key='k1'); b = self.admin.add_account('deepseek', key='k2')
+        self.assertEqual((a.label, b.label), ('DeepSeek', 'DeepSeek 2'))
+        self.admin.update_account(b.id, label='DeepSeek')                                # 改回重名也会自动加编号
+        self.assertEqual(self.admin.accounts()[1].label, 'DeepSeek 2')
+        labels = [self.admin.model_label(m) for m in self.admin.models('chat')]
+        self.assertEqual(len(labels), len(set(labels)))
+
+    def test_agent_lists_only_harness_models_and_explains_scope(self):
+        from aicompanion.providers.models import Binding
+        mm = self.admin.add_account('minimax-cn', key='k')
+        self.admin.add_model(mm.id, 'MiniMax-M3.1-Flash', ('chat', 'tools'))
+        self.assertNotIn('MiniMax-M3.1-Flash', [m.model_id for m in self.admin.models('agent')])
+        with self.assertRaisesRegex(ValueError, 'Harness 不支持'):
+            self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3.1-Flash')
+        self.assertIn('还没有配置办事模型', self.router.agent_problem('deepseek-whale'))
+        # 旧配置里留下的不支持模型：不启用，提示说清是哪一层设置
+        self.router.store.bind(Binding('agent', f'{mm.id}/MiniMax-M3.1-Flash', route='minimax-cn'))
+        self.assertIsNone(self.router.agent_target('deepseek-whale'))
+        self.assertIn('全局默认', self.router.agent_problem('deepseek-whale'))
+        self.admin.choose('agent', 'deepseek-whale', f'{mm.id}/MiniMax-M3')
+        target = self.router.agent_target('deepseek-whale')
+        self.assertEqual((target.model_id, target.source), ('MiniMax-M3', '角色单独设置'))
+        self.assertEqual(self.router.agent_problem('deepseek-whale'), '')
+
     def test_test_chat_uses_configured_client(self):
         ds = self.admin.add_account('deepseek', key='k1')
         self.admin.choose('chat', None, f'{ds.id}/deepseek-flash')
@@ -164,6 +189,28 @@ class PageTests(unittest.TestCase):
             self.assertFalse(self.page.apply())
         warning.assert_called_once()
         self.assertIsNone(self.admin.binding('tts', None))
+
+    def test_choices_save_without_apply(self):
+        # 实机反馈：选完不点“应用”就切换范围或关闭设置，选择会丢
+        ds = self.admin.add_account('deepseek', key='k1'); bz = self.admin.add_account('breezeblue', key='k2'); self.page.refresh()
+        chat = self.page.pickers['chat']; chat.setCurrentIndex(chat.findData(f'{ds.id}/deepseek-flash'))
+        self.assertEqual(self.admin.binding('chat', None).model, f'{ds.id}/deepseek-flash')
+        self.page.scope.setCurrentIndex(self.page.scope.findData('deepseek-whale'))     # 切换范围不会改动全局
+        self.assertEqual(self.admin.binding('chat', None).model, f'{ds.id}/deepseek-flash')
+        self.assertIsNone(self.admin.binding('chat', 'deepseek-whale'))
+        tts = self.page.pickers['tts']
+        with mock.patch.object(QMessageBox, 'warning') as warning:
+            tts.setCurrentIndex(tts.findData(f'{bz.id}/breeze-tts-2'))                   # 还没填音色：只提示，不弹窗
+        warning.assert_not_called()
+        self.assertIn('音色', self.page.status.text())
+        self.page.voice.setText('voc_whale'); self.page.voice.editingFinished.emit()
+        self.assertEqual(self.router.tts_target('deepseek-whale').voice, 'voc_whale')
+        self.page.speed.setValue(1.3)
+        self.assertEqual(self.router.tts_target('deepseek-whale').speed, 1.3)
+        self.page.scope.setCurrentIndex(0)
+        self.page.scope.setCurrentIndex(self.page.scope.findData('deepseek-whale'))
+        self.assertEqual(self.page.pickers['chat'].currentText(), '跟随全局')           # 载入时不误存
+        self.assertEqual(self.page.voice.text(), 'voc_whale')
 
     def test_tts_test_reports_duration(self):
         bz = self.admin.add_account('breezeblue', key='k'); self.page.refresh()
