@@ -25,6 +25,7 @@ from aicompanion.llm.base import ChatTurn
 THRESHOLDS = (2, 5, 12, 30, 80)
 TREND_EVERY = 7*86400
 RUNNING = set(); LOCK = threading.Lock()
+CIRCLES = ('B站 弹幕', '游戏圈', '二次元 动画', '抽象文化 贴吧', '直播 主播')
 
 INFER = ('你在帮一个常泡 QQ 群的角色理解群里的黑话和梗。下面是词"{term}"和它在群聊里出现过的几句上下文。输出 JSON：'
          '{{"in_context":"结合上下文它在这里是什么意思（20 字内）","plain":"只看这个词本身、不看上下文时的一般意思（20 字内）",'
@@ -121,30 +122,36 @@ class CommunityLearner:
         circle = str(data.get('circle') or '')[:20]
         scope = local_scope(channel)
         result = 'observed'
-        web = None
         if self.db.get_setting('community_web', True) and searchable(term, speakers=speakers, names=self.known_names()):
             hits = self.web(client).search(f'{term} 梗 意思')
-            if hits:
-                listing = '\n'.join(f'{n}. {h.title}（{h.site or h.url}）：{h.summary[:500]}' for n, h in enumerate(hits[:5], 1))
-                web = ask(client, WEB.format(term=term, group=here or '不清楚'), listing)
-                if web and str(web.get('meaning') or '').strip():
-                    try: pick = hits[max(0, int(str(web.get('source') or '1'))-1)]
-                    except (ValueError, IndexError): pick = hits[0]
-                    change = str(web.get('change') or 'same')
-                    origin_note = str(web.get('origin') or '')[:40]
-                    current = [s for s in self.lexicon.senses(term, include_old=False) if s['scope'] == '']
-                    mode = 'new' if not current else self.compare(client, term, current[0]['meaning'], str(web['meaning']))
-                    self.lexicon.learn(term, str(web['meaning']), origin='web', usage=str(web.get('usage') or '') + (f'；出处：{origin_note}' if origin_note else ''),
-                                       tone=str(web.get('tone') or tone), circle=str(web.get('circle') or circle), source_name=pick.site or pick.title,
-                                       source_url=pick.url, confidence=0.75, change=mode)
-                    result = 'web'
-                    if change in ('same', 'extend'): return result   # 这里的用法就是网上的意思，不另记一条本地用法
+            change = self.learn_web(term, hits, client, here=here, tone=tone, circle=circle) if hits else ''
+            if change:
+                result = 'web'
+                if change in ('same', 'extend'): return result   # 这里的用法就是网上的意思，不另记一条本地用法
         if here:
             current = [s for s in self.lexicon.senses(term, include_old=False) if s['scope'] == scope]
             mode = 'new' if not current else self.compare(client, term, current[0]['meaning'], here)
             self.lexicon.learn(term, here, origin='observed', usage=str(data.get('usage') or ''), tone=tone, circle=circle, scope=scope,
                                confidence=0.55 if result == 'observed' else 0.6, change=mode)
         return result
+
+    def learn_web(self, term: str, hits, client, here='', tone='', circle='') -> str:
+        """把网上搜到的结果总结成通用义（作用域空、带来源）写进词库，和已知含义对比后按 Graphiti 的方式更新。
+        返回网上的意思和这里用法的关系（same / extend / changed / group_variant）；结果和这个词无关时返回空、不写。
+        后台推断（infer）和当场查梗（community/lookup.py）共用。"""
+        listing = '\n'.join(f'{n}. {h.title}（{h.site or h.url}）：{h.summary[:500]}' for n, h in enumerate(hits[:5], 1))
+        web = ask(client, WEB.format(term=term, group=here or '不清楚'), listing)
+        if not web or not str(web.get('meaning') or '').strip(): return ''
+        try: pick = hits[max(0, int(str(web.get('source') or '1'))-1)]
+        except (ValueError, IndexError): pick = hits[0]
+        origin_note = str(web.get('origin') or '')[:40]
+        current = [s for s in self.lexicon.senses(term, include_old=False) if s['scope'] == '']
+        mode = 'new' if not current else self.compare(client, term, current[0]['meaning'], str(web['meaning']))
+        self.lexicon.learn(term, str(web['meaning']), origin='web', usage=str(web.get('usage') or '') + (f'；出处：{origin_note}' if origin_note else ''),
+                           tone=str(web.get('tone') or tone), circle=str(web.get('circle') or circle), source_name=pick.site or pick.title,
+                           source_url=pick.url, confidence=0.75, change=mode)
+        self.lexicon.mark(term, is_jargon=True, inferred_at_count=int((self.lexicon.info(term) or {}).get('inferred_at_count') or 0))
+        return str(web.get('change') or 'same')
 
     def compare(self, client, term, old, new) -> str:
         if old.strip() == new.strip(): return 'same'
@@ -160,8 +167,11 @@ class CommunityLearner:
         self.db.set_setting('community_trend_at', self.clock())
         month = datetime.fromtimestamp(self.clock()).strftime('%Y年%m月')
         hits = self.web(client).search(f'{month} 最近流行的网络热梗 意思')
+        # T20：只搜"网络热梗"基本只有大众梗。每周再轮一个小圈子（按周数轮换，多花一次搜索），慢慢补游戏、二次元、B 站、抽象这些圈子
+        circle = CIRCLES[int(self.clock()//TREND_EVERY) % len(CIRCLES)]
+        hits += [h for h in self.web(client).search(f'{month} {circle} 最近流行的梗 意思') if h.url not in {x.url for x in hits}]
         if not hits: return 0
-        listing = '\n'.join(f'{n}. {h.title}（{h.site or h.url}）：{h.summary[:600]}' for n, h in enumerate(hits[:6], 1))
+        listing = '\n'.join(f'{n}. {h.title}（{h.site or h.url}）：{h.summary[:600]}' for n, h in enumerate(hits[:8], 1))
         data = ask(client, TREND, listing) or {}
         learned = 0
         for item in (data.get('terms') or [])[:8]:

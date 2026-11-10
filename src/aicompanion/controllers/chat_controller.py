@@ -148,6 +148,7 @@ class ChatController:
         try:
             person_id=self._person(person,channel,scene,context)
             mind=getattr(parser,'mind',None) if parser else None
+            self.last_mind=(turn_id,dict(mind) if mind else {})   # T20：桥接看她这一轮有没有要查的词
             heated=False
             if person_id and mind and status=='complete':
                 from aicompanion.relationship.service import scope_of

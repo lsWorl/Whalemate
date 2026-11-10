@@ -193,6 +193,7 @@ class LearnerTests(Base):
         client = Client(**{'最近的网络热梗': {'terms': [{'term': '哈基米', 'meaning': '对猫的爱称', 'tone': '调侃', 'source': '1'}]}})
         self.assertEqual(learner.trending(client), 1)
         self.assertEqual(learner.trending(client), 0)                                              # 一周内不重复
+        queries = [c.args[0] for c in web.search.call_args_list]; self.assertEqual(len(queries), 2); self.assertNotEqual(*queries)   # T20：另搜一个小圈子
         self.assertEqual(learner.lexicon.senses('哈基米')[0]['origin'], 'trend')
         self.assertEqual(learner.recent_trends()[0]['term'], '哈基米')
 
@@ -273,16 +274,17 @@ class SwitchAndScheduleTests(Base):
                            '最近的网络热梗': {'terms': [{'term': '哈基米', 'meaning': '对猫的爱称', 'source': '1'}]}})
         with mock.patch('aicompanion.community.learner.CommunityLearner.web', lambda self, client: fake):
             self.batch(client)
-            self.assertEqual(fake.search.call_count, 1); self.assertTrue(Lexicon(self.db).senses('哈基米'))
+            self.assertEqual(fake.search.call_count, 2)                                            # 大众热梗 + 这周轮到的一个小圈子（T20）
+            self.assertTrue(Lexicon(self.db).senses('哈基米'))
             self.clock.advance(seconds=3600); self.batch(client)
-            self.assertEqual(fake.search.call_count, 1)                                            # 一周内不重复
+            self.assertEqual(fake.search.call_count, 2)                                            # 一周内不重复
             self.clock.advance(days=8); self.db.set_setting('community_web', False); self.batch(client)
-            self.assertEqual(fake.search.call_count, 1)                                            # 关了联网：不查，也不占掉这周
+            self.assertEqual(fake.search.call_count, 2)                                            # 关了联网：不查，也不占掉这周
             self.assertLess(float(self.db.get_setting('community_trend_at')), self.clock()-7*86400)
             self.db.set_setting('community_web', True); self.db.set_setting('community_learning', False); self.batch(client)
-            self.assertEqual(fake.search.call_count, 1)                                            # 关了学习：不查
+            self.assertEqual(fake.search.call_count, 2)                                            # 关了学习：不查
             self.db.set_setting('community_learning', True); self.batch(client)
-            self.assertEqual(fake.search.call_count, 2)
+            self.assertEqual(fake.search.call_count, 4)                                            # 重新打开：又查一轮
 
 
 class MigrationTests(unittest.TestCase):

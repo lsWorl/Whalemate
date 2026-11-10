@@ -110,7 +110,10 @@ class ExpressionStream:
         at = pick('at', ('me', 'other', 'all', 'none'))
         voice = pick('voice', ('own', 'quote'))
         tone = pick('tone', ('joke', 'tease', 'sarcasm', 'attack', 'neutral'))
-        if self.mind is None: self.mind = {'intent': intent, 'willing': willing, 'feel': feel, 'toward': toward, 'at': at, 'voice': voice, 'tone': tone}
+        # T20：她想当场查一个没见过的梗（只留词本身：去掉引号、控制字符，最多 16 字）
+        lookup = re.sub(r'[\x00-\x1f<>]', '', str(attrs.get('lookup', ''))).strip().strip('"“”「」『』《》')[:16]
+        if self.mind is None: self.mind = {'intent': intent, 'willing': willing, 'feel': feel, 'toward': toward, 'at': at, 'voice': voice, 'tone': tone,
+                                           'lookup': lookup}
         self.diagnose('mind')
 
     def _marker(self, raw):

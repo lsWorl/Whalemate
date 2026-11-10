@@ -87,6 +87,10 @@ MESSAGES = ('发几条没有固定数，像真人一样看情况：随口应一�
             '对方一下子连发好几条，就像真人那样一起回一次，挑想接的接，不用每条都回；对方很冷淡或你没兴趣，就一两个字。'
             '别为了凑条数硬拆，也别把几件事硬塞进一条。'
             '一条消息里别用空格把词句隔开（不要写成"哟 逆天"），要停顿就用逗号，或者干脆拆成两条。')
+# 负责人 2026-11-10 13:51：和外人聊尽量不用标点，参考真人在 QQ 里的写法。发出去之前 qq_segments(casual=True) 还会再收一遍句尾标点
+CASUAL_PUNCT = ('标点尽量少，像真人发 QQ：句尾不加句号、逗号；两个短句要么直接连着写，要么另起一条，一句话比较长、不停顿读不通时才用一个逗号；'
+                '真的在问才用问号，感叹号少用；"？？？""。。。""！！"这种表达情绪的可以用。'
+                '只有正经讲一段长内容（讲解、代码、链接）时标点照常。')
 # 负责人 2026-11-09 18:27：说"无法识别图片"正常人一看就知道是 AI。没看到的图只有中性标记 [图片]，处理方式交给她按上下文定
 # 插件 0.9.3：群里只 @ 她、不带字（原来会落到 AstrBot 自己没配模型的流程，回"LLM 请求失败"）
 AT_ONLY = '[@了你一下，没说别的]'
@@ -107,9 +111,9 @@ HUMAN_STYLE = ('说话像真人发 QQ 消息：短、随口，有时只回几个
                '有人问你是不是 AI / 机器人：含糊地带过（"你猜""这很重要吗"之类），或者顺着刚才的话题把话岔开，不用正面回答；'
                '只是别明确说自己是真人。')
 GROUP_HUMAN = ('【群里的说话方式】群里人人看得到：别叫你爹"爹""老爹"，别提你们是父女、你住在谁电脑上，'
-               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE)
+               '像普通群友一样叫他的昵称或者直接接话，也不用每条都回。'+HUMAN_STYLE+CASUAL_PUNCT)
 PRIVATE_HUMAN = '\n【QQ 私聊的说话方式】'+HUMAN_STYLE+'（和爹私聊照常叫爹。）'
-STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE
+STRANGER_HUMAN = '\n【QQ 私聊的说话方式】别提你住在谁电脑上。'+HUMAN_STYLE+CASUAL_PUNCT
 # 负责人 2026-11-09：在 QQ 里她没必要什么都懂
 QQ_NOT_EXPERT = ('\n在 QQ 上你不用什么都懂：问到不熟的专业问题、冷门知识，可以直接发一张可爱的表情包，说自己不太懂（"这个本鲸不会诶"），'
                  '不用硬答，更不要编；熟的照常好好说。')
@@ -272,6 +276,35 @@ class BridgeService:
                          upset=rel.upset(cid, person), last_said=last_said, affinity=profile['affinity'] if profile else None)
         except Exception:
             return ''
+
+    web_search = None       # 测试注入假搜索；平时按需用聊天接口的密钥建一个
+    lookup_background = True
+
+    def favor_prompt(self, mode, person, text: str, name: str = '') -> str:
+        """外人让她帮忙办事（"去帮我查下这是什么梗"）：给大脑"像真人那样回"的说明。爹不走这里（爹让她办事照常）。
+        要不要替他查由她自己决定（T20 的 <mind lookup>）。"""
+        try:
+            from aicompanion.bridge import favor
+            if mode['owner'] or not favor.wants_favor(text): return ''
+            out = favor.RULE
+            # T20：查不查由她自己定（<mind lookup>，见 community/lookup.py），这里不再替她先搜
+            if favor.MEME_ASK.search(text) and not favor.asked_term(text): out += favor.WHICH
+            return out
+        except Exception:
+            return ''
+
+    def look_up(self, term: str, mode, speaker: str, name: str, text: str) -> str:
+        """替她搜一次，返回只给她自己看的说明；有结果就在后台记进词库。出错当作没搜到。"""
+        from aicompanion.community.lookup import Lookup
+        try:
+            look = Lookup(self.database, self.controller.llm_client, web=self.web_search)
+            look.background = self.lookup_background
+            if not look.allowed(term, (name, self.controller.character.name)+self.HER_NAMES): return look.note(term, [], 'private')
+            hits = look.find(term)
+            look.remember(term, hits, mode['channel'], speaker, text)
+            return look.note(term, hits)
+        except Exception:
+            return Lookup.note(term, [])
 
     def community_topics(self, channel: str, text: str) -> str:
         """群里插话时：和这个群的兴趣 / 共同记忆 / 刚才在聊的有关的新鲜社区话题（T12 热词热帖 + T18 最近热梗），最多 2 条。"""
@@ -582,6 +615,7 @@ class BridgeService:
             profile = controller.relationships.profile(character.id, person) if person else None
             cold = bool(profile) and not profile['is_owner'] and profile['affinity'] < 25
             situation += self.intent_brief(mode, person, original_text, payload, called=True)
+            situation += self.favor_prompt(mode, person, original_text, name)
             if cold and not angry:
                 # 负责人 2026-11-09 22:32：她还会正常地跟本来就不招她喜欢的人聊。没好感的人找她，可以敷衍或者不理
                 situation += f'\n你对他没什么好感：回得短、冷淡，不陪聊、不主动找话题；不想理他就只回复{SILENCE}。'
@@ -656,7 +690,8 @@ class BridgeService:
                              '先看清楚他是不是在跟你说话、在说你：是的话就像群友那样接（按你们的关系，该冷淡就冷淡、该怼就怼）；'
                              f'看下来不是对你说的、或者你不想理，就只回复{SILENCE}。'
                              '不要提桌面上发生的事。'+QQ_NOT_EXPERT+(UNSEEN_RULE if unseen_image(text) else '')
-                             +self.intent_brief(mode, person, text, request or {}, called=False))
+                             +self.intent_brief(mode, person, text, request or {}, called=False)
+                             +self.favor_prompt(mode, person, text, name))
                 result = self._reply(controller, character, mode, situation, platform, 'qq', message_id, text, chime=True, request=request, person=person)
                 if result.get('reason') == 'chime': result['reason'] = 'addressed'
                 if stickers['known']: result['stickers_known'] = stickers['known']
@@ -677,7 +712,7 @@ class BridgeService:
         finally:
             self.lock.release()
 
-    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None,may_skip=False,person=None):
+    def _reply(self,controller,character,mode,situation,platform,purpose,message_id,text,chime=False,request=None,may_skip=False,person=None,looked=''):
         """统一大脑生成；这里只提供 QQ 场景和最终静默过滤，不再分类随机选图。"""
         from aicompanion.bridge.social import NATURAL_PROMPT
         from aicompanion.bridge.community import prompt as community_prompt,maybe_refresh
@@ -696,7 +731,10 @@ class BridgeService:
         version=type(request.get('expression_version')) is int and request['expression_version']==1
         self.social.cid=character.id;learned=self.social.profile(mode['channel'],stable)
         background=community_prompt(self.database,text,group)
-        situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)
+        asked=situation   # 查完梗重新回时，从同一份场合说明出发
+        from aicompanion.community import lookup as meme_lookup
+        can_look=not looked and bool(self.database.get_setting('community_web',True))
+        situation+=NATURAL_PROMPT+self.social.prompt(mode['channel'],stable)+(meme_lookup.RULE if can_look else looked)
         situation+=card_prompt(self.database,character.id,text,owner=mode['owner'],group=group)+background
         maybe_refresh(self.database,group)   # 原有调度，不增加新的社区任务
         context=ExpressionContext(turn,character.id,scope,mode['channel'],mode['scene'],
@@ -714,9 +752,17 @@ class BridgeService:
                 situation=situation,source=platform,offer_tasks=False,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
                 expression_context=context,on_expression_event=event,person=person):pass
         except Exception:
-            return {'reply':'','silent':True,'reason':'error'}
+            failed=True   # 只写了 <mind lookup/>、没有正文时生成会报"没有有效内容"：先看是不是要查梗
+        else:failed=False
         if self.closed or controller.character.id!=character.id:
             controller.expression.cancel(turn,character.id);return {'reply':'','silent':True,'reason':'closed'}
+        # T20：她这一轮只写了 <mind lookup="词"/>——想查一个不懂的梗。搜一次，把结果只给她自己看，同一轮重新回一次（只查一次）
+        term=meme_lookup.tidy((getattr(controller,'last_mind',('',{}))[1] or {}).get('lookup','')) if getattr(controller,'last_mind',('',))[0]==turn else ''
+        if term and can_look:
+            self.database.drop_reply(turn,character.id);controller.expression.cancel(turn,character.id)   # 第一遍不算她说过的话
+            return self._reply(controller,character,mode,asked,platform,purpose,message_id,text,chime=chime,request=request,may_skip=may_skip,person=person,
+                               looked=self.look_up(term,mode,stable,str(request.get('sender_name') or ''),text))
+        if failed:return {'reply':'','silent':True,'reason':'error'}
         expression=delivered[-1];attachments=expression.attachments
         wire=expression.wire();wire['attachments']=[]
         for attachment in attachments:
@@ -747,7 +793,8 @@ class BridgeService:
         # 旧插件只看 reply，不受影响。只有一条时也换成整理后的写法。
         from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
         burst=chat_burst(reply,peer_burst=peer,closeness=0.8 if private else self.closeness_of(person))
-        segments=qq_segments(reply,chance=self.chance,burst=burst)
+        # 和外人（群里、非爹的私聊）尽量不用标点；和爹私聊照旧
+        segments=qq_segments(reply,chance=self.chance,burst=burst,casual=not private)
         if len(segments)>1:result.update(segments=segments,segment_delays=typing_delays(segments,chance=self.chance,burst=burst))
         if len(segments)==1:
             result['reply']=segments[0]

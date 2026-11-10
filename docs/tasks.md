@@ -27,3 +27,5 @@
 | T13 | 可选择记忆和表情包存放磁盘 | Codex | 已合入（PR #11，合并提交 `d2ff507`） | 默认空图库中文分类 / 用户自建分类集成回归；21 存储专项，全量 408（401 通过 / 7 跳过）及 Smoke 通过；P3 决定见任务；T13 先合入、T14 后同步，不改 T14 分支 |
 | P0-ARCH | 五项长期架构约束入库 | Codex | 已合入（PR #12） | docs/tasks/P0-architecture-constraints.md |
 | T12 | QQ 识图、自然表情与社区表达学习 | Codex | 已合入（PR #10，合并提交 `2e8ee11`）；新风格待真机体验 | 用户确认私聊表情已成功识别；新增聊天卡和带来源社区词义，表情只理解含义、不展开分析；387 项检查通过，真实模型短句 / 原创表情复测通过 |
+| T19 | 对外人更像真人：外人使唤她办事时按真人的方式回（问梗时顺手搜一下）、和外人聊尽量不用标点 | Claude 实现；Codex 审查 | 待审查（Claude，`task/t19-human-outsiders`，叠在 T18 上） | docs/tasks/T19-human-outsiders.md |
+| T20 | 补 T18 的缺口：当场查没见过的梗并记进词库、查不查用不用由她决定、真实搜索验收脚本、小圈子来源、语境对照评测 | Claude 实现；Codex 审查 | 待审查（Claude，`task/t20-community-gaps`，叠在 T19 上） | docs/tasks/T20-community-gaps.md |
