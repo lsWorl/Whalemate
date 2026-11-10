@@ -5,7 +5,9 @@ from html.parser import HTMLParser
 import json
 import re
 import time
-from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.request import Request, build_opener
+
+from aicompanion.net import NoRedirect  # 共用的“不跟随跳转”
 
 PAGE = 'https://wiki.biligame.com/ys/黑话'
 API = ('https://wiki.biligame.com/ys/api.php?action=parse&format=json&page=%E9%BB%91%E8%AF%9D'
@@ -49,8 +51,6 @@ class Extractor(HTMLParser):
             self.title = ''; self.parts = []
 
 
-class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl): return None
 
 
 def refresh(database, source, opener=None, clock=time.time):

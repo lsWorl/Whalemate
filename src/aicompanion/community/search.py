@@ -17,7 +17,9 @@ import json
 import re
 import time
 from urllib.parse import quote, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import Request, build_opener
+
+from aicompanion.net import NoRedirect  # 共用的“不跟随跳转”
 
 MAX_RESPONSE = 1024*1024
 WIKI = 'https://zh.wikipedia.org/w/api.php'
@@ -27,8 +29,6 @@ class SearchError(Exception):
     pass
 
 
-class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl): return None
 
 
 @dataclass
