@@ -1,5 +1,5 @@
 {
-  "mode": "built-in image_gen full-character cels for walking; existing keys for interactions",
+  "mode": "built-in image_gen full-character inbetweens, original cels retained",
   "identity_reference": "art/deepseek-whale/reference-motion-v1/user-identity-reference.png",
   "identity_sha256": "503b064b7d936756e05281c7600766229eb7459f0e471736a271b24e32ea7b37",
   "requested_actions": 10,
@@ -9,22 +9,22 @@
   "not_1200_hand_drawn_frames": true,
   "automatic_validation": {
     "walking_left": {
-      "frames": 120,
-      "fps": 12,
+      "frames": 240,
+      "fps": 24,
       "duration_ms": 10000,
       "first_last_identical": true,
       "min_margin_px": 58,
       "safe_margin_passed": true,
-      "image_sha256": "b444493fc8d831d7ccf78fb95c663d2eec0388a1039df46fbe2f5eb234a5c6d9"
+      "image_sha256": "b6300b69f204f4f2ae1f162213b4c47d048be7866425e5fe19cf8dbc8f960d8c"
     },
     "walking_right": {
-      "frames": 120,
-      "fps": 12,
+      "frames": 240,
+      "fps": 24,
       "duration_ms": 10000,
       "first_last_identical": true,
       "min_margin_px": 58,
       "safe_margin_passed": true,
-      "image_sha256": "8cb4998a4e2cfbc376302cf9b408775c547effce7b19343e7ed6a449be294247"
+      "image_sha256": "fc1a7f773b920ab7baeaaa55e3ef0e701697c4cf7f37cfa49454fda337d25613"
     },
     "click_wave": {
       "frames": 120,
@@ -120,16 +120,20 @@
   "alignment": {
     "walking_left": {
       "method": "whole_character_painted_cels",
-      "painted_cels": 17,
+      "painted_cels": 34,
       "cycles": 7,
-      "uniform_scale": true,
+      "fps": 24,
+      "frames": 240,
+      "original_cels_unchanged": true,
       "floor_y": 326
     },
     "walking_right": {
       "method": "whole_character_painted_cels",
-      "painted_cels": 17,
+      "painted_cels": 34,
       "cycles": 7,
-      "uniform_scale": true,
+      "fps": 24,
+      "frames": 240,
+      "original_cels_unchanged": true,
       "floor_y": 326
     },
     "click_wave": {
@@ -227,28 +231,89 @@
     "walking_left": {
       "sheets": [
         {
-          "file": "art/deepseek-whale/walk-cels-v1/left-sheet.png",
-          "sha256": "decdca78d287cd98ea5c16acbb595fbc9315c2c6aae1c0e2d7f94c54bd25c70a",
+          "file": "art/deepseek-whale/walk-cels-v2/left-sheet.png",
+          "sha256": "db2e655205175c0fe8070bc5957a3925e22f64a54eef8b6bd6b1d4b5988e7253",
           "columns": 3,
           "rows": 6
         }
       ],
-      "sequence": "art/deepseek-whale/walk-cels-v1/left/sequence.json",
-      "painted_cels": 17,
+      "base_cels": "art/deepseek-whale/walk-cels-v1/left",
+      "sequence": "art/deepseek-whale/walk-cels-v2/left/sequence.json",
+      "painted_cels": 34,
+      "newly_painted_cels": 17,
       "whole_frame_only": true
     },
     "walking_right": {
       "sheets": [
         {
-          "file": "art/deepseek-whale/walk-cels-v1/right-sheet.png",
-          "sha256": "78f896f0ed104845fb721ddee3098b556583404355ae73d18a3a56a9f439b998",
+          "file": "art/deepseek-whale/walk-cels-v2/right-sheet.png",
+          "sha256": "244ee06795f7429a0ce10e8c7a10996e85e5892d599f5eecdd970fae77587f4d",
           "columns": 3,
           "rows": 6
         }
       ],
-      "sequence": "art/deepseek-whale/walk-cels-v1/right/sequence.json",
-      "painted_cels": 17,
+      "base_cels": "art/deepseek-whale/walk-cels-v1/right",
+      "sequence": "art/deepseek-whale/walk-cels-v2/right/sequence.json",
+      "painted_cels": 34,
+      "newly_painted_cels": 17,
       "whole_frame_only": true
+    }
+  },
+  "per_action_timing": {
+    "walking_left": {
+      "frames": 240,
+      "fps": 24,
+      "duration_ms": 10000
+    },
+    "walking_right": {
+      "frames": 240,
+      "fps": 24,
+      "duration_ms": 10000
+    },
+    "click_wave": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "curtsy": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "curious": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "shy_peek": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "happy_hops": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "self_hug": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "pout_stomp": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "giggle": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
+    },
+    "idle": {
+      "frames": 120,
+      "fps": 12,
+      "duration_ms": 10000
     }
   }
 }

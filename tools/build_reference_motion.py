@@ -136,34 +136,39 @@ def compile_action(key,keys):
     return frames
 
 
-def durations(unit=1000):
-    return [round((i+1)*unit/FPS)-round(i*unit/FPS) for i in range(COUNT)]
+def durations(unit=1000,count=COUNT,fps=FPS):
+    return [round((i+1)*unit/fps)-round(i*unit/fps) for i in range(count)]
 
 
-def export(key,name,frames,write_png=False):
-    columns=8;rows=15;atlas=Image.new('RGBA',(SIZE*columns,SIZE*rows))
-    for i,frame in enumerate(frames):atlas.paste(frame,(i%columns*SIZE,i//columns*SIZE))
+def export(key,name,frames,write_png=False,*,fps=FPS,frame_map=None):
+    count=len(frames);columns=8
+    stored=frames[:max(frame_map)+1] if frame_map else frames
+    rows=math.ceil(len(stored)/columns);atlas=Image.new('RGBA',(SIZE*columns,SIZE*rows))
+    for i,frame in enumerate(stored):atlas.paste(frame,(i%columns*SIZE,i//columns*SIZE))
     path=OUT/(key+'.webp');atlas.save(path,'WEBP',lossless=True,exact=True,method=4)
     rgb=[]
     if write_png:(PREVIEW/'frames'/key).mkdir(parents=True,exist_ok=True)
     for i,frame in enumerate(frames):
         if write_png:frame.save(PREVIEW/'frames'/key/f'{i:03}.png')
         bg=Image.new('RGB',(SIZE,SIZE),'#edf2fc');bg.paste(frame,mask=frame.getchannel('A'));rgb.append(bg)
-    # GIF 时长只能为 10ms 的整数倍；交替 80/90ms，总长仍精确 10 秒。
-    rgb[0].save(PREVIEW/(key+'.gif'),save_all=True,append_images=rgb[1:],duration=[x*10 for x in durations(100)],loop=0,optimize=True)
-    frames[0].save(PREVIEW/(key+'-animated.webp'),save_all=True,append_images=frames[1:],duration=durations(),loop=0,lossless=True,exact=True,method=4)
+    # GIF 时长按10ms量化分配，12或24FPS均保持精确总时长。
+    rgb[0].save(PREVIEW/(key+'.gif'),save_all=True,append_images=rgb[1:],duration=[x*10 for x in durations(100,count,fps)],loop=0,optimize=True)
+    frames[0].save(PREVIEW/(key+'-animated.webp'),save_all=True,append_images=frames[1:],duration=durations(count=count,fps=fps),loop=0,lossless=True,exact=True,method=4)
     with Image.open(path) as encoded:
-        if encoded.crop((0,0,SIZE,SIZE)).tobytes()!=encoded.crop((7*SIZE,14*SIZE,8*SIZE,15*SIZE)).tobytes():raise ValueError('图集编码后首尾像素不一致。')
+        first=frame_map[0] if frame_map else 0;last=frame_map[-1] if frame_map else count-1
+        def cell(index):return encoded.crop((index%columns*SIZE,index//columns*SIZE,index%columns*SIZE+SIZE,index//columns*SIZE+SIZE))
+        if cell(first).tobytes()!=cell(last).tobytes():raise ValueError('图集编码后首尾像素不一致。')
     boxes=[f.getbbox() for f in frames]
     min_margin=min(min(b[0],b[1],SIZE-b[2],SIZE-b[3]) for b in boxes)
-    record={'frames':len(frames),'fps':FPS,'duration_ms':sum(durations()),'first_last_identical':frames[0].tobytes()==frames[-1].tobytes(),
+    record={'frames':len(frames),'fps':fps,'duration_ms':sum(durations(count=count,fps=fps)),'first_last_identical':frames[0].tobytes()==frames[-1].tobytes(),
       'min_margin_px':min_margin,'safe_margin_passed':min_margin>=math.ceil(SIZE*.1),'image_sha256':digest(path)}
     facing='left' if key=='walking_left' else 'right'
-    entry={'name':name,'image':path.name,'frameWidth':SIZE,'frameHeight':SIZE,'columns':columns,'rows':rows,'frameCount':COUNT,'fps':FPS,'facing':facing}
+    entry={'name':name,'image':path.name,'frameWidth':SIZE,'frameHeight':SIZE,'columns':columns,'rows':rows,'frameCount':count,'fps':fps,'facing':facing}
+    if frame_map is not None:entry['frameMap']=frame_map
     if key.startswith('walking'):
         from build_walk_cels import available,CYCLE_DISTANCE,CYCLES,write_metadata
         entry.update(cycleDistance=CYCLE_DISTANCE if available() else 256,strideCycles=CYCLES if available() else 8)
-        if available():write_metadata(key)
+        if available():write_metadata(key,entry)
     return entry,record
 
 
@@ -174,7 +179,11 @@ def main(only=None,write_png=False):
     for key,name in ACTIONS.items():
         if only and key not in only:continue
         print('编排',key,flush=True);frames=compile_action(key,keys[key])
-        actions[key],validation[key]=export(key,name,frames,write_png);all_frames[key]=frames
+        kwargs={}
+        if key.startswith('walking'):
+            from build_walk_cels import dense_available,DENSE_FPS,sequence_order
+            if dense_available():kwargs={'fps':DENSE_FPS,'frame_map':sequence_order()}
+        actions[key],validation[key]=export(key,name,frames,write_png,**kwargs);all_frames[key]=frames
     if only:
         path=OUT/'animations.json';manifest=json.loads(path.read_text(encoding='utf-8'));manifest['actions'].update(actions)
         path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
@@ -204,15 +213,16 @@ def main(only=None,write_png=False):
     original.write_text(json.dumps(original_data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (ART/'alignment.json').write_text(json.dumps(reports,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     montage=[];font=ImageFont.truetype('C:/Windows/Fonts/msyh.ttc',12)
-    for i in range(COUNT):
+    preview_count=max(len(frames) for frames in all_frames.values());preview_fps=preview_count/10
+    for i in range(preview_count):
         bg=Image.new('RGB',(960,424),'#edf2fc');draw=ImageDraw.Draw(bg)
         for n,(key,name) in enumerate(ACTIONS.items()):
-            tile=all_frames[key][i].resize((192,192),Image.Resampling.LANCZOS);x=n%5*192;y=n//5*212
+            tile=all_frames[key][min(len(all_frames[key])-1,int(i/preview_count*len(all_frames[key])))].resize((192,192),Image.Resampling.LANCZOS);x=n%5*192;y=n//5*212
             bg.paste(tile,(x,y+20),tile.getchannel('A'));draw.text((x+8,y+4),name,font=font,fill='#29466d')
         montage.append(bg)
-    montage[0].save(PREVIEW/'all-actions.gif',save_all=True,append_images=montage[1:],duration=[x*10 for x in durations(100)],loop=0,optimize=True)
+    montage[0].save(PREVIEW/'all-actions.gif',save_all=True,append_images=montage[1:],duration=[x*10 for x in durations(100,preview_count,preview_fps)],loop=0,optimize=True)
     failures=[key for key,r in validation.items() if not r['safe_margin_passed'] or not r['first_last_identical']]
-    print(json.dumps({'actions':10,'frames':1200,'validation_failures':failures},ensure_ascii=False),flush=True)
+    print(json.dumps({'actions':10,'frames':sum(len(frames) for frames in all_frames.values()),'validation_failures':failures},ensure_ascii=False),flush=True)
     if failures:raise SystemExit(1)
 
 

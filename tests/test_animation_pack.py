@@ -72,6 +72,19 @@ class AnimationPackTests(unittest.TestCase):
             data['poses'].pop('thinking');path.write_text(json.dumps(data),encoding='utf-8')
             with self.assertRaises(CharacterPackError):load_animation_pack(path)
 
+    def test_frame_map_reuses_valid_cells_without_relaxing_atlas_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path,data=make_pack(Path(directory))
+            data['actions']['idle'].update(frameCount=3,fps=24,frameMap=[1,0,1])
+            path.write_text(json.dumps(data),encoding='utf-8')
+            clip=load_animation_pack(path).actions['idle']
+            self.assertEqual([clip.cell_at(i) for i in range(3)],[1,0,1])
+            self.assertEqual(clip.frame_at(2/24+.001),2)
+            for mapping in ([0,1], [0,1,2], [0,True,1], [0,-1,1], None, '0,1,0'):
+                data['actions']['idle']['frameMap']=mapping
+                path.write_text(json.dumps(data),encoding='utf-8')
+                with self.subTest(mapping=mapping),self.assertRaises(CharacterPackError):load_animation_pack(path)
+
     def test_broken_json_never_escapes_as_unhandled_structure_error(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'animations.json'
@@ -97,6 +110,24 @@ class AnimationViewTests(unittest.TestCase):
         while not predicate() and time.monotonic()<until:
             self.app.processEvents();time.sleep(.005)
         self.assertTrue(predicate())
+
+    def test_mapped_frames_apply_to_current_and_outgoing_cels(self):
+        from dataclasses import replace
+        from aicompanion.ui.animation_view import Decoder
+        original=load_animation_pack(self.path).actions['idle']
+        clip=replace(original,count=3,fps=24,frame_map=(1,0,1))
+        decoder=Decoder();decoded=[]
+        decoder.decoded.connect(lambda a,image,error:decoded.append((image,error)))
+        decoder.decode(clip);image,error=decoded[0];self.assertFalse(error)
+        for index,expected in enumerate(('blue','red','blue')):
+            self.view._take_frame(image,clip,index)
+            self.assertEqual(self.view._frame.pixelColor(32,32),QColor(expected))
+        now=time.monotonic();self.view._frame=image.copy(0,0,64,64)
+        self.view._previous=image.copy(0,0,64,64)
+        self.view._outgoing=(clip,image,now,0.,True)
+        self.view._frame_facing=clip.facing;self.view._fade_started=now;self.view._fade_duration=1.
+        self.view._compose(now)
+        self.assertEqual(self.view._display.pixelColor(32,32),QColor('blue'))
 
     def test_async_decode_advances_real_frames_without_empty_or_opaque_background(self):
         frames=[];self.view.frameAdvanced.connect(frames.append);self.view.show()

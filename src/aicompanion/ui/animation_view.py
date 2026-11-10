@@ -37,7 +37,7 @@ class Decoder(QObject):
             if action.content_scale!=1. or action.content_offset!=(0.,0.):
                 framed=QImage(target,QImage.Format.Format_ARGB32_Premultiplied);framed.fill(Qt.GlobalColor.transparent)
                 painter=QPainter(framed);painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                for i in range(action.count):
+                for i in range(max(action.frame_map)+1 if action.frame_map else action.count):
                     x=i%action.columns*width;y=i//action.columns*height
                     rect=QRectF(x+action.content_offset[0]*width,y+action.content_offset[1]*height,width*action.content_scale,height*action.content_scale)
                     painter.drawImage(rect,image,QRectF(x,y,width,height))
@@ -208,7 +208,8 @@ class AnimationAvatar(QWidget):
 
     def _take_frame(self,sheet,clip,index):
         w=sheet.width()//clip.columns;h=sheet.height()//clip.rows
-        self._frame=sheet.copy(index%clip.columns*w,index//clip.columns*h,w,h)
+        cell=clip.cell_at(index)
+        self._frame=sheet.copy(cell%clip.columns*w,cell//clip.columns*h,w,h)
         self.frameAdvanced.emit(index)
 
     def _compose(self,now):
@@ -219,7 +220,8 @@ class AnimationAvatar(QWidget):
             clip,sheet,started,elapsed,gait=self._outgoing
             index=clip.frame_at(elapsed if gait else now-started)
             w=sheet.width()//clip.columns;h=sheet.height()//clip.rows
-            self._previous=sheet.copy(index%clip.columns*w,index//clip.columns*h,w,h)
+            cell=clip.cell_at(index)
+            self._previous=sheet.copy(cell%clip.columns*w,cell//clip.columns*h,w,h)
             if not self.using_reference and clip.facing!=self._frame_facing:self._previous=self._previous.mirrored(True,False)
         self._display=mix_frames(self._previous,self._frame,amount)
         if progress>=1:self._previous=QImage();self._outgoing=None

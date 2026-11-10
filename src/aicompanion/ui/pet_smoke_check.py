@@ -373,7 +373,8 @@ def schedule_pet_smoke_check(window, database, output):
             def ready():
                 if pet.view._loaded==key and not pet.view.transitioning:
                     clip=pet.view.pack.actions[key]
-                    if clip.count!=120 or clip.fps!=12:state['errors'].append('新动作规格不符：'+key)
+                    expected=(240,24) if key.startswith('walking') else (120,12)
+                    if (clip.count,clip.fps)!=expected:state['errors'].append('新动作规格不符：'+key)
                     state['reference_actions'].append(key);QTimer.singleShot(80,lambda:check_reference(index+1))
                 elif time.monotonic()>deadline:state['errors'].append('新动作加载超时：'+key);finish_checks()
                 else:QTimer.singleShot(25,ready)

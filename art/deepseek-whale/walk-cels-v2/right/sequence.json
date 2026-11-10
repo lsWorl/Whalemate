@@ -1,0 +1,885 @@
+{
+  "method": "whole_character_painted_cels",
+  "painted_cels": 34,
+  "newly_painted_cels": 17,
+  "cycles": 7,
+  "fps": 24,
+  "frame_count": 240,
+  "sequence": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    0,
+    0
+  ],
+  "no_limb_rig": true,
+  "no_optical_flow": true,
+  "registration": [
+    {
+      "cel": 0,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/00.png",
+      "source_sha256": "dbd2e64dfbe084f114f96e124231940dd3cb07b9282d936aee71c6647cea1c72",
+      "bounds": [
+        115,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 1,
+      "kind": "new_inbetween",
+      "endpoints": [
+        0,
+        1
+      ],
+      "source_size": [
+        132,
+        214
+      ],
+      "scale": 1.205607476635514,
+      "whole_frame_offset": [
+        112,
+        68
+      ],
+      "bounds": [
+        112,
+        68,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 2,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/01.png",
+      "source_sha256": "2de553df2c47bdee713f207e420250403f51c7498a3d3d6ee9264fab586d4416",
+      "bounds": [
+        115,
+        68,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 3,
+      "kind": "new_inbetween",
+      "endpoints": [
+        1,
+        2
+      ],
+      "source_size": [
+        133,
+        214
+      ],
+      "scale": 1.205607476635514,
+      "whole_frame_offset": [
+        112,
+        68
+      ],
+      "bounds": [
+        112,
+        68,
+        272,
+        326
+      ]
+    },
+    {
+      "cel": 4,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/02.png",
+      "source_sha256": "ddf6948a07df9ab83b7c2ecb520e7ebaf6d2fb3e300d33a6ddd8ecf558b94823",
+      "bounds": [
+        116,
+        68,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 5,
+      "kind": "new_inbetween",
+      "endpoints": [
+        2,
+        3
+      ],
+      "source_size": [
+        132,
+        214
+      ],
+      "scale": 1.205607476635514,
+      "whole_frame_offset": [
+        112,
+        68
+      ],
+      "bounds": [
+        112,
+        68,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 6,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/03.png",
+      "source_sha256": "250c2c118bfd25381c1f5fa45969945b47ddc7a8e0a9136d859df2fa0baae832",
+      "bounds": [
+        116,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 7,
+      "kind": "new_inbetween",
+      "endpoints": [
+        3,
+        4
+      ],
+      "source_size": [
+        131,
+        211
+      ],
+      "scale": 1.2132701421800949,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 8,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/04.png",
+      "source_sha256": "2d657cb9a8db845e4ccea120be82e564e174fa755eea73f93677916c86c6c50d",
+      "bounds": [
+        115,
+        70,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 9,
+      "kind": "new_inbetween",
+      "endpoints": [
+        4,
+        5
+      ],
+      "source_size": [
+        131,
+        211
+      ],
+      "scale": 1.2132701421800949,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 10,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/05.png",
+      "source_sha256": "c912f3d9befb534c7edc930fd52f1e2e69e9adf0d685cd5153480bf0cdf7aa63",
+      "bounds": [
+        116,
+        69,
+        268,
+        326
+      ]
+    },
+    {
+      "cel": 11,
+      "kind": "new_inbetween",
+      "endpoints": [
+        5,
+        6
+      ],
+      "source_size": [
+        132,
+        211
+      ],
+      "scale": 1.2180094786729858,
+      "whole_frame_offset": [
+        112,
+        69
+      ],
+      "bounds": [
+        112,
+        69,
+        273,
+        326
+      ]
+    },
+    {
+      "cel": 12,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/06.png",
+      "source_sha256": "797ecfc77785be930a03b689f3167e5c0b933fe923adfdb055af0ddda9a2c69a",
+      "bounds": [
+        115,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 13,
+      "kind": "new_inbetween",
+      "endpoints": [
+        6,
+        7
+      ],
+      "source_size": [
+        131,
+        212
+      ],
+      "scale": 1.2122641509433962,
+      "whole_frame_offset": [
+        112,
+        69
+      ],
+      "bounds": [
+        112,
+        69,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 14,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/07.png",
+      "source_sha256": "eb030870fbd0c5f704bad579903fbfc00de03e7a3751584e28dd61e4d3768a7c",
+      "bounds": [
+        115,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 15,
+      "kind": "new_inbetween",
+      "endpoints": [
+        7,
+        8
+      ],
+      "source_size": [
+        131,
+        212
+      ],
+      "scale": 1.2075471698113207,
+      "whole_frame_offset": [
+        113,
+        70
+      ],
+      "bounds": [
+        113,
+        70,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 16,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/08.png",
+      "source_sha256": "a2b9fbf0b70ad1096bbfe7ca6ece7c2da3c476c2a60d7506d3dab54827999717",
+      "bounds": [
+        116,
+        70,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 17,
+      "kind": "new_inbetween",
+      "endpoints": [
+        8,
+        9
+      ],
+      "source_size": [
+        132,
+        212
+      ],
+      "scale": 1.2075471698113207,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 18,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/09.png",
+      "source_sha256": "f96ee8e0d96a1bddfcbec8cc6de18f918dbf9d19b51e4884adc6ff3cac27d24a",
+      "bounds": [
+        116,
+        70,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 19,
+      "kind": "new_inbetween",
+      "endpoints": [
+        9,
+        10
+      ],
+      "source_size": [
+        131,
+        210
+      ],
+      "scale": 1.2190476190476192,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        272,
+        326
+      ]
+    },
+    {
+      "cel": 20,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/10.png",
+      "source_sha256": "84ee5f1239eba961364adc2a3ccd85a773d341d6ad858551936bc4a3b3fadd06",
+      "bounds": [
+        116,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 21,
+      "kind": "new_inbetween",
+      "endpoints": [
+        10,
+        11
+      ],
+      "source_size": [
+        131,
+        211
+      ],
+      "scale": 1.2132701421800949,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 22,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/11.png",
+      "source_sha256": "5857d3cd387d105875303913babcc8384d433dd935dd2ca82dcb81932cd203ea",
+      "bounds": [
+        116,
+        70,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 23,
+      "kind": "new_inbetween",
+      "endpoints": [
+        11,
+        12
+      ],
+      "source_size": [
+        132,
+        210
+      ],
+      "scale": 1.223809523809524,
+      "whole_frame_offset": [
+        111,
+        69
+      ],
+      "bounds": [
+        111,
+        69,
+        273,
+        326
+      ]
+    },
+    {
+      "cel": 24,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/12.png",
+      "source_sha256": "30138ce103189c52edc18339599de7e8c680124134a28f05f550dbf9967ba704",
+      "bounds": [
+        116,
+        68,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 25,
+      "kind": "new_inbetween",
+      "endpoints": [
+        12,
+        13
+      ],
+      "source_size": [
+        131,
+        211
+      ],
+      "scale": 1.2227488151658767,
+      "whole_frame_offset": [
+        112,
+        68
+      ],
+      "bounds": [
+        112,
+        68,
+        272,
+        326
+      ]
+    },
+    {
+      "cel": 26,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/13.png",
+      "source_sha256": "b82871aa14822af5c374e90589f2e827727b43b04b9399198c7fe9d2b0a79595",
+      "bounds": [
+        115,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 27,
+      "kind": "new_inbetween",
+      "endpoints": [
+        13,
+        14
+      ],
+      "source_size": [
+        131,
+        212
+      ],
+      "scale": 1.2122641509433962,
+      "whole_frame_offset": [
+        112,
+        69
+      ],
+      "bounds": [
+        112,
+        69,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 28,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/14.png",
+      "source_sha256": "e614874856357259279e6b986d3aa0bcaad40bf407298ad66c02681f14c98439",
+      "bounds": [
+        116,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 29,
+      "kind": "new_inbetween",
+      "endpoints": [
+        14,
+        15
+      ],
+      "source_size": [
+        132,
+        212
+      ],
+      "scale": 1.2122641509433962,
+      "whole_frame_offset": [
+        112,
+        69
+      ],
+      "bounds": [
+        112,
+        69,
+        272,
+        326
+      ]
+    },
+    {
+      "cel": 30,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/15.png",
+      "source_sha256": "4ae49950ceaa1f3b3b4caa12cb9d08a8ec0343b9323b84de84c0278bc38fd34f",
+      "bounds": [
+        116,
+        69,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 31,
+      "kind": "new_inbetween",
+      "endpoints": [
+        15,
+        16
+      ],
+      "source_size": [
+        131,
+        211
+      ],
+      "scale": 1.2132701421800949,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        271,
+        326
+      ]
+    },
+    {
+      "cel": 32,
+      "kind": "original",
+      "source": "art/deepseek-whale/walk-cels-v1/right/16.png",
+      "source_sha256": "4bc7bfb59f3d7e33ac1cbbfe78966f1267564460de76a06e331cf2aaffb4af57",
+      "bounds": [
+        115,
+        70,
+        269,
+        326
+      ]
+    },
+    {
+      "cel": 33,
+      "kind": "new_inbetween",
+      "endpoints": [
+        16,
+        0
+      ],
+      "source_size": [
+        132,
+        212
+      ],
+      "scale": 1.2075471698113207,
+      "whole_frame_offset": [
+        112,
+        70
+      ],
+      "bounds": [
+        112,
+        70,
+        271,
+        326
+      ]
+    }
+  ],
+  "cel_sha256": [
+    "dbd2e64dfbe084f114f96e124231940dd3cb07b9282d936aee71c6647cea1c72",
+    "2159e22f83ae576f64d260ef1dda917a19e2d2a674e2a6e2922004141568ed85",
+    "2de553df2c47bdee713f207e420250403f51c7498a3d3d6ee9264fab586d4416",
+    "cf11d459f15fb9fdf2cdbce02a790f216987198d747f8d355da03cc2119449ce",
+    "ddf6948a07df9ab83b7c2ecb520e7ebaf6d2fb3e300d33a6ddd8ecf558b94823",
+    "b66ecc81d7b23f6e8cabc88f9100e752012eb15a0ffd3b1736db93238b213762",
+    "250c2c118bfd25381c1f5fa45969945b47ddc7a8e0a9136d859df2fa0baae832",
+    "ff07e596b57921087b92e5cc19661c442bff3a559c1e1a931822f80974b50f76",
+    "2d657cb9a8db845e4ccea120be82e564e174fa755eea73f93677916c86c6c50d",
+    "60b56c195c9d445f7aff02b67677fd3230f7c5c079a94e4f64a1d2f669e4e9cc",
+    "c912f3d9befb534c7edc930fd52f1e2e69e9adf0d685cd5153480bf0cdf7aa63",
+    "4119bb2045573f66573982c919181848a88c2e8a21381bfeebb984c51019e10c",
+    "797ecfc77785be930a03b689f3167e5c0b933fe923adfdb055af0ddda9a2c69a",
+    "be25115cff441dad9a718449de70a1bb2fb6d95e3bb5734847b20d96601ac816",
+    "eb030870fbd0c5f704bad579903fbfc00de03e7a3751584e28dd61e4d3768a7c",
+    "67176c575aa893ef8e2d4b3bba57f38e19127c1079d7c48f9d26a85cc5264a7e",
+    "a2b9fbf0b70ad1096bbfe7ca6ece7c2da3c476c2a60d7506d3dab54827999717",
+    "663eb8aac6bae921337c956586cbec060c7c81f7db85032baef30a2e11661e52",
+    "f96ee8e0d96a1bddfcbec8cc6de18f918dbf9d19b51e4884adc6ff3cac27d24a",
+    "eb3dc0256bcceac5ad3c8e35b2d30fcaac32705762f5a9140028b45e14933762",
+    "84ee5f1239eba961364adc2a3ccd85a773d341d6ad858551936bc4a3b3fadd06",
+    "99eda01e24a833ebc6d749849792624c8bea289734735f7469344ac4c5ab0c03",
+    "5857d3cd387d105875303913babcc8384d433dd935dd2ca82dcb81932cd203ea",
+    "0abff2bd77cd0a4d72d3a9b55cd96d0c71e52c981d841d8c4770435a07fc8be9",
+    "30138ce103189c52edc18339599de7e8c680124134a28f05f550dbf9967ba704",
+    "bbc576a49ffc41bea1e7914e386389dc94db09520e8eb524cf7f78a5c7bf875d",
+    "b82871aa14822af5c374e90589f2e827727b43b04b9399198c7fe9d2b0a79595",
+    "ae56d92c40b8647c4a977bae4ccd7b11377c6cb558b3932be6f2d10e117d243a",
+    "e614874856357259279e6b986d3aa0bcaad40bf407298ad66c02681f14c98439",
+    "dacf9ee454af773425bba86b67c7c000593620b0c16b3e25d18202aa13f810b2",
+    "4ae49950ceaa1f3b3b4caa12cb9d08a8ec0343b9323b84de84c0278bc38fd34f",
+    "fb8d9f0b6fcadd93b88b4ce64ce50a66d7197ddb9fb0bdc401903c39563a056a",
+    "4bc7bfb59f3d7e33ac1cbbfe78966f1267564460de76a06e331cf2aaffb4af57",
+    "6c3ae2ae860f5bb0ce556f1653eb14b561908ce62a07f271c476ce36eb11a2fa"
+  ]
+}

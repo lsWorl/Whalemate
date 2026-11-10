@@ -6,7 +6,7 @@ import sys
 import unittest
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
-from build_walk_cels import ART,OUT,CELS,CYCLES,COUNT,read_sheet
+from build_walk_cels import ART,OUT,CELS,CYCLES,COUNT,read_sheet,BASE_ART,sequence_order
 
 class WholeCharacterCelTests(unittest.TestCase):
     def test_every_encoded_frame_is_one_complete_painted_cel(self):
@@ -14,7 +14,7 @@ class WholeCharacterCelTests(unittest.TestCase):
             record=json.loads((ART/direction/'sequence.json').read_text(encoding='utf-8'))
             order=record['sequence']
             self.assertEqual(len(order),COUNT)
-            self.assertEqual(order,list(range(CELS))*CYCLES+[0])
+            self.assertEqual(order,sequence_order())
             self.assertTrue(record['no_limb_rig']);self.assertTrue(record['no_optical_flow'])
             cels=[]
             for index in range(CELS):
@@ -24,17 +24,23 @@ class WholeCharacterCelTests(unittest.TestCase):
             self.assertEqual(len(set(cels)),CELS)
             with Image.open(OUT/f'walking_{direction}.webp') as atlas:
                 for index,cel in enumerate(order):
-                    frame=atlas.crop((index%8*384,index//8*384,index%8*384+384,index//8*384+384))
+                    frame=atlas.crop((cel%8*384,cel//8*384,cel%8*384+384,cel//8*384+384))
                     self.assertEqual(frame.convert('RGBA').tobytes(),cels[cel],(direction,index))
 
-    def test_full_frames_share_one_scale_and_original_aspect_ratios(self):
+    def test_originals_unchanged_and_inbetweens_keep_aspect_ratios(self):
         for direction in ('left','right'):
             record=json.loads((ART/direction/'sequence.json').read_text(encoding='utf-8'))
-            self.assertEqual(len({r['scale'] for r in record['registration']}),1)
+            self.assertEqual(record['newly_painted_cels'],17)
             for item in record['registration']:
-                width,height=item['source_size'];left,top,right,bottom=item['bounds'];scale=item['scale']
-                self.assertAlmostEqual(right-left,width*scale,delta=2)
-                self.assertAlmostEqual(bottom-top,height*scale,delta=2)
+                left,top,right,bottom=item['bounds']
+                if item['kind']=='new_inbetween':
+                    width,height=item['source_size'];scale=item['scale']
+                    self.assertAlmostEqual(right-left,width*scale,delta=2)
+                    self.assertAlmostEqual(bottom-top,height*scale,delta=2)
+                else:
+                    index=item['cel']//2
+                    with Image.open(BASE_ART/direction/f'{index:02}.png') as old,Image.open(ART/direction/f'{index*2:02}.png') as new:
+                        self.assertEqual(old.convert('RGBA').tobytes(),new.convert('RGBA').tobytes())
                 self.assertEqual(bottom,326)
                 self.assertLessEqual(abs((left+right)/2-192),1)
                 self.assertGreaterEqual(min(left,top,384-right,384-bottom),39)
@@ -46,7 +52,7 @@ class WholeCharacterCelTests(unittest.TestCase):
         for direction in ('left','right'):
             item=source['walking_cel_sources']['walking_'+direction]
             self.assertTrue(item['whole_frame_only'])
-            self.assertEqual(item['painted_cels'],17)
+            self.assertEqual(item['painted_cels'],34)
             self.assertEqual(len(item['sheets']),1)
             self.assertEqual(len(read_sheet(ART/f'{direction}-sheet.png',rows=6)),18)
 

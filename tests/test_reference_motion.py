@@ -27,19 +27,21 @@ class ReferenceMotionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
 
-    def test_ten_actions_have_120_frames_12fps_and_exact_matching_endpoints(self):
+    def test_actions_preserve_ten_seconds_with_dense_walk_and_matching_endpoints(self):
         pack=load_animation_pack(ROOT/'animation-reference-v1/animations.json')
         with Image.open(pack.poster) as im:stand=im.convert('RGBA').tobytes()
         for key in ACTIONS:
             clip=pack.actions[key]
-            self.assertEqual((clip.count,clip.fps),(120,12))
+            self.assertEqual((clip.count,clip.fps),(240,24) if key.startswith('walking') else (120,12))
             with Image.open(clip.path) as sheet:
                 first=sheet.crop((0,0,384,384)).convert('RGBA')
-                last=sheet.crop((7*384,14*384,8*384,15*384)).convert('RGBA')
+                cell=clip.cell_at(clip.count-1)
+                last=sheet.crop((cell%clip.columns*384,cell//clip.columns*384,cell%clip.columns*384+384,cell//clip.columns*384+384)).convert('RGBA')
                 self.assertEqual(first.tobytes(),last.tobytes(),key)
                 if not key.startswith('walking'):self.assertEqual(first.tobytes(),stand,key)
                 for i in range(clip.count):
-                    frame=sheet.crop((i%8*384,i//8*384,i%8*384+384,i//8*384+384))
+                    cell=clip.cell_at(i)
+                    frame=sheet.crop((cell%clip.columns*384,cell//clip.columns*384,cell%clip.columns*384+384,cell//clip.columns*384+384))
                     box=frame.getbbox()
                     self.assertGreaterEqual(min(box[0],box[1],384-box[2],384-box[3]),39,key)
 

@@ -89,7 +89,7 @@ class WindowWalkTests(unittest.TestCase):
     def test_reference_walk_speed_follows_full_frame_clip_duration(self):
         from types import SimpleNamespace
         self.view.using_reference=True
-        self.view.pack=SimpleNamespace(actions={'walking_right':SimpleNamespace(cycle_distance=280.,fps=12,count=120)})
+        self.view.pack=SimpleNamespace(actions={'walking_right':SimpleNamespace(cycle_distance=280.,fps=24,count=240)})
         self.pet.walk_to(300,100);self.pet._walk_timer.stop();self.pet._walk_last=100.
         for i in range(1,21):self.tick(100+i*.05)
         self.assertAlmostEqual(self.pet._walk_speed,28.)

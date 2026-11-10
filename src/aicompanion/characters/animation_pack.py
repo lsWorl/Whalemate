@@ -25,6 +25,10 @@ class Animation:
     gait_cycles: int = 1
     content_scale: float = 1.
     content_offset: tuple[float,float] = (0.,0.)
+    frame_map: tuple[int,...] = ()
+
+    def cell_at(self,index):
+        return self.frame_map[index%self.count] if self.frame_map else index
 
     def frame_at(self, elapsed):
         return int(max(0, elapsed)*self.fps)%self.count
@@ -78,7 +82,12 @@ def animation_entry(root,key,entry,size):
     width=integer(entry['frameWidth'],16,1024); height=integer(entry['frameHeight'],16,1024)
     columns=integer(entry['columns'],1,32); rows=integer(entry['rows'],1,64)
     count=integer(entry['frameCount'],1,600); fps=integer(entry['fps'],1,30)
-    if (width,height)!=size or count>columns*rows or (rows-1)*columns>=count or width*height*columns*rows>32_000_000:
+    frame_map=entry.get('frameMap',[])
+    if (not isinstance(frame_map,list) or (frame_map and len(frame_map)!=count)
+            or any(type(v) is not int or not 0<=v<columns*rows for v in frame_map)):
+        raise CharacterPackError('动画帧序列必须逐帧指向图集内的有效格子。')
+    cells=max(frame_map)+1 if frame_map else count
+    if (width,height)!=size or cells>columns*rows or (rows-1)*columns>=cells or width*height*columns*rows>32_000_000:
         raise CharacterPackError('动画帧数、画布或图集尺寸不一致。')
     facing=entry.get('facing','left')
     if facing not in ('left','right'):raise CharacterPackError('动画朝向无效。')
@@ -93,7 +102,7 @@ def animation_entry(root,key,entry,size):
             or not isinstance(offset,(tuple,list)) or len(offset)!=2
             or any(type(v) not in (int,float) or not math.isfinite(v) or v<0 or v+scale>1.0001 for v in offset)):
         raise CharacterPackError('动画构图缩放或偏移无效。')
-    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing,group,float(distance),cycles,float(scale),tuple(offset))
+    return Animation(key,str(entry.get('name',key)),image,width,height,columns,rows,count,fps,facing,group,float(distance),cycles,float(scale),tuple(offset),tuple(frame_map))
 
 
 def load_animation_pack(path):

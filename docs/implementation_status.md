@@ -1156,3 +1156,13 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 交付预览walking-pair.gif、可暂停/逐帧拖动的独立walking-preview.html、all-actions.gif、1200张PNG和DeepSeek-10-actions-12fps.zip（250.03MiB），均在output/reference-motion-v1。按帧播放与几何检查不能证明动画已自然；面部视角/服装细节一致性、两腿遮挡和脚底接触仍待用户审图。另一方最新提交审查、长期内存、多屏、高DPI与低性能机器未验证；PR #25保持草稿，不标记可合并。
 
 - 重建验证边界：本轮实际执行了左右整帧导出，并单独验证compile_action入口返回120帧与一致端点；未再次重导旧版全部原画/过渡素材。上面的“导出链接通”指代码已接入，非本轮全量重导出记录。
+
+## 整帧补画与24FPS播放（Codex，本轮结果）
+
+- 用户要求“多画几帧让动作更加流畅”。左右各新增17张完整人物过渡原画，和原17张交替组成34张/周期；旧17张PNG保持像素一致。新增完整帧由内置image_gen绘制，不拆手脚、不用光流造帧；相邻A/B图、统一画风输入、最终清稿和完整提示词存于art/deepseek-whale/walk-cels-v2。初稿背景残留和新旧画风差异经清理后再导出，未采用稿放output回收区。
+- 行走升级为24FPS、10秒、240帧（34×7+2个闭环帧），首末RGBA一致，左右最小边距58px；八个互动仍12FPS/120帧，WebP与a39378d逐字节一致。距离参数280和名义步速28px/s不变，保留旧版回退。不是240张独立新画。
+- 240格384px全图会超过既有32M像素限制，因此新增可选frameMap时序引用，物理图集仅存34张完整原画（8列5行，5,898,240像素）。索引长度、整数类型、范围及原图集像素上限严格校验；当前帧、过渡中旧帧及构图处理使用实际格索引。默认无frameMap的旧资源兼容。每个运行帧都逐像素对应完整原画，未通过运行时扭曲来补画。
+- 两张行走WebP分别1,838,762与1,950,256字节，新包全部11张WebP共58.18MiB。离线编译和总预览支持混合FPS，逐动作JSON带FrameMap，项目独立逐帧网页已适配。实际运行了tools/build_walk_cels.py导出；旧版所有原画/过渡的全量重导出本轮未再次执行。
+- tools/run_checks.bat退出0：809项，802通过 / 7跳过，130.039秒。Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0；十动作加载、左右到达、新旧回退与原交互通过。新增真实Qt红蓝格回归覆盖帧映射和淡出旧帧；旧原画保留、新增原画来源、等比对齐与帧像素匹配检查均通过。临时库/Mock，不读取.env或真实用户库。
+- 实际播放器42ms间隔录制237张，左右各120px均到达，各实际推进103个逻辑帧索引，using_reference=true、无错误。主进程工作集短时采样峰值345.1MiB、最低206.5MiB，含PNG录制开销，不含启动器/控制台，不代表长期内存或350MB目标验收。报告live-walk-dense-report.json，录屏runtime-walking-24fps.gif。
+- 新交付在output/reference-motion-v1：walking-pair-24fps.gif、walking-before-after.gif（同速12/24FPS对照）、walking-preview-24fps.html、all-actions-dense.gif、1440张PNG和DeepSeek-10-actions-walk24fps.zip（276.51MiB）。原12FPS预览和包保留。全套自动检查不能证明自然度与角色细节完全一致，仍待用户对补帧连贯性/遮挡的真机审图、另一方最新提交审查，以及长期/多屏/DPI验证。PR #25继续草稿，不标记可合并。
