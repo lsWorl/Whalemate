@@ -17,10 +17,11 @@ from aicompanion.speech.translation import JapaneseSpeechTranslator
 class SpeechClient:
     """识别和合成各自分流，千问、智谱与聊天服务的凭据不会混用。"""
 
-    def __init__(self,settings):
+    def __init__(self,settings,translation_source=None):
         self.settings = settings
         self.qwen = QwenSpeechClient(settings)
-        self.translator = JapaneseSpeechTranslator(settings)
+        # 日语配音的翻译跟随当前角色的聊天模型（由界面提供，计划书 v4 功能一）
+        self.translator = JapaneseSpeechTranslator(settings,source=translation_source)
         self.asr_provider = getattr(settings, 'asr_provider', 'zhipu')
 
     def ensure_recognition_ready(self):

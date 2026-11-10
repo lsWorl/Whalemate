@@ -34,7 +34,6 @@ class CharacterPack:
     order: int = 100
     theme: str = ''
     renderer: dict = field(default_factory=dict)
-    provider: dict = field(default_factory=dict)
     voice: dict = field(default_factory=dict)
     persona: dict | None = None
     lines: dict = field(default_factory=dict)
@@ -94,7 +93,7 @@ def load_pack(directory: Path) -> CharacterPack:
         if not isinstance(lines, dict): raise CharacterPackError(f'{lines_path} 必须是对象。')
     return CharacterPack(id=pack_id, name=name.strip(), root=Path(directory).resolve(), status=data.get('status', 'ready'),
         order=int(data.get('order', 100)), theme=data.get('theme', ''), renderer=renderer,
-        provider=data.get('provider') or {}, voice=data.get('voice') or {}, persona=persona, lines=lines)
+        voice=data.get('voice') or {}, persona=persona, lines=lines)
 
 
 def discover(root: Path = PACKS_DIR) -> tuple[list[CharacterPack], list[str]]:

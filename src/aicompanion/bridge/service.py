@@ -375,7 +375,10 @@ class BridgeService:
         """替她搜一次，返回只给她自己看的说明；有结果就在后台记进词库。出错当作没搜到。"""
         from aicompanion.community.lookup import Lookup
         try:
-            look = Lookup(self.database, self.controller.llm_client, web=self.web_search)
+            # 查梗后的第二次生成和搜索都按这个角色的设置取：分析用途的模型、角色的搜索服务（不看聊天主机名）
+            cid = self.controller.character.id
+            web = self.web_search or self.controller.search_factory(cid)()
+            look = Lookup(self.database, self.controller.client(cid, 'community'), web=web)
             look.background = self.lookup_background
             if not look.allowed(term, (name, self.controller.character.name)+self.HER_NAMES): return look.note(term, [], 'private')
             hits = look.find(term)
@@ -1046,6 +1049,8 @@ class BridgeService:
         every = int(self.database.get_setting('bridge_memory_every', DEFAULTS['bridge_memory_every']) or 0)
         if every <= 0 or memory.pending(character_id, channel) < every: return False
         if self.quota.check_silent('memory') == 'stop': return False
+        try: client = self.controller.client(character_id, 'memory')   # 在启动线程前取好，线程里不再读共享状态
+        except Exception: return False
         with REMEMBERING_LOCK:
             if channel in REMEMBERING: return False
             REMEMBERING.add(channel)
@@ -1054,7 +1059,7 @@ class BridgeService:
             try:
                 from aicompanion.usage.meter import using
                 with using('memory', character_id):
-                    memory.analyze(character_id, self.controller.llm_client, CancellationToken(), channel=channel)
+                    memory.analyze(character_id, client, CancellationToken(), channel=channel)
             except Exception:
                 pass   # 整理失败不影响聊天；下次够条数再试
             finally:

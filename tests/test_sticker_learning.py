@@ -283,7 +283,7 @@ class BridgeStickerTests(Base):
         class Pick(Model):
             def generate_reply_stream(self_, history, prompt, cancellation=None):
                 ids = re.findall(r'^(s\d+)｜', prompt, re.M); yield '收到'+(f'<sticker id="{ids[0]}"/>' if ids else '')
-        self.controller.llm_client = Pick()
+        self.controller.use_client(Pick())
         for _ in range(2):
             self.service.handle(dict(platform='qq', sender_id='10001', sender_name='爹', group_id='', text='好的',
                                      expression_version=1, bot_account_id='90009'))

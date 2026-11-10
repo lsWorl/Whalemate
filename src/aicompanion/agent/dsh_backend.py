@@ -25,7 +25,7 @@ from typing import Callable
 
 from aicompanion.agent.paths import protected_reason, task_folders
 
-DEFAULT_MODEL = 'deepseek-v4-flash'
+DEFAULT_MODEL = 'deepseek-flash'   # 只在测试里不传 target 时用
 MCP_PREFIX = 'mcp__aicompanion__'
 DISABLED_ROWS = ('tool-pwsh', 'tool-bash', 'persistent-pwsh', 'persistent-bash', 'tool-fs', 'tool-fs-search', 'tool-jobs',
                  'tool-workflow', 'ptc-runtime')
@@ -61,13 +61,22 @@ def pick_workspace(goal: str, default: str) -> Path:
     return path if path.is_dir() and not protected_reason(path.resolve()) else Path.home()
 
 
-def dsh_base_url(base_url: str) -> str | None:
-    """聊天用的是 OpenAI 兼容地址，DSH 走 Messages 接口：官方地址就交给 DSH 用默认值，自建代理原样传入。"""
-    from urllib.parse import urlparse
-    if not base_url: return None
-    host = (urlparse(base_url).hostname or '').lower()
-    if host == 'api.deepseek.com': return None
-    return base_url
+# 运行时需要的系统变量（Windows 进程、代理、编码）。其余一概不传：父进程里可能有各家的 API Key，
+# DSH 内置多家供应商路由，会读到它们（计划书 v4 硬底线：Harness 子进程只拿到本次选定的 Key）。
+ENV_KEEP = ('SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATH', 'PATHEXT', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'HOME',
+            'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432', 'COMMONPROGRAMFILES',
+            'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_IDENTIFIER', 'OS', 'USERNAME', 'USERDOMAIN',
+            'COMPUTERNAME', 'LANG', 'LC_ALL', 'TZ', 'PYTHONIOENCODING', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+            'http_proxy', 'https_proxy', 'no_proxy')
+
+
+def child_environment(selected: tuple, parent=None) -> dict:
+    """白名单里的系统变量 + 本次选定的凭据。大小写不敏感地匹配（Windows 环境变量不分大小写）。"""
+    parent = os.environ if parent is None else parent
+    keep = {name.upper() for name in ENV_KEEP}
+    env = {k: v for k, v in parent.items() if k.upper() in keep}
+    env.update(dict(selected))
+    return env
 
 
 @dataclass
@@ -177,13 +186,11 @@ class DshAgent:
         self.session_id = None; self.stopping = False; self.done = threading.Event()
 
     # ---- 运行时 -----------------------------------------------------------------
-    def _launch(self, api_key: str, base_url: str):
-        env = os.environ.copy()
+    def _launch(self, selected: tuple):
         home = dsh_home(); home.mkdir(parents=True, exist_ok=True)
         patch = home/'aicompanion.patch.yml'; patch.write_text(PATCH, encoding='utf-8')
+        env = child_environment(selected)
         env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
-        if api_key: env['DEEPSEEK_API_KEY'] = api_key
-        if dsh_base_url(base_url): env['DEEPSEEK_BASE_URL'] = dsh_base_url(base_url)
         if self.launcher: return self.launcher(env)
         from aicompanion.agent import sandbox
         from deepseek_harness_runtime import resolve_bundled_launch_args
@@ -197,12 +204,13 @@ class DshAgent:
             with sandbox.low_integrity(): return start()   # 运行时和它的子进程都是低完整性
         return start()
 
-    def _ensure(self, api_key: str, base_url: str) -> AcpConnection:
+    def _ensure(self, selected: tuple) -> AcpConnection:
+        """凭据或地址变了（换 Key、换路由）就重启运行时；进程启动时的环境变量之后改不了。"""
         with self.lock:
-            key = (api_key, base_url)
+            key = tuple(selected)
             if self.conn is not None and self.key == key and self.conn.proc.poll() is None: return self.conn
             self._close_locked()
-            conn = AcpConnection(self._launch(api_key, base_url))
+            conn = AcpConnection(self._launch(key))
             conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
             self.conn, self.key = conn, key
             return conn
@@ -240,8 +248,9 @@ class DshAgent:
         return None
 
     # ---- 跑一个任务 ----------------------------------------------------------------
-    def run(self, prompt: str, cwd: Path, model: str = DEFAULT_MODEL, api_key: str = '', base_url: str = '',
-            on_event: Callable[[str, dict], None] | None = None) -> DshResult:
+    def run(self, prompt: str, cwd: Path, target=None, on_event: Callable[[str, dict], None] | None = None) -> DshResult:
+        """target：providers.router.AgentTarget（路由、模型、只含选定凭据的环境变量）。测试可不传。"""
+        route, model, selected = (target.route, target.model_id, target.env) if target else ('deepseek-official', DEFAULT_MODEL, ())
         on_event = on_event or (lambda kind, data: None)
         self.stopping = False; self.done.clear(); self.session_id = None
         steps: list = []; text: list[str] = []; context = {'used': [], 'chars': 0, 'final_from': 0}; calls: dict = {}
@@ -267,16 +276,18 @@ class DshAgent:
 
         conn = None
         try:
-            conn = self._ensure(api_key, base_url)
+            conn = self._ensure(selected)
             conn.listeners.append(listen)
             session = conn.request('session/new', {'cwd': str(cwd), 'mcpServers': self.mcp_servers}, 60)
             self.session_id = session.get('sessionId')
             if not self.session_id: raise RuntimeError('DSH 没有返回会话')
-            wanted = json.dumps(['deepseek-official', model], separators=(',', ':'))
+            wanted = json.dumps([route, model], separators=(',', ':'))
             option = next((o for o in session.get('configOptions') or [] if o.get('id') == 'model'), None)
             if option and option.get('currentValue') != wanted and model:
                 try: conn.request('session/set_config_option', {'sessionId': self.session_id, 'configId': 'model', 'value': wanted}, 30)
-                except Exception: pass   # 模型名不认识时用 DSH 的默认模型
+                except Exception as error:
+                    # 不认识这个路由或模型时不退回 DSH 默认模型（那会用另一家的 Key 计费），直接报错
+                    raise RuntimeError(f'Harness 不支持 {route} / {model}，请在设置里换一个办事模型') from error
             if self.stopping: raise InterruptedError
             reply = conn.request('session/prompt', {'sessionId': self.session_id, 'prompt': [{'type': 'text', 'text': prompt}]}, PROMPT_TIMEOUT)
             reason = reply.get('stopReason') or 'end_turn'

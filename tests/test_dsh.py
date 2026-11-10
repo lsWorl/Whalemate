@@ -1,13 +1,16 @@
 """干活：DSH（ACP）后端用假运行时测，工具把关用临时文件夹测。不联网、不需要真的 DSH。"""
 import json
+import os
 from pathlib import Path
 import queue
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from aicompanion.agent import dsh_backend
 from aicompanion.agent.dsh_backend import DshAgent, pick_workspace
+from aicompanion.providers.router import AgentTarget
 from aicompanion.agent.tools_server import Task, ToolBox, is_read_only_command
 from aicompanion.agent.mcp_server import McpToolServer, tool_client
 
@@ -15,8 +18,8 @@ from aicompanion.agent.mcp_server import McpToolServer, tool_client
 class FakeRuntime:
     """假 dsh 运行时：收到 session/prompt 时按脚本发 session/update，再回 stopReason。"""
 
-    def __init__(self, script, stop_reason='end_turn', hang=False):
-        self.script = script; self.stop_reason = stop_reason; self.hang = hang
+    def __init__(self, script, stop_reason='end_turn', hang=False, reject_model=False):
+        self.script = script; self.stop_reason = stop_reason; self.hang = hang; self.reject_model = reject_model
         self.out = queue.Queue(); self.sent = []; self.alive = True; self.stdin = self; self.stdout = self; self.stderr = None
         self.pending_prompt = None
 
@@ -26,7 +29,9 @@ class FakeRuntime:
         method = message.get('method'); rid = message.get('id')
         if method == 'initialize': self._reply(rid, {'protocolVersion': 1})
         elif method == 'session/new': self._reply(rid, {'sessionId': 's1', 'configOptions': [{'id': 'model', 'currentValue': '["deepseek-official","deepseek-v4-flash"]'}]})
-        elif method == 'session/set_config_option': self._reply(rid, {})
+        elif method == 'session/set_config_option':
+            if self.reject_model: self.out.put(json.dumps({'jsonrpc': '2.0', 'id': rid, 'error': {'message': 'unknown model'}})+'\n')
+            else: self._reply(rid, {})
         elif method == 'session/prompt':
             for update in self.script:
                 self.out.put(json.dumps({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': 's1', 'update': update}})+'\n')
@@ -80,7 +85,8 @@ class AcpBackendTest(unittest.TestCase):
     def test_events_steps_usage(self):
         runtime = FakeRuntime(SCRIPT); agent = DshAgent(launcher=lambda env: runtime); events = []
         agent.mcp_servers = [{'type': 'http', 'name': 'aicompanion', 'url': 'http://127.0.0.1:1/mcp', 'headers': []}]
-        result = agent.run('做事', Path('.'), 'deepseek-v4-pro', 'key', '', lambda k, d: events.append((k, d)))
+        target = AgentTarget('deepseek-official', 'deepseek-v4-pro', (('DEEPSEEK_API_KEY', 'key'),), 'DeepSeek')
+        result = agent.run('做事', Path('.'), target, lambda k, d: events.append((k, d)))
         self.assertEqual(result.status, 'done'); self.assertEqual(result.text, '本鲸做完啦。')
         self.assertEqual([s[0] for s in result.steps], ['list_dir'])
         self.assertEqual((result.usage.prompt, result.usage.completion, result.usage.cached), (1000, 50, 800))
@@ -114,10 +120,32 @@ class AcpBackendTest(unittest.TestCase):
             self.assertIn(f'- id: {row}\n  disabled: true', dsh_backend.PATCH)
         self.assertIn('session-log-deepseek', dsh_backend.PATCH)
 
-    def test_base_url_and_problem(self):
-        self.assertIsNone(dsh_backend.dsh_base_url('https://api.deepseek.com'))
-        self.assertEqual(dsh_backend.dsh_base_url('https://proxy.example/anthropic'), 'https://proxy.example/anthropic')
+    def test_child_environment_only_carries_selected_key(self):
+        # 计划书 v4 硬底线：Harness 内置多家供应商路由，父进程里的其他 Key 一个都不能带进去
+        parent = {'PATH': '/bin', 'SystemRoot': 'C:\\Windows', 'OPENAI_API_KEY': 'o', 'MINIMAX_API_KEY': 'm',
+                  'ANTHROPIC_API_KEY': 'a', 'LLM_API_KEY': 'l', 'GITHUB_TOKEN': 'g', 'HTTPS_PROXY': 'http://proxy'}
+        env = dsh_backend.child_environment((('DEEPSEEK_API_KEY', 'd'),), parent)
+        self.assertEqual(env, {'PATH': '/bin', 'SystemRoot': 'C:\\Windows', 'HTTPS_PROXY': 'http://proxy', 'DEEPSEEK_API_KEY': 'd'})
         self.assertIsInstance(dsh_backend.problem(), str)
+
+    def test_launch_receives_only_selected_key_and_restarts_on_key_change(self):
+        launched = []
+        agent = DshAgent(launcher=lambda env: launched.append(env) or FakeRuntime(SCRIPT))
+        first = AgentTarget('minimax', 'MiniMax-M3', (('MINIMAX_API_KEY', 'one'),), 'MiniMax')
+        with patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'leak'}):
+            agent.run('x', Path('.'), first); agent.run('x', Path('.'), first)
+            agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-M3', (('MINIMAX_API_KEY', 'two'),), 'MiniMax'))
+        self.assertEqual(len(launched), 2)                                       # 同一把 Key 复用运行时，换 Key 重启
+        self.assertEqual([e['MINIMAX_API_KEY'] for e in launched], ['one', 'two'])
+        self.assertTrue(all('DEEPSEEK_API_KEY' not in e for e in launched))
+        agent.close()
+
+    def test_unknown_route_fails_instead_of_falling_back(self):
+        runtime = FakeRuntime(SCRIPT, reject_model=True); agent = DshAgent(launcher=lambda env: runtime)
+        result = agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-Unknown', (('MINIMAX_API_KEY', 'k'),), 'MiniMax'))
+        self.assertEqual(result.status, 'failed'); self.assertIn('不支持', result.text)
+        self.assertFalse(any(m.get('method') == 'session/prompt' for m in runtime.sent))   # 不会用默认模型照常干活
+        agent.close()
 
     def test_pick_workspace(self):
         with tempfile.TemporaryDirectory() as folder:

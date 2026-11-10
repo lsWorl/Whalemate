@@ -4,7 +4,6 @@ import re
 from threading import Lock
 
 from aicompanion.llm.base import ChatTurn
-from aicompanion.llm.factory import create_llm_client
 
 
 TRANSLATION_PROMPT = (
@@ -17,9 +16,12 @@ TRANSLATION_PROMPT = (
 
 
 class JapaneseSpeechTranslator:
-    def __init__(self, settings, llm_client=None):
+    def __init__(self, settings, llm_client=None, source=None):
+        """source：每次翻译时调用，返回 (客户端, 缓存范围)；没配置聊天模型时返回 (None, '')。
+        缓存范围包含角色和模型配置修订，切换角色或模型后不会命中旧口吻的译文。"""
         self.settings = settings
         self.client = llm_client
+        self.source = source
         # 缓存只存在内存中且有上限，不把额外的日语译文写进用户聊天数据库。
         self.cache = OrderedDict()
         self.lock = Lock()
@@ -29,21 +31,20 @@ class JapaneseSpeechTranslator:
         # 已有假名的日语台词不再往返翻译；仅汉字的短句仍交给翻译器判断。
         if re.search(r'[\u3041-\u3096\u30a1-\u30fa]', text):
             return text
-        cache_key = (text, role_style)
+        client, scope = (self.client, '') if self.client is not None else (self.source() if self.source else (None, ''))
+        if client is None:
+            raise RuntimeError('日语配音需要配置真实聊天 API（设置的“模型”页）；也可以选择中文朗读。')
+        cache_key = (scope, text, role_style)
         with self.lock:
             cached = self.cache.get(cache_key)
             if cached is not None:
                 self.cache.move_to_end(cache_key)
                 return cached
-            if self.client is None:
-                if self.settings.llm_provider == 'mock':
-                    raise RuntimeError('日语配音需要真实聊天 API；离线模式可选择中文朗读。')
-                self.client = create_llm_client(self.settings)
         parts = []
         prompt = TRANSLATION_PROMPT + ('\n日语口吻参考（不改变原文事实）：'+role_style if role_style else '')
         from aicompanion.usage.meter import using
         with using('voice'):
-            for token in self.client.generate_reply_stream([ChatTurn('user', text)], prompt, cancellation):
+            for token in client.generate_reply_stream([ChatTurn('user', text)], prompt, cancellation):
                 cancellation.check()
                 parts.append(token)
                 if sum(map(len, parts)) > 600:

@@ -123,19 +123,6 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(next(c for c in self.database.characters() if c.id == 'deepseek-whale').name, '小鲸')
         self.assertEqual(self.database.recent_messages(5, 'emilia')[0]['content'], 'hello')
 
-    def test_client_resolution(self):
-        default = object()
-        registry = CharacterRegistry(self.database, settings(), environ={})
-        client, label = registry.client_for('deepseek-whale', default)
-        self.assertIs(client, default); self.assertIn('DeepSeek', label)
-        client, label = registry.client_for('chatgpt-dragon', default)
-        self.assertIs(client, default); self.assertIn('未配置', label)
-        registry = CharacterRegistry(self.database, settings(), environ={'OPENAI_API_KEY': 'k', 'OPENAI_MODEL': 'm'})
-        client, label = registry.client_for('chatgpt-dragon', default)
-        self.assertIsNot(client, default); self.assertEqual(client.model, 'm')
-        self.assertIs(registry.client_for('chatgpt-dragon', default)[0], client)
-        mock = CharacterRegistry(self.database, settings(llm_provider='mock'), environ={'OPENAI_API_KEY': 'k', 'OPENAI_MODEL': 'm'})
-        self.assertIs(mock.client_for('chatgpt-dragon', default)[0], default)
 
 
 class StateMachineTests(unittest.TestCase):

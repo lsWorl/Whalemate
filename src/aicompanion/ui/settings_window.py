@@ -105,7 +105,7 @@ class SettingsWindow(QDialog):
         self.voice_hint=QLabel(''); self.voice_hint.setWordWrap(True); voice_form.addRow('',self.voice_hint)
         voice_form.addRow('',self.proactive); voice_form.addRow('',self.analysis)
         voice_form.addRow('免打扰开始（小时）',self.quiet_start); voice_form.addRow('免打扰结束（小时）',self.quiet_end)
-        voice_form.addRow('模型',QLabel(f'{settings.llm_provider} / {settings.llm_model}'))
+        voice_form.addRow('模型',QLabel(controller.router.label(controller.character.id)))
         voice_form.addRow('千问合成',QLabel(settings.qwen_tts_model))
         self.asr_model=QLabel(''); self.asr_model.setWordWrap(True)
         self.asr_provider.currentIndexChanged.connect(self._recognition_provider_changed)
@@ -161,7 +161,7 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.relationship_page import RelationshipPage   # T15
         self.relationship_page=RelationshipPage(self.database,controller.character.id,self); self.tabs.addTab(self.relationship_page,'人物关系')
         from aicompanion.ui.community_page import CommunityPage   # T18
-        self.community_page=CommunityPage(self.database,controller.character.id,self,getattr(controller,'llm_client',None)); self.tabs.addTab(self.community_page,'社区与黑话')
+        self.community_page=CommunityPage(self.database,controller.character.id,self); self.tabs.addTab(self.community_page,'社区与黑话')
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)

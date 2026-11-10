@@ -49,9 +49,10 @@ def searchable(term: str, *, speakers=0, names=()) -> bool:
 
 
 class WebSearch:
-    def __init__(self, database, client=None, opener=None, clock=time.time, today=None):
+    def __init__(self, database, client=None, opener=None, clock=time.time, today=None, target=None):
         from datetime import date
-        self.db, self.client, self.clock = database, client, clock
+        # target：按角色的搜索设置解析出的服务（计划书 v4 功能一）；没有时沿用旧规则，看聊天客户端的地址。
+        self.db, self.client, self.clock, self.target = database, client, clock, target
         self.today = today or date.today
         self.open = opener or build_opener(NoRedirect()).open
         self.timeout = 20       # 聊天里顺手搜一下时会调短，不让对方干等
@@ -60,10 +61,17 @@ class WebSearch:
     def enabled(self) -> bool:
         return bool(self.db.get_setting('community_web', True))
 
+    def _endpoint(self) -> tuple[str, str]:
+        if self.target is not None: return self.target.base_url, self.target.api_key
+        return str(getattr(self.client, 'base_url', '') or ''), str(getattr(self.client, 'api_key', '') or '')
+
     def backend(self) -> str:
-        base = str(getattr(self.client, 'base_url', '') or '')
+        if self.target is not None:
+            base, key = self._endpoint()
+            return 'deepseek' if self.target.backend == 'deepseek' and urlsplit(base).scheme == 'https' and key else 'wikipedia'
+        base, key = self._endpoint()
         parts = urlsplit(base)
-        return 'deepseek' if parts.scheme == 'https' and parts.hostname == 'api.deepseek.com' and getattr(self.client, 'api_key', '') else 'wikipedia'
+        return 'deepseek' if parts.scheme == 'https' and parts.hostname == 'api.deepseek.com' and key else 'wikipedia'
 
     def _budget(self, kind: str) -> bool:
         limit = int(self.db.get_setting(f'community_{kind}_daily', 30 if kind == 'search' else 10) or 0)
@@ -97,10 +105,11 @@ class WebSearch:
             return ''
 
     def _post(self, action: str, body: dict) -> Request:
-        base = str(self.client.base_url).rstrip('/')
+        base, key = self._endpoint()
+        base = base.rstrip('/')
         if not base.endswith('/v1'): base += '/v1'
         return Request(f'{base}/tools/{action}', data=json.dumps(body, ensure_ascii=False).encode(), method='POST',
-                       headers={'Authorization': f'Bearer {self.client.api_key}', 'Content-Type': 'application/json'})
+                       headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'})
 
     def _deepseek(self, query: str, count: int) -> list[Hit]:
         data = self._json(self._post('search', {'query': query, 'count': max(1, min(10, count)), 'need_content': False}))

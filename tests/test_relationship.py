@@ -388,7 +388,7 @@ class BehaviourTests(BridgeFixture):
         owner = self.rel.resolve(OWNER_DESKTOP, CID)
         calls = []
         real = RelationshipAnalyzer.maybe_run
-        def spy(analyzer, character_id, channel, client, background=True, trigger=None):
+        def spy(analyzer, character_id, channel, client, background=True, trigger=None, search=None):
             calls.append(trigger); return False
         RelationshipAnalyzer.maybe_run = spy
         try:

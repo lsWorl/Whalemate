@@ -107,10 +107,9 @@ def run(args, client=None):
             from dotenv import load_dotenv   # 只在用户显式指定时读取这份模型配置；不打印任何值
             load_dotenv(args.dotenv)
         from aicompanion.config import load_settings
-        from aicompanion.llm.factory import create_llm_client
+        from aicompanion.providers import real_chat_client
         settings = load_settings()
-        if settings.llm_provider == 'mock': raise SystemExit('需要真实模型；当前配置是 mock。')
-        client = create_llm_client(settings)
+        client, _ = real_chat_client(settings=settings)   # 需要真实模型；没在设置里配置时直接退出
     work = Path(args.out or ROOT/'output'/time.strftime('t20-social-eval-%Y%m%d-%H%M%S')).resolve()
     work.mkdir(parents=True, exist_ok=True)
     data = load_scenarios(args.scenarios); scenarios = data['scenarios']

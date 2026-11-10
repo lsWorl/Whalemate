@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
             from aicompanion.characters.registry import CharacterRegistry
             registry=CharacterRegistry(self.database,settings); registry.sync()
             controller.character=registry.active()
-        self.registry=registry; self.default_llm_client=controller.llm_client
+        self.registry=registry
         self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.renderer=None; self.model_label=''
         self.tray_hint_shown=False; self.first_token=set()
         # 台词标注：每轮回复一个解析器；开语音时动作挂在句子上，等那句开始播放再执行
@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
         self.call_active=False; self.call_epoch=0; self.asr_worker=None; self.memory_worker=None
         self.user_speaking=False; self.asr_failures=0
         self.last_interaction=monotonic(); self.first_history_id=None; self.mood='calm'
-        self.speech_client=SpeechClient(settings)
+        self.speech_client=SpeechClient(settings,translation_source=self._translation_client)
         self.speech=SpeechOutput(self.speech_client,self); self.microphone=self.qt_microphone=Microphone(self)
         # P4：外放打断。回声门控的耦合系数跨会话保存；Chromium 回声消除后端按需创建
         self.web_microphone=None; self.voice_stats={'barge_ins':0,'cancelled':0,'latencies':[]}
@@ -342,8 +342,9 @@ class MainWindow(QMainWindow):
 
     def _apply_identity(self):
         character=self.controller.character
-        client,label=self.registry.client_for(character.id,self.default_llm_client)
-        self.controller.llm_client=client; self.model_label=label; self.model_info.setText(label)
+        # 只更新显示；每轮生成时再按角色和用途取模型（计划书 v4 功能一），不改共享状态
+        label=self.controller.router.label(character.id)
+        self.model_label=label; self.model_info.setText(label)
         self.name_label.setText(character.name)
         self.vocab=Vocab.from_pack(self.registry.pack(character.id)); self.controller.vocabs[character.id]=self.vocab
         pack=self.registry.pack(character.id); self.interjections=interjection.load(pack.root if pack else None)
@@ -610,10 +611,11 @@ class MainWindow(QMainWindow):
         self._finish_exit_if_ready()
 
     def _analyze_memory(self):
-        if self.memory_worker or self.settings.llm_provider=='mock': return
-        if self.quota.check_silent('memory')=='stop': return
         character_id=self.controller.character.id
-        worker=TaskWorker(lambda token:self.controller.memory_service.analyze(character_id,self.controller.llm_client,token),self)
+        if self.memory_worker or not self.controller.router.ready('chat',character_id): return
+        if self.quota.check_silent('memory')=='stop': return
+        client=self.controller.client(character_id,'memory')   # 线程启动前取好，线程里不读共享状态
+        worker=TaskWorker(lambda token:self.controller.memory_service.analyze(character_id,client,token),self)
         self.memory_worker=worker; self.tasks.add(worker)
         worker.failed.connect(lambda error:None) # 后台分析失败不破坏主对话。
         worker.finished.connect(lambda w=worker:self._task_finished(w)); worker.start()
@@ -682,12 +684,20 @@ class MainWindow(QMainWindow):
         except Exception as error:   # 整理失败不影响聊天
             self._status('记忆整理失败：'+str(error))
 
+    def _translation_client(self):
+        """日语配音的翻译用当前角色的聊天模型；缓存范围含角色与模型配置修订。没配置时返回 (None, '')。"""
+        character_id=self.controller.character.id
+        router=self.controller.router
+        if not router.ready('chat',character_id): return None,''
+        client,resolved=router.client('chat',character_id,'translation')
+        return client,f'{character_id}|{resolved.model_id}|{resolved.config_revision}|{resolved.credential_revision}'
+
     def _maybe_generate_purposes(self):
         character_id=self.controller.character.id
         if self.purpose_worker or self.closing or not self.purposes.should_generate(character_id): return
-        if self.settings.llm_provider=='mock' or self.quota.check_silent('purpose')=='stop':
-            self.purposes.generate(character_id); return   # 离线或额度用完：用规则生成，不调用模型
-        client=self.controller.llm_client
+        if not self.controller.router.ready('chat',character_id) or self.quota.check_silent('purpose')=='stop':
+            self.purposes.generate(character_id); return   # 离线、没配模型或额度用完：用规则生成，不调用模型
+        client=self.controller.client(character_id,'purpose')
         worker=TaskWorker(lambda token:self.purposes.generate(character_id,client,token),self)
         self.purpose_worker=worker; self.tasks.add(worker)
         worker.failed.connect(lambda error:None)

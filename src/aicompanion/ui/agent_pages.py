@@ -21,7 +21,7 @@ class AgentPage(QWidget):
     def __init__(self, database, parent=None):
         super().__init__(parent)
         self.database = database
-        from aicompanion.agent.dsh_backend import DEFAULT_MODEL, dsh_home, problem
+        from aicompanion.agent.dsh_backend import dsh_home, problem
         layout = QVBoxLayout(self)
         status = problem()
         layout.addWidget(QLabel(('⚠️ '+status) if status else f'DeepSeek Harness 已安装。运行数据在 {dsh_home()}。'))
@@ -34,7 +34,7 @@ class AgentPage(QWidget):
         pick = QPushButton('选择…'); pick.clicked.connect(lambda: self._pick(self.workspace))
         row = QHBoxLayout(); row.addWidget(self.workspace, 1); row.addWidget(pick)
         form.addRow('默认工作区', row)
-        self.model = QLineEdit(database.get_setting('dsh_model', DEFAULT_MODEL)); form.addRow('干活用的模型', self.model)
+        form.addRow('干活用的模型', QLabel('在“模型”页的“办事”一项里选择'))
         self.blog = QLineEdit(database.get_setting('blog_root', '')); self.blog.setPlaceholderText(r'例如 D:\MyBlog（写博客时告诉她在哪）')
         pick_blog = QPushButton('选择…'); pick_blog.clicked.connect(lambda: self._pick(self.blog))
         blog_row = QHBoxLayout(); blog_row.addWidget(self.blog, 1); blog_row.addWidget(pick_blog)
@@ -73,7 +73,6 @@ class AgentPage(QWidget):
         self.database.set_setting('agent_enabled', self.enabled.isChecked())
         self.database.set_setting('agent_auto', self.auto.isChecked())
         self.database.set_setting('dsh_workspace', self.workspace.text().strip())
-        self.database.set_setting('dsh_model', self.model.text().strip())
         self.database.set_setting('blog_root', self.blog.text().strip())
         self.database.set_setting('trash_keep_days', self.keep_days.value())
         self.database.set_setting('trash_max_mb', self.max_mb.value())

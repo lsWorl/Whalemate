@@ -10,8 +10,11 @@ from aicompanion.services.emotion_service import EmotionService
 class ChatController:
     """纯业务流程可由桌面或后续安卓适配器调用，不依赖 Qt。"""
 
-    def __init__(self,database,memory_service,llm_client):
-        self.database,self.memory_service,self.llm_client = database,memory_service,llm_client
+    def __init__(self,database,memory_service,models):
+        """models：模型解析器（ModelRouter）。传入的是单个客户端时（测试、诊断脚本）包成 FixedRouter。"""
+        self.database,self.memory_service = database,memory_service
+        from aicompanion.providers.router import FixedRouter
+        self.router = models if hasattr(models,'resolve') else FixedRouter(database,models)
         self.character = database.characters()[0] if database.characters() else DEFAULT_CHARACTER
         self.context = ContextService(database,memory_service)
         self.emotions = EmotionService(database)
@@ -26,6 +29,23 @@ class ChatController:
         from aicompanion.relationship.analyzer import RelationshipAnalyzer
         self.relationships = RelationshipService(database)
         self.relationship_analyzer = RelationshipAnalyzer(database, self.relationships)
+
+    # ---- 模型 ---------------------------------------------------------------------------------
+    def client(self,character_id=None,purpose='companion'):
+        """这个角色、这个用途此刻该用的聊天客户端（计划书 v4 功能一）。
+        调用方拿到后自己保存，用它把这一轮说完；后台线程不要中途再来取。"""
+        return self.router.client('chat',character_id or self.character.id,purpose)[0]
+
+    def use_client(self,client,**options):
+        """测试与桌宠自检：所有能力都改用这个客户端（options 传给 FixedRouter，例如 vision_model）。"""
+        from aicompanion.providers.router import FixedRouter
+        self.router=FixedRouter(self.database,client,**options)
+
+    def search_factory(self,character_id):
+        """查梗 / 学梗用的搜索服务工厂：按这个角色的搜索设置，而不是聊天接口的主机名。"""
+        target=self.router.search_target(character_id)
+        from aicompanion.community.search import WebSearch
+        return lambda _client=None:WebSearch(self.database,target=target)
 
     def record_user_message(self,content,source='text',channel='desktop'):
         message_id = self.database.add_message('user',content,self.character.id,source=source,channel=channel)
@@ -78,8 +98,9 @@ class ChatController:
                                     set(vocab.expressions)|set(vocab.motions) if vocab else None)
             choices={c.asset_id:c for c in candidates}
             from aicompanion.usage.meter import using
+            client=self.client(character.id,'proactive' if proactive else ('qq' if channel.startswith('qq:') else purpose))
             with using(purpose,character.id,turn_id):
-                for token in self.llm_client.generate_reply_stream(history,prompt,cancellation):
+                for token in client.generate_reply_stream(history,prompt,cancellation):
                     cancellation.check()
                     clean=parser.feed(token)
                     if context.early_before and attachment is None and parser.selection and parser.selection[1]=='before_text':
@@ -164,7 +185,8 @@ class ChatController:
                     heated=kind in ('quarrel','insult')
             if status=='complete':
                 # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）
-                self.relationship_analyzer.maybe_run(character.id,channel,self.llm_client,trigger=2 if heated else None)
+                self.relationship_analyzer.maybe_run(character.id,channel,self.client(character.id,'relationship'),
+                                                     trigger=2 if heated else None,search=self.search_factory(character.id))
         except Exception:
             pass
 
