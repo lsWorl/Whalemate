@@ -1547,3 +1547,9 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 发现 1 项 P3：默认 980×700 设置窗口存在横向溢出，删除按钮要横向滚动才完整可见，左侧说明随后被截断；已有关系页最小宽度会撑宽滚动内容，建议统筹页面与日期行适配。未发现新的 P1 / P2，核心功能走查通过，P3 留作界面改进。
 - 仅追加记录和两张不含私人数据的设置截图，业务代码未改；沿用已通过的 963 项单测和 Windows Smoke，不重复全量。临时验收进程已关闭，合成数据与完整证据留在本机忽略目录。
 - 未验证：真实模型话术、真实 QQ 发送、连续多日真实使用及整个阶段的负责人长期体验；不写成这些项目均已通过。
+
+## 2026-11-12 清理过时文档（task/oss-docs-cleanup，Claude）
+
+- 做了什么：按负责人要求删除 `docs/project_plan.md`、`docs/project_plan_v2.md`、`docs/project_plan_v3.md`、`docs/tasks/T14-smart-expression-original-2026-11-08.md` 和 `docs/tasks/evidence/`（T14 评测证据 11 个文件）。`project_plan_v4.md`、`AGENTS.md`、`T14-smart-expression-design.md` 里的引用改为指向 git 历史（提交 `7ebc39c` 及之前）。本文件中较早的记录保留原样，其中提到的旧计划书同样可在该提交之前的历史中查看。
+- 怎么验证：只删文档、改引用，不涉及代码；检查仓库里的 Markdown、Python、JSON 和 bat 文件，除本文件的历史记录和已完成任务的说明外，没有其他地方引用被删的文件。
+- 没验证：没有运行回归（纯文档改动）。旧的自绘鲸娘美术不在这次范围内，随 #25（Aboutme 大肥鱼）一起处理。

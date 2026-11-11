@@ -5,7 +5,7 @@
 ## 项目一句话
 
 Windows 桌面常驻的 AI 桌宠（Python 3.14 + PySide6 + SQLite）。默认角色是 DeepSeek 的二创鲸娘；会动（分层网格骨骼）、会记（衰减记忆、心事）、会说（千问声线、语音打断）、能干活（DeepSeek Harness 负责想，桌宠自己的工具执行并把关）。
-计划书：`docs/project_plan_v4.md`（2026-11-10 起的开发依据；v3 保留为历史）；实际完成情况以 `docs/implementation_status.md` 为准。开发时优先参考现有成熟方案，见 v4 的“开发参考”一节。
+计划书：`docs/project_plan_v4.md`（2026-11-10 起的开发依据；v1～v3 已删除，见 git 历史）；实际完成情况以 `docs/implementation_status.md` 为准。开发时优先参考现有成熟方案，见 v4 的“开发参考”一节。
 
 ## 长期架构约束（2026-11-08 用户确认）
 
