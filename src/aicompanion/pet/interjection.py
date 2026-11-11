@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 import random
 
-STYLES = ('interjection', 'brief', 'full')   # 只说语气词 / 语气词 + 第一句短话 / 完整朗读
+STYLES = ('smart', 'interjection', 'brief', 'full')   # 智能朗读（默认，计划书 v4 功能八）/ 只说语气词 / 语气词 + 第一句短话 / 完整朗读
+DEFAULT_STYLE = 'smart'
 BRIEF_LIMIT = 30
 
 DEFAULT = {

@@ -62,11 +62,17 @@ class SettingsWindow(QDialog):
 
         # ---- 声音与通话 ---------------------------------------------------------------------
         self.provider=QComboBox()
-        for label,value in [('本地朗读（系统自带，不计费）','system'),('智谱语音','cloud'),('千问动漫声线','qwen'),('Breeze Blue（音色在“模型与 Key”页选）','breeze')]: self.provider.addItem(label,value)
-        self.provider.setCurrentIndex(max(0,self.provider.findData(self.database.get_setting('tts_provider',settings.tts_provider))))
+        for label,value in [('本地朗读（系统自带，不计费）','system'),('智谱语音','cloud'),('千问动漫声线','qwen'),('云端声线（鲸鲸默认：MiniMax 有感情的少女音；也可在“模型与 Key”页换 Breeze Blue）','breeze')]: self.provider.addItem(label,value)
+        # 记下打开时库里是否存过朗读方式：没存过且用户没改时保存不写入，否则“没选过”会被保存成“明确选了本地朗读”，
+        # 之后添加 MiniMax 账户也不会自动用上默认声线（Codex PR #41 审查 2）
+        self.stored_tts_provider=self.database.get_setting('tts_provider')
+        self.provider.setCurrentIndex(max(0,self.provider.findData(self.stored_tts_provider or settings.tts_provider)))
+        # 用户只要在窗口里动过朗读方式（哪怕最后又选回本地朗读），就是明确选择，保存时要落库（Codex PR #41 复核）
+        self.tts_provider_touched=False
         self.voice=QComboBox(); self.voice.setEditable(True)
         self._voice_provider_changed()
         self.provider.currentIndexChanged.connect(self._voice_provider_changed)
+        self.provider.currentIndexChanged.connect(self._tts_provider_touched)
         self.voice_style=QPlainTextEdit(self.database.get_setting(f'qwen_style:{cid}',DEFAULT_STYLE))
         self.voice_style.setMaximumHeight(74)
         self.voice_mood=QComboBox()
@@ -104,9 +110,11 @@ class SettingsWindow(QDialog):
         self.echo_backend.setCurrentIndex(max(0,self.echo_backend.findData(self.database.get_setting('echo_backend','qt'))))
         self.asr_provider.setCurrentIndex(max(0,self.asr_provider.findData(self.database.get_setting('asr_provider',settings.asr_provider))))
         self.speech_style=QComboBox()
-        for text,value in [('只说语气词（嘿嘿、诶？），文字看气泡','interjection'),('语气词 + 第一句短话','brief'),('完整朗读每一句','full')]: self.speech_style.addItem(text,value)
-        self.speech_style.setCurrentIndex(max(0,self.speech_style.findData(self.database.get_setting('speech_style','interjection'))))
-        voice_page=Page('声音与通话','朗读默认关闭：在聊天面板点“朗读”打开；点“通话”后按住收音键（默认右 Ctrl）和她说话。')
+        for text,value in [('智能朗读：短回复全念，长回复挑重点分段念（默认）','smart'),('只说语气词（嘿嘿、诶？），文字看气泡','interjection'),
+                           ('语气词 + 第一句短话','brief'),('完整朗读每一句','full')]: self.speech_style.addItem(text,value)
+        from aicompanion.pet.interjection import DEFAULT_STYLE as DEFAULT_SPEECH_STYLE   # 不和千问语气的 DEFAULT_STYLE 重名
+        self.speech_style.setCurrentIndex(max(0,self.speech_style.findData(self.database.get_setting('speech_style',DEFAULT_SPEECH_STYLE))))
+        voice_page=Page('声音与通话','她默认会把回复念出来（智能朗读：长回复只念重点）；不想听就点聊天面板上的“朗读”关掉。点“通话”后按住收音键（默认右 Ctrl）和她说话。')
         speak=QFormLayout(); speak.addRow('说多少',self.speech_style); speak.addRow('朗读方式',self.provider); speak.addRow('声线',self.voice)
         speak.addRow('配音语言',self.speech_language)
         tryit=QHBoxLayout(); tryit.addWidget(preview); tryit.addWidget(self.preview_status,1); speak.addRow('',tryit)
@@ -279,9 +287,9 @@ class SettingsWindow(QDialog):
         except Exception: target,problem=None,''
         if not target and (not problem or problem.startswith('还没有配置')): problem='还没有选办事模型（可选，在“模型与 Key”页的“办事”里选）'
         row('办事',target is not None,('办事模型：'+target.label) if target else problem,'models')
-        providers={'system':'本地朗读','cloud':'智谱语音','qwen':'千问动漫声线','breeze':'Breeze Blue'}
+        providers={'system':'本地朗读','cloud':'智谱语音','qwen':'千问动漫声线','breeze':'云端声线'}
         tts=self.database.get_setting('tts_provider',self.settings.tts_provider)
-        row('声音',True,f'朗读方式：{providers.get(tts,tts)}；在聊天面板点“朗读”打开','voice')
+        row('声音',True,f'朗读方式：{providers.get(tts,tts)}；默认开着，聊天面板上的“朗读”可以关掉','voice')
         from aicompanion.bridge.service import setting as bridge_setting
         bridge=bool(bridge_setting(self.database,'bridge_enabled'))
         row('QQ',bridge,'QQ 桥接已打开' if bridge else '没有接 QQ（可选）','platforms')
@@ -301,6 +309,8 @@ class SettingsWindow(QDialog):
         path,_=QFileDialog.getOpenFileName(self,'选择背景图','', '图片 (*.png *.jpg *.jpeg *.webp)')
         if path: self.panel_background.setText(path)
 
+    def _tts_provider_touched(self,*args): self.tts_provider_touched=True
+
     def _voice_provider_changed(self,*args):
         self.voice.clear()
         if self.provider.currentData()=='qwen':
@@ -311,17 +321,24 @@ class SettingsWindow(QDialog):
             self.voice.addItem('灵希：可爱甜美','longanlingxi')
             self.voice.addItem('风悦：自然亲切','longanfengyue')
         elif self.provider.currentData()=='breeze':
-            # 音色在“模型与 Key”页的“语音合成”里按角色设置，这里只显示当前生效的
-            target=self.controller.router.tts_target(self.controller.character.id)
-            current=target.cache_id if target else ''
-            self.voice.addItem(target.label if target else '未配置：请到“模型与 Key”页设置音色',current)
+            # 音色在“模型与 Key”页的“语音合成”里按角色设置；没设置时用角色自己的默认声线（MiniMax），可以在这里从候选里换
+            cid=self.controller.character.id
+            target=self.controller.router.tts_target(cid)
+            from aicompanion.domain.voice_profile import profile_for
+            profile=profile_for(cid)
+            if target and target.label.endswith('（默认声线）') and profile:
+                for voice,label in profile.minimax_candidates: self.voice.addItem(label,'choice:'+voice)
+                current='choice:'+target.voice
+            else:
+                current=target.cache_id if target else ''
+                self.voice.addItem(target.label if target else '未配置：在“模型与 Key”页添加 MiniMax 账户（鲸鲸默认声线）或设置 Breeze Blue 音色',current)
         else:
             current=self.controller.character.voice or self.database.get_setting('tts_voice','tongtong')
             self.voice.addItem('彤彤','tongtong')
         index=self.voice.findData(current)
         if index>=0: self.voice.setCurrentIndex(index)
         else: self.voice.setEditText(current)
-        self.voice.setEnabled(self.provider.currentData() not in ('system','breeze'))
+        self.voice.setEnabled(self.provider.currentData()!='system' and (self.provider.currentData()!='breeze' or str(current).startswith('choice:')))
 
     def _recognition_provider_changed(self,*args):
         provider=self.asr_provider.currentData()
@@ -342,10 +359,25 @@ class SettingsWindow(QDialog):
             return self.voice.itemData(index)
         return self.voice.currentText().strip()
 
+    def _voice_choice(self):
+        """界面上选中的默认声线候选音色 ID（choice:<音色 ID>）；不是候选时返回 None。"""
+        value=str(self.voice.currentData() or '') if self.provider.currentData()=='breeze' else ''
+        return value[len('choice:'):] if value.startswith('choice:') else None
+
+    def _save_voice_choice(self,cid):
+        """默认声线的候选音色存成 voice_choice:<角色>，路由按它选 MiniMax 音色。只在点“保存”时调用。"""
+        choice=self._voice_choice()
+        if choice is not None: self.database.set_setting(f'voice_choice:{cid}',choice)
+
     def preview_voice(self):
         if not self.speech_output: return
         speech=self.speech_output; speech.stop(); speech.enabled=True
         speech.provider=self.provider.currentData(); speech.voice=self.selected_voice()
+        # 试听当前选中的候选音色：临时取一份合成配置交给这一句，不写数据库；点“取消”后仍是原来的音色（Codex PR #41 审查 3）
+        target=None
+        if speech.provider=='breeze':
+            target=self.controller.router.tts_target(self.controller.character.id,voice_choice=self._voice_choice())
+            if target: speech.voice=target.cache_id
         speech.language=self.speech_language.currentData()
         speech.role_style=self.japanese_style.toPlainText()
         mood=self.voice_mood.currentData()
@@ -353,7 +385,7 @@ class SettingsWindow(QDialog):
         speech.style=self.voice_style.toPlainText()
         # 系统朗读可能同步触发开始信号，先显示准备状态，避免覆盖正在试听的提示。
         self.preview_status.setText('正在准备试听，云端合成会产生少量用量。')
-        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex)
+        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex,target=target)
 
     def _preview_started(self,active):
         if active: self.preview_status.setText('正在试听')
@@ -432,12 +464,16 @@ class SettingsWindow(QDialog):
         self.database.update_character(character); self.controller.character=character
         if self.provider.currentData()=='qwen':
             self.database.set_setting(f'qwen_voice:{character.id}',self.selected_voice())
+        self._save_voice_choice(character.id)
         self.database.set_setting(f'qwen_style:{character.id}',self.voice_style.toPlainText())
         self.database.set_setting(f'qwen_mood:{character.id}',self.voice_mood.currentData())
         self.database.set_setting(f'speech_language:{character.id}',self.speech_language.currentData())
         self.database.set_setting(f'avatar_mode:{character.id}',self.avatar_mode.currentData())
         self.database.set_setting(f'japanese_style:{character.id}',self.japanese_style.toPlainText())
-        for key,value in [('tts_provider',self.provider.currentData()),('input_device',self.input.currentData()),
+        tts_provider=self.provider.currentData()
+        if self.stored_tts_provider is not None or self.tts_provider_touched:
+            self.database.set_setting('tts_provider',tts_provider)
+        for key,value in [('input_device',self.input.currentData()),
                           ('asr_provider',self.asr_provider.currentData()),('voice_mode',self.voice_mode.currentData()),
                           ('speech_style',self.speech_style.currentData()),
                           ('panel_background',self.panel_background.text().strip()),('panel_background_opacity',self.panel_opacity.value()/100),
