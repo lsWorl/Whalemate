@@ -5,7 +5,6 @@ Key 输入框始终遮蔽；保存后只显示“已加密保存 / 未设置”�
 """
 from __future__ import annotations
 
-from uuid import uuid4
 
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
@@ -114,7 +113,7 @@ class ModelPage(QWidget):
             box = QComboBox(); self.pickers[cap] = box; c.addRow(CAPABILITY_LABELS[cap], box)
             box.currentIndexChanged.connect(lambda *_, cap=cap: self._auto_save(cap))
             if cap == 'agent':
-                hint = QLabel('办事只列出 Harness 支持的模型。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
+                hint = QLabel('办事只列出已经接通的模型（目前只有 DeepSeek；MiniMax 办事还在接入）。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
                               '只想给某个角色换，请先把上面的“设置范围”切到那个角色再选。')
                 hint.setWordWrap(True); hint.setStyleSheet('color: gray'); c.addRow('', hint)
         self.voice = QLineEdit(); self.voice.setPlaceholderText('Breeze Blue 音色 ID，例如 voc_8rsb3nhb7645')
@@ -293,11 +292,10 @@ class ModelPage(QWidget):
             import io, wave
             with wave.open(io.BytesIO(audio)) as w: seconds = w.getnframes() / w.getframerate()
             self.status.setText(f'语音合成正常：{seconds:.1f} 秒音频')
-            if self.speech_output is not None and cid == self.current:
-                # 用正式的播放链路试听当前角色的声音
-                target = self.router.tts_target(cid)
-                speech = self.speech_output; speech.stop(); speech.provider = 'breeze'; speech.voice = target.cache_id if target else ''
-                speech.enabled = True; speech.enqueue('你好，这是声音测试。', uuid4().hex)
+            if self.speech_output is not None:
+                # 把刚合成的这份音频交给正式播放链路，不再合成第二次（Codex 审计 R6）
+                try: self.speech_output.play_audio('你好，这是声音测试。', audio)
+                except Exception as error: self.status.setText(f'语音合成正常，但播放失败：{error}')
         self.run(lambda token: self.admin.test_tts(cid, token), done, lambda error: self.status.setText('语音测试失败：' + error))
 
     def _run_in_background(self, function, on_success, on_failure):

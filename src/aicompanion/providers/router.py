@@ -26,13 +26,15 @@ AGENT_ROUTES = {
     'minimax': ('MINIMAX_API_KEY', None),
     'minimax-cn': ('MINIMAX_CN_API_KEY', None),
 }
-# 各路由在锁定的 DSH 0.2.1rc2 内置模型目录里实际有的模型（2026-11-11 从安装包读取）。
-# 不在目录里的模型（例如 MiniMax-M3.1-Flash）Harness 会拒绝，所以办事只能选这些。
+# 各路由现在能办事的模型。DeepSeek 两个模型已用锁定的 DSH 0.2.1rc2 验证。
+# MiniMax：模型虽在 Harness 目录里，但 llm-pi-ai 的 MiniMax 路由要在补丁里显式配置才会激活，现在设置 Key 也会被拒绝为
+# unknown model option（Codex 审计 R3，实测）。接入并验证前先不开放，界面和提示里写明“暂未接通”。
 AGENT_MODELS = {
     'deepseek-official': ('deepseek-flash', 'deepseek-v4-pro'),
-    'minimax': ('MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
-    'minimax-cn': ('MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
+    'minimax': (),
+    'minimax-cn': (),
 }
+AGENT_NOT_READY = '办事暂时只能用 DeepSeek 的模型（MiniMax 办事还在接入，暂未接通）'
 OFFLINE_LABEL = '离线模拟模型'
 
 
@@ -216,6 +218,8 @@ class ModelRouter:
             if not model or not provider:
                 return f'办事模型（{scope}）已被删除。请到{where}重新选择“办事”。'
             supported = AGENT_MODELS.get(binding.route, ())
+            if not supported:
+                return f'{AGENT_NOT_READY}。现在的办事模型 {model.model_id}（{scope}）用不了，请到{where}“办事”改选 DeepSeek 的模型。'
             if model.model_id not in supported:
                 return (f'办事模型 {model.model_id}（{scope}）Harness 不支持。请到{where}“办事”改选：'
                         + '、'.join(supported) + '。')

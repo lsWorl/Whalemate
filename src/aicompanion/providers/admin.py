@@ -4,17 +4,41 @@
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import replace
+from urllib.parse import urlsplit
 
 from aicompanion.providers.models import (CAPABILITIES, MODEL_PRESETS, PROVIDER_PRESETS, Binding, ModelProfile,
                                           ProviderProfile)
-from aicompanion.providers.router import AGENT_MODELS, AGENT_ROUTES, ModelRouter
+from aicompanion.providers.router import AGENT_MODELS, AGENT_NOT_READY, AGENT_ROUTES, ModelRouter
 
 CAPABILITY_LABELS = {'chat': '聊天', 'vision': '识图', 'search': '搜索', 'agent': '办事', 'tts': '语音合成'}
 # 每种能力需要模型具备的标记；搜索不选模型，选的是账户
 REQUIRES = {'chat': 'chat', 'vision': 'vision', 'agent': 'tools', 'tts': 'tts'}
 TTS_LANGUAGES = (('', '自动判断'), ('zh', '中文'), ('en', '英文'), ('ja', '日语'))
+
+
+def check_base_url(url: str) -> str:
+    """服务地址的统一校验（新增和修改账户共用）。Key 会随请求发往这个地址，所以：
+    - 必须是 https；本机调试可用 http，但主机必须真的是回环 IP（127.x.x.x 或 ::1）——
+      不能用前缀判断，否则 http://127.0.0.1.attacker.invalid 也会被放行（Codex 审计 R5）；
+    - 不能带用户名密码、查询参数或片段。"""
+    url = str(url or '').strip()
+    try:
+        parts = urlsplit(url); host = parts.hostname or ''; parts.port
+    except ValueError as error:
+        raise ValueError('地址格式不对') from error
+    if parts.username is not None or parts.password is not None or '@' in parts.netloc:
+        raise ValueError('地址里不能带用户名或密码')
+    if parts.query or parts.fragment: raise ValueError('地址里不能带 ? 或 # 后面的部分')
+    if not host: raise ValueError('地址缺少主机名')
+    if parts.scheme == 'https': return url.rstrip('/')
+    if parts.scheme == 'http':
+        try: loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError: loopback = False
+        if loopback: return url.rstrip('/')
+    raise ValueError('地址必须是 https://（本机调试可用 http://127.0.0.1）')
 
 
 def agent_route(provider: ProviderProfile) -> str | None:
@@ -48,12 +72,9 @@ class ModelAdmin:
         if label: profile = replace(profile, label=label)
         if base_url: profile = replace(profile, base_url=base_url)
         if region: profile = replace(profile, region=region)
-        if not profile.base_url.startswith('https://') and not profile.base_url.startswith('http://127.0.0.1'):
-            raise ValueError('地址必须是 https://（本机调试可用 http://127.0.0.1）')
-        if '@' in profile.base_url.split('//', 1)[-1].split('/', 1)[0]:
-            raise ValueError('地址里不能带用户名或密码')
+        profile = replace(profile, base_url=check_base_url(profile.base_url))
         profile = replace(profile, id=self._new_id(preset or profile.label), label=self._unique_label(profile.label))
-        credential = self._credential(profile.id, key, key_env)
+        credential = self._credential(profile.id, key, key_env, profile.base_url)
         if not credential:
             raise ValueError('请填写 Key，或填写保存 Key 的环境变量名')
         profile = replace(profile, credential=credential)
@@ -71,12 +92,16 @@ class ModelAdmin:
         config = self.store.load()
         profile = config.providers[provider_id]
         if label and label != profile.label: profile = replace(profile, label=self._unique_label(label, provider_id))
+        moved = False
         if base_url:
-            if not base_url.startswith('https://') and not base_url.startswith('http://127.0.0.1'):
-                raise ValueError('地址必须是 https://')
+            base_url = check_base_url(base_url)
+            moved = base_url != profile.base_url.rstrip('/')
             profile = replace(profile, base_url=base_url)
+        # 先改凭据记录、再保存新地址：Key 登记到新地址后，拿着旧地址快照的请求就取不到它（Codex 审计 R1）
         if key or key_env:
-            profile = replace(profile, credential=self._credential(provider_id, key, key_env))
+            profile = replace(profile, credential=self._credential(provider_id, key, key_env, profile.base_url))
+        elif moved and profile.credential.startswith('stored:'):
+            self.credentials.bind(profile.credential.split(':', 1)[1], profile.base_url)
         self.store.put_provider(profile)
         return profile
 
@@ -156,6 +181,7 @@ class ModelAdmin:
         if capability == 'agent':
             route = agent_route(config.providers[profile.provider])
             if route not in AGENT_ROUTES: raise ValueError('这个服务的办事（Harness）支持还没有验证')
+            if not AGENT_MODELS.get(route): raise ValueError(AGENT_NOT_READY)
             if profile.model_id not in AGENT_MODELS[route]:
                 raise ValueError(f'Harness 不支持用 {profile.model_id} 办事，可选：' + '、'.join(AGENT_MODELS[route]))
             extra['route'] = route
@@ -184,9 +210,9 @@ class ModelAdmin:
         return BreezeSpeechClient().synthesize(target, '你好，这是声音测试。', cancellation or CancellationToken())
 
     # ---- 内部 --------------------------------------------------------------------------------
-    def _credential(self, provider_id: str, key: str, key_env: str) -> str:
+    def _credential(self, provider_id: str, key: str, key_env: str, endpoint: str = '') -> str:
         if key.strip():
-            return self.credentials.save(provider_id, key)
+            return self.credentials.save(provider_id, key, endpoint=endpoint or None)
         if key_env.strip():
             name = key_env.strip()
             if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', name): raise ValueError('环境变量名不合法')

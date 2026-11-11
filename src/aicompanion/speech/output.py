@@ -11,6 +11,7 @@ import math
 from time import monotonic
 import re
 import wave
+from uuid import uuid4
 from PySide6.QtCore import QObject, Signal, QBuffer, QIODevice, QUrl, QLocale, QTimer
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtTextToSpeech import QTextToSpeech
@@ -57,8 +58,22 @@ def spoken_text(text):
 
 
 class SentenceBuffer:
+    """把流式文字切成句子交给朗读。记住是否在 ``` 代码块里：模型逐 token 输出时，开围栏、代码行、闭围栏会被切成
+    不同的句子，单句去看认不出代码（Codex 审计 R7），所以跨句保持状态——代码块整体读成一次“一段代码”。
+    只影响朗读，气泡和历史仍是原文。"""
     def __init__(self):
         self.text = ''
+        self.in_code = False
+
+    def _speakable(self, sentence):
+        parts = sentence.split('```')
+        kept = []
+        for index, part in enumerate(parts):
+            if index:   # 每遇到一个围栏切换一次
+                self.in_code = not self.in_code
+                if self.in_code: kept.append('一段代码。')
+            if not self.in_code and part.strip(): kept.append(part)
+        return ''.join(kept).strip()
 
     def feed(self, text, final=False):
         self.text += text
@@ -73,6 +88,7 @@ class SentenceBuffer:
             if not length:
                 break
             sentence, self.text = self.text[:length].strip(), self.text[length:]
+            sentence = self._speakable(sentence) if sentence else ''
             if sentence:
                 result.append(sentence)
         return result
@@ -192,6 +208,14 @@ class SpeechOutput(QObject):
                                         self.role_style, target))
         self._next()
         self._prefetch()
+
+    def play_audio(self, text, raw, provider='breeze'):
+        """直接播放一段已经合成好的 WAV（模型页的“试听”用）：走正式的播放链路（字幕、口型、可打断），
+        不再请求合成，也不改朗读开关和朗读方式（Codex 审计 R6）。"""
+        self.stop()
+        job = SpeechSegment(text, uuid4().hex, provider, '', self.mood, self.style, self.language, self.role_style)
+        job.requested, job.audio = True, validate_wav(raw)
+        self.queue.append(job); self._next()
 
     def _next(self):
         if self.busy or not self.queue:
