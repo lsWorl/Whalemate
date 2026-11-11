@@ -232,7 +232,7 @@ class ProactiveScheduler:
 
     def _share(self, character_id, system_idle) -> Outreach | None:
         """她自己看到的有意思的事（功能四）。他在电脑前时才来说，不然说了也是对着空屋子。"""
-        if self.life is None or system_idle >= PRESENT_SECONDS: return None
+        if self.life is None or system_idle >= PRESENT_SECONDS or not self.life.enabled(): return None   # 总开关也管分享（Codex PR #48）
         row = self.life.shareable(character_id)
         if row is None: return None
         return Outreach('share', f"share:{row['id']}", self.life.intent(row), {'activity': dict(row)})

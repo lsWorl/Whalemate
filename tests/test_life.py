@@ -114,6 +114,36 @@ class ShareLoopTests(LifeTests):
         self.assertEqual(events[0]['kind'], 'praised'); self.assertIn('接住', events[0]['reason'])
 
 
+class SwitchOffTests(ShareLoopTests):
+    """Codex PR #48 第 1 项：关掉“自己的生活”以后，挑选和发送都停；搜索或思考进行中关掉也不拿来说。历史保留。"""
+
+    def test_switch_off_stops_sharing_but_keeps_history(self):
+        aid = self.life.run(CID, FakeSearch([HIT]), FakeClient('{"thought":"好玩","worth":0.9}'))
+        scheduler = ProactiveScheduler(self.db, clock=lambda: self.now[0], rng=lambda: 0.0, life=self.life)
+        self.db.set_setting('life_enabled', False)
+        self.assertIsNone(self.life.shareable(CID)); self.assertIsNone(scheduler.next(CID, 30, 9999))
+        self.assertEqual(self.row(aid)['status'], 'done')                               # 历史还在
+        self.db.set_setting('life_enabled', True)
+        self.assertEqual(scheduler.next(CID, 30, 9999).source, 'share')
+
+    def test_switch_off_while_running(self):
+        db = self.db
+        class OffDuringSearch(FakeSearch):
+            def search(self, query, count=5):
+                db.set_setting('life_enabled', False); return super().search(query, count)
+        client = FakeClient('{"thought":"好玩","worth":0.9}')
+        aid = self.life.run(CID, OffDuringSearch([HIT]), client)
+        self.assertEqual(self.row(aid)['status'], 'cancelled'); self.assertEqual(client.prompts, [])   # 不再花模型调用
+        self.db.set_setting('life_enabled', True)
+        class OffDuringThinking(FakeClient):
+            def generate_reply_stream(self, history, prompt, cancellation=None):
+                db.set_setting('life_enabled', False); yield '{"thought":"好玩","worth":0.9}'
+        other = Hit('另一篇', 'https://example.org/other', HIT.summary, '科普网')
+        aid = self.life.run(CID, FakeSearch([other]), OffDuringThinking(''))
+        self.assertEqual(self.row(aid)['status'], 'quiet')
+        self.db.set_setting('life_enabled', True); self.assertIsNone(self.life.shareable(CID))       # 重新打开也不拿来说
+
+
 try:
     from PySide6.QtWidgets import QApplication
 except ImportError:   # pragma: no cover

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QSpinBox, QVBoxLay
 
 from aicompanion.brain.life import DAILY, LifeService
 
-STATUS = {'doing': '正在看', 'done': '看完了', 'failed': '没看成', 'shared': '跟你说了'}
+STATUS = {'doing': '正在看', 'done': '看完了', 'failed': '没看成', 'shared': '跟你说了', 'cancelled': '你关掉了，没看完', 'quiet': '看完了（你关掉了，不拿来说）'}
 RESPONSE = {'answered': '你回了', 'ignored': '你没回'}
 
 

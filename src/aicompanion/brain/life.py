@@ -89,10 +89,14 @@ class LifeService:
             hit = self._pick_hit(character_id, search.search(query, count=5) if search else [])
             if hit is None:
                 self._finish(activity, 'failed'); return activity                 # 没看到东西：不算做过，也不编
+            if not self.enabled():                                                 # 搜的时候你关掉了：不再花一次模型调用
+                self._finish(activity, 'cancelled'); return activity
             view = self._view(character_id, character_name, interest, hit, client, cancellation)
+            # 想的时候你关掉了：看到的东西照样记下（历史），但标成 quiet，以后重新打开也不拿来分享
+            status = 'done' if self.enabled() else 'quiet'
             with self.db.transaction() as c:
-                c.execute("UPDATE activities SET status='done', title=?, url=?, site=?, excerpt=?, thought=?, opener=?, worth=?, finished_at=? WHERE id=?",
-                          (hit.title[:80], hit.url[:500], (hit.site or '')[:30], hit.summary[:900], view['thought'], view['opener'],
+                c.execute("UPDATE activities SET status=?, title=?, url=?, site=?, excerpt=?, thought=?, opener=?, worth=?, finished_at=? WHERE id=?",
+                          (status, hit.title[:80], hit.url[:500], (hit.site or '')[:30], hit.summary[:900], view['thought'], view['opener'],
                            view['worth'], self.clock(), activity))
             return activity
         except Exception:
@@ -139,6 +143,8 @@ class LifeService:
 
     # ---- 分享 --------------------------------------------------------------------------------
     def shareable(self, character_id: str):
+        """有没有值得现在来说的。关掉“自己的生活”以后一件都不挑（活动历史照样保留；Codex PR #48 第 1 项）。"""
+        if not self.enabled(): return None
         with self.db.transaction() as c:
             return c.execute("SELECT * FROM activities WHERE character_id=? AND status='done' AND worth>=? AND finished_at>=? "
                              'ORDER BY worth DESC, finished_at DESC LIMIT 1', (character_id, SHARE_AT, self.clock()-SHARE_WITHIN)).fetchone()
