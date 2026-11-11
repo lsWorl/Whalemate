@@ -157,14 +157,14 @@ class ModelRouter:
             if not binding: continue
             if binding.backend == 'deepseek' and binding.provider in config.providers:
                 provider = config.providers[binding.provider]
-                return SearchTarget('deepseek', provider.base_url, self.credentials.get(provider.credential))
+                return SearchTarget('deepseek', provider.base_url, self.credentials.get(provider.credential, endpoint=provider.base_url))
             if binding.backend == 'wikipedia':
                 return SearchTarget('wikipedia')
         # 旧规则（community/search.py 的 backend）：聊天走 DeepSeek 官方 https 且有 Key 才用 DeepSeek 搜索
         if self.offline: return SearchTarget('wikipedia')
         chat = self.resolve('chat', character_id, 'community')
         parts = urlsplit(chat.base_url)
-        key = self.credentials.get(chat.credential)
+        key = self.credentials.get(chat.credential, chat.credential_revision, chat.base_url)
         if parts.scheme == 'https' and parts.hostname == 'api.deepseek.com' and key:
             return SearchTarget('deepseek', chat.base_url, key)
         return SearchTarget('wikipedia')
@@ -177,7 +177,7 @@ class ModelRouter:
                 model = config.models[binding.model]
                 provider = config.providers.get(model.provider)
                 if not provider: continue
-                key = self.credentials.get(provider.credential)
+                key = self.credentials.get(provider.credential, endpoint=provider.base_url)
                 if not key: return None
                 key_env, base_env = AGENT_ROUTES[binding.route]
                 env = [(key_env, key)]
@@ -211,8 +211,11 @@ class ModelRouter:
         with self._lock:
             client = self._clients.get(key)
             if client is None:
-                secret = self.credentials.get(resolved.credential)
+                # 只取和快照同一修订的 Key：快照之后账户换了地址和 Key，这次请求作废，不拼成“旧地址 + 新 Key”
+                secret = self.credentials.get(resolved.credential, resolved.credential_revision, resolved.base_url)
                 if not secret:
+                    if self.credentials.get(resolved.credential):
+                        raise ModelUnavailable(f'{resolved.label} 的 Key 刚刚更换，这次请求已取消，请再试一次。')
                     raise ModelUnavailable(f'{resolved.label} 的 Key 还没有设置或已失效，请到设置里填写。')
                 factory = self._factory or _openai_client
                 client = factory(resolved, secret)
