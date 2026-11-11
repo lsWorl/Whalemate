@@ -32,7 +32,12 @@ class Base(unittest.TestCase):
         self.db = Database(self.path); self.db.initialize()
         self.recall = RecallService(self.db)
 
-    def tearDown(self): self.tmp.cleanup()
+    def tearDown(self):
+        # 生成一轮后，关系分析会在后台线程里写库；等它写完再删临时目录（否则偶发“目录不为空”）
+        import threading
+        for thread in threading.enumerate():
+            if thread.name.startswith('aicompanion-'): thread.join(5)
+        self.tmp.cleanup()
 
     def fill_chat(self, n, channel='desktop', text='闲聊第{}句'):
         return [self.db.add_message('user' if i % 2 == 0 else 'assistant', text.format(i), CID, channel=channel) for i in range(n)]

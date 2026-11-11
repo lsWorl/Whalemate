@@ -5,6 +5,7 @@
 4. 确定超过已知模型上限的请求不发送；输出预留吃光窗口时不退回默认预算。
 全部用临时库、合成数据和离线模型替身。"""
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,7 +35,12 @@ class Base(unittest.TestCase):
         self.db = Database(Path(self.tmp.name)/'f.sqlite3'); self.db.initialize()
         self.character = next(c for c in self.db.characters() if c.id == CID)
 
-    def tearDown(self): self.tmp.cleanup()
+    def tearDown(self):
+        # 生成一轮后，关系分析会在后台线程里写库；等它写完再删临时目录（否则偶发“目录不为空”）
+        import threading
+        for thread in threading.enumerate():
+            if thread.name.startswith('aicompanion-'): thread.join(5)
+        self.tmp.cleanup()
 
     def controller(self, model):
         controller = ChatController(self.db, MemoryService(self.db), model)
@@ -70,6 +76,37 @@ class PrivacyTests(Base):
         with self.db.transaction() as c:                                                    # 删除之后的新任务照常能想起
             c.execute("UPDATE agent_runs SET started_at=datetime('now','localtime','+1 minute') WHERE id=?", (later,))
         self.assertEqual([r['id'] for r, _ in recall.recall(CID, '上次整理目录的事情').tasks], [later])
+
+
+class SecondRoundTests(Base):
+    """Codex PR #38 第二轮（fbd5dfd）。"""
+
+    def test_mood_reason_respects_deletion(self):
+        # 生产链路：任务完成写 achievement 原因（同 AgentSession._done）→ 删除相关事实 → 私下提示词不再带出原因里的代号
+        run = self.db.add_agent_run(CID, '整理目录：内部计划ZX842的资料'); self.db.finish_agent_run(run, 'done', '好了')
+        MoodService(self.db).event(CID, 'achievement', reason='一起办完了：整理目录：内部计划ZX842')
+        context = ContextService(self.db, MemoryService(self.db))
+        self.assertIn('ZX842', context.build(self.character, '上次整理目录的事情')[1])
+        mid = self.db.add_message('user', '内部计划ZX842要保密', CID)
+        self.db.upsert_memory('内部计划ZX842要保密', CID, fact_key='synthetic:zx842', source_ids=(mid,))
+        self.db.delete_memory(next(r for r in self.db.memory_card(CID) if r['fact_key'] == 'synthetic:zx842')['id'], CID)
+        _, prompt = context.build(self.character, '上次整理目录的事情')
+        self.assertNotIn('ZX842', prompt)
+        self.assertIn('有点开心（因为一起做成了事）', prompt)                                  # 心情强度不清空，原因只说笼统的
+        self.assertEqual(MoodService(self.db).recent(CID)[0]['reason'], '一起办完了：整理目录：内部计划ZX842')   # 事件记录保留
+        MoodService(self.db, clock=lambda: time.time()+2).event(CID, 'praised', reason='夸她画得好', extra={'happy': 40})   # 删除之后的新原因照常具体
+        self.assertIn('夸她画得好', context.build(self.character, '在吗')[1])
+
+    def test_neutral_judgement_blocks_fallback(self):
+        model = Model(); controller = self.controller(model)
+        for n in range(4):
+            controller.record_user_message('你不是笨蛋')
+            model.reply = '<mind at="me" voice="own" tone="neutral" toward="0" feel="平静"/>嗯，我知道'
+            list(controller.generate(f'n{n}', self.character, CancellationToken(), '你不是笨蛋'))
+        mood = MoodService(self.db).current(CID)
+        self.assertEqual(mood.levels.get('angry', 0), 0); self.assertEqual(MoodService(self.db).recent(CID), [])
+        self.assertEqual(MoodService(self.db).on_mind(CID, {'tone': 'neutral', 'toward': 0}), 'neutral')
+        self.assertIsNone(MoodService(self.db).on_mind(CID, {'intent': '乐意', 'willing': 0.8}))   # 只表态不评判：仍走兜底
 
 
 class FallbackTests(Base):

@@ -71,12 +71,25 @@ class MoodService:
         label = mood.label()
         if label == 'calm': return ''
         since = self.clock()-24*3600
+        forgotten = self._deleted_at(character_id)
         for event in self.recent(character_id, 30):
             if event['at'] < since: break
             if EVENTS.get(event['kind'], {}).get(label, 0) > 0 or (event['kind'] == 'reunion' and label == 'sad'):
-                if public: return event['label']
+                # 用户删过记忆以后，删除之前写下的具体原因不再给模型（可能正好提到被删的事）；
+                # 只说笼统的事件类型。事件本身留作记录，心情强度不变（Codex PR #38 第二轮第 1 项）
+                if public or (forgotten is not None and event['at'] < forgotten+1): return event['label']   # 同一秒内也算删除前（文本只精确到秒）
                 return event['reason'] or event['label']
         return ''
+
+    def _deleted_at(self, character_id: str) -> float | None:
+        """最近一次删除记忆的时间（秒）。memory_tombstones.deleted_at 是 SQLite 的 UTC 时间文本。"""
+        try:
+            with self.db.transaction() as c:
+                row = c.execute("SELECT CAST(strftime('%s', MAX(deleted_at)) AS REAL) FROM memory_tombstones WHERE character_id=?",
+                                (character_id,)).fetchone()
+            return float(row[0]) if row and row[0] is not None else None
+        except Exception:
+            return None
 
     def prompt(self, character_id: str, public: bool = False) -> str:
         mood = self.current(character_id)
@@ -140,7 +153,8 @@ class MoodService:
 
     def on_mind(self, character_id: str, mind: dict, channel: str = 'desktop') -> str | None:
         """她这一轮的 <mind/> → 心情事件。返回记下的事件类型；明确判断“不是冲她”（转述、在说别人）返回 'skip'；
-        没有可用的判断返回 None（这时才用用词兜底）。"""
+        有判断但判断是中性（例如 tone=neutral toward=0 feel=平静）返回 'neutral'——这也是有效判断，不再走用词兜底
+        （Codex PR #38 第二轮第 2 项）；mind 里根本没有对这句话的判断（只写了 intent / lookup 之类）才返回 None。"""
         if not mind: return None
         at, voice, tone = mind.get('at') or '', mind.get('voice') or '', mind.get('tone') or ''
         toward, feel = mind.get('toward'), str(mind.get('feel') or '')[:20]
@@ -153,7 +167,9 @@ class MoodService:
         elif toward is not None and toward >= 1:
             kind = 'affection' if re.search(r'害羞|撒娇|喜欢|心动|甜', feel) else 'praised'; strength = toward/2
         elif re.search(r'委屈|难过|失落', feel): kind = 'ignored'
-        if kind is None: return None
+        if kind is None:
+            judged = any(mind.get(k) not in (None, '') for k in ('at', 'voice', 'tone', 'toward', 'feel'))
+            return 'neutral' if judged else None
         self.event(character_id, kind, reason=feel, scale=min(1.5, max(0.3, strength))*scale, channel=channel)
         return kind
 

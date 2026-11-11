@@ -14,18 +14,19 @@ class MoodCard(QWidget):
         super().__init__(parent)
         self.service = MoodService(database, clock=clock); self.cid = character_id; self.clock = clock
         box = QVBoxLayout(self); box.setContentsMargins(0, 0, 0, 0)
-        self.summary = QLabel(); self.summary.setWordWrap(True); box.addWidget(self.summary)
+        # 按钮放在最上面靠左：设置窗口较窄、整页因下面的关系表格变宽时，也不用横向滚动才能看到（Codex PR #38 第二轮）
+        top = QHBoxLayout()
+        self.soothe_button = QPushButton('哄好她'); self.soothe_button.setToolTip('委屈和生气马上清零（开心、撒娇不变）')
+        self.soothe_button.clicked.connect(self.soothe)
+        refresh = QPushButton('刷新'); refresh.clicked.connect(self.refresh)
+        self.summary = QLabel(); self.summary.setWordWrap(True)
+        top.addWidget(self.soothe_button); top.addWidget(refresh); top.addWidget(self.summary, 1); box.addLayout(top)
         grid = QGridLayout(); self.bars = {}
         for row, mood in enumerate(MOODS):
             bar = QProgressBar(); bar.setRange(0, 100); bar.setTextVisible(False); bar.setFixedHeight(8)
             grid.addWidget(QLabel(LABELS[mood]), row, 0); grid.addWidget(bar, row, 1); self.bars[mood] = bar
         box.addLayout(grid)
         self.events = QLabel(); self.events.setObjectName('Hint'); self.events.setWordWrap(True); box.addWidget(self.events)
-        row = QHBoxLayout(); row.addStretch(1)
-        refresh = QPushButton('刷新'); refresh.clicked.connect(self.refresh); row.addWidget(refresh)
-        self.soothe_button = QPushButton('哄好她'); self.soothe_button.setToolTip('委屈和生气马上清零（开心、撒娇不变）')
-        self.soothe_button.clicked.connect(self.soothe); row.addWidget(self.soothe_button)
-        box.addLayout(row)
         self.refresh()
 
     def refresh(self):
