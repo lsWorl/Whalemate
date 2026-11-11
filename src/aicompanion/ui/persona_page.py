@@ -25,6 +25,7 @@ class PersonaEditor(QWidget):
         self.service.ensure(controller.character, pack_persona)
         self.run = run or self._run_in_background; self.workers = set()
         self.current_id = None; self._loading = False; self.dirty = False
+        self.preview_seq = 0   # 每次预览、每次换人格都加一；回来的结果对不上就丢掉
         box = QVBoxLayout(self); box.setContentsMargins(0, 0, 0, 0); box.setSpacing(8)
 
         # ---- 选择与管理 ----
@@ -157,6 +158,9 @@ class PersonaEditor(QWidget):
         persona = self.service.get(persona_id) if persona_id else None
         if persona is None: return
         self._loading = True
+        if persona.id != self.current_id:
+            # 换了人格：上一个人格的预览不再算数（Codex PR #35 复审建议），还在路上的那次也作废
+            self.preview_seq += 1; self.preview_text.setText('')
         self.current_id = persona.id
         self.title.setText(persona.title); self.description.setPlainText(persona.description)
         self.style.setPlainText(persona.speaking_style); self.background.setPlainText(persona.background)
@@ -311,10 +315,13 @@ class PersonaEditor(QWidget):
         if state == 'stop': self.preview_text.setText('现在没法预览：'+note); return
         try: client = self.controller.client(self.cid, 'companion')
         except Exception as error: self.preview_text.setText('现在没法预览：'+str(error)); return
-        self.preview_text.setText('她在想怎么回…')
+        self.preview_seq += 1; seq = self.preview_seq; title = draft.title
+        self.preview_text.setText(f'“{title}”在想怎么回…')
+        def show(text):
+            if seq == self.preview_seq: self.preview_text.setText(text)   # 期间换了人格或又点了预览：旧结果不显示
         self.run(lambda token: ''.join(client.generate_reply_stream([ChatTurn('user', ask)], prompt, token or CancellationToken())).strip(),
-                 lambda text: self.preview_text.setText(f'{name}：{text[:400]}'),
-                 lambda error: self.preview_text.setText('预览失败：'+str(error)[:200]))
+                 lambda text: show(f'{name}（{title}）：{text[:400]}'),
+                 lambda error: show('预览失败：'+str(error)[:200]))
 
     # ---- 内部 ----
     def _is_active(self, persona_id) -> bool:

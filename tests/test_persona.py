@@ -319,6 +319,29 @@ class EditorTests(PersonaBase):
         finally:
             editor.deleteLater()
 
+    def test_preview_is_labeled_and_cleared_when_persona_changes(self):
+        # Codex PR #35 复审建议：换人格后旧预览要清掉；预览标明是哪个人格；换人格前发出、换人格后才回来的结果不显示
+        pending = []
+        client = SimpleNamespace(generate_reply_stream=lambda history, prompt, token: iter(['哼']))
+        editor, _ = self.editor(client)
+        try:
+            first = editor.current_id; title = editor.title.text()
+            editor.preview()
+            self.assertIn(f'（{title}）：哼', editor.preview_text.text())
+            editor.new()                                                                         # 换到另一个人格
+            self.assertEqual(editor.preview_text.text(), '')
+            editor.run = lambda function, ok, fail: pending.append((function, ok))              # 改成异步：结果晚点才回来
+            editor.preview()
+            self.assertIn('在想怎么回', editor.preview_text.text())
+            editor.picker.setCurrentIndex(editor.picker.findData(first))                         # 结果回来前又换回去
+            function, ok = pending.pop(); ok(function(None))
+            self.assertEqual(editor.current_id, first); self.assertEqual(editor.preview_text.text(), '')   # 迟到的结果被丢掉
+            editor.run = lambda function, ok, fail: ok(function(None)); editor.preview()           # 同一个人格保存后预览保留
+            text = editor.preview_text.text(); editor.title.setText(title+'2'); editor.title.textEdited.emit(title+'2'); editor.save()
+            self.assertEqual(editor.preview_text.text(), text)
+        finally:
+            editor.deleteLater()
+
     def test_preview_respects_daily_quota(self):
         # Codex PR #35 R1：预览也是聊天请求，额度到限就不发
         calls = []
