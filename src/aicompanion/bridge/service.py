@@ -200,7 +200,7 @@ class BridgeService:
 
     def called_by_name(self, text: str) -> bool:
         """群里没 @ 她，但提到了她的名字 / 外号：当作在叫她。"""
-        names = {self.controller.character.name, '鲸娘', '大肥鱼'}
+        names = {self.controller.character.name, '鲸鲸', '鲸娘', '大肥鱼'}
         return any(n and n in text for n in names)
 
     # ---- 连发合并（负责人 2026-11-09 20:05 同意：对方连着发好几条时，等他停下再一起回一次） --------------------------
@@ -233,7 +233,7 @@ class BridgeService:
     # 交给同一个大脑判断"是不是在跟我说"，是就接，不是就【不说】；而不是只有被 @ 才开口。
     ATTENTION = 180          # 她在群里说完话后，留意多久（秒）
     ADDRESSED_GAP = 5        # 同一个群两次"是不是在跟我说"的判断至少隔几秒（省模型调用）
-    ABOUT_HER = re.compile(r'你|她|本鲸|鲸娘|[Aa][Ii]|机器人|[Bb]ot')
+    ABOUT_HER = re.compile(r'你|她|本鲸|鲸鲸|鲸娘|[Aa][Ii]|机器人|[Bb]ot')
 
     def note_partner(self, channel: str, stable: str) -> None:
         """记下她在这个群刚和谁说过话（最近 3 分钟内的才算"正在聊"）。"""
@@ -267,7 +267,7 @@ class BridgeService:
         return len(senders) >= 2 or bool(rows and rows[-1]['sender'] and rows[-1]['sender'] != stable)
 
     # ---- T18：是不是在说她、什么意思（线索给同一个大脑，结论由她在 <mind at voice tone> 里给） -------------------------
-    HER_NAMES = ('鲸娘', '本鲸')
+    HER_NAMES = ('鲸鲸', '鲸娘', '本鲸')
 
     def intent_brief(self, mode, person, text: str, payload: dict, called: bool) -> str:
         try:
