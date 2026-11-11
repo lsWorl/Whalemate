@@ -115,6 +115,7 @@ class LibraryPage(QWidget):
         if row['review_status']!='approved':return '许可待确认'
         if not row['enabled']:return '停用'+('（不适合发）' if m.get('suitable') is False else '')
         if m.get('analysis')=='pending':return '可用 · 识别含义中'
+        if m.get('analysis')=='failed':return '可用 · 含义没识别出来（可点“重新识别含义”）'
         return '可用'
     def selected_ids(self):
         rows=sorted({i.row() for i in self.table.selectedIndexes()})
@@ -156,6 +157,7 @@ class LibraryPage(QWidget):
         text=f"已{'启用' if enabled else '停用'} {len(ids)-pending} 张"
         if pending and enabled:text+=f"；{pending} 张许可待确认，在“来源”里选一项后才会使用"
         self.status.setText(text)
+        if enabled:self.analyze_soon()   # 重新启用的图如果还在等识别含义，接着识别
     def set_license(self):
         ids=self.selected_ids()
         if not ids:self.status.setText('先在表格里选中图片');return
@@ -169,6 +171,7 @@ class LibraryPage(QWidget):
         self.refresh();self.keep_selection(ids)
         self.status.setText(f"已把 {len(ids)-len(failed)} 张设为“{LICENSE_LABELS.get(license,license)}”"
                             +(f"；{len(failed)} 张没改：{failed[0]}" if failed else ''))
+        self.analyze_soon()   # 确认来源后可用的图，如果还在等识别含义，接着识别
     def save_meaning(self):
         aid=self.selected()
         if not aid:self.status.setText('选中一张图再改含义');return
@@ -177,12 +180,17 @@ class LibraryPage(QWidget):
             self.catalog.annotate(aid,{'semantic':text[:160]});self.status.setText('已保存含义；以后自动识别不会覆盖')
         else:
             self.queue_analysis([aid]);self.status.setText('含义已清空，会重新自动识别')
-        self.refresh();self.keep_selection([aid]);self.analyze_soon()
+        self.refresh();self.keep_selection([aid]);self.explain_if_blocked()
+    def explain_if_blocked(self):
+        """开始识别；现在不能识别（额度、识图没配好等）就把原因接在状态后面，不让图一声不吭地停在“识别含义中”。"""
+        if self.analyze_soon() or self.analyzer is not None:return
+        reason=self.blocker()
+        if reason:self.status.setText(self.status.text()+'；暂未开始：'+reason)
     def reanalyze(self):
         ids=self.selected_ids()
         if not ids:self.status.setText('先在表格里选中图片');return
         self.queue_analysis(ids);self.refresh();self.keep_selection(ids)
-        self.status.setText(f'{len(ids)} 张已排队重新识别含义');self.analyze_soon()
+        self.status.setText(f'{len(ids)} 张已排队重新识别含义');self.explain_if_blocked()
     def queue_analysis(self,ids):
         """排进自动识别：清掉用户手改标记，识别结果写回含义。"""
         import json as _json
@@ -199,22 +207,58 @@ class LibraryPage(QWidget):
         from aicompanion.bridge.media import QQMedia
         return QQMedia(self.catalog.db,self.controller)
     def analysis_hint(self):
+        reason=self.blocker()
+        if reason:return reason
+        return '后台识别中' if self.analyzer is not None else '稍后自动识别'
+    def blocker(self):
+        """等识别含义的图现在为什么不能识别；能识别时返回空。
+        实机反馈（2026-11-11）：点“重新识别含义”后一直显示“识别含义中”，原来额度用完、识图出错都没有任何提示。"""
         media=self.media()
         if media is None:return '打开设置窗口时自动识别'
-        if not media.vision_ready():return '在“模型”页选好识图模型后自动识别，现在先按分类名使用'
-        return '后台识别中' if self.analyzer is not None else '稍后自动识别'
+        if not media.vision_ready():return '在“模型”页选好识图模型（并打开识图）后自动识别，现在先按分类名使用'
+        if self.quota_stopped(self.catalog.db):return '今天的金额额度已用完，明天或在“用量”页调高额度后继续识别'
+        from aicompanion.expression.collect import StickerCollector
+        collector=StickerCollector(self.catalog.db,self.catalog)
+        limit=collector.analysis_daily()
+        if collector.analysis_count_today()>=limit:
+            return f'今天已识别 {collector.analysis_count_today()} 张，到了“每天最多分析 {limit} 张”的上限；明天或调高上限后继续'
+        if self.analyzer is None and not collector.pending(1):
+            waiting=[r for r in self.catalog.rows() if r['metadata'].get('analysis')=='pending']
+            if waiting and all(r['review_status']!='approved' or not r['enabled'] for r in waiting):
+                return '等识别的图是停用或许可待确认的，启用 / 确认来源后才识别'
+            if waiting and not collector.enabled() and all(r['metadata'].get('collected') for r in waiting if r['enabled']):
+                return '“收集 QQ 表情包”已关闭，收集来的图暂不识别'
+            if waiting:return '另一处（QQ 服务或之前打开的图库页）正在识别，稍后刷新查看'
+        return ''
+    @staticmethod
+    def quota_stopped(database):
+        """金额额度是否已到上限。识图费用记在 qq 用途上，和 QQ 后台分析用同一个检查（Codex 审计 PR #31 R2）。"""
+        from aicompanion.usage.meter import Quota
+        try:return Quota(database).check_silent('qq')=='stop'
+        except Exception:return True   # 查不了额度时宁可不调用模型
     def analyze_soon(self):
-        """后台识别几张等识别含义的图；识完一批再接下一批，直到没有或当天额度用完。"""
+        """后台识别几张等识别含义的图；识完一批再接下一批，直到没有、当天次数用完或金额额度到限（队列保留，下次再接着识别）。"""
         media=self.media()
         if media is None or self.analyzer is not None or not media.vision_ready():return False
         from aicompanion.expression.collect import StickerCollector
         collector=StickerCollector(self.catalog.db,self.catalog)
-        if not collector.pending(1):return False
-        # 线程挂在主窗口上（和导入一样）：关掉设置窗口时这一批照常识别完，不会因为页面销毁而中断崩溃
-        worker=self.start_worker(lambda token:collector.analyze_pending(media.analyze_sticker,limit=self.ANALYZE_BATCH,
-                                                                        alive=lambda:not token.event.is_set()))
+        if not collector.pending(1) or self.quota_stopped(self.catalog.db):return False
+        if collector.analysis_count_today()>=collector.analysis_daily():return False   # 当天张数已满：不开线程，原因由 blocker 显示
+        # 线程挂在主窗口上（和导入一样）：关掉设置窗口时这一批照常识别完，不会因为页面销毁而中断崩溃。
+        # 同一张图不会被重开的页面或 QQ 服务再交给模型一次：collector 在分析层按素材领取（R3）。
+        # 页面关掉后 worker 还在跑：每张开始前的检查不碰页面对象，只用数据库
+        database,stopped=self.catalog.db,self.quota_stopped
+        # Codex 复审 R5：每张开始前也复核识图是否仍可用（中途关了识图、或首张被接口拒收图片后标为不支持），
+        # 不可用就结束本批、保留 pending，不预留次数也不记失败；media 是捕获的对象，不碰已关闭的页面
+        def alive(token):
+            return not token.event.is_set() and not stopped(database) and media.vision_ready()
+        def run(token):
+            collector.analyze_pending(media.analyze_sticker,limit=self.ANALYZE_BATCH,alive=lambda:alive(token))
+            return collector.last
+        worker=self.start_worker(run)
         self.analyzer=worker
-        worker.succeeded.connect(self.analyzed);worker.finished.connect(self.analysis_finished);worker.start()
+        worker.succeeded.connect(self.analyzed);worker.failed.connect(self.analysis_failed)
+        worker.finished.connect(self.analysis_finished);worker.start()
         return True
     def start_worker(self,fn):
         owner=self.window().parentWidget()
@@ -223,9 +267,21 @@ class LibraryPage(QWidget):
             owner.tasks.add(worker);worker.finished.connect(lambda:owner._task_finished(worker))
         else:worker.finished.connect(worker.deleteLater)
         return worker
-    def analyzed(self,count):
-        self._progress=bool(count);self.refresh()
-        if count:self.status.setText(f'已自动识别 {count} 张图的含义')
+    def analyzed(self,last):
+        """一批识别结束：说清识别成功几张、失败几张、为什么停下（失败只显示状态码 / 异常类型，不显示错误正文）。"""
+        last=last if isinstance(last,dict) else {}
+        self._progress=bool(last.get('done'));self.refresh()
+        parts=[]
+        if last.get('ok'):parts.append(f"已识别 {last['ok']} 张图的含义")
+        if last.get('failed'):
+            error=(self.catalog.db.get_setting('sticker_analysis_error',{}) or {}).get('reason','')
+            parts.append(f"{last['failed']} 张这次没识别出来"+(f"：{error}" if error else '')+'（每张最多试 2 次，之后可点“重新识别含义”）')
+        if last.get('stop'):
+            reason=self.blocker()
+            if reason:parts.append('已暂停：'+reason)
+        if parts:self.status.setText('；'.join(parts))
+    def analysis_failed(self,error):
+        self.status.setText('自动识别出错：'+str(error)[:300])
     def analysis_finished(self):
         self.analyzer=None
         # 这一批识别出了东西才接着下一批；额度用完或识图失败（一张都没处理）就停，等下次刷新或打开设置

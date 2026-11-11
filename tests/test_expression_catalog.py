@@ -29,6 +29,26 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.cat.review(aid,author='x',source='x',license='unknown')
         self.cat.review(aid,**{k:self.meta[k] for k in ('author','source','license')})
         self.assertEqual(self.cat.resolve(aid)[0],png())
+    def test_legacy_pack_record_keeps_provenance_and_meaning(self):
+        # Codex 审计 PR #31 R1：旧版 import_pack 导入的记录没有 from_pack，扫描迁移不能把它当成来源不明的自己的图，
+        # 原作者、来源、清单写明的含义都要保留；只有旧版扫描登记的“许可未知、原作者来源都空”的图才转为自己的图。
+        import hashlib,shutil
+        memes=self.library/'memes';(memes/'imported').mkdir(parents=True);(memes/'happy').mkdir()
+        data=png(0xff445566);target=memes/'imported'/(hashlib.sha256(data).hexdigest()+'.png');target.write_bytes(data)
+        legacy=dict(author='合成原作者',source='https://example.invalid/original',license='unknown',
+                    semantic='清单明确指定的含义',category='imported',character_id='deepseek-whale')   # 旧版 import_image 写入的样子
+        pack,_=self.cat.register(target,self.library,legacy)
+        scanned=memes/'happy'/'b.png';scanned.write_bytes(png(0xff778899))
+        old_scan,_=self.cat.register(scanned,self.library,dict(semantic='happy',category='happy'))   # 旧版扫描：无许可、无标记
+        self.assertEqual(self.cat.get(old_scan)['review_status'],'pending_review')
+        self.cat.scan()
+        row=self.cat.get(pack);m=row['metadata']
+        self.assertEqual((row['review_status'],row['enabled']),('pending_review',0))
+        self.assertEqual((m['license'],m['author'],m['source'],m['semantic']),
+                         ('unknown','合成原作者','https://example.invalid/original','清单明确指定的含义'))
+        self.assertNotIn('analysis',m)                                   # 清单写明的含义不交给识图
+        row=self.cat.get(old_scan);m=row['metadata']
+        self.assertEqual((row['review_status'],row['enabled'],m['license'],m.get('analysis')),('approved',1,'user-owned','pending'))
     def test_review_keeps_user_disable_choice(self):
         # Codex 审计（ee541d0）：审核 / 保存许可和启用是两件事，已审核但被停用的图保存后仍然停用
         aid,_=self.cat.register(self.path,self.library)
