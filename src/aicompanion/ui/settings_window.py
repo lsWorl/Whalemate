@@ -73,9 +73,10 @@ class SettingsWindow(QDialog):
         self.asr_provider.addItem('本地识别（SenseVoice，离线、不计费）','local')
         # P4：收音方式、收音键、外放回声处理
         from aicompanion.voice.hotkey import KEYS, DEFAULT_KEY
+        from aicompanion.voice.turns import DEFAULT_MODE
         self.voice_mode=QComboBox()
-        for text,value in [('持续通话：直接开口，可随时打断她','continuous'),('按住说话：按住收音键说，松开发送','ptt'),('切换式：按一下开始，再按一下结束','toggle')]: self.voice_mode.addItem(text,value)
-        self.voice_mode.setCurrentIndex(max(0,self.voice_mode.findData(self.database.get_setting('voice_mode','continuous'))))
+        for text,value in [('按住说话：按住收音键说，松开发送（默认）','ptt'),('切换式：按一下开始，再按一下结束','toggle'),('持续通话：直接开口，可随时打断她','continuous')]: self.voice_mode.addItem(text,value)
+        self.voice_mode.setCurrentIndex(max(0,self.voice_mode.findData(self.database.get_setting('voice_mode',DEFAULT_MODE))))
         self.ptt_key=QComboBox()
         for value,(text,_code) in KEYS.items(): self.ptt_key.addItem(text,value)
         self.ptt_key.setCurrentIndex(max(0,self.ptt_key.findData(self.database.get_setting('ptt_key',DEFAULT_KEY))))
@@ -149,6 +150,14 @@ class SettingsWindow(QDialog):
         update=QPushButton('更新选中'); update.clicked.connect(lambda:self.save_reminder(True)); rb.addWidget(update)
         remove=QPushButton('删除选中'); remove.clicked.connect(self.delete_reminder); rb.addWidget(remove); rl.addLayout(rb)
         self.tabs.addTab(reminders,'提醒'); self.refresh_reminders()
+        # 计划书 v4 功能一：模型页。只有正式的模型解析器才有配置可改（测试里的固定客户端没有）
+        self.model_page=None
+        if hasattr(controller.router,'store'):
+            from aicompanion.ui.model_page import ModelPage
+            self.model_page=ModelPage(controller.router,[(c.id,c.name) for c in self.database.characters()],controller.character.id,
+                                      self,speech_output=speech_output)
+            model_scroll=QScrollArea(); model_scroll.setWidgetResizable(True); model_scroll.setWidget(self.model_page)
+            self.tabs.insertTab(1,model_scroll,'模型')
         from aicompanion.ui.agent_pages import AgentPage, AuditPage, UsagePage
         self.agent_page=AgentPage(self.database); self.tabs.addTab(self.agent_page,'干活')
         self.audit_page=AuditPage(self.database); self.tabs.addTab(self.audit_page,'操作日志')
@@ -162,7 +171,7 @@ class SettingsWindow(QDialog):
         self.community_page=CommunityPage(self.database,controller.character.id,self); self.tabs.addTab(self.community_page,'社区与黑话')
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
-        other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)
+        other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\n模型 Key 在“模型”页加密保存（Windows DPAPI），不以明文写入 SQLite。'); other.setWordWrap(True)
         self.usage_page.layout().addWidget(other)
         usage_scroll=QScrollArea(); usage_scroll.setWidgetResizable(True); usage_scroll.setWidget(self.usage_page)
         self.tabs.addTab(usage_scroll,'用量')
@@ -294,6 +303,7 @@ class SettingsWindow(QDialog):
         self.refresh()
 
     def save(self):
+        if self.model_page is not None and not self.model_page.save(): return
         if not self.name.text().strip() or not self._validate_model_input(): return
         character=replace(self.controller.character,name=self.name.text().strip(),description=self.description.toPlainText(),
                           speaking_style=self.style.toPlainText(),model_path=self.model.text().strip(),

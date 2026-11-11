@@ -100,7 +100,9 @@ class MainWindow(QMainWindow):
             self.web_microphone=WebMicrophone(self); self._connect_microphone(self.web_microphone)
         return self.web_microphone
 
-    def _voice_mode(self): return self.database.get_setting('voice_mode','continuous')
+    def _voice_mode(self):
+        from aicompanion.voice.turns import DEFAULT_MODE
+        return self.database.get_setting('voice_mode',DEFAULT_MODE)
 
     def _configure_voice(self):
         """按设置选择收音后端和收音方式。Chromium 后端时她的语音也改由同一网页播放，回声消除才有参考。"""
@@ -809,8 +811,8 @@ class MainWindow(QMainWindow):
         if self.settings.tts_provider=='qwen' and self.settings.qwen_api_key:
             setup=self.settings.qwen_tts_model+':'+self.settings.qwen_tts_voice
             if self.database.get_setting('qwen_voice_setup')!=setup:
+                # 只切换朗读方式；朗读开关默认关闭，由用户自己打开（负责人 2026-11-11）
                 self.database.set_setting('tts_provider','qwen')
-                self.database.set_setting('speech_enabled',True)
                 self.database.set_setting('qwen_voice_setup',setup)
         character_id=self.controller.character.id
         self.speech_client.asr_provider=self.database.get_setting('asr_provider',self.settings.asr_provider)
@@ -835,13 +837,17 @@ class MainWindow(QMainWindow):
         self._apply_identity(); self._apply_avatar()
         self.controller.agent_enabled=bool(self.database.get_setting('agent_enabled',True))
         self._apply_backdrop()
-        if self.call_active:   # 收音方式或回声后端改了：重开一次通话让新设置生效
-            self._end_call(); self._toggle_call()
+        # 通话中改了收音设置由 _settings 只重启收音；这里不再挂断重开，否则会打断正在进行的回复
 
     def _settings(self):
-        self._end_call(); self.interrupt()
+        # 打开设置不打断正在进行的回复、办事或通话（负责人 2026-11-11 实机反馈）：
+        # 生成线程拿的是开始时的角色和模型快照，设置改动只影响下一轮。
+        voice=(self.database.get_setting('input_device',''),self.database.get_setting('echo_backend','qt'),self._voice_mode())
         dialog=SettingsWindow(self.controller,self.settings,self,speech_output=self.speech); dialog.exec()
         self._refresh_roles(); self._apply_settings()
+        if self.call_active and voice!=(self.database.get_setting('input_device',''),self.database.get_setting('echo_backend','qt'),self._voice_mode()):
+            # 通话中换了麦克风或收音方式：只重启收音，不挂断、不打断她正在说的话
+            self.microphone.stop(); self._configure_voice(); self.microphone.start(self._microphone_device())
 
     def _switch_role(self,index):
         self._switch_to(self.roles.itemData(index))

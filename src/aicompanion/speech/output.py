@@ -11,6 +11,7 @@ import math
 from time import monotonic
 import re
 import wave
+from uuid import uuid4
 from PySide6.QtCore import QObject, Signal, QBuffer, QIODevice, QUrl, QLocale, QTimer
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtTextToSpeech import QTextToSpeech
@@ -18,15 +19,61 @@ from aicompanion.speech.qwen_client import validate_wav
 from aicompanion.ui.chat_worker import TaskWorker
 
 
+# 朗读时不念的东西（负责人 2026-11-11 实机反馈：完整朗读会把文件名一个字母一个字母念出来）。
+# 气泡和聊天记录保留原文，这里只影响念出来的内容。
+_FILE_EXT = (r'(?:py|pyw|js|ts|tsx|jsx|json|md|txt|log|csv|tsv|xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|svg|bmp|ico|'
+             r'mp3|wav|flac|ogg|m4a|mp4|mov|mkv|avi|zip|7z|rar|gz|tar|exe|msi|bat|cmd|ps1|sh|html?|css|ya?ml|toml|ini|cfg|'
+             r'conf|env|sqlite3?|db|java|kt|cpp|cc|c|h|hpp|go|rs|rb|php|swift|vue|lua|sql|xml|ipynb|apk|dll|so|lock)')
+_CODE_BLOCK = re.compile(r'```.*?(?:```|$)', re.S)
+_INLINE_CODE = re.compile(r'`[^`\n]*`')
+_URL = re.compile(r'(?:https?|ftp)://[^\s，。！？；、）)」』]+', re.I)
+# Windows（C:\…、\\server\…）与类 Unix（/home/…、./x、~/x）路径；中文目录名也算
+_PATH = re.compile(r'(?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\.{1,2}[\\/]|(?<![\w.])/(?=[\w.\u4e00-\u9fff-]+/))'
+                   r'[^\s，。！？；、：:“”"\'（）()「」『』`]*')
+# 不带前缀的相对路径（src/app/main.py、docs/tasks/）：英文片段之间有斜杠，并且以文件扩展名或斜杠结尾，
+# 避免把“开心/难过”这类中文斜杠当成路径
+_REL_PATH = re.compile(r'(?<![\w/\\])[A-Za-z0-9_.-]+(?:[\\/][\w.\u4e00-\u9fff-]+)+(?:\.' + _FILE_EXT + r'\b|[\\/])', re.I)
+_FILE = re.compile(r'(?<![\w./\\])[\w\u4e00-\u9fff-]+(?:\.[\w-]+)*\.' + _FILE_EXT + r'\b', re.I)
+
+
+def _say_path(match) -> str:
+    """路径念成“那个文件 / 那个文件夹”；后面本来就跟着“文件 / 文件夹 / 目录”时只念“那个”，避免重复。"""
+    rest = match.string[match.end():].lstrip()
+    if rest.startswith(('文件夹', '目录', '文件')): return '那个'
+    return '那个文件' if re.search(r'\.' + _FILE_EXT + r'$', match.group(), re.I) else '那个文件夹'
+
+
 def spoken_text(text):
-    """保留台词，去掉常见 Markdown 标记和链接地址，避免念出格式符号。"""
+    """把要朗读的台词整理成能念的话：去掉 Markdown 记号和代码，链接、路径、文件名换成简短说法。"""
+    text = _CODE_BLOCK.sub('一段代码', text)
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    return re.sub(r'[*`#_]', '', text).strip()
+    text = _INLINE_CODE.sub(lambda m: m.group()[1:-1] if len(m.group()) <= 26 else '一段代码', text)   # 短代码去掉反引号再按路径规则处理
+    text = _URL.sub('链接', text)
+    text = _PATH.sub(_say_path, text)
+    text = _REL_PATH.sub(_say_path, text)
+    text = _FILE.sub(lambda m: '那个' if m.string[m.end():].lstrip().startswith('文件') else '文件', text)
+    text = re.sub(r'^\s*(?:[-*+]|\d+[.)、])\s+', '', text, flags=re.M)    # 列表记号
+    text = re.sub(r'[*`#_|>]', '', text)
+    return re.sub(r'[ \t]{2,}', ' ', text).strip()
 
 
 class SentenceBuffer:
+    """把流式文字切成句子交给朗读。记住是否在 ``` 代码块里：模型逐 token 输出时，开围栏、代码行、闭围栏会被切成
+    不同的句子，单句去看认不出代码（Codex 审计 R7），所以跨句保持状态——代码块整体读成一次“一段代码”。
+    只影响朗读，气泡和历史仍是原文。"""
     def __init__(self):
         self.text = ''
+        self.in_code = False
+
+    def _speakable(self, sentence):
+        parts = sentence.split('```')
+        kept = []
+        for index, part in enumerate(parts):
+            if index:   # 每遇到一个围栏切换一次
+                self.in_code = not self.in_code
+                if self.in_code: kept.append('一段代码。')
+            if not self.in_code and part.strip(): kept.append(part)
+        return ''.join(kept).strip()
 
     def feed(self, text, final=False):
         self.text += text
@@ -41,6 +88,7 @@ class SentenceBuffer:
             if not length:
                 break
             sentence, self.text = self.text[:length].strip(), self.text[length:]
+            sentence = self._speakable(sentence) if sentence else ''
             if sentence:
                 result.append(sentence)
         return result
@@ -160,6 +208,14 @@ class SpeechOutput(QObject):
                                         self.role_style, target))
         self._next()
         self._prefetch()
+
+    def play_audio(self, text, raw, provider='breeze'):
+        """直接播放一段已经合成好的 WAV（模型页的“试听”用）：走正式的播放链路（字幕、口型、可打断），
+        不再请求合成，也不改朗读开关和朗读方式（Codex 审计 R6）。"""
+        self.stop()
+        job = SpeechSegment(text, uuid4().hex, provider, '', self.mood, self.style, self.language, self.role_style)
+        job.requested, job.audio = True, validate_wav(raw)
+        self.queue.append(job); self._next()
 
     def _next(self):
         if self.busy or not self.queue:

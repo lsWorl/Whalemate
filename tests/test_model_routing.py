@@ -199,10 +199,12 @@ class TargetTests(RoutingBase):
         self.store.bind(Binding('agent', 'deepseek-flash', route='deepseek-official'))
         target = self.router.agent_target()
         self.assertEqual((target.route, target.model_id, dict(target.env)), ('deepseek-official', 'deepseek-flash', {'DEEPSEEK_API_KEY': 'ds-secret'}))
+        self.assertNotIn('mm-secret', repr(target))
+        # MiniMax 办事暂未接通（Codex 审计 R3）：选了也不启用，不会带着 MiniMax Key 启动 Harness
         self.store.bind(Binding('agent', 'minimax-m3', route='minimax'))
-        target = self.router.agent_target()
-        self.assertEqual((target.route, target.model_id, dict(target.env)), ('minimax', 'MiniMax-M3', {'MINIMAX_API_KEY': 'mm-secret'}))
-        self.creds.delete('minimax-main')
+        self.assertIsNone(self.router.agent_target())
+        self.store.bind(Binding('agent', 'deepseek-flash', route='deepseek-official'))
+        self.creds.delete('deepseek-main')
         self.assertIsNone(self.router.agent_target())
 
 
