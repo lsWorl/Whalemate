@@ -20,14 +20,14 @@ class CardTests(unittest.TestCase):
         self.assertIn('不描述、不鉴赏', card['style'])
         self.assertTrue(any('表情包' in e['user'] for e in card['samples']))
         prompt = cards.prompt(self.db, 'deepseek-whale', '[收到图片]', owner=True)
-        self.assertIn('当前说话人是爹', prompt)
+        self.assertIn('当前说话人是⟨指代⟩', prompt)                                  # 拼好整段提示词后按关系设定替换
         self.assertIn('示例不是已发生', prompt)
         self.assertNotIn('社区世界书', prompt)
 
     def test_ordinary_user_is_never_given_parent_relationship(self):
         prompt = cards.prompt(self.db, 'deepseek-whale', '你好', owner=False, group='30003')
-        self.assertIn('不叫爹、不冒充亲密关系', prompt)
-        self.assertNotIn('当前说话人是爹', prompt)
+        self.assertIn('不冒充亲密关系', prompt)
+        self.assertNotIn('当前说话人是⟨指代⟩', prompt)
 
     def test_builtin_knowledge_only_matches_selected_community_and_actual_message(self):
         self.db.set_setting('qq_community', 'bilibili')

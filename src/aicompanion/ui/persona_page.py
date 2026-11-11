@@ -51,10 +51,28 @@ class PersonaEditor(QWidget):
         form = QFormLayout(); form.setVerticalSpacing(8)
         self.title = QLineEdit(); self.title.setPlaceholderText('例如：默认、傲娇一点、工作模式')
         self.description = QPlainTextEdit(); self.description.setMinimumHeight(110)
-        self.description.setPlaceholderText('她是什么样的人：性格、和你的关系、喜欢什么、忌讳什么')
+        self.description.setPlaceholderText('她是什么样的人：性格、喜欢什么、忌讳什么（和你的关系在下面“和你的关系”里设）')
         self.style = QPlainTextEdit(); self.style.setMinimumHeight(80); self.style.setPlaceholderText('她怎么说话：口头禅、语气、长短、称呼')
         self.background = QPlainTextEdit(); self.background.setMaximumHeight(80); self.background.setPlaceholderText('可选：她的来历、所处的情境')
-        form.addRow('人格名称', self.title); form.addRow('角色设定', self.description); form.addRow('说话风格', self.style)
+        form.addRow('人格名称', self.title)
+        # ---- 和你的关系（负责人 2026-11-11：不一定是父女，女朋友、妹妹、朋友都行，也可以自己写）----
+        from aicompanion.domain.bond import PRESETS
+        self.bond_preset = QComboBox()
+        for key, value in PRESETS.items(): self.bond_preset.addItem(value['label'], key)
+        self.bond_call = QLineEdit(); self.bond_call.setPlaceholderText('她平时怎么叫你，例如：爹、亲爱的、哥哥、你的名字')
+        self.bond_refer = QLineEdit(); self.bond_refer.setPlaceholderText('说明里怎么指你，例如：你爹、你的恋人、你哥')
+        self.bond_tag = QLineEdit(); self.bond_tag.setMaxLength(6); self.bond_tag.setPlaceholderText('群聊里标在你消息前，例如：爹、对象、哥')
+        self.bond_relation = QLineEdit(); self.bond_relation.setMaxLength(8); self.bond_relation.setPlaceholderText('关系名，例如：父女、情侣、兄妹')
+        self.bond_how = QPlainTextEdit(); self.bond_how.setMaximumHeight(90)
+        self.bond_how.setPlaceholderText('你们怎么相处。可以写 {叫法} {指代} 代替上面的称呼，换称呼时不用改这段；角色设定、说话风格里也能用')
+        self.bond_claims = QLineEdit(); self.bond_claims.setPlaceholderText('外人自称这些身份时她会生气，用 | 分隔，例如：男朋友|老公（可空）')
+        bond_row = QHBoxLayout()
+        for label, widget in (('叫你', self.bond_call), ('指代', self.bond_refer), ('群里标记', self.bond_tag), ('关系', self.bond_relation)):
+            bond_row.addWidget(QLabel(label)); bond_row.addWidget(widget, 1)
+        form.addRow('和你的关系', self.bond_preset); form.addRow('', bond_row); form.addRow('相处方式', self.bond_how)
+        form.addRow('冒充提醒', self.bond_claims)
+        self.bond_preset.currentIndexChanged.connect(self._bond_preset_changed)
+        form.addRow('角色设定', self.description); form.addRow('说话风格', self.style)
         form.addRow('背景', self.background)
         self.examples = QTableWidget(0, 2); self.examples.setHorizontalHeaderLabels(['对方说（可空）', '她这样回']); self._table(self.examples)
         form.addRow('说话示例', self._with_buttons(self.examples, '她只学语气和分寸，不会照抄原句'))
@@ -81,8 +99,9 @@ class PersonaEditor(QWidget):
         save = QPushButton('保存这个人格'); save.setObjectName('Primary'); save.clicked.connect(self.save)
         save_row.addWidget(self.status, 1); save_row.addWidget(save); box.addLayout(save_row)
 
-        for widget in (self.title, self.interests, self.notes): widget.textEdited.connect(self._changed)
-        for widget in (self.description, self.style, self.background): widget.textChanged.connect(self._changed)
+        for widget in (self.title, self.interests, self.notes, self.bond_call, self.bond_refer, self.bond_tag, self.bond_relation,
+                       self.bond_claims): widget.textEdited.connect(self._changed)
+        for widget in (self.description, self.style, self.background, self.bond_how): widget.textChanged.connect(self._changed)
         for widget in (self.examples, self.lore): widget.itemChanged.connect(self._changed)
         for widget in (self.touchy, self.forgiving): widget.valueChanged.connect(self._changed)
         self.reload()
@@ -170,6 +189,7 @@ class PersonaEditor(QWidget):
         self.interests.setText('，'.join(persona.interests)); self.notes.setText(persona.notes)
         temper = dict(persona.temper)
         self.touchy.setValue(int(temper.get('touchy', .5)*100)); self.forgiving.setValue(int(temper.get('forgiving', .5)*100))
+        self._show_bond(persona.relation())
         active = self.service.active(self.cid)
         self.use_button.setEnabled(not (active and active.id == persona.id))
         self.use_button.setText('正在使用' if active and active.id == persona.id else '设为当前')
@@ -186,7 +206,24 @@ class PersonaEditor(QWidget):
                 'lore': [{'keys': split(cell(self.lore, r, 0)), 'content': cell(self.lore, r, 1),
                           'always': bool(self.lore.item(r, 2) and self.lore.item(r, 2).checkState() == Qt.CheckState.Checked)}
                          for r in range(self.lore.rowCount())],
-                'notes': self.notes.text()}
+                'notes': self.notes.text(),
+                'bond': {'preset': self.bond_preset.currentData(), 'call': self.bond_call.text(), 'refer': self.bond_refer.text(),
+                         'tag': self.bond_tag.text(), 'relation': self.bond_relation.text(), 'how': self.bond_how.toPlainText(),
+                         'claims': self.bond_claims.text()}}
+
+    def _show_bond(self, bond):
+        self.bond_preset.blockSignals(True)
+        self.bond_preset.setCurrentIndex(max(0, self.bond_preset.findData(bond.preset)))
+        self.bond_preset.blockSignals(False)
+        self.bond_call.setText(bond.call); self.bond_refer.setText(bond.refer); self.bond_tag.setText(bond.tag)
+        self.bond_relation.setText(bond.relation); self.bond_how.setPlainText(bond.how); self.bond_claims.setText(bond.claims)
+
+    def _bond_preset_changed(self, *args):
+        """换了预设：各字段填成预设值（之后还能改）。选“自定义”时保留现在填的，只是不再跟预设走。"""
+        from aicompanion.domain.bond import from_preset
+        key = self.bond_preset.currentData()
+        if key == 'custom': self._changed(); return
+        self._show_bond(from_preset(key)); self._changed()
 
     def _changed(self, *args):
         if self._loading: return
@@ -307,8 +344,9 @@ class PersonaEditor(QWidget):
         except PersonaError as error: self.preview_text.setText(str(error)); return
         ask = self.ask.text().strip() or PREVIEW_ASK
         name = self.controller.character.name
-        prompt = (f'你正在扮演 {name}。\n人设：{draft.description}\n说话风格：{draft.speaking_style}\n'
-                  + prompt_extras(draft, ask) + '\n这是一次说话风格的预览，像平时聊天那样自然地回一句。')
+        bond = draft.relation()
+        prompt = bond.fill(f'你正在扮演 {name}。\n人设：{draft.description}\n{bond.prompt()}\n说话风格：{draft.speaking_style}\n'
+                           + prompt_extras(draft, ask) + '\n这是一次说话风格的预览，像平时聊天那样自然地回一句。', name)
         # 预览也是一次聊天请求，按陪伴用途走日金额额度（Codex PR #35 R1）；到限就不发
         from aicompanion.usage.meter import Quota
         state, note = Quota(self.db).check('companion')

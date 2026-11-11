@@ -111,6 +111,31 @@ class ServiceTests(PersonaBase):
         reverted = self.service.revert(mine.id, old['id'])
         self.assertEqual(reverted.description, old['content']['description'])
 
+    def test_revert_old_snapshot_without_bond_restores_default_relation(self):
+        """Codex PR #42：升级前的旧快照没有 bond，回退时关系也要回到当时的默认（父女），不能留着现在的女朋友。"""
+        mine = self.service.create('deepseek-whale', {'title': 'A', 'description': '你是他闺女，叫他爹', 'speaking_style': 's'})
+        old = self.service.versions(mine.id)[0]
+        with self.db.transaction() as c:                                                       # 模拟升级前的库：快照里没有 bond
+            data = dict(old['content']); data.pop('bond')
+            c.execute('UPDATE persona_versions SET data=? WHERE id=?', (json.dumps(data, ensure_ascii=False), old['id']))
+        self.now[0] += 1
+        mine = self.service.save(mine.with_content(dict(mine.content(), description='你是他女朋友',
+                                                        bond={'preset': 'girlfriend', 'call': '宝'})))
+        self.assertEqual(mine.relation().preset, 'girlfriend')
+        reverted = self.service.revert(mine.id, old['id'])
+        self.assertEqual(reverted.description, '你是他闺女，叫他爹')
+        self.assertEqual((reverted.relation().preset, reverted.relation().call), ('daughter', '爹'))
+        self.assertEqual(self.service.get(mine.id).relation().preset, 'daughter')               # 落库后读回也一致
+        partial = self.service.get(mine.id).with_content({'description': '只改设定'})              # 普通编辑缺字段仍不动关系
+        self.assertEqual(partial.relation(), reverted.relation())
+
+    def test_restore_builtin_without_pack_bond_restores_default_relation(self):
+        self.service.ensure(self.character(), PACK)
+        built = self.service.get(builtin_id('deepseek-whale'))
+        self.service.save(built.with_content(dict(built.content(), bond={'preset': 'sister'})))
+        restored = self.service.restore_builtin('deepseek-whale', PACK)
+        self.assertEqual(restored.relation().preset, 'daughter')
+
     def test_pack_upgrade_respects_user_edits(self):
         self.db.update_character(replace(self.whale, description=PACK['description'], speaking_style=PACK['speaking_style']))
         self.service.ensure(self.character(), PACK)
@@ -195,6 +220,18 @@ class CardTests(unittest.TestCase):
         long = Persona('p', 'c', '').with_content({'title': 't', 'description': '长'*(WARN_CHARS+1), 'speaking_style': ''})
         self.assertGreater(long.chars(), WARN_CHARS)
 
+    def test_sillytavern_round_trip_keeps_custom_bond(self):
+        """Codex PR #42：设置页导出 SillyTavern 再导入，自定义的关系和称呼不能变回“女儿 / 爹”。"""
+        bond = {'preset': 'girlfriend', 'call': '宝', 'refer': '我家那位', 'tag': '宝贝', 'relation': '恋人',
+                'how': '用户是{指代}，你叫他“{叫法}”，黏人爱吃醋。', 'claims': '老公|男朋友'}
+        persona = Persona('p', 'c', '').with_content({'title': '恋人', 'description': 'd', 'speaking_style': 's', 'bond': bond})
+        back = Persona('q', 'c', '').with_content(read_card(json.dumps(export_sillytavern(persona, '大肥鱼')).encode()))
+        self.assertEqual(back.relation(), persona.relation())
+        self.assertEqual(back.relation().call, '宝')
+        plain = {'spec': 'chara_card_v2', 'data': {'name': 'x', 'description': 'd'}}             # 别处的卡片不带 bond：按默认
+        self.assertNotIn('bond', read_card(json.dumps(plain).encode()))
+        self.assertEqual(Persona('r', 'c', '').with_content(read_card(json.dumps(plain).encode())).relation().preset, 'daughter')
+
     def test_prompt_extras_only_bring_matching_lore(self):
         persona = Persona('p', 'c', '').with_content({'title': 't', 'description': 'd', 'speaking_style': 's', 'background': '住在深海',
             'examples': [{'user': '你好', 'reply': '本鲸在'}],
@@ -256,6 +293,18 @@ class EditorTests(PersonaBase):
                                      client=lambda cid, purpose: client)
         sync = lambda function, ok, fail: ok(function(None))
         return PersonaEditor(controller, PACK, run=sync), controller
+
+    def test_bond_fields_round_trip_and_preset_fills(self):
+        editor, _ = self.editor()
+        try:
+            self.assertEqual(editor.bond_preset.currentData(), 'daughter'); self.assertEqual(editor.bond_call.text(), '爹')
+            editor.bond_preset.setCurrentIndex(editor.bond_preset.findData('girlfriend'))
+            self.assertEqual((editor.bond_call.text(), editor.bond_tag.text()), ('亲爱的', '对象'))
+            editor.bond_call.setText('宝'); editor.save()
+            saved = self.service.get(editor.current_id).relation()
+            self.assertEqual((saved.preset, saved.call, saved.refer), ('girlfriend', '宝', '你的恋人'))
+        finally:
+            editor.deleteLater()
 
     def test_edit_save_switch_and_import(self):
         editor, controller = self.editor()

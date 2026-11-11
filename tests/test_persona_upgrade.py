@@ -27,8 +27,10 @@ class PersonaUpgradeTests(unittest.TestCase):
 
     def test_v5_keeps_v4_and_drops_commas_and_full_stops(self):
         style = self.persona['speaking_style']
-        self.assertEqual(self.persona['version'], 6)
-        self.assertEqual(style, self.persona['previous_speaking_style'])                          # v6 只改名字，风格同 v5
+        self.assertEqual(self.persona['version'], 7)
+        self.assertEqual(self.persona['older'][0]['speaking_style'].count('爹'), 5)                   # v6 原文留在 older 里
+        self.assertNotIn('爹', style); self.assertNotIn('爹', self.persona['description'])            # v7：关系挪到 bond，原文不写死“爹”
+        self.assertEqual(self.persona['bond']['preset'], 'daughter')
         self.assertTrue(self.persona['description'].startswith('你是“鲸鲸”'))
         self.assertIn('不用逗号和句号', style); self.assertIn('换行另起一条', style)
         self.assertIn('可以用 emoji', style); self.assertNotIn('emoji、状态数值', style)
@@ -37,8 +39,8 @@ class PersonaUpgradeTests(unittest.TestCase):
     def test_upgrades_from_v4_v3_and_v2_originals(self):
         current = self.start_from(self.persona['previous_description'], self.persona['previous_speaking_style'], 5)
         self.assertEqual((current.description, current.speaking_style), (self.persona['description'], self.persona['speaking_style']))
-        self.assertEqual(len(self.persona['older']), 3)
-        for version, old in zip((4, 3, 2), self.persona['older']):
+        self.assertEqual(len(self.persona['older']), 4)
+        for version, old in zip((6, 4, 3, 2), self.persona['older']):
             self.temp.cleanup(); self.setUp()
             current = self.start_from(old['description'], old['speaking_style'], version)
             self.assertEqual((current.description, current.speaking_style), (self.persona['description'], self.persona['speaking_style']))
@@ -47,7 +49,7 @@ class PersonaUpgradeTests(unittest.TestCase):
     def test_user_edited_persona_is_kept(self):
         current = self.start_from('我自己写的人设', '我自己写的说话风格', 3)
         self.assertEqual(current.speaking_style, '我自己写的说话风格')
-        self.assertEqual(self.db.get_setting('persona_version:deepseek-whale'), 6)
+        self.assertEqual(self.db.get_setting('persona_version:deepseek-whale'), 7)
 
     def test_pack_rename_updates_untouched_name_once(self):
         # 负责人 2026-11-11：鲸娘改名鲸鲸。库里还是包的旧名字就换；用户自己起的名字不动；换过一次后用户改回旧名也不再换
@@ -81,7 +83,8 @@ class PersonaUpgradeTests(unittest.TestCase):
         self.assertEqual(current.name, '鲸鲸')
         self.assertTrue(current.description.startswith('你是“鲸鲸”'))
         active = PersonaService(self.db).active('deepseek-whale')
-        self.assertTrue(active.builtin); self.assertEqual(active.pack_version, 6)
+        self.assertTrue(active.builtin); self.assertEqual(active.pack_version, 7)
+        self.assertEqual(active.relation().call, '爹')                                            # 升级后关系设定照旧是父女
 
 
 if __name__ == '__main__':

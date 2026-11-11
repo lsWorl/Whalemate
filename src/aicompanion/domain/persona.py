@@ -61,6 +61,7 @@ class Persona:
     temper: tuple = (('touchy', 0.5), ('forgiving', 0.5))   # 情绪倾向：容易不高兴、消气快（0～1），功能三使用
     lore: tuple = ()                   # LoreEntry
     notes: str = ''                    # 作者备注，不进提示词
+    bond: object = None                # 她和你的关系（domain/bond.py）；None 按默认（升级前的人格行为不变）
     builtin: bool = False              # 来自角色包的内置人格
     pack_version: int = 0
     user_modified: bool = False        # 内置人格被用户改过：角色包升级时不覆盖
@@ -72,7 +73,11 @@ class Persona:
                 'background': self.background, 'examples': [asdict(e) for e in self.examples],
                 'interests': list(self.interests), 'temper': dict(self.temper),
                 'lore': [{'keys': list(e.keys), 'content': e.content, 'always': e.always} for e in self.lore],
-                'notes': self.notes}
+                'notes': self.notes, 'bond': self.relation().to_dict()}
+
+    def relation(self):
+        from aicompanion.domain.bond import DEFAULT
+        return self.bond or DEFAULT
 
     def with_content(self, data: dict) -> 'Persona':
         clean = normalize(data)
@@ -122,6 +127,9 @@ def normalize(data: dict) -> dict:
         keys = tuple(k for k in (_text(x, 40) for x in (item.get('keys') or [])[:MAX_KEYS] if isinstance(x, str)) if k)
         if content and (keys or item.get('always')): lore.append(LoreEntry(keys, content, bool(item.get('always'))))
     out['lore'] = tuple(lore)
+    if 'bond' in data:
+        from aicompanion.domain.bond import normalize as normalize_bond
+        out['bond'] = normalize_bond(data.get('bond'))
     return out
 
 
@@ -157,7 +165,9 @@ def export_sillytavern(persona: Persona, character_name: str) -> dict:
         'name': character_name, 'description': persona.description, 'personality': persona.speaking_style,
         'scenario': persona.background, 'first_mes': '', 'mes_example': examples, 'creator_notes': persona.notes,
         'system_prompt': '', 'post_history_instructions': '', 'tags': list(persona.interests), 'creator': '',
-        'character_version': persona.title, 'alternate_greetings': [], 'extensions': {'aicompanion': {'temper': dict(persona.temper)}},
+        'character_version': persona.title, 'alternate_greetings': [],
+        # 本项目自己的扩展：情绪倾向和完整的关系设定（Codex PR #42：导出再导入不能把用户写的称呼、相处方式丢回默认的“爹”）
+        'extensions': {'aicompanion': {'temper': dict(persona.temper), 'bond': persona.relation().to_dict()}},
         **({'character_book': book} if persona.lore else {})}}
 
 
@@ -243,8 +253,12 @@ def _from_sillytavern(card: dict) -> dict:
         content = entry.get('content') if isinstance(entry.get('content'), str) else ''
         lore.append({'keys': keys, 'content': _macros(content),
                      'always': bool(entry.get('constant'))})
-    temper = ((data.get('extensions') or {}).get('aicompanion') or {}).get('temper') if isinstance(data.get('extensions'), dict) else None
-    return {'title': str(data.get('character_version') or '').strip() or (name+' 的人格' if name else '导入的人格'),
+    own = (data.get('extensions') or {}).get('aicompanion') if isinstance(data.get('extensions'), dict) else None
+    own = own if isinstance(own, dict) else {}
+    temper = own.get('temper')
+    # 只有本项目导出的卡片才带 bond；别处的卡片没有，就不写这个字段，导入后按默认关系
+    extra = {'bond': own['bond']} if isinstance(own.get('bond'), dict) else {}
+    return {**extra,'title': str(data.get('character_version') or '').strip() or (name+' 的人格' if name else '导入的人格'),
             'description': description, 'speaking_style': '', 'background': background, 'examples': examples,
             'interests': [t for t in (data.get('tags') or []) if isinstance(t, str)], 'lore': lore,
             'temper': temper if isinstance(temper, dict) else {}, 'notes': text('creator_notes')}

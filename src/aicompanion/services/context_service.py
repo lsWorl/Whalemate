@@ -40,7 +40,7 @@ class ContextService:
         except Exception:
             recall_text = ''   # 召回出错不影响聊天
         trust = (f"长期相处的信任程度：{relationship['trust']}（不要向用户直接报数值）。" if private else
-                 "这是公开场合：对方不一定是你爹，其他人也看得到你的回复；跟不熟的人别装熟，但也不用客气得像客服。")
+                 "这是公开场合：对方不一定是⟨指代⟩，其他人也看得到你的回复；跟不熟的人别装熟，但也不用客气得像客服。")
         prompt = f"""你正在扮演 {character.name}，与用户进行自然的长期陪伴对话。
 人设：{character.description}
 说话风格：{character.speaking_style}
@@ -73,6 +73,12 @@ class ContextService:
             except Exception:
                 pass
         if situation: prompt += '\n'+situation
+        # 她和你的关系来自当前人格（domain/bond.py）：关系说明放在人设后面；全文里的 ⟨叫法⟩⟨指代⟩⟨标记⟩⟨关系⟩、{{user}} / {{char}} 统一换成这个关系的说法。
+        # 代码里不再写死“爹”（负责人 2026-11-11：人设不要太固定，女朋友、妹妹都可以，项目是情感框架）
+        from aicompanion.domain.bond import current as current_bond
+        bond = persona.relation() if persona is not None else current_bond(self.database, character.id)
+        prompt = prompt.replace('\n说话风格：', '\n'+bond.prompt()+'\n说话风格：', 1)
+        prompt = bond.fill(prompt, character.name)
         turns=[]
         from aicompanion.expression.stream import clean_expression_history
         from aicompanion.expression.service import ExpressionService

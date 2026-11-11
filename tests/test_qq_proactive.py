@@ -94,12 +94,13 @@ class GroupToneTests(Base):
 
     def test_group_prompt_hides_ai_traces_and_never_says_dad_private_unchanged(self):
         self.ask('30003'); group_prompt = self.model.prompts[-1]
-        self.assertIn(GROUP_HUMAN, group_prompt); self.assertIn('别叫你爹', group_prompt); self.assertIn('含糊地带过', group_prompt)
+        from aicompanion.domain.bond import DEFAULT
+        self.assertIn(DEFAULT.fill(GROUP_HUMAN), group_prompt); self.assertIn('别用“爹”这类私下的称呼叫你爹', group_prompt); self.assertIn('含糊地带过', group_prompt)
         self.assertIn('别明确说自己是真人', group_prompt)
         # 负责人 13:30：私聊也不露 AI 痕迹，但和爹私聊照常叫爹
         self.ask(''); private = self.model.prompts[-1]
-        self.assertNotIn(GROUP_HUMAN, private); self.assertNotIn('别叫你爹', private)
-        self.assertIn('别提自己是 AI', private); self.assertIn('含糊地带过', private); self.assertIn('照常叫爹', private)
+        self.assertNotIn(DEFAULT.fill(GROUP_HUMAN), private); self.assertNotIn('私下的称呼', private)
+        self.assertIn('别提自己是 AI', private); self.assertIn('含糊地带过', private); self.assertIn('照常叫“爹”', private)
 
     def test_image_only_private_message_may_be_left_and_vision_note_says_do_not_analyse(self):
         from aicompanion.bridge.media import inline_image
