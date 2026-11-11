@@ -72,6 +72,15 @@ class ContextService:
                 prompt += group_prompt(self.database, character.id)
             except Exception:
                 pass
+            # 计划书 v4 功能九：认识第几天；今天有特别的日子、还没提过时提醒她一句（这一轮说完后由 ChatController 记成“今天提过了”）
+            try:
+                from aicompanion.services.companion_dates import CompanionDates
+                dates = CompanionDates(self.database)
+                text, keys = dates.prompt(character.id)
+                prompt += text
+                self.pending_dates = (character.id, keys, dates.today()) if keys else None
+            except Exception:
+                self.pending_dates = None
         if situation: prompt += '\n'+situation
         # 她和你的关系来自当前人格（domain/bond.py）：关系说明放在人设后面；全文里的 ⟨叫法⟩⟨指代⟩⟨标记⟩⟨关系⟩、{{user}} / {{char}} 统一换成这个关系的说法。
         # 代码里不再写死“爹”（负责人 2026-11-11：人设不要太固定，女朋友、妹妹都可以，项目是情感框架）

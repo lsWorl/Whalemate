@@ -442,7 +442,9 @@ class RelationshipService:
         对方最近多常找她做事、她记得的关于对方的事（跟人走，不分群），以及"自己的意愿"。不规定回应方式，只给依据。"""
         p = self.profile(character_id, person_id) if person_id else None
         if p is None: return ''
-        days = max(0, int((self.clock()-p['first_met'])//86400))
+        # 按本地日历日算，见面当天是第 1 天（计划书 v4 功能九；以前按 86400 秒取整，跨午夜的头一天会算成 0 天）
+        from datetime import datetime
+        days = max(1, (datetime.fromtimestamp(self.clock()).date()-datetime.fromtimestamp(p['first_met']).date()).days+1)
         lines = []
         who = '他'
         if p['is_owner']:

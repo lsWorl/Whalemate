@@ -217,6 +217,12 @@ class ChatController:
                     if judged is None and pending and pending[0]==character.id and pending[1]==channel and time.time()-pending[3]<600:
                         mood.apply_fallback(character.id,pending[2],channel)
                 except Exception: pass
+            if status=='complete' and channel=='desktop':
+                # 计划书 v4 功能九：这一轮带了“今天是特别的日子”的提醒，说完了就记下今天已经提过（一天只提一次，重启也不重复）
+                pending=getattr(self.context,'pending_dates',None)
+                if pending and pending[0]==character.id:
+                    from aicompanion.services.companion_dates import CompanionDates
+                    CompanionDates(self.database).mark(pending[0],pending[1],pending[2]); self.context.pending_dates=None
             if status=='complete':
                 # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）
                 self.relationship_analyzer.maybe_run(character.id,channel,self.client(character.id,'relationship'),
