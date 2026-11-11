@@ -113,7 +113,7 @@ class ModelPage(QWidget):
             box = QComboBox(); self.pickers[cap] = box; c.addRow(CAPABILITY_LABELS[cap], box)
             box.currentIndexChanged.connect(lambda *_, cap=cap: self._auto_save(cap))
             if cap == 'agent':
-                hint = QLabel('办事只列出已经接通的模型（目前只有 DeepSeek；MiniMax 办事还在接入）。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
+                hint = QLabel('办事只列出 Harness 能用的模型（DeepSeek、MiniMax）。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
                               '只想给某个角色换，请先把上面的“设置范围”切到那个角色再选。')
                 hint.setWordWrap(True); hint.setStyleSheet('color: gray'); c.addRow('', hint)
         self.voice = QLineEdit(); self.voice.setPlaceholderText('Breeze Blue 音色 ID，例如 voc_8rsb3nhb7645')

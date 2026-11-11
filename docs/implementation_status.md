@@ -1169,3 +1169,13 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - **界面**：许可改成中文下拉（只能选，不用输入许可名），去掉作者、来源、表达意图、情绪输入框；表格可多选，新增“全选 / 启用选中 / 停用选中 / 重新识别含义 / 设为选中图片的来源”；“导入图片”可多选；状态列显示“可用 / 停用 / 许可待确认 / 识别含义中”。需要署名的许可缺作者时提示改选“自己的图（自用）”。
 - 验证：容器离线单测 796 项通过、38 项跳过（新增批量操作与清单许可、自动识别含义两项界面测试；更新了原先断言“用户新增的图待审核”的 5 处测试）；离屏截图检查页面布局。
 - 没验证：Windows 实机；真实识图模型给图库图片识别含义的效果和耗时。
+
+## 2026-11-11：办事接入 MiniMax（Claude）
+
+负责人要求引入 MiniMax 办事（处理审计 R3 登记的已知问题）。
+
+- Harness 的 llm-pi-ai 多供应商路由默认不注册路由。`dsh_backend.runtime_patch(home, target)` 只在本次选的是 MiniMax 时，在补丁里激活那一条路由（`minimax` 或 `minimax-cn`）：`apiKeyEnv` 指向选定 Key 的环境变量（补丁里只有变量名），`baseURL` 用账户地址的主机加 `/anthropic`（Anthropic 兼容接口，Key 只发往账户登记的主机），并列出可用模型。内置目录没有 MiniMax-M3.1-Flash，补丁里按官方文档声明（100 万上下文、支持图片）；不声明思考档位，请求不带 `thinking` 参数（这个模型关不掉思考，发 disabled 会被拒绝），由服务端按默认深度思考。
+- 可办事的 MiniMax 模型：MiniMax-M3.1-Flash、MiniMax-M3、MiniMax-M2.7、MiniMax-M2.7-highspeed（后两个需要在模型页自己添加）。路由、地址或 Key 变化时重启运行时。
+- R2 的凭据隔离保持不变：managed 凭据文件仍指向本应用的空文件，MiniMax Key 只从选定的环境变量来。
+- 验证：容器离线单测通过；用真实 DSH 0.2.1rc2 运行时（Linux 版）+ 本机模拟 Anthropic Messages 服务 + 假 Key 跑了 `minimax` / `minimax-cn` × M3.1-Flash / M3 共 4 组，每组两轮：Harness 接受模型选择，请求发往 `/anthropic/v1/messages`，带的是选定 Key（预置的 managed 旧 Key 没被用），M3.1-Flash 请求里没有 `thinking` 参数，第二轮带着上一轮的思考块正常完成。该回归在 `tests/test_dsh.py`（未安装运行时时跳过）。
+- 没验证：真实 MiniMax 服务（需要负责人用自己的 Key 按测试手册第 8 节试）；M3.1-Flash 默认思考深度下的速度和费用；Windows 上的真实运行时回归。
