@@ -1390,3 +1390,25 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - Windows 实机听感、首次出声延迟；
   - 系统朗读回退的真实效果；
   - 云端声线（尚未配置）。
+
+## 2026-11-11 V4-8b 鲸鲸默认声线（task/v4-8b-whale-voice，叠在 #39 之上）
+
+- 做了什么：
+  - 角色声线设定 `domain/voice_profile.py`；
+  - MiniMax 语音客户端；
+  - 模型页没配语音时，鲸鲸用 MiniMax 的少女音色作默认声线，和聊天共用 MiniMax 账户；
+  - 心情明显时指定情绪，其余交给模型按台词自动选；
+  - 第一次自动把朗读方式切到云端声线，之后尊重用户选择；
+  - 设置里可以从 6 个候选音色里换、试听。
+
+  说明见 `docs/tasks/V4-8b-whale-voice.md`。
+- 怎么验证：`PYTHONPATH=src:tests QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests` 全部通过（跳过 41）。新增 `tests/test_whale_voice.py` 覆盖以下内容：
+  - 请求体；
+  - hex 解码；
+  - 错误不泄露 Key；
+  - 按服务种类分流；
+  - 默认声线路由、候选切换、模型页显式配置优先、离线不套用。
+- 没验证：
+  - 真实 MiniMax 语音接口；
+  - 音色听感和情绪效果（需负责人试听拍板）；
+  - Windows 真机。

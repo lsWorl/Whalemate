@@ -895,6 +895,11 @@ class MainWindow(QMainWindow):
         # 环境配置只在该角色首次启用时应用；之后尊重设置界面保存的选择。
         if self.settings.speech_language=='ja' and self.database.get_setting(f'speech_language:{character_id}') is None:
             self.database.set_setting(f'speech_language:{character_id}','ja')
+        # 负责人 2026-11-11：鲸鲸默认就用有感情的云端声线。有可用的默认声线（例如已经有 MiniMax 账户）时只切换一次，
+        # 之后尊重设置里的选择；用户自己选过朗读方式的不动
+        if (self.database.get_setting('voice_profile_setup') is None and self.controller.router.default_voice(character_id)
+                and self.database.get_setting('tts_provider') in (None,'system')):
+            self.database.set_setting('tts_provider','breeze'); self.database.set_setting('voice_profile_setup',character_id)
         self.speech.provider=self.database.get_setting('tts_provider',self.settings.tts_provider)
         self.speech.language=self.database.get_setting(f'speech_language:{character_id}',self.settings.speech_language)
         self.speech.role_style=self.database.get_setting(f'japanese_style:{character_id}','')

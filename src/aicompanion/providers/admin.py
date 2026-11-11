@@ -204,10 +204,10 @@ class ModelAdmin:
 
     def test_tts(self, character_id: str, cancellation=None) -> bytes:
         from aicompanion.domain.cancellation import CancellationToken
-        from aicompanion.speech.breeze_client import BreezeSpeechClient
+        from aicompanion.speech.minimax_client import synthesize_target
         target = self.router.tts_target(character_id)
         if target is None: raise ValueError('还没有配置语音合成（模型、音色和 Key）')
-        return BreezeSpeechClient().synthesize(target, '你好，这是声音测试。', cancellation or CancellationToken())
+        return synthesize_target(target, '你好，这是声音测试。', cancellation or CancellationToken())
 
     # ---- 内部 --------------------------------------------------------------------------------
     def _credential(self, provider_id: str, key: str, key_env: str, endpoint: str = '') -> str:
