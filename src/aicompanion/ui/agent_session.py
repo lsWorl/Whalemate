@@ -281,6 +281,12 @@ class AgentSession(QObject):
         w.pet.hide_activity(); w.pet.close_confirm(); w.pet.dispatch('waiting', active=False)
         ok = result.status == 'done'
         w.pet.dispatch('work_finished', ok=ok, error=result.text if not ok else '')
+        if ok:
+            # 计划书 v4 功能三：一起把事办成了，她会开心一阵
+            try:
+                from aicompanion.services.mood_service import MoodService
+                MoodService(w.database).event(w.controller.character.id, 'achievement', reason=f'一起办完了：{self.goal[:20]}')
+            except Exception: pass
         # 最终回复里的表情 / 动作标注：执行后从文字里去掉（和聊天一致）
         from aicompanion.pet.script import CueStream
         text, cues = CueStream(w.vocab).feed(result.text, final=True)

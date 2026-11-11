@@ -96,6 +96,9 @@ class Database:
                 # 重启后未确认的外部发送不能自动重发；尚未开始的待发结果作废。
                 connection.execute("UPDATE expression_deliveries SET status='unknown' WHERE status='sending'")
                 connection.execute("UPDATE expression_deliveries SET status='cancelled' WHERE status='pending'")
+                # 计划书 v4 功能六：聊天记录全文索引（触发器里有分号，不能放进按分号切开执行的 SCHEMA_SQL）
+                from aicompanion.storage import fts
+                fts.ensure(connection, rebuild=version < 10 and "chat_messages" in tables)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 connection.commit()
             except Exception:

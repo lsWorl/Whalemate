@@ -145,7 +145,14 @@ class SettingsWindow(QDialog):
         self.purpose_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.purpose_table.horizontalHeader().setStretchLastSection(True); self.purpose_table.setColumnWidth(2,360); self.purpose_table.setMinimumHeight(180)
         memory_page.add(Section('心事','她会从清楚的记忆里想出想聊的事，在你不忙、非深夜时主动开口；每天最多 3 次。',self.purpose_table))
-        memory_page.add(ComingSoon('想得起旧事','归档的记忆在相关时也能想起来，较远的聊天用有来源的摘要代替；可以看到每次请求带了多少上下文。'))
+        # 计划书 v4 功能六（阶段二）：召回与整份请求预算已接入；语义检索和有来源的摘要在阶段四
+        from aicompanion.services import budget
+        self.context_report=QLabel(budget.describe(self.database.get_setting(f'context_report:{cid}')))
+        self.context_report.setWordWrap(True); self.context_report.setObjectName('Hint')
+        memory_page.add(Section('想得起旧事','聊到相关的事时，她会想起淡忘的旧记忆、30 条之外更早的聊天、以前帮你办过的事；'
+                                '你删掉的记忆不会再想起来，群里的聊天也不会出现在桌面上。每次请求有字数预算，超了先丢最早的聊天记录，'
+                                '人格和你刚说的话不会被丢。',self.context_report))
+        memory_page.add(ComingSoon('换个说法也想得起','同义词和省略说法也能对上（语义检索）；很早以前的聊天用有来源的摘要代替，需要时能查回原话。'))
         memory_page.finish()
 
         # ---- 主动与提醒 ---------------------------------------------------------------------
@@ -203,10 +210,13 @@ class SettingsWindow(QDialog):
         self.library_page=LibraryPage(self.database,cid,self,controller=controller)
         library_page=Page('表情图库','她能发的表情包。自己的图放进目录就能用，含义由识图模型自动识别。'); library_page.add(self.library_page)
         self.relationship_page=RelationshipPage(self.database,cid,self)
-        relation_page=Page('关系与心情','她和每个人的关系（桌面主人、QQ 上的朋友）。')
+        relation_page=Page('关系与心情','她现在的心情，以及她和每个人的关系（桌面主人、QQ 上的朋友）。')
+        from aicompanion.ui.mood_card import MoodCard
+        self.mood_card=MoodCard(self.database,cid,self)
+        relation_page.add(Section('她现在的心情','心情会延续一段时间、慢慢回落：被冷落会委屈、被欺负会生气、被哄会消气。'
+                                  '容不容易生气、消气快慢在“角色与形象 → 人格 → 情绪倾向”里调。心情不改好感，也不影响办事。',self.mood_card))
         relation_page.add(self.relationship_page)
         relation_page.add(ComingSoon('陪伴日期','记得你们认识了多少天、哪些日子值得纪念；到了那天她会自己提起。'))
-        relation_page.add(ComingSoon('她现在的心情','心情会延续一段时间：被冷落会委屈、被哄会消气。这里能看到她现在的心情和最近的原因，必要时手动“哄好”。'))
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
         platforms_page=Page('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')

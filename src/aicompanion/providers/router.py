@@ -291,7 +291,7 @@ class ModelRouter:
         return Resolved(capability, character_id, purpose, source, provider.id, provider.kind, provider.base_url.rstrip('/'),
                         model.model_id, provider.credential, self.credentials.revision(provider.credential), revision,
                         f'{provider.label} · {model.model_id}', temperature, self.TIMEOUT,
-                        limit, tuple(sorted((k, _freeze(v)) for k, v in extra.items())))
+                        limit, tuple(sorted((k, _freeze(v)) for k, v in extra.items())), context_window=model.context_window)
 
 
 def openai_client(resolved: Resolved, secret: str):

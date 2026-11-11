@@ -107,6 +107,7 @@ class Resolved:
     max_output: int | None = None
     extra: tuple = ()                # 供应商专用参数（已按思考策略翻译好）
     note: str = ''                   # 给界面看的补充说明，例如“未配置专属密钥，暂用默认模型”
+    context_window: int | None = None   # 模型的上下文窗口（词元）；未知为空。整份请求预算据此封顶（计划书 v4 功能六）
 
     @property
     def cache_key(self) -> tuple:

@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -186,4 +186,11 @@ CREATE TABLE IF NOT EXISTS persona_versions (
  id INTEGER PRIMARY KEY AUTOINCREMENT, persona_id TEXT NOT NULL, data TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', saved_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_persona_versions ON persona_versions(persona_id, id);
+-- v11 计划书 v4 功能三 持续情绪：各情绪强度（按半衰期回落）和最近的情绪事件（界面里看“为什么”）
+CREATE TABLE IF NOT EXISTS mood_state (character_id TEXT PRIMARY KEY, data TEXT NOT NULL, at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS mood_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+ scale REAL NOT NULL DEFAULT 1, channel TEXT NOT NULL DEFAULT 'desktop', at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mood_events ON mood_events(character_id, id);
 """

@@ -422,7 +422,10 @@ class MainWindow(QMainWindow):
         self.pet.show_user(text)
         self.coordinator.submit(text)
         previous_mood=self.mood
-        self.mood=self.database.load_emotion(self.controller.character.id).mood
+        try:
+            from aicompanion.services.mood_service import MoodService
+            self.mood=MoodService(self.database).current(self.controller.character.id).label()   # 先回落再读（功能三）
+        except Exception: self.mood=self.database.load_emotion(self.controller.character.id).mood
         # 这句话让她变开心（例如被夸）时，回复结束后跳一下庆祝。
         self.celebrate_next=self.mood=='happy' and previous_mood!='happy'
         self.pet.dispatch('message_sent')
