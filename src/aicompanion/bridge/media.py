@@ -192,12 +192,33 @@ class QQMedia:
             text = self._vision_call(profile, content, 300, 'qq')
         except Exception as error:
             self.note_failure(error, profile)
-            status = re.search(r'\b(?:HTTP\s*)?([45]\d\d)\b', str(error))
-            return self._sticker_failed(f"识图接口出错（{type(error).__name__}{'，HTTP '+status.group(1) if status else ''}）")
+            return self._sticker_failed(self.failure_reason(error))
         result = parse_sticker_analysis(text or '')
         if result is None:
             return self._sticker_failed('识图模型的回答格式不对（缺少 suitable 判断或含义为空）')
         return result
+
+    # MiniMax 等接口常把错误放在 HTTP 200 的 base_resp 里（没有 choices），客户端报“响应格式不符合预期”且不记用量。
+    # 实机 2026-11-11：一上午 95 次识图失败都没有用量记录，原因看不到；这里只取错误码并翻成中文，不记平台返回的正文。
+    PROVIDER_CODES = {1000: '平台内部错误', 1001: '平台超时', 1002: '请求太频繁（限流）', 1004: 'Key 无效或鉴权失败',
+                      1008: '账户余额不足', 1013: '平台内部错误', 1024: '平台内部错误', 1026: '图片或提示词没通过内容审核',
+                      1027: '输出没通过内容审核', 1039: '超过 token 上限', 2013: '请求参数不合法（多半是图片格式或大小不被接受）'}
+
+    @classmethod
+    def failure_reason(cls, error) -> str:
+        """识图失败给人看的原因：HTTP 状态码 / 平台错误码 + 中文说明 + 异常类型；不含错误正文、请求摘要或凭据。"""
+        text = str(error)
+        http = re.search(r'HTTP\s*([45]\d\d)\b', text)
+        code = re.search(r"""['"]status_code['"]\s*:\s*(\d{3,5})""", text)
+        parts = []
+        if http: parts.append('HTTP '+http.group(1))
+        if code and int(code.group(1)) != 0:
+            parts.append(f"平台错误码 {code.group(1)}"+(f"：{cls.PROVIDER_CODES[int(code.group(1))]}" if int(code.group(1)) in cls.PROVIDER_CODES else ''))
+        elif '超时' in text: parts.append('响应超时')
+        elif '格式不符合预期' in text: parts.append('响应里没有结果')
+        elif '推理阶段用完' in text: parts.append('输出额度在推理阶段用完')
+        parts.append(type(error).__name__)
+        return '识图接口出错（'+'，'.join(parts)+'）'
 
     def _sticker_failed(self, reason: str):
         try: self.db.set_setting(self.ERROR_KEY, {'at': round(self.clock()), 'reason': reason})

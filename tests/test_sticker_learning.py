@@ -128,6 +128,12 @@ class CollectorTests(Base):
         self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
         reason = self.db.get_setting(QQMedia.ERROR_KEY)['reason']
         self.assertIn('HTTP 503', reason); self.assertNotIn('sk-xxx', reason)
+        def minimax(*a):
+            raise RuntimeError("模型响应格式不符合预期：{'choices': None, 'base_resp': {'status_code': 1002, 'status_msg': 'rate limit sk-yyy'}}")
+        media._vision_call = minimax
+        self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
+        reason = self.db.get_setting(QQMedia.ERROR_KEY)['reason']
+        self.assertIn('1002', reason); self.assertIn('限流', reason); self.assertNotIn('sk-yyy', reason)
         self.ingest(0xff646464)
         self.collector.analyze_pending(lambda d, m: None)
         self.assertEqual({k: self.collector.last[k] for k in ('done', 'ok', 'failed')}, {'done': 1, 'ok': 0, 'failed': 1})

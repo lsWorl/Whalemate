@@ -115,6 +115,7 @@ class LibraryPage(QWidget):
         if row['review_status']!='approved':return '许可待确认'
         if not row['enabled']:return '停用'+('（不适合发）' if m.get('suitable') is False else '')
         if m.get('analysis')=='pending':return '可用 · 识别含义中'
+        if m.get('analysis')=='failed':return '可用 · 含义没识别出来（可点“重新识别含义”）'
         return '可用'
     def selected_ids(self):
         rows=sorted({i.row() for i in self.table.selectedIndexes()})
