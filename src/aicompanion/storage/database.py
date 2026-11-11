@@ -75,6 +75,12 @@ class Database:
                     for name, definition in (("clarity", "REAL NOT NULL DEFAULT 1"), ("recalled_at", "TEXT"), ("scope", "TEXT NOT NULL DEFAULT 'pet'")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE memories ADD COLUMN {name} {definition}")
+                if "outreach_log" in tables:
+                    # v13 的主动开口记录在 PR #46 审查中补了两列（插件取件时间、对应轮次）；先跑过这个分支的库按缺哪列补哪列
+                    existing = {r[1] for r in connection.execute("PRAGMA table_info(outreach_log)")}
+                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL")):
+                        if name not in existing:
+                            connection.execute(f"ALTER TABLE outreach_log ADD COLUMN {name} {definition}")
                 # executescript 隐式提交，固定 schema 逐条执行才保证迁移原子性。
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():

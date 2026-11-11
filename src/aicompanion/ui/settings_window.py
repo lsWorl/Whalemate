@@ -178,7 +178,8 @@ class SettingsWindow(QDialog):
         self.proactive_gap.setValue(int(self.database.get_setting('proactive_gap_minutes',GAP_MINUTES)))
         pace=QHBoxLayout(); pace.addWidget(QLabel('每天最多主动找你')); pace.addWidget(self.proactive_limit)
         pace.addWidget(QLabel('，两次之间至少隔')); pace.addWidget(self.proactive_gap); pace.addStretch(1)
-        talk=Section('主动聊天','问候、心里惦记的事、纪念日、没回时追一句，都算主动开口。你没回上一句时她不会开新话题，最多撒娇追一句。')
+        talk=Section('主动聊天','问候、心里惦记的事、纪念日、没回时追一句，都算主动开口。你没回上一句时她不会开新话题，最多撒娇追一句。'
+                     '两次之间的间隔是下限：你们还不太熟时她会隔得更久，但不会比这里设的更短。')
         talk.add(self.proactive); talk.add(quiet); talk.add(pace); proactive_page.add(talk)
         self.reminder_table=QTableWidget(0,3); self.reminder_table.setHorizontalHeaderLabels(['内容','时间（UTC）','状态'])
         self.reminder_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

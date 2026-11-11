@@ -163,6 +163,7 @@ class BridgeService:
         self.lock = PROCESS_LOCK
         self.expression_bindings={}; self.expression_lock=threading.Lock()
         self.outbox=[]; self.outbox_waiting={}   # 主动发到 QQ 私聊的消息：等插件心跳取走（见 proactive_qq）
+        self.outbox_taken={}; self.outbox_handed={}   # 取件时通知调用方；已取走、等回执的（轮次 → 取件时间、角色）
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
         self.bursts = {}; self.burst_lock = threading.Lock(); self.sleep = time.sleep   # 连发合并（见 _gather）
 
@@ -978,6 +979,7 @@ class BridgeService:
     # 生成和桌面主动消息是同一个大脑、同一段和爹的记录（desktop 频道）；生成完放进发件箱，插件下一次心跳（15 秒内）取走，
     # 用 AstrBot 的主动发送接口发到爹的 QQ 私聊，再回报发没发成。没发出去的话从记录里拿掉（不算她说过）。
     OUTBOX_TTL = 600
+    ACK_TTL = 600   # 插件取走后这么久还没回执（回执请求断了）：插件已经调用过发送，按发出去算，不再当作没发（Codex PR #46 第二轮）
 
     def qq_ready(self) -> bool:
         """能不能主动发 QQ：接口开着、绑定了爹、插件 1 分钟内有心跳且 QQ 已连上、插件版本支持发件箱（0.9.0 起）。"""
@@ -989,9 +991,10 @@ class BridgeService:
                     and (beat.get('onebot') or {}).get('connected') and version
                     and tuple(int(x) for x in version.groups()) >= (0, 9, 0))
 
-    def proactive_qq(self, intent: str, on_done=None) -> str | None:
+    def proactive_qq(self, intent: str, on_done=None, on_taken=None) -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
-        on_done(sent: bool) 在插件回报（或过期）时调用一次。"""
+        on_done(sent: bool) 在插件回报（或过期）时调用一次；on_taken(轮次) 在插件取件时调用一次。
+        这一轮带上的纪念日提醒跟着送达结果走：发出去才算提过，明确失败就放回（Codex PR #46 第二轮）。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.media import inline_image
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
@@ -1013,12 +1016,12 @@ class BridgeService:
             try:
                 for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
                                              situation=situation, source='qq', offer_tasks=False, purpose='companion',
-                                             expression_context=context, on_expression_event=event): pass
+                                             expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
                 return None
             if self.closed or controller.character.id != character.id or not delivered:
                 if delivered: controller.expression.cancel(turn, character.id)
-                self.database.drop_reply(turn, character.id); return None
+                self.database.drop_reply(turn, character.id); self._settle_dates(character.id, turn, False); return None
             expression = delivered[-1]; wire = expression.wire(); wire['attachments'] = []
             for attachment in expression.attachments:
                 media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
@@ -1028,23 +1031,38 @@ class BridgeService:
             burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
             segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
-                self.database.drop_reply(turn, character.id); return None
+                self.database.drop_reply(turn, character.id); self._settle_dates(character.id, turn, False); return None
+            try:
+                from aicompanion.services.companion_dates import CompanionDates
+                CompanionDates(self.database).hold(character.id, turn, self.OUTBOX_TTL+self.ACK_TTL+60)
+            except Exception: pass
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
                 self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
-                self.outbox_waiting[turn] = on_done
+                self.outbox_waiting[turn] = on_done; self.outbox_taken[turn] = on_taken
             return turn
 
     def take_outbox(self) -> list:
         """插件心跳时取走待发的主动消息；超过 OUTBOX_TTL 还没取走的作废（插件掉线时不会攒一堆过期问候）。"""
+        now = self.clock()
         with self.expression_lock:
             items, self.outbox = self.outbox, []
-        fresh = []
+            lost = [(turn, cid) for turn, (at, cid) in self.outbox_handed.items() if now-at > self.ACK_TTL]
+        for turn, cid in lost: self._outbox_done(turn, True, cid)   # 取走了却一直没回执：按发出去算
+        fresh, taken = [], []
         for item in items:
-            if self.clock()-item['at'] > self.OUTBOX_TTL: self._outbox_done(item['id'], False, item.get('character'))
-            else: fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
+            if now-item['at'] > self.OUTBOX_TTL: self._outbox_done(item['id'], False, item.get('character'))
+            else:
+                fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
+                with self.expression_lock:
+                    self.outbox_handed[item['id']] = (now, item.get('character'))
+                    taken.append((item['id'], self.outbox_taken.pop(item['id'], None)))
+        for turn, callback in taken:
+            if callback:
+                try: callback(turn)
+                except Exception: pass
         return fresh
 
     def outbox_ack(self, payload) -> dict:
@@ -1058,10 +1076,22 @@ class BridgeService:
     def _outbox_done(self, turn, sent, character_id) -> None:
         with self.expression_lock:
             callback = self.outbox_waiting.pop(turn, None)
+            self.outbox_taken.pop(turn, None); self.outbox_handed.pop(turn, None)
         if not sent and character_id: self.database.drop_reply(turn, character_id)   # 没发出去：不算她说过
+        if character_id: self._settle_dates(character_id, turn, sent)
         if callback:
             try: callback(sent)
             except Exception: pass
+
+    def _settle_dates(self, character_id, turn, sent) -> None:
+        """主动消息这一轮占住的纪念日提醒：送到了记成今天提过，没送到放回去（生日不能因为 QQ 没发出去就当作提过）。"""
+        try:
+            from aicompanion.services.companion_dates import CompanionDates
+            dates = CompanionDates(self.database)
+            if sent: dates.confirm(character_id, turn)
+            else: dates.release(character_id, turn)
+        except Exception:
+            pass
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------
     def maybe_remember(self, character_id, channel, background=True):

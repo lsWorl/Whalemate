@@ -1560,3 +1560,17 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   说明见 `docs/tasks/V4-4a-scheduler.md`。
 - 怎么验证：新增 `tests/test_scheduler.py`（6 项，可控时钟）；全部单元测试通过（跳过 41 项）；冒烟检查加 `outreach_logged`。
 - 没验证：Windows 冒烟和真机体验；兴趣分享（下一步）；真实模型的追问语气。
+
+## 2026-11-11 PR #46 Codex 第二轮修复（Claude）
+
+- 做了什么：主动开口的记录区分“还没交出去”和“插件已取走、结果未知”，记下插件取件时间和对应轮次。
+  - 回执丢了不再重复追问，一个话题最多追问一次。
+  - 主人看到第一段就回复也算接上了。
+  - 主动发到 QQ 的那一轮，纪念日提醒要等送达才算提过。
+  - 重启后放回卡住的纪念日 / 问候占位。
+  - 设置里的间隔改成真正的下限。
+  - 追问按轮次找回上一句原话。
+  - 详见 `docs/tasks/V4-4a-scheduler.md`。
+- 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：993 项通过（跳过 8 项）。新增 8 项回归，在修复前的代码上全部失败。
+- 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（Linux 上 QtWebEngine 一启动就崩溃）；真实 QQ 回执时序；真实模型话术。
+

@@ -31,7 +31,7 @@ CLAIM_TTL = 600   # 一轮生成占住提醒最多这么久（秒）：进程里
 # 拼提示词时先在这里按（数据库、角色、key、日期）占住，占住的轮次才带提醒；成功说完写进库，失败 / 取消就放掉。
 # 只在内存里：单进程结构（AGENTS.md），重启时没有进行中的轮次，没说完的自然作废。
 _CLAIMS_LOCK = threading.Lock()
-_CLAIMS: dict[tuple[str, str, str, str], tuple[str, float]] = {}
+_CLAIMS: dict[tuple[str, str, str, str], tuple[str, float]] = {}   # 占位 → （轮次, 到期时刻 monotonic）
 
 
 @dataclass(frozen=True)
@@ -270,13 +270,13 @@ class CompanionDates:
         day, now = self.today(), time.monotonic()
         taken = []
         with _CLAIMS_LOCK:
-            for slot, (_, at) in list(_CLAIMS.items()):
-                if now - at > CLAIM_TTL: del _CLAIMS[slot]
+            for slot, (_, until) in list(_CLAIMS.items()):
+                if now > until: del _CLAIMS[slot]
             for d in events:
                 slot = self._slot(character_id, d.key, day)
                 owner = _CLAIMS.get(slot)
                 if (owner and owner[0] != claim) or self.mentioned(character_id, d.key, day): continue
-                _CLAIMS[slot] = (claim, now); taken.append(d)
+                _CLAIMS[slot] = (claim, now + CLAIM_TTL); taken.append(d)
         return taken
 
     def _owned(self, character_id: str, claim: str) -> list[tuple[str, str, str, str]]:
@@ -293,6 +293,13 @@ class CompanionDates:
                     c.execute('INSERT OR IGNORE INTO companion_date_mentions(character_id, key, day, at) VALUES (?,?,?,?)',
                               (cid, key, day, self.clock()))
             for slot in slots: _CLAIMS.pop(slot, None)
+
+    def hold(self, character_id: str, claim: str, seconds: float) -> None:
+        """生成完了但还没真正送到（主动发到 QQ，要等插件回执）：把这一轮的占位延长到 seconds 秒后，
+        回执到了再 confirm / release（Codex PR #46 第二轮：QQ 明确发送失败时生日不能算提过）。"""
+        until = time.monotonic() + seconds
+        with _CLAIMS_LOCK:
+            for slot in self._owned(character_id, claim): _CLAIMS[slot] = (claim, max(until, _CLAIMS[slot][1]))
 
     def release(self, character_id: str, claim: str) -> None:
         """这一轮失败、被取消或回复被拦下：放掉占住的日子，下一轮还能提。"""

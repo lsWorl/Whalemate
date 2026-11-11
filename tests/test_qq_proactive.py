@@ -74,6 +74,36 @@ class ProactiveQQTests(Base):
         self.assertEqual(self.db.recent_messages(5, self.character.id), [])
         self.assertFalse(self.service.outbox_ack({'id': 'x'*32, 'status': 'whatever'})['ok'])
 
+    def test_special_day_on_qq_counts_only_when_delivered(self):
+        """Codex PR #46 第二轮：主动发到 QQ 的那一轮带了生日提醒。插件回报失败 → 生日没算提过，下一轮还会提；
+        送到了 → 记成今天提过；取走后回执一直没来 → 按发出去算。"""
+        from datetime import date, timedelta
+        from aicompanion.services.companion_dates import CompanionDates
+        dates = CompanionDates(self.db); dates.set_met_on(self.character.id, date.today()-timedelta(days=99))   # 今天第 100 天
+        key = 'milestone:100'
+        results = []
+        turn = self.service.proactive_qq('闲聊', on_done=results.append)
+        self.assertIn('特别的日子', self.model.prompts[-1])
+        self.assertFalse(dates.mentioned(self.character.id, key))                         # 生成完还不算
+        self.assertEqual(dates.prompt(self.character.id, claim='other')[1], ())           # 等回执期间别的轮次不会也提
+        self.service.take_outbox(); self.service.outbox_ack({'id': turn, 'status': 'failed'})
+        self.assertFalse(dates.mentioned(self.character.id, key))
+        turn = self.service.proactive_qq('闲聊', on_done=results.append)
+        self.assertIn('特别的日子', self.model.prompts[-1])                               # 放回来了，这一轮又带上
+        self.service.take_outbox(); self.service.outbox_ack({'id': turn, 'status': 'sent'})
+        self.assertTrue(dates.mentioned(self.character.id, key))
+        self.assertEqual(results, [False, True])
+
+    def test_taken_without_receipt_counts_as_sent(self):
+        now = [1000.0]; self.service.clock = lambda: now[0]
+        results, taken = [], []
+        turn = self.service.proactive_qq('闲聊', on_done=results.append, on_taken=taken.append)
+        self.service.take_outbox(); self.assertEqual(taken, [turn]); self.assertEqual(results, [])
+        now[0] += self.service.ACK_TTL+1; self.service.take_outbox()
+        self.assertEqual(results, [True])
+        self.assertEqual(self.db.recent_messages(5, self.character.id)[-1]['role'], 'assistant')   # 记录保留
+        self.assertFalse(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])            # 迟到的回执不再重复处理
+
     def test_not_ready_generates_nothing(self):
         runtime.last_heartbeat = None
         self.assertIsNone(self.service.proactive_qq('闲聊')); self.assertEqual(self.model.prompts, [])

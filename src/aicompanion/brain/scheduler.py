@@ -6,13 +6,18 @@
 规则（数值是初值，按体感调，都能在设置里改）：
 - 总开关、安静时段、专注模式照旧；他 3 分钟内刚说过话不插嘴。
 - 每天主动开口有上限（proactive_daily_limit，默认 5 次，追问也算）。
-- 两次主动开口至少隔一段时间（proactive_gap_minutes，默认 90 分钟，再乘关系节奏：越亲近越常来）。
+- 两次主动开口至少隔一段时间（proactive_gap_minutes，默认 90 分钟）。这是下限：关系还生疏时节奏放慢、隔得更久，
+  再亲近也不会比用户设的更短（Codex PR #46 第二轮）。
 - 上一句他还没回：不开新话题。过一会儿（45～90 分钟）他在电脑前却没理，可能撒娇追一句，也可能自己算了；
   一个话题最多追一次；3 小时还没回就当他没空，记一点点委屈（持续情绪里的“被冷落”，力度很小），之后可以聊别的。
 - 他回了（主动消息之后他说了话）就算接上了。
 - 先后：今天是特别的日子而他还没来 → 心里惦记的事 → 早晚问候 / 闲聊。
 
-记录在 outreach_log：每次主动开口一条，渠道（桌面 / QQ）、状态（sent / answered / followed / let_go / ignored）。
+记录在 outreach_log：每次主动开口一条，渠道（桌面 / QQ）、状态：
+- pending：选中了、还没交出去（桌面在生成，或 QQ 在生成 / 等插件取件）；
+- delivering：QQ 插件已经取走、发送结果未知（回执可能丢）。它已经可能被看到了，不能当作没发过；
+- sent / answered / followed / let_go / ignored：说出来以后的去向。
+sent_at 记的是对方最早能看到的时刻（桌面：开始说；QQ：插件取件），用来判断“他是不是回了这一句”。
 """
 from __future__ import annotations
 
@@ -30,7 +35,7 @@ PRESENT_SECONDS = 600            # 电脑闲置不到 10 分钟：他在电脑�
 FOLLOW_AFTER = (45*60, 90*60)    # 没回多久以后考虑追一句
 FOLLOW_CHANCE = 0.6              # 到时候追问的概率；其余就“算了”
 GIVE_UP_SECONDS = 3*3600
-PENDING_STALE = 30*60            # 发送中超过半小时还没确认：当作没发出去
+PENDING_STALE = 30*60            # 占位半小时还没交出去（程序中途退出之类）：当作没发出去；已交给插件的按发出去算
 DATE_FROM_HOUR = 9
 
 
@@ -59,7 +64,8 @@ class ProactiveScheduler:
         if self.greetings is not None:
             try: pace = float(self.greetings.pace_of(character_id))
             except Exception: pace = 1.0
-        return minutes*60*max(0.3, pace)
+        # 用户填的是“至少”：关系节奏只能把间隔拉长（还不熟时少打扰），不能缩短到设置以下（Codex PR #46 第二轮）
+        return minutes*60*max(1.0, pace)
 
     # ---- 记录 --------------------------------------------------------------------------------
     def reserve(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
@@ -71,23 +77,39 @@ class ProactiveScheduler:
                              (character_id, outreach.source, outreach.key, channel, 'pending', outreach.payload.get('parent_id'), now)).lastrowid
         return self.db.locked(work)
 
+    def attach(self, outreach_id: int, turn_id: str) -> None:
+        """记下这次主动开口对应的聊天轮次：追问时按它找回上一句原话（Codex PR #46 第二轮 P3）。"""
+        if not turn_id: return
+        with self.db.transaction() as c:
+            c.execute('UPDATE outreach_log SET turn_id=? WHERE id=?', (turn_id, outreach_id))
+
+    def handed(self, outreach_id: int, turn_id: str | None = None) -> None:
+        """QQ 插件取走了这条：从这一刻起对方就可能看到（第一段），回执可能晚到甚至丢失。
+        记下取件时间当作“说出来的时候”，状态改成 delivering：之后不再当作没发过（Codex PR #46 第二轮两项 P2）。"""
+        now = self.clock()
+        with self.db.transaction() as c:
+            c.execute("UPDATE outreach_log SET status='delivering', handed_at=?, turn_id=COALESCE(?, turn_id) WHERE id=? AND status='pending'",
+                      (now, turn_id, outreach_id))
+
     def confirm(self, character_id: str, outreach_id: int, outreach: Outreach, channel: str = 'desktop') -> None:
-        """真说出来了：pending → sent（时间按说出来的时候算）；追问还会把它追的那条标成 followed；分享的活动标成 shared。"""
+        """真说出来了：→ sent；追问还会把它追的那条标成 followed。
+        时间按对方最早能看到的时候算：QQ 是插件取件的时刻（主人看到第一段就回复，可能早于整条的回执）；桌面是开始说的时候。"""
         now = self.clock()
         def work(c):
             parent = outreach.payload.get('parent_id')
             if parent: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
-            updated = c.execute("UPDATE outreach_log SET status='sent', channel=?, sent_at=? WHERE id=? AND status='pending'",
-                                (channel, now, outreach_id)).rowcount
-            if not updated:   # 回执来得太晚，占位已经当作没发出去撤掉了：照实补记一条
+            updated = c.execute("UPDATE outreach_log SET status='sent', channel=?, sent_at=COALESCE(handed_at, sent_at) "
+                                "WHERE id=? AND status IN ('pending','delivering')", (channel, outreach_id)).rowcount
+            if not updated and not c.execute('SELECT 1 FROM outreach_log WHERE id=?', (outreach_id,)).fetchone():
+                # 回执来得太晚，占位已经当作没发出去撤掉了：照实补记一条
                 c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
                           (character_id, outreach.source, outreach.key, channel, 'sent', parent, now))
         self.db.locked(work)
 
     def release(self, outreach_id: int) -> None:
-        """没说成（生成失败、被打断、QQ 没发出去）：撤掉占位，不算说过。"""
+        """没说成（生成失败、被打断、QQ 明确没发出去）：撤掉占位，不算说过。"""
         with self.db.transaction() as c:
-            c.execute("DELETE FROM outreach_log WHERE id=? AND status='pending'", (outreach_id,))
+            c.execute("DELETE FROM outreach_log WHERE id=? AND status IN ('pending','delivering')", (outreach_id,))
 
     def record(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
         """占位并立刻确认（已经说出来时用）。"""
@@ -101,16 +123,35 @@ class ProactiveScheduler:
             return c.execute('SELECT COUNT(*) FROM outreach_log WHERE character_id=? AND sent_at>=?', (character_id, start)).fetchone()[0]
 
     def last(self, character_id: str):
-        """最近一条已经说出来的（pending 另算）。"""
+        """最近一条已经说出来的（发送中的另算）。"""
         with self.db.transaction() as c:
-            return c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status!='pending' ORDER BY id DESC LIMIT 1", (character_id,)).fetchone()
+            return c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status NOT IN ('pending','delivering') ORDER BY id DESC LIMIT 1",
+                             (character_id,)).fetchone()
 
     def pending(self, character_id: str) -> bool:
-        """有还在发送中的主动消息。超过 PENDING_STALE 还没确认的当作没发出去（程序中途退出之类），撤掉。"""
+        """有还在发送中的主动消息。过了 PENDING_STALE 还没结果的（程序中途退出、回执丢了）分两种处理：
+        - 还没交出去（pending）：确实没发出去。撤掉，并把它在问候 / 纪念日 / 心事那边的占位一起放回，下次还能说
+          （Codex PR #46 第二轮：生成前退出重启，生日占位不能一直卡着）；
+        - 插件已经取走（delivering）：可能已经发到了，按发出去记，不会再为同一个话题追问第二次。"""
         now = self.clock()
         with self.db.transaction() as c:
-            c.execute("DELETE FROM outreach_log WHERE character_id=? AND status='pending' AND sent_at<?", (character_id, now-PENDING_STALE))
-            return c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND status='pending' LIMIT 1", (character_id,)).fetchone() is not None
+            stale = c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status='pending' AND sent_at<?",
+                              (character_id, now-PENDING_STALE)).fetchall()
+            for row in stale: c.execute("DELETE FROM outreach_log WHERE id=? AND status='pending'", (row['id'],))
+            c.execute("UPDATE outreach_log SET status='sent', sent_at=COALESCE(handed_at, sent_at) "
+                      "WHERE character_id=? AND status='delivering' AND handed_at<?", (character_id, now-PENDING_STALE))
+            busy = c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND status IN ('pending','delivering') LIMIT 1",
+                             (character_id,)).fetchone() is not None
+        for row in stale: self._give_back(character_id, row['source'], row['key'])
+        return busy
+
+    def _give_back(self, character_id: str, source: str, key: str) -> None:
+        try:
+            if source in ('date', 'greeting'): self.db.release_proactive(character_id, key)
+            elif source == 'purpose' and self.purposes is not None and key.startswith('purpose:'):
+                self.purposes.release(int(key.split(':', 1)[1]))
+        except Exception:
+            pass
 
     def seconds_since_user(self, character_id: str) -> float:
         """他最近一次说话距今多久：桌面和主人的 QQ 私聊都算（两边都记在 desktop 频道；Codex PR #46 第 2 项）。"""
@@ -172,6 +213,8 @@ class ProactiveScheduler:
 
     def _follow_up(self, character_id, last, now_ts, system_idle) -> Outreach | None:
         if last['source'] == 'follow' or last['parent_id']: return None             # 追问过了就不再追
+        with self.db.transaction() as c:                                                 # 同一个话题已经有追问（含发送中、结果未知的）
+            if c.execute('SELECT 1 FROM outreach_log WHERE parent_id=? LIMIT 1', (last['id'],)).fetchone(): return None
         if system_idle >= PRESENT_SECONDS: return None                               # 他不在电脑前，不算没理她
         rng = random.Random(f"{character_id}:{last['id']}")                           # 每条消息的“多久后追”固定，重启也一样
         # 追问也是一次主动开口，设置里的“两次之间至少隔 N 分钟”同样适用（Codex PR #46 第 3 项）；
@@ -179,18 +222,25 @@ class ProactiveScheduler:
         if now_ts-last['sent_at'] < max(rng.uniform(*FOLLOW_AFTER), self.gap_seconds(character_id)): return None
         if self.rng() >= FOLLOW_CHANCE:
             self._set(last['id'], 'let_go', now_ts); return None                       # 自己算了
-        said = self._said_after(character_id, last['sent_at'])
+        said = self._said(character_id, last)
         gist = f'（你说的是：“{said[:60]}”）' if said else ''
         return Outreach('follow', f"follow:{last['id']}",
                         f'你刚才主动找他说了话{gist}，过了好一会儿他还没回，人好像就在电脑前。'
                         '可以撒个娇追一句，或者装作不在意地嘀咕一句；只说一句，别质问，别重复刚才的话，也别说是系统让你来的。',
                         {'parent_id': last['id']})
 
-    def _said_after(self, character_id, since) -> str:
-        stamp = datetime.fromtimestamp(since-5, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    def _said(self, character_id, last) -> str:
+        """上一句主动消息的原话：按记下的轮次取；旧记录没有轮次时按时间就近找。
+        QQ 是先生成、插件心跳时才取件，取件时间可能比生成晚十几秒，不能只按时间往前看几秒（Codex PR #46 第二轮 P3）。"""
         with self.db.transaction() as c:
-            row = c.execute("SELECT content FROM chat_messages WHERE character_id=? AND channel='desktop' AND role='assistant' AND created_at>=? "
-                            "ORDER BY id LIMIT 1", (character_id, stamp)).fetchone()
+            row = None
+            if last['turn_id']:
+                row = c.execute("SELECT content FROM chat_messages WHERE character_id=? AND turn_id=? AND role='assistant' LIMIT 1",
+                                (character_id, last['turn_id'])).fetchone()
+            if row is None:
+                stamp = datetime.fromtimestamp(last['sent_at']-5, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                row = c.execute("SELECT content FROM chat_messages WHERE character_id=? AND channel='desktop' AND role='assistant' AND created_at>=? "
+                                "ORDER BY id LIMIT 1", (character_id, stamp)).fetchone()
         return ' '.join(str(row['content']).split()) if row else ''
 
     def _date(self, character_id, now: datetime) -> Outreach | None:

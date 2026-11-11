@@ -209,7 +209,8 @@ CREATE TABLE IF NOT EXISTS companion_date_mentions (
 CREATE TABLE IF NOT EXISTS outreach_log (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, source TEXT NOT NULL, key TEXT NOT NULL,
  channel TEXT NOT NULL DEFAULT 'desktop', status TEXT NOT NULL DEFAULT 'sent', parent_id INTEGER,
- sent_at REAL NOT NULL, settled_at REAL
+ sent_at REAL NOT NULL, settled_at REAL, turn_id TEXT, handed_at REAL
 );
+CREATE INDEX IF NOT EXISTS ix_outreach_parent ON outreach_log(parent_id);
 CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
 """

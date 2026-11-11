@@ -129,7 +129,7 @@ class CodexRoundOneTests(SchedulerTests):
         window = SimpleNamespace(
             controller=SimpleNamespace(character=SimpleNamespace(id=CID)), database=self.db, outreach_scheduler=self.s,
             purposes=SimpleNamespace(delivered=lambda i: None, release=lambda i: None),
-            _proactive_on_qq=lambda intent, done: receipts.append(done) or True)
+            _proactive_on_qq=lambda intent, done, taken=None: receipts.append(done) or True)
         MainWindow._deliver_outreach(window, CID, self.s.next(CID, 30, 9999))
         self.later(60)
         self.assertIsNone(self.s.next(CID, 30, 9999))                                     # 回执没到：占着，不再追第二遍
@@ -163,6 +163,108 @@ class CodexRoundOneTests(SchedulerTests):
         self.later(91*60); self.assertIsNone(self.s.next(CID, 30, 9999))                  # 设成 12 小时：91 分钟后不追问
         self.db.set_setting('proactive_gap_minutes', 30)
         self.assertEqual(self.s.next(CID, 30, 9999).source, 'follow')
+
+
+
+class CodexRoundTwoTests(SchedulerTests):
+    """Codex PR #46 第二轮（22b2f18）五项 P2、一项 P3 的回归。"""
+
+    def window(self, receipts, hand=None):
+        """真实的 MainWindow._deliver_outreach；_proactive_on_qq 换成替身：记下回执回调，按需模拟插件取件。"""
+        from aicompanion.ui.main_window import MainWindow
+        def on_qq(intent, done, taken=None):
+            receipts.append(done)
+            if hand and taken: taken(hand)
+            return True
+        return MainWindow, SimpleNamespace(
+            controller=SimpleNamespace(character=SimpleNamespace(id=CID)), database=self.db, outreach_scheduler=self.s,
+            purposes=SimpleNamespace(delivered=lambda i: None, release=lambda i: None), _proactive_on_qq=on_qq)
+
+    def say_turn(self, role, text, turn, source='qq'):
+        stamp = datetime.fromtimestamp(self.now[0], timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO chat_messages(role, content, created_at, character_id, turn_id, status, source, channel) "
+                      "VALUES (?,?,?,?,?, 'complete', ?, 'desktop')", (role, text, stamp, CID, turn, source))
+
+    def rows(self):
+        with self.db.transaction() as c:
+            return [tuple(r) for r in c.execute('SELECT source, status, parent_id FROM outreach_log ORDER BY id')]
+
+    def test_taken_but_unacked_follow_up_is_never_repeated(self):
+        """插件取走了追问、回执丢了：30 分钟后不再撤掉重来，按已发出算；同一个话题只追问一次。"""
+        self.send(self.s.next(CID, 0, 9999))
+        self.later(FOLLOW_AFTER[1]+60)
+        receipts = []; cls, window = self.window(receipts, hand='f'*32)
+        follow = self.s.next(CID, 30, 9999); self.assertEqual(follow.source, 'follow')
+        cls._deliver_outreach(window, CID, follow)
+        for _ in range(6):                                                                # 往后两个多小时，每 20 分钟一次 tick
+            self.later(20*60); self.assertIsNone(self.s.next(CID, 30, 9999))
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual([r[0] for r in self.rows()], ['greeting', 'follow'])
+        receipts[0](True)                                                                 # 迟到的回执：不再补记一条
+        self.assertEqual(len(self.rows()), 2)
+
+    def test_reply_before_final_receipt_counts_as_answer(self):
+        """分段发送：主人看到第一段就回了，12 秒后才收到整条回执。回复时间早于回执也算接上了，不追问。"""
+        receipts = []; cls, window = self.window(receipts, hand='a'*32)
+        cls._deliver_outreach(window, CID, self.s.next(CID, 0, 9999))                    # 选中即交给插件（取件）
+        self.later(5); self.say('user', '在呢')
+        self.later(7); receipts[0](True)                                                  # 回执
+        self.later(91*60)
+        self.assertNotEqual(getattr(self.s.next(CID, 30, 9999), 'source', None), 'follow')
+        self.assertEqual(self.rows()[0][:2], ('greeting', 'answered'))
+
+    def test_restart_before_generation_gives_special_day_back(self):
+        """选中生日、占位后还没生成就退出：重启 31 分钟后占位作废，纪念日的“今天已选”也一并放回，还能再说。"""
+        from aicompanion.services.companion_dates import CompanionDates
+        CompanionDates(self.db, clock=lambda: self.now[0]).add(CID, 'birthday', '', datetime.fromtimestamp(self.now[0]).date())
+        first = self.s.next(CID, 0, 9999); self.assertEqual(first.source, 'date')
+        self.s.reserve(CID, first)                                                        # 然后程序退出
+        db = Database(Path(self.tmp.name)/'s.sqlite3'); db.initialize()
+        again = ProactiveScheduler(db, self.purposes, self.greet, clock=lambda: self.now[0], rng=lambda: self.roll[0])
+        self.later(31*60)
+        self.assertEqual(getattr(again.next(CID, 0, 9999), 'source', None), 'date')
+        self.assertEqual(again.today_count(CID), 0)
+
+    def test_close_relationship_never_goes_below_the_set_gap(self):
+        """关系很近（节奏 0.6）、设置 120 分钟：91 分钟时不追问，过了 120 分钟才可能追问。"""
+        self.greet.pace_of = lambda cid: 0.6
+        self.db.set_setting('proactive_gap_minutes', 120)
+        self.assertEqual(self.s.gap_seconds(CID), 120*60)
+        self.send(self.s.next(CID, 0, 9999))
+        self.later(91*60); self.assertIsNone(self.s.next(CID, 30, 9999))
+        self.later(30*60); self.assertEqual(self.s.next(CID, 30, 9999).source, 'follow')
+        self.greet.pace_of = lambda cid: 1.5                                              # 还不熟：间隔拉长
+        self.assertEqual(self.s.gap_seconds(CID), 180*60)
+
+    def test_follow_up_quotes_the_qq_message_by_turn(self):
+        """QQ 先生成、插件 12 秒后才取件：追问仍能按轮次找回上一句原话。"""
+        turn = 'b'*32
+        receipts = []; cls, window = self.window(receipts)
+        cls._deliver_outreach(window, CID, self.s.next(CID, 0, 9999))
+        self.say_turn('assistant', '你看今天的晚霞好好看', turn)
+        self.later(12)
+        with self.db.transaction() as c: oid = c.execute('SELECT id FROM outreach_log').fetchone()[0]
+        self.s.handed(oid, turn); receipts[0](True)
+        self.later(91*60)
+        follow = self.s.next(CID, 30, 9999)
+        self.assertEqual(follow.source, 'follow'); self.assertIn('晚霞', follow.intent)
+
+    def test_outreach_columns_added_to_existing_v13_table(self):
+        """先跑过这个分支的 v13 库（outreach_log 还没有两列新列）：重新打开时补上，不丢数据。"""
+        path = Path(self.tmp.name)/'old.sqlite3'
+        db = Database(path); db.initialize()
+        with db.transaction() as c:
+            c.execute('DROP TABLE outreach_log')
+            c.execute("CREATE TABLE outreach_log (id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, source TEXT NOT NULL, "
+                      "key TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'desktop', status TEXT NOT NULL DEFAULT 'sent', parent_id INTEGER, "
+                      "sent_at REAL NOT NULL, settled_at REAL)")
+            c.execute("INSERT INTO outreach_log(character_id, source, key, sent_at) VALUES (?, 'greeting', 'g', 1)", (CID,))
+        Database(path).initialize()
+        with db.transaction() as c:
+            columns = {r[1] for r in c.execute('PRAGMA table_info(outreach_log)')}
+            self.assertTrue({'turn_id', 'handed_at'} <= columns)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM outreach_log').fetchone()[0], 1)
 
 
 if __name__ == '__main__':

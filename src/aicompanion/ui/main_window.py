@@ -742,21 +742,24 @@ class MainWindow(QMainWindow):
             else: self.outreach_scheduler.release(rid)
             if purpose: self.purposes.delivered(purpose['id']) if ok else self.purposes.release(purpose['id'])
             if not ok and claimed: self.database.release_proactive(cid,o.key)
-        if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq')):return
+        # QQ：插件取走那一刻起对方就可能看到，记成 delivering（回执丢了也不再当作没发过、不会重复追问）
+        taken=lambda turn,rid=reserved:self.outreach_scheduler.handed(rid,turn)
+        if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq'),taken):return
         generation=self.coordinator.active=uuid4().hex
+        self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
         self.outreaches[generation]=done
         self._start(generation,proactive=outreach.intent)
 
-    def _proactive_on_qq(self,intent,done):
+    def _proactive_on_qq(self,intent,done,taken=None):
         """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
-        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说。返回 True 表示这次走 QQ，桌面不再说。"""
+        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说；插件取件时 taken(轮次)。返回 True 表示这次走 QQ，桌面不再说。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.services.proactive_service import choose_channel
         from aicompanion.ui.desktop_integration import system_idle_seconds
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
         if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
-        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done),self)
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken),self)
         self.tasks.add(worker)
         worker.succeeded.connect(lambda turn:None if turn else done(False))
         worker.failed.connect(lambda error:done(False))
