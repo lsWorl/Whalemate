@@ -144,6 +144,31 @@ class ExpressionUITests(unittest.TestCase):
                     self.assertEqual(page.table.item(0,1).text(),'开心到转圈')
                 finally:
                     page.deleteLater();self.app.processEvents()
+    def test_library_auto_meaning_respects_money_quota(self):
+        # Codex 审计 PR #31 R2：图库入口和 QQ 后台一样检查金额额度；到限不调用模型，队列保留
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            (root/'开心').mkdir()
+            for n in range(2):(root/'开心'/f'{n}.png').write_bytes(fixtures.png(0xff101010+n*4099))
+            db.set_setting('qq_meme_root',str(root));db.set_setting('quota_daily_total',0.5)
+            from aicompanion.expression.catalog import AssetCatalog
+            AssetCatalog(db).scan()
+            calls=[]
+            def analyze(media,data,mime):   # 每次识图记账 0.3 元：第二张开始前已超 0.5 元
+                calls.append(1);db.add_token_usage('qq','mock',1,1,cost=0.3);return {'suitable':True,'meaning':'开心'}
+            with mock.patch('aicompanion.bridge.media.QQMedia.vision_ready',return_value=True), \
+                 mock.patch('aicompanion.bridge.media.QQMedia.analyze_sticker',autospec=True,side_effect=analyze):
+                db.add_token_usage('qq','mock',1,1,cost=0.3)
+                page=LibraryPage(db,'deepseek-whale',controller=SimpleNamespace())
+                try:
+                    worker=page.analyzer;self.assertIsNotNone(worker);self.assertTrue(worker.wait(5000))
+                    for _ in range(4):self.app.processEvents()
+                    self.assertEqual(len(calls),1)
+                    self.assertEqual(sorted(r['metadata']['analysis'] for r in page.catalog.rows()),['done','pending'])
+                    self.assertFalse(page.analyze_soon());self.assertEqual(len(calls),1)   # 已到限：不再启动
+                finally:
+                    page.deleteLater();self.app.processEvents()
     def test_worker_orders_attachment_before_text_and_final_without_tts_tags(self):
         with tempfile.TemporaryDirectory() as temp:
             db=Database(Path(temp)/'synthetic.sqlite3');db.initialize()

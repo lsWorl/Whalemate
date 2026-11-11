@@ -156,6 +156,7 @@ class LibraryPage(QWidget):
         text=f"已{'启用' if enabled else '停用'} {len(ids)-pending} 张"
         if pending and enabled:text+=f"；{pending} 张许可待确认，在“来源”里选一项后才会使用"
         self.status.setText(text)
+        if enabled:self.analyze_soon()   # 重新启用的图如果还在等识别含义，接着识别
     def set_license(self):
         ids=self.selected_ids()
         if not ids:self.status.setText('先在表格里选中图片');return
@@ -169,6 +170,7 @@ class LibraryPage(QWidget):
         self.refresh();self.keep_selection(ids)
         self.status.setText(f"已把 {len(ids)-len(failed)} 张设为“{LICENSE_LABELS.get(license,license)}”"
                             +(f"；{len(failed)} 张没改：{failed[0]}" if failed else ''))
+        self.analyze_soon()   # 确认来源后可用的图，如果还在等识别含义，接着识别
     def save_meaning(self):
         aid=self.selected()
         if not aid:self.status.setText('选中一张图再改含义');return
@@ -203,16 +205,27 @@ class LibraryPage(QWidget):
         if media is None:return '打开设置窗口时自动识别'
         if not media.vision_ready():return '在“模型”页选好识图模型后自动识别，现在先按分类名使用'
         return '后台识别中' if self.analyzer is not None else '稍后自动识别'
+    @staticmethod
+    def quota_stopped(database):
+        """金额额度是否已到上限。识图费用记在 qq 用途上，和 QQ 后台分析用同一个检查（Codex 审计 PR #31 R2）。"""
+        from aicompanion.usage.meter import Quota
+        try:return Quota(database).check_silent('qq')=='stop'
+        except Exception:return True   # 查不了额度时宁可不调用模型
     def analyze_soon(self):
-        """后台识别几张等识别含义的图；识完一批再接下一批，直到没有或当天额度用完。"""
+        """后台识别几张等识别含义的图；识完一批再接下一批，直到没有、当天次数用完或金额额度到限（队列保留，下次再接着识别）。"""
         media=self.media()
         if media is None or self.analyzer is not None or not media.vision_ready():return False
         from aicompanion.expression.collect import StickerCollector
         collector=StickerCollector(self.catalog.db,self.catalog)
-        if not collector.pending(1):return False
-        # 线程挂在主窗口上（和导入一样）：关掉设置窗口时这一批照常识别完，不会因为页面销毁而中断崩溃
+        if not collector.pending(1) or self.quota_stopped(self.catalog.db):return False
+        # 线程挂在主窗口上（和导入一样）：关掉设置窗口时这一批照常识别完，不会因为页面销毁而中断崩溃。
+        # 同一张图不会被重开的页面或 QQ 服务再交给模型一次：collector 在分析层按素材领取（R3）。
+        # 页面关掉后 worker 还在跑：每张开始前的检查不碰页面对象，只用数据库
+        database,stopped=self.catalog.db,self.quota_stopped
+        def alive(token):
+            return not token.event.is_set() and not stopped(database)
         worker=self.start_worker(lambda token:collector.analyze_pending(media.analyze_sticker,limit=self.ANALYZE_BATCH,
-                                                                        alive=lambda:not token.event.is_set()))
+                                                                        alive=lambda:alive(token)))
         self.analyzer=worker
         worker.succeeded.connect(self.analyzed);worker.finished.connect(self.analysis_finished);worker.start()
         return True

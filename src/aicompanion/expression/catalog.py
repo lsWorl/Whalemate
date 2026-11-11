@@ -183,19 +183,38 @@ class AssetCatalog:
         self.db.locked(apply)
     def _adopt(self,asset_id,scanned):
         """旧版扫描登记成“待审核、来源不明”的自己的图：按新的默认改成自己的图并启用（用户停用过的保持停用）；
-        含义还是默认值且没排过识别的，排进自动识别。清单导入的、用户确认过许可的不碰。"""
+        含义还是默认值且没排过识别的，排进自动识别。
+        Codex 审计（PR #31 R1）：from_pack 是这个 PR 才写的，旧版 import_pack 导入的记录没有它，不能据此判断来源。
+        所以只认“旧记录本身就是来源不明”的：许可 unknown 且原作者、来源都是空的（旧版扫描登记的样子）。
+        写了原作者或来源的（旧素材清单、旧版手动导入填过的）保持原样待确认，原作者、来源、含义都不改。
+        含义是不是默认值也只看旧记录自己的元数据，不看这次扫描补的默认值。"""
         def apply(c):
             row=c.execute('SELECT metadata,review_status,enabled FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
             if not row:return
             metadata=json.loads(row['metadata']);status=row['review_status'];enabled=row['enabled']
             if metadata.get('from_pack') or metadata.get('collected'):return
-            if status=='pending_review' and metadata.get('license','unknown')=='unknown' and scanned.get('license')=='user-owned':
+            if status=='pending_review' and self._unattributed(metadata) and scanned.get('license')=='user-owned':
                 metadata.update(OWNED);status='approved';enabled=int(self._chosen_enabled(metadata,row))
-            if scanned.get('analysis')=='pending' and 'analysis' not in metadata and not metadata.get('user_annotated'):
+            # 含义排队识别和许可无关：没审核的图只是先排着，审核启用后才真正识别（见 collect.pending）
+            if scanned.get('analysis')=='pending' and 'analysis' not in metadata and self._default_meaning(metadata):
                 metadata['analysis']='pending'
             c.execute('UPDATE expression_assets SET metadata=?,review_status=?,enabled=? WHERE asset_id=?',
                       (json.dumps(metadata,ensure_ascii=False),status,enabled,asset_id))
         self.db.locked(apply)
+    @staticmethod
+    def _unattributed(metadata):
+        """旧记录是不是“来源不明”：许可未知，原作者和来源也都没写。"""
+        return (metadata.get('license','unknown')=='unknown' and not str(metadata.get('author','')).strip()
+                and not str(metadata.get('source','')).strip())
+    @classmethod
+    def _default_meaning(cls,metadata):
+        """旧记录的含义是否只是扫描时补的默认值（可以交给识图）。用户改过的、清单写明的都不算。
+        有 annotation_defaults 的按它；更早的记录没有这个标记，只有含义为空或等于分类目录名才算默认。"""
+        if metadata.get('user_annotated'):return False
+        defaults=metadata.get(cls.DEFAULTS_KEY)
+        if isinstance(defaults,list):return 'semantic' in defaults
+        semantic=str(metadata.get('semantic','')).strip()
+        return not semantic or semantic==str(metadata.get('category','')).strip()
     def get(self,asset_id):
         with self.db.transaction() as c: row=c.execute('SELECT * FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
         if row is None: return None

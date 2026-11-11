@@ -85,6 +85,36 @@ class CollectorTests(Base):
         self.assertEqual(len(self.collector.pending()), 1)
         self.assertEqual(self.collector.stats()['analyzed_today'], 1)
 
+    def test_unreviewed_or_disabled_image_waits_without_using_attempts(self):
+        # Codex 审计 PR #31 R4：许可待确认 / 停用的图不交给模型、不扣次数、不算失败；确认启用后照常识别
+        catalog = self.controller.expression.catalog
+        (self.library/'清单').mkdir(); path = self.library/'清单'/'p.png'; path.write_bytes(png(0xff313131))
+        pack, _ = catalog.register(path, self.library, dict(from_pack=True, analysis='pending'))
+        off = self.ingest(0xff424242)['asset_id']; catalog.enable(off, False)
+        calls = []
+        def analyzer(data, mime): calls.append(1); return dict(GOOD)
+        for _ in range(3): self.assertEqual(self.collector.analyze_pending(analyzer), 0)
+        self.assertEqual((calls, self.collector.stats()['analyzed_today']), ([], 0))
+        for aid in (pack, off):
+            meta = catalog.get(aid)['metadata']; self.assertEqual((meta['analysis'], meta.get('attempts', 0)), ('pending', 0))
+        catalog.review(pack, author='', source='', license='user-owned'); catalog.enable(off, True)
+        self.assertEqual(self.collector.analyze_pending(analyzer), 2); self.assertEqual(len(calls), 2)
+        self.assertEqual({catalog.get(a)['metadata']['analysis'] for a in (pack, off)}, {'done'})
+
+    def test_same_image_is_never_analyzed_twice_concurrently(self):
+        # Codex 审计 PR #31 R3：第一个识图请求还没返回时，另一个入口（重开的图库页 / QQ 服务）不能再领同一张图
+        import threading
+        self.ingest(0xff535353)
+        entered, release = threading.Event(), threading.Event(); calls = []
+        def slow(data, mime): calls.append(1); entered.set(); release.wait(5); return dict(GOOD)
+        first = threading.Thread(target=lambda: self.collector.analyze_pending(slow)); first.start()
+        self.assertTrue(entered.wait(5))
+        other = StickerCollector(self.db, self.controller.expression.catalog)
+        self.assertEqual(other.pending(), [])
+        self.assertEqual(other.analyze_pending(slow), 0)
+        release.set(); first.join(5)
+        self.assertEqual((len(calls), self.collector.stats()['analyzed_today']), (1, 1))
+
     def test_no_library_or_disabled_collects_nothing(self):
         self.db.set_setting('qq_meme_root', '')
         self.assertEqual(self.ingest()['status'], 'no_library')   # 不往仓库自带图目录里写
