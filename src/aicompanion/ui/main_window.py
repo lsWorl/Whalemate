@@ -471,6 +471,10 @@ class MainWindow(QMainWindow):
         self.sentences=SentenceBuffer(); self.texts[generation]=''
         if not hasattr(self,'reply_queries'): self.reply_queries={}
         self.reply_queries[generation]=query   # 识别到要动手时，把用户原话交给干活的她
+        # 只有用户自己发起的这一轮可以接 <task> 去办事。主动开口（分享网页、心事、问候、追问）的轮次一律丢掉这个标记：
+        # 主动消息的提示里带着网页等外来内容，模型复述出来的标记不能变成办事（Codex PR #48 第 1 项）
+        if not hasattr(self,'task_turns'): self.task_turns=set()
+        if not proactive: self.task_turns.add(generation)
         self.delivered[generation]=''; self.reply_characters[generation]=self.controller.character.id
         self.reply_voice[generation]=self._full_voice(); self.reply_status[generation]='generating'
         if self.reply_voice[generation] and self._speech_style()=='smart':
@@ -533,6 +537,7 @@ class MainWindow(QMainWindow):
 
     def _result(self,generation,state,error):
         expression,media=self.expression_results.pop(generation,(None,None))
+        allowed_task=generation in getattr(self,'task_turns',()); getattr(self,'task_turns',set()).discard(generation)
         key=self.proactive_keys.pop(generation,None)
         if key and state!='complete': self.database.release_proactive(*key)
         outreach_done=self.outreaches.pop(generation,None)
@@ -571,7 +576,7 @@ class MainWindow(QMainWindow):
             self.voiced_first.discard(generation); self.reply_expressions.pop(generation,None)
             self.database.record_usage(self.controller.character.id,'reply_characters',len(self.texts[generation]))
             task=self.pending_tasks.pop(generation,None)
-            if task:
+            if task and allowed_task:
                 original=getattr(self,'reply_queries',{}).get(generation,'').strip()
                 goal=original if original else task   # 用原话，不用陪伴回复里的转述（转述会丢细节、擅自加步骤）
                 QTimer.singleShot(400,lambda t=goal:self._offer_task(t))
@@ -601,7 +606,8 @@ class MainWindow(QMainWindow):
         self.reply_expressions.setdefault(generation,[]).extend(c.name for c in cues if c.kind=='expression')
         tasks=[c for c in cues if c.kind=='task']
         if tasks:
-            self.pending_tasks[generation]=tasks[-1].name; cues=[c for c in cues if c.kind!='task']
+            if generation in getattr(self,'task_turns',()): self.pending_tasks[generation]=tasks[-1].name
+            cues=[c for c in cues if c.kind!='task']
             if not cues: return
         if self.speech.enabled and self.reply_voice.get(generation):
             self.pending_cues.setdefault(generation,[]).extend(cues)   # 等下一句话开始播放
@@ -746,12 +752,13 @@ class MainWindow(QMainWindow):
             else: self.outreach_scheduler.release(rid)
             if purpose: self.purposes.delivered(purpose['id']) if ok else self.purposes.release(purpose['id'])
             if not ok and claimed: self.database.release_proactive(cid,o.key)
-        if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq')):return
+        valid=lambda o=outreach:self.outreach_scheduler.still_valid(o)
+        if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq'),valid):return
         generation=self.coordinator.active=uuid4().hex
         self.outreaches[generation]=done
         self._start(generation,proactive=outreach.intent)
 
-    def _proactive_on_qq(self,intent,done):
+    def _proactive_on_qq(self,intent,done,still_valid=None):
         """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
         没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说。返回 True 表示这次走 QQ，桌面不再说。"""
         from aicompanion.bridge.server import runtime
@@ -760,7 +767,7 @@ class MainWindow(QMainWindow):
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
         if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
-        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done),self)
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,still_valid=still_valid),self)
         self.tasks.add(worker)
         worker.succeeded.connect(lambda turn:None if turn else done(False))
         worker.failed.connect(lambda error:done(False))
@@ -790,7 +797,9 @@ class MainWindow(QMainWindow):
         client=None
         if self.controller.router.ready('chat',character.id) and self.quota.check_silent('life')!='stop':
             client=self.controller.client(character.id,'life')
-        worker=TaskWorker(lambda token:self.life.run(character.id,search,client,token,character.name),self)
+        # 搜索要花点时间，期间别的对话可能把额度用完：真正发起总结请求前再查一次（Codex PR #48 第 4 项）
+        allow=lambda:self.quota.check_silent('life')!='stop'
+        worker=TaskWorker(lambda token:self.life.run(character.id,search,client,token,character.name,allow_model=allow),self)
         self.life_worker=worker; self.tasks.add(worker)
         worker.failed.connect(lambda error:None)
         worker.finished.connect(lambda w=worker:self._task_finished(w)); worker.start()

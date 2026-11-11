@@ -8,8 +8,9 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QSpinBox, QVBoxLay
 
 from aicompanion.brain.life import DAILY, LifeService
 
-STATUS = {'doing': '正在看', 'done': '看完了', 'failed': '没看成', 'shared': '跟你说了', 'cancelled': '你关掉了，没看完', 'quiet': '看完了（你关掉了，不拿来说）'}
-RESPONSE = {'answered': '你回了', 'ignored': '你没回'}
+STATUS = {'doing': '正在看', 'done': '看完了', 'failed': '没看成', 'shared': '跟你说了', 'cancelled': '你关掉了，没看完', 'quiet': '看完了（你关掉了，不拿来说）',
+          'interrupted': '没看完（中途退出了）'}
+RESPONSE = {'answered': '你回了', 'ignored': '你没回'}   # 她“算了”不再追问的，三小时后也会结算成其中一种
 
 
 class LifeCard(QWidget):

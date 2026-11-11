@@ -159,10 +159,10 @@ class CardTests(unittest.TestCase):
         from aicompanion.ui.life_card import LifeCard
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         db = Database(Path(tmp.name)/'c.sqlite3'); db.initialize()
-        LifeService(db).run(CID, FakeSearch([HIT]), FakeClient('{"thought":"<b>好玩</b>","worth":0.9}'))
+        LifeService(db).run(CID, FakeSearch([HIT]), FakeClient('{"thought":"<b>好玩</b> & 1<2","worth":0.9}'))
         card = LifeCard(db, CID)
         try:
-            self.assertIn('https://example.org/whale', card.recent.text()); self.assertIn('&lt;b&gt;', card.recent.text())   # 转义，不当成 HTML
+            self.assertIn('https://example.org/whale', card.recent.text()); self.assertIn('好玩 &amp; 1〈2', card.recent.text())   # 标记存库前就去掉，其余照样转义，不当成 HTML
             card.enabled.setChecked(False); card.daily.setValue(1); card.save()
             self.assertFalse(db.get_setting('life_enabled')); self.assertEqual(db.get_setting('life_daily_activities'), 1)
         finally:

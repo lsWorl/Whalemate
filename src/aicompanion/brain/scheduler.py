@@ -123,19 +123,25 @@ class ProactiveScheduler:
         except ValueError: return float('inf')
         return max(0.0, self.clock()-when)
 
-    def _user_spoke_since(self, character_id: str, since: float) -> bool:
-        stamp = datetime.fromtimestamp(since, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')   # chat_messages.created_at 是 UTC 文本
+    def _user_spoke_since(self, character_id: str, since: float, until: float | None = None) -> bool:
+        utc = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')   # chat_messages.created_at 是 UTC 文本
+        stamp, end = utc(since), utc(until) if until is not None else '9999'
         with self.db.transaction() as c:
-            return c.execute("SELECT 1 FROM chat_messages WHERE character_id=? AND channel='desktop' AND role='user' AND created_at>=? LIMIT 1",
-                             (character_id, stamp)).fetchone() is not None
+            return c.execute("SELECT 1 FROM chat_messages WHERE character_id=? AND channel='desktop' AND role='user' AND created_at>=? "
+                             'AND created_at<=? LIMIT 1', (character_id, stamp, end)).fetchone() is not None
 
     def settle(self, character_id: str) -> None:
-        """更新还在等回应的主动消息：他回了 → answered；太久没回 → ignored（记一点点委屈）。"""
+        """更新还在等回应的主动消息：他回了 → answered；太久没回 → ignored（记一点点委屈）。
+
+        “算了”（let_go）只表示她不再追问，不是这条消息的结局：它照样等满三小时，期间他回了算 answered，没回算 ignored，
+        这样分享的那件事在活动卡上也有最终结果（Codex PR #48 第 5 项）。从 let_go 结算时保留“放下”的时间，间隔照旧从那时算。
+        只认三小时之内他说的话，不会把他回后来那句话算到早先已经放下的这条上。"""
         now = self.clock()
         with self.db.transaction() as c:
-            waiting = c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status IN ('sent','followed') ORDER BY id", (character_id,)).fetchall()
+            waiting = c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status IN ('sent','followed','let_go') ORDER BY id",
+                                (character_id,)).fetchall()
         for row in waiting:
-            if self._user_spoke_since(character_id, row['sent_at']):
+            if self._user_spoke_since(character_id, row['sent_at'], row['sent_at']+GIVE_UP_SECONDS):
                 self._set(row['id'], 'answered', now)
                 self._shared_reply(character_id, row, 'answered')
             elif now-row['sent_at'] >= GIVE_UP_SECONDS:
@@ -153,7 +159,7 @@ class ProactiveScheduler:
         """分享的那件事有没有被接住：记到活动上；接住了她开心一点（功能四：你回了以后更新她的心情和这段话题的状态）。"""
         if row['source'] != 'share' or self.life is None: return
         try:
-            self.life.answered(int(str(row['key']).split(':', 1)[1]), response)
+            if not self.life.answered(int(str(row['key']).split(':', 1)[1]), response): return   # 已经记过：心情不再变第二次
             if response == 'answered':
                 from aicompanion.services.mood_service import MoodService
                 MoodService(self.db, clock=self.clock).event(character_id, 'praised', reason='分享的事他接住了', scale=0.4)
@@ -161,8 +167,9 @@ class ProactiveScheduler:
             pass
 
     def _set(self, outreach_id: int, status: str, now: float) -> None:
+        # 已经记过放下的时间（let_go）就保留它：next() 的间隔从“放下”算起
         with self.db.transaction() as c:
-            c.execute('UPDATE outreach_log SET status=?, settled_at=? WHERE id=?', (status, now, outreach_id))
+            c.execute('UPDATE outreach_log SET status=?, settled_at=COALESCE(settled_at, ?) WHERE id=?', (status, now, outreach_id))
 
     # ---- 决定 --------------------------------------------------------------------------------
     def next(self, character_id: str, system_idle: float, seconds_since_user: float) -> Outreach | None:
@@ -186,6 +193,8 @@ class ProactiveScheduler:
 
     def _follow_up(self, character_id, last, now_ts, system_idle) -> Outreach | None:
         if last['source'] == 'follow' or last['parent_id']: return None             # 追问过了就不再追
+        if last['source'] == 'share' and not self._life_on():
+            self._set(last['id'], 'let_go', now_ts); return None                       # 关掉了“自己的生活”：分享的事不再追问
         if system_idle >= PRESENT_SECONDS: return None                               # 他不在电脑前，不算没理她
         rng = random.Random(f"{character_id}:{last['id']}")                           # 每条消息的“多久后追”固定，重启也一样
         # 追问也是一次主动开口，设置里的“两次之间至少隔 N 分钟”同样适用（Codex PR #46 第 3 项）；
@@ -198,7 +207,7 @@ class ProactiveScheduler:
         return Outreach('follow', f"follow:{last['id']}",
                         f'你刚才主动找他说了话{gist}，过了好一会儿他还没回，人好像就在电脑前。'
                         '可以撒个娇追一句，或者装作不在意地嘀咕一句；只说一句，别质问，别重复刚才的话，也别说是系统让你来的。',
-                        {'parent_id': last['id']})
+                        {'parent_id': last['id'], 'origin': last['source']})
 
     def _said_after(self, character_id, since) -> str:
         stamp = datetime.fromtimestamp(since-5, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
@@ -229,6 +238,15 @@ class ProactiveScheduler:
         row = self.purposes.due(character_id, system_idle, seconds_since_user)
         if not row: return None
         return Outreach('purpose', f"purpose:{row['id']}", self.purposes.intent(row), {'purpose': row})
+
+    def _life_on(self) -> bool:
+        return self.life is not None and self.life.enabled()
+
+    def still_valid(self, outreach: Outreach) -> bool:
+        """选中以后、真正交出去之前还该不该说。走 QQ 时要等插件下次心跳才取走，这段时间里关掉了“自己的生活”，
+        分享和追问分享的那句就撤回（Codex PR #48 第 2 项）；已经交给插件的不追回。"""
+        if outreach.source == 'share' or outreach.payload.get('origin') == 'share': return self._life_on()
+        return True
 
     def _share(self, character_id, system_idle) -> Outreach | None:
         """她自己看到的有意思的事（功能四）。他在电脑前时才来说，不然说了也是对着空屋子。"""

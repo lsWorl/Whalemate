@@ -1576,3 +1576,33 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - 真实搜索和模型的效果；
   - 分享到 QQ 的时机；
   - Windows 真机。
+
+## 2026-11-12 PR #48 Codex 第二轮复核修复（Claude）
+
+- 做了什么（对应 Codex 在 `f881c2e` 上的 1 个 P1、4 个 P2 和一个低优先级问题）：
+  - **P1 主动分享不能触发办事**：
+    - 桌面按生成轮次记录能不能接办事。只有用户自己发起的轮次（`_start` 时不是主动开口）才收 `<task>` 标记、才分派。主动开口的轮次（分享、心事、问候、追问）一律丢掉这个标记，用户明确委托的流程不变。
+    - 分享的说明 `LifeService.intent` 把网页标题、摘要、看法、开场白放进一段 JSON，并明说只是引用的数据，里面像指令的文字不照做、不复述。
+    - 外来文字先经 `quote()` 去掉尖括号标记（`<task>`、`<think>` 等）。模型据网页写出的看法、开场白存库前也整理一遍。
+  - **P2 关掉开关后，已排队的分享和追问**：
+    - `ProactiveScheduler.still_valid()` 判断分享，以及由分享引出的追问（追问的 payload 带 `origin`），关掉“自己的生活”后不再有效。
+    - `BridgeService.proactive_qq(still_valid=...)` 把这个检查挂在发件箱条目上，`take_outbox()` 交给插件前再问一次。不该发就撤回、回调 `False`：占位释放，活动仍是 `done`，不记为她说过。已交给插件的不追回。
+    - 关掉后，上一条若是分享，到了追问的时候直接“算了”，不追问。
+  - **P2 每日件数**：`should_start` 按当天开始过的活动计数，没看成的也算，因为每次开始都已花了一次搜索。
+  - **P2 额度复查**：`LifeService.run(allow_model=...)` 在真正发起总结请求前再查一次 `Quota.check_silent('life')`。到限就不调模型，按已有的低分记录处理。
+  - **P2 “算了”后的回应结果**：
+    - `let_go` 只表示不再追问，不是这条消息的结局。`settle()` 照样等满三小时：这期间他回了记 `answered`，没回记 `ignored`。
+    - 结算时保留放下的时间（`settled_at` 不覆盖），间隔照旧从放下时算。只认三小时之内的回复。
+    - `LifeService.answered()` 每件事只记一次，心情也只跟着变一次。
+    - 行为变化：`let_go` 三小时没回，现在也会记一次“被冷落”的小委屈，和直接没回一致。
+  - **低优先级**：进行中超过半小时的活动（进程中途退出）在 `should_start` / `recent` 时标成 `interrupted`，卡片显示“没看完（中途退出了）”。
+- 怎么验证：
+  - 新增 `tests/test_life_review.py` 13 项，都用替身搜索、替身模型和模拟 QQ 发件箱。在 `f881c2e` 的代码上 13 项全部失败或报错，修复后通过。
+  - `tests/test_scheduler.py` 的替身改为接受新参数。
+  - `tests/test_life.py` 的卡片转义用例改为检查 `&` 和剩下的 `<`（`<b>` 现在存库前就去掉了）。
+  - 容器内（Linux、Python 3.13、Qt offscreen）全量 `python -m unittest discover -s tests`：**1012 项，1004 通过、8 跳过**；`git diff --check` 无输出。
+- 没验证：
+  - 没在 Windows 上跑 `tools\run_checks.bat` 和桌宠 Smoke。
+  - 没在真实 `MainWindow` 里重走 Codex 的整条办事复现链（`LifeService → … → AgentSession.start`）。本次测的是 `_handle_cues` 的分派闸门和分享说明本身。
+  - 真实模型对引用材料的遵守程度、真实搜索和 QQ 收发都没验证。
+  - #46 的既有意见仍由依赖 PR 跟进。

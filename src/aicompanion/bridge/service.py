@@ -989,9 +989,10 @@ class BridgeService:
                     and (beat.get('onebot') or {}).get('connected') and version
                     and tuple(int(x) for x in version.groups()) >= (0, 9, 0))
 
-    def proactive_qq(self, intent: str, on_done=None) -> str | None:
+    def proactive_qq(self, intent: str, on_done=None, still_valid=None) -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
-        on_done(sent: bool) 在插件回报（或过期）时调用一次。"""
+        on_done(sent: bool) 在插件回报（或过期）时调用一次。still_valid()：插件来取之前再问一次还该不该发，
+        返回 False 就撤回、当作没发（例如分享在发件箱里等着时用户关掉了“自己的生活”）。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.media import inline_image
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
@@ -1033,7 +1034,7 @@ class BridgeService:
             with self.expression_lock:
                 self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
-                                    'at': self.clock(), 'character': character.id})
+                                    'at': self.clock(), 'character': character.id, 'valid': still_valid})
                 self.outbox_waiting[turn] = on_done
             return turn
 
@@ -1043,9 +1044,17 @@ class BridgeService:
             items, self.outbox = self.outbox, []
         fresh = []
         for item in items:
-            if self.clock()-item['at'] > self.OUTBOX_TTL: self._outbox_done(item['id'], False, item.get('character'))
-            else: fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
+            if self.clock()-item['at'] > self.OUTBOX_TTL or not self._still_valid(item):
+                self._outbox_done(item['id'], False, item.get('character'))
+            else: fresh.append({k: v for k, v in item.items() if k not in ('at', 'character', 'valid')})
         return fresh
+
+    @staticmethod
+    def _still_valid(item) -> bool:
+        check = item.get('valid')
+        if check is None: return True
+        try: return bool(check())
+        except Exception: return False
 
     def outbox_ack(self, payload) -> dict:
         if set(payload) != {'id', 'status'} or payload.get('status') not in ('sent', 'partial', 'failed'): return {'ok': False}

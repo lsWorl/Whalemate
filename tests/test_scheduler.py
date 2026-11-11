@@ -129,7 +129,7 @@ class CodexRoundOneTests(SchedulerTests):
         window = SimpleNamespace(
             controller=SimpleNamespace(character=SimpleNamespace(id=CID)), database=self.db, outreach_scheduler=self.s,
             purposes=SimpleNamespace(delivered=lambda i: None, release=lambda i: None),
-            _proactive_on_qq=lambda intent, done: receipts.append(done) or True)
+            _proactive_on_qq=lambda intent, done, still_valid=None: receipts.append(done) or True)
         MainWindow._deliver_outreach(window, CID, self.s.next(CID, 30, 9999))
         self.later(60)
         self.assertIsNone(self.s.next(CID, 30, 9999))                                     # 回执没到：占着，不再追第二遍
