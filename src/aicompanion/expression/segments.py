@@ -173,18 +173,17 @@ def typing_delays(segments: list[str], chance=random.random, burst: float = 0.5)
     return delays
 
 
-DROP_MAX = 16   # 按态度截条数时，最多丢掉这么多字的零碎话（"快点""别磨叽"）；再多就是有内容的话，不能丢
-DROP_PIECE = 6  # 每条零碎话不超过这么多字；更长的一条多半是在说事（"第三步最后再检查一遍"）
+# 能明确认定“没有实质内容”的语气碎片：叹词、标点，以及几句固定的敷衍话。只有超出条数的部分全是这种碎片才截掉
+FILLER = re.compile(r'^(?:[哦噢喔嗯唔啊呀哈呵嘿嘻诶欸哎唉呃哼额嘛吧呢啦咯么～~…。.!！?？\s]|行吧|好吧|随便|随你|算了|无所谓|就这样|没了|懒得说)+$')
 
 
 def fit_cap(text: str, segments: list[str], cap: int | None) -> tuple[list[str], bool]:
     """按态度限制条数（冷淡一句、不熟最多三条）。返回（要发的几条，有没有丢掉内容）。
 
-    只丢零碎的口头话：丢掉的每条不超过 DROP_PIECE 字、加起来不超过 DROP_MAX 字。超过的说明后面是有内容的回答（配队、步骤、答案），
-    丢了对方就只看到开头（2026-11-11 群聊："没说完呢""怎么不说话了"），而她以为自己全说了，接下来就对不上。
-    这时照她拆好的条数全发（负责人 2026-11-11 15:39："特殊情况可以多发几条会话消息，不用通过逗号这种方式分隔"），
-    text 留着给以后按内容判断用。"""
+    态度主要靠提示词影响她写多少；这里只做保守的收尾：超出条数的部分全是能明确认定没有实质内容的语气碎片（FILLER）才截掉，
+    拿不准就全发。名单（"雷神""八重神子"）、短步骤（"再断电""最后清洁"）字数再短也是正文，不能按字数删
+    （Codex PR #40 第二轮第 1 项；原问题见 2026-11-11 群聊："没说完呢""怎么不说话了"）。
+    text 暂不使用，保留参数便于以后按整段内容判断。"""
     if not cap or len(segments) <= cap: return segments, False
-    rest = segments[cap:]
-    if len(''.join(rest)) <= DROP_MAX and all(len(piece) <= DROP_PIECE for piece in rest): return segments[:cap], True
+    if all(FILLER.match(piece.strip()) for piece in segments[cap:]): return segments[:cap], True
     return segments, False

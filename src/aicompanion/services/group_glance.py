@@ -31,7 +31,9 @@ def glance(database, character_id: str, minutes: int = WINDOW_MINUTES) -> str:
     with database.transaction() as c:
         rows = c.execute(
             "SELECT id, role, content, channel, created_at FROM chat_messages WHERE character_id=? AND channel LIKE 'qq:group:%' "
-            "AND id>? AND created_at >= datetime('now', ?) ORDER BY id DESC LIMIT 200",
+            "AND id>? AND created_at >= datetime('now', ?) "
+            # 她自己的话只算真正完成的回复：生成失败、被打断、被压下的草稿没发到群里，不能当成她在群里说过（Codex PR #40 第二轮第 2 项）
+            "AND (role!='assistant' OR status='complete') ORDER BY id DESC LIMIT 200",
             (character_id, watermark, f'-{int(minutes)} minutes')).fetchall()
     if not rows: return ''
     groups: dict[str, list] = {}

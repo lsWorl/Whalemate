@@ -26,6 +26,26 @@ class GroupGlanceTests(BridgeFixture):
         group_prompt = self.model.prompts[-1]
         self.assertNotIn('有人在和你聊天么', group_prompt); self.assertNotIn('QQ 群里最近的动静', group_prompt)
 
+    def test_failed_drafts_are_not_things_she_said_in_the_group(self):
+        """Codex PR #40 第二轮第 2 项：生成失败、没发出去的草稿不能进“你自己在群里的经历”。走真实控制器的失败路径。"""
+        from aicompanion.services.group_glance import glance
+        original = self.model.generate_reply_stream
+        def broken(history, prompt, cancellation=None):
+            self.model.prompts.append(prompt)
+            yield '合成未发送草稿：周末准备组织桌游活动'
+            raise ConnectionError('流中断')
+        self.model.generate_reply_stream = broken
+        try: result = self.say('周末干嘛')
+        finally: self.model.generate_reply_stream = original
+        self.assertTrue(result['silent'])
+        with self.db.transaction() as c:
+            row = c.execute("SELECT status FROM chat_messages WHERE role='assistant' AND content LIKE '合成未发送草稿%'").fetchone()
+        self.assertIsNotNone(row); self.assertNotEqual(row['status'], 'complete')
+        seen = glance(self.db, CID)
+        self.assertIn('周末干嘛', seen); self.assertNotIn('合成未发送草稿', seen)
+        self.say('那下周呢', '下周再说')
+        self.assertIn('你：下周再说', glance(self.db, CID))                                         # 正常发出的回复照常算
+
     def test_nothing_when_group_is_quiet_or_memories_deleted(self):
         from aicompanion.services.group_glance import glance
         self.assertEqual(glance(self.db, CID), '')

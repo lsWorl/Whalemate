@@ -88,10 +88,10 @@ class BehaviourTests(BridgeFixture):
 
     def test_cold_people_get_one_short_line_and_strangers_at_most_three(self):
         guy = self.guy(); self.rel.adjust(CID, guy, affinity=15)
-        result = self.say('在吗', '哦\n有事说\n没事别找我\n真的')
+        result = self.say('在吗', '哦\n嗯\n行吧')
         self.assertIn('【你现在对他很冷淡】', self.model.prompts[-1]); self.assertIn('十个字以内', self.model.prompts[-1])
-        self.assertEqual(result['reply'], '哦'); self.assertNotIn('segments', result)              # 只发第一句
-        stranger = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='40004', name='小林')
+        self.assertEqual(result['reply'], '哦'); self.assertNotIn('segments', result)              # 只发第一句（后面全是语气碎片）
+        stranger = self.say('在吗', '在\n咋了\n说\n嗯\n哈哈', sender='40004', name='小林')
         self.assertIn('【你跟他不熟】', self.model.prompts[-1]); self.assertEqual(stranger['segments'], ['在', '咋了', '说'])
         friend = self.rel.resolve(PersonRef('qq', '90000', '50005', '阿青'), CID); self.rel.adjust(CID, friend, affinity=85, familiarity=80, trust=75)
         warm = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='50005', name='阿青')
@@ -111,10 +111,24 @@ class BehaviourTests(BridgeFixture):
         mine = [r['content'] for r in self.db.recent_messages(5, self.character.id, channel=GROUP) if r['role'] == 'assistant']
         self.assertEqual(mine[-1], lineup)
         # 零碎话照旧截掉，记录里也只留发出去的那几条
-        chatter = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='40004', name='小林')
+        chatter = self.say('在吗', '在\n咋了\n说\n嗯\n哈哈', sender='40004', name='小林')
         self.assertEqual(chatter['segments'], ['在', '咋了', '说'])
         mine = [r['content'] for r in self.db.recent_messages(5, self.character.id, channel=GROUP) if r['role'] == 'assistant']
         self.assertEqual(mine[-1], '在\n咋了\n说')
+
+    def test_short_names_and_steps_are_never_cut(self):
+        """Codex PR #40 第二轮：名单、短步骤每条都很短，也是正文，不能按字数当零碎话截掉。走真实桥接 + 插件发送。"""
+        from test_astrbot_plugin import load_plugin
+        plugin = load_plugin()
+        for ask, reply in (('完整给出四名角色的名字，一行一个', '可以\n雷神\n八重神子\n九条裟罗\n班尼特'),
+                           ('关机步骤是啥', '先保存\n再关闭\n再断电\n最后清洁')):
+            result = self.say(ask, reply, sender='40004', name='小林')
+            self.assertIn('【你跟他不熟】', self.model.prompts[-1])
+            sent = plugin.AICompanionBridge.segments_of(result)                                         # 插件据此一条条发出去
+            self.assertEqual(result['segments'], reply.split('\n'))
+            mine = [r['content'] for r in self.db.recent_messages(3, self.character.id, channel=GROUP) if r['role'] == 'assistant']
+            self.assertEqual(mine[-1], reply)                                                          # 记录里也是全文
+            self.assertEqual(sent, reply.split('\n'))
 
     def test_arguing_back_is_not_cut_off(self):
         """负责人 2026-11-11 15:39：吵架时因为好感不够被截成一句，话没说完。她判断对方在冲她来时不截条数。"""
