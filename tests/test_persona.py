@@ -257,6 +257,18 @@ class EditorTests(PersonaBase):
         sync = lambda function, ok, fail: ok(function(None))
         return PersonaEditor(controller, PACK, run=sync), controller
 
+    def test_bond_fields_round_trip_and_preset_fills(self):
+        editor, _ = self.editor()
+        try:
+            self.assertEqual(editor.bond_preset.currentData(), 'daughter'); self.assertEqual(editor.bond_call.text(), '爹')
+            editor.bond_preset.setCurrentIndex(editor.bond_preset.findData('girlfriend'))
+            self.assertEqual((editor.bond_call.text(), editor.bond_tag.text()), ('亲爱的', '对象'))
+            editor.bond_call.setText('宝'); editor.save()
+            saved = self.service.get(editor.current_id).relation()
+            self.assertEqual((saved.preset, saved.call, saved.refer), ('girlfriend', '宝', '你的恋人'))
+        finally:
+            editor.deleteLater()
+
     def test_edit_save_switch_and_import(self):
         editor, controller = self.editor()
         try:

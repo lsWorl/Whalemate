@@ -18,7 +18,7 @@ KEY = 'sticker_usage:'
 LIMIT = 800
 CUE_CHARS = 60
 PLACEHOLDER = re.compile(r'\[(?:图片|收到图片|发了表情包[^\]]*|对方发了表情包[^\]]*)\]')
-SPEAKER = re.compile(r'^(?:【爹】)?[^：\n]{0,30}#\d+：')
+SPEAKER = re.compile(r'^(?:【[^】\n]{1,6}】)?[^：\n]{0,30}#\d+：')
 
 
 def clean_cue(text: str) -> str:

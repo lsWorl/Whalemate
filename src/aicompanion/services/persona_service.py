@@ -58,7 +58,7 @@ class PersonaService:
         if pack_persona:
             pack = {'title': '默认（内置）', 'description': pack_persona.get('description', ''),
                     'speaking_style': pack_persona.get('speaking_style', ''), **{k: pack_persona[k] for k in
-                    ('background', 'examples', 'interests', 'temper', 'lore') if k in pack_persona}}
+                    ('background', 'examples', 'interests', 'temper', 'lore', 'bond') if k in pack_persona}}
             version = int(pack_persona.get('version') or 1)
             built = next((p for p in existing if p.builtin), None)
             if built is None:
@@ -89,7 +89,8 @@ class PersonaService:
         built = self.get(builtin_id(character_id))
         if built is None: raise PersonaError('这个角色没有内置人格')
         data = {'description': pack_persona.get('description', ''), 'speaking_style': pack_persona.get('speaking_style', ''),
-                'background': '', 'examples': [], 'lore': [], 'interests': [], 'title': '默认（内置）'}
+                'background': '', 'examples': [], 'lore': [], 'interests': [], 'title': '默认（内置）',
+                **({'bond': pack_persona['bond']} if 'bond' in pack_persona else {})}
         restored = self.save(replace(built, user_modified=False, pack_version=int(pack_persona.get('version') or 1)).with_content(data),
                              note='恢复内置原文', by_user=False)
         self.db.set_setting(f'persona_pack_update:{character_id}', 0)

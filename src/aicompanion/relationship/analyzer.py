@@ -125,7 +125,7 @@ class RelationshipAnalyzer:
             person = owner if channel == 'desktop' else senders.get(r['sender'] or '')
             if person is None: continue
             alias = aliases.setdefault(person, f'P{len(aliases)+1}'); people[alias] = person
-            text = re.sub(r'^(?:【爹】)?[^：\n]{0,30}#\d+：', '', str(r['content']))   # 群聊记录前面的"昵称#编号："
+            text = re.sub(r'^(?:【[^】\n]{1,6}】)?[^：\n]{0,30}#\d+：', '', str(r['content']))   # 群聊记录前面的"昵称#编号："
             lines.append(('（新）' if r['id'] > done else '')+f'{alias}：'+text[:300])
         if not people: self._advance(character_id, channel, rows); return 0
         known = []

@@ -61,6 +61,7 @@ class Persona:
     temper: tuple = (('touchy', 0.5), ('forgiving', 0.5))   # 情绪倾向：容易不高兴、消气快（0～1），功能三使用
     lore: tuple = ()                   # LoreEntry
     notes: str = ''                    # 作者备注，不进提示词
+    bond: object = None                # 她和你的关系（domain/bond.py）；None 按默认（升级前的人格行为不变）
     builtin: bool = False              # 来自角色包的内置人格
     pack_version: int = 0
     user_modified: bool = False        # 内置人格被用户改过：角色包升级时不覆盖
@@ -72,7 +73,11 @@ class Persona:
                 'background': self.background, 'examples': [asdict(e) for e in self.examples],
                 'interests': list(self.interests), 'temper': dict(self.temper),
                 'lore': [{'keys': list(e.keys), 'content': e.content, 'always': e.always} for e in self.lore],
-                'notes': self.notes}
+                'notes': self.notes, 'bond': self.relation().to_dict()}
+
+    def relation(self):
+        from aicompanion.domain.bond import DEFAULT
+        return self.bond or DEFAULT
 
     def with_content(self, data: dict) -> 'Persona':
         clean = normalize(data)
@@ -122,6 +127,9 @@ def normalize(data: dict) -> dict:
         keys = tuple(k for k in (_text(x, 40) for x in (item.get('keys') or [])[:MAX_KEYS] if isinstance(x, str)) if k)
         if content and (keys or item.get('always')): lore.append(LoreEntry(keys, content, bool(item.get('always'))))
     out['lore'] = tuple(lore)
+    if 'bond' in data:
+        from aicompanion.domain.bond import normalize as normalize_bond
+        out['bond'] = normalize_bond(data.get('bond'))
     return out
 
 
