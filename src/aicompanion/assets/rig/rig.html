@@ -6,6 +6,7 @@
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script src="../live2d/vendor/pixi.min.js"></script>
 <script src="rig.js"></script>
+<script src="posepack_frames.js"></script>
 <script src="posepack.js"></script>
 <script>
 /* 宿主（Qt WebChannel 对象 rig）与渲染器之间的胶水；没有 Qt 时（测试）通过 window.rigApi 直接驱动。 */
@@ -42,6 +43,7 @@ const api = window.rigApi = {
     if (c.bounce) engine.bounce(c.bounce);
     if (c.express) engine.express(c.express, c.seconds || 3);
     if (c.motion) engine.playMotion(c.motion);
+    if (c.motion_event && engine.motionEvent) engine.motionEvent(c.motion_event.name, c.motion_event.data || {});
   },
   hitmap: () => engine ? engine.hitmap() : null,
   probe: (x, y) => engine ? engine.probe(x, y) : null,

@@ -37,6 +37,9 @@
     const rig = await readJSON(url);
     if (rig.format !== 'AICompanionPoseRig' || rig.version !== 1) throw new Error('不支持的姿态包');
     const base = url.slice(0, url.lastIndexOf('/') + 1);
+    const frameBase = rig.frame_actions ? base + rig.frame_actions.slice(0, rig.frame_actions.lastIndexOf('/') + 1) : null;
+    const frameConfig = rig.frame_actions ? await readJSON(base + rig.frame_actions) : null;
+    if (frameConfig && frameConfig.type !== 'full-frame-sequence') throw new Error('不支持的整帧动作格式');
     const textures = [];
     const figure = new PIXI.Container(); figure.sortableChildren = true;
     const inner = new PIXI.Container(); inner.sortableChildren = true; figure.addChild(inner);   // 跳跃、挤压在这一层
@@ -45,7 +48,7 @@
       // 加载中途失败：释放已经加载的纹理再抛出，不留泄漏
       figure.destroy({ children: true }); for (const tex of textures) tex.destroy(true); throw error;
     }
-    return { rig, figure, inner, poses, textures };
+    return { rig, figure, inner, poses, textures, frameConfig, frameBase };
 
     async function buildPoses() {
     for (const [name, spec] of Object.entries(rig.poses)) {
@@ -71,7 +74,7 @@
     }
   }
 
-  function createEngine(app, built) {
+  function createBaseEngine(app, built) {
     const { rig, figure, inner, poses, textures } = built;
     const S = {
       head: new Spring(70, 10, 6), hair: new Spring(55, 7, 3), hairY: new Spring(50, 8, 2), swing: new Spring(28, 2.6, 55),
@@ -325,5 +328,9 @@
     };
   }
 
+  function createEngine(app, built) {
+    const base = createBaseEngine(app, built);
+    return built.frameConfig ? window.FullFrameActions.wrap(app, built, base) : base;
+  }
   window.PosePackRenderer = { createFigure, createEngine };
 })();

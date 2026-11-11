@@ -1,6 +1,7 @@
 {
  "format": "AICompanionPoseRig",
  "version": 1,
+ "frame_actions": "frame-actions/actions.json",
  "name": "鲸娘",
  "id": "deepseek-whale",
  "source": {

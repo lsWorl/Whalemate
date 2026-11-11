@@ -1,0 +1,51 @@
+# T24 鲸鲸整帧动作序列
+
+状态：进行中；Codex 素材与实现，Claude 统筹及审帧。当前交付 P1；Claude 已基本通过真实窗口审帧，本轮已修正双影，草稿 PR 等待代码审查。
+
+## 范围与分支
+
+- 基线是用户实际使用的 D 盘十姿态鲸娘：`posepack.js` + 原有 rig。分支 `task/t24-whale-motion` 从 `collaboration-baseline` 的 `335fcdb` 创建，不依赖 #25。
+- 角色唯一造型参考是 `art/deepseek-whale/approved-poses-preview.png` 与同一套定稿的 idle。此前部件拼接方案已归档到用户指定的 `output/t24-motion-review/retired-parts/`，本分支不包含那些资源。
+- 全部新增画帧由内置 imagegen 生成完整角色，再做整张等比缩放、平移、允许的水平镜像。没有拆肢体、补画肢体拼接或网格变形。
+- 不修改 `character.json`、#25 的 `animation_view.py`、主窗口、数据库、依赖配置。
+
+## 素材与播放
+
+源画帧保持 1254×1254，脚底锚点 `[627,1156]`。归一按固定头型的脸颊轮廓标尺，不按全身 bbox 缩放；转圈眼帧把眼白并入脸部轮廓再按同一参考换算，避免肤色被大眼睛分割。实测误差和标尺坐标记录在 `actions.json`，每帧不超过 2%。落地帧脚底 y=1156；离地帧有独立鞋底高度。
+
+| 动作 | 帧数 | 名义帧率 | 推进方式 |
+| --- | ---: | ---: | --- |
+| pickup | 2 | 12 | 166.7ms 内接悬挂 |
+| drag_left / drag_right | 各4 | 8 | 最大甩开 → 回中 → 小幅反摆 → 回中；右组是完整左组镜像 |
+| release / fall | 各2 | 12 / 8 | 松手过渡、下落末帧保持至物理落地 |
+| land | 3 | 10 | 屈膝、深蹲、回弹 |
+| dizzy | 4 | 8 | 转圈眼与星环，重摔后循环约2.1秒 |
+| recover / start | 各2 | 8 / 10 | 爬起、前倾起步 |
+| walk / run | 各8 | 8 / 12 | 实际位移相位；经过位抬脚、跑步腾空及两侧腿交替 |
+| brake / turn | 2 / 3 | 10 | 刹车站稳；侧 → 正 → 另一侧，转身完成才更新朝向 |
+
+`rig/frame-actions/actions.json` 配置 `full-frame-sequence`；1254px 审帧 PNG 保留在忽略的 output 目录；仓库中的完整画帧缩到512px无损 WebP，运行图集每格512px，最多4列，避免8张1254px图同时解码成超大纹理。按需载入、缓存最多3张图集，换角色时释放纹理。
+
+整帧层与基线 figure 同级，挂点 `[627,80]` 在头饰上方，额外整体旋转为0，不叠加基线 `S.swing`。整帧层采用 `opaque-keyframes`：同动作循环帧直接切换；动作之间用已画好的 pickup/release/land/start/brake 首帧衔接，不透明叠放两张角色。悬挂换向先显示原方向的回中帧70ms，再显示新方向回中帧70ms，然后接回钟摆相位。被打断而目标图集尚未就绪时，保持当前不透明画帧及距离相位；载入完成从目标过渡首帧接上。普通十姿态表情继续使用原有渲染。
+
+速度从真实窗口位移换算到 rig 单位，并做120ms平滑，防止1/2像素取整抖动导致反复切跑步。进入跑步110 rig单位/秒，退回行走85，保留相位；走/跑一步循环分别对应源画面400/600像素位移。`desktop_pet.py` 只转发 grab/fall/landed 与实际水平位移，保留现有70px/s漫游和物理计算。
+
+## 验证与复现
+
+没有新增依赖。开发验收使用本机已有 Pillow、Node；桌宠运行不依赖 Node。
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_posepack_frame*.py' -v
+tools\run_checks.bat
+.venv\Scripts\python.exe tools\preview_motion_frames.py --out output\t24-motion-review --frame0-only
+.venv\Scripts\python.exe tools\preview_motion_frames.py --out output\t24-motion-review
+.venv\Scripts\python.exe tools\compile_motion_frames.py --rebuild src\aicompanion\characters\deepseek-whale\rig\frame-actions
+```
+
+整帧专项18项测试已通过，覆盖异步图集载入与异常尺寸、镜像缓存、载入中打断与首帧续接、距离相位、走跑阈值、换向回中、单角色层不透明显示、资源释放和画帧规格。完整 `tools\run_checks.bat` 退出码0：unittest 944项，OK（跳过7项）；smoke `passed: true`、`failed_checks: []`、`errors: []`，单角色层不透明检查通过。完整结果在审查包 `validation.json` 和原始日志中记录。
+
+两个真实 Qt 窗口回放各163帧，全部可见；每次诊断都是一个角色层、alpha=1、fading=false。另有拎起、悬挂换向、停下三段特写 GIF 与逐帧 PNG；已人工查看这三处，没有半透明双影。首轮旧录像与日志保留在 `output/t24-motion-review/review-history/309f0de/` 及 `checks/attempt-1/`。
+
+真实窗口预览只使用内存设置存根，公开事件回放驱动真实 DesktopPetWindow/RigAvatar，包含真实窗口位移及物理落地。先确认第0帧可见，再通过 QWidget.grab 抓取透明窗口，按窗口实际位置合成浅灰舞台，避免桌面固定截图区域错位。没有系统鼠标注入，不把它写成真人鼠标操作验收。各帧可见像素、播放状态、帧号、错误及实际时间记录在诊断 JSON。
+
+尚未验证：用户本人实际鼠标手感、多显示器与不同 DPI 的真机效果、长期内存曲线、P2 行为。本轮草稿 PR 只供代码审查，未标可合并；P2 按用户要求后续再做。

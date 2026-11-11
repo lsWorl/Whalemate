@@ -148,6 +148,10 @@ class DesktopPetWindow(QWidget):
             if key in ('poke', 'poke_angry', 'pat', 'thrown', 'dizzy'): self.interacted.emit('poke' if key == 'poke_angry' else key)
             self.say_line(key)
         self._apply_state()
+        if hasattr(self.view, "motion_event"):
+            if event == "grab": self.view.motion_event("drag", active=bool(data.get("active")))
+            elif event == "fall": self.view.motion_event("fall", active=bool(data.get("active")))
+            elif event == "landed": self.view.motion_event("land", hard=bool(data.get("hard")))
 
     def say_line(self, key, force=False):
         if not self.pack or not self.database.get_setting('pet_bubble_enabled', True): return False
@@ -277,8 +281,13 @@ class DesktopPetWindow(QWidget):
         now = time.monotonic(); dt = min(0.05, now-self._walk_last); self._walk_last = now
         step = 70*dt*self.scale   # 每秒约 70 像素
         remaining = self._walk_target-self.x()
-        if abs(remaining) <= step: self.move(self._walk_target, self.y()); self.stop_walking(); return
+        previous_x = self.x()
+        if abs(remaining) <= step:
+            self.move(self._walk_target, self.y())
+            if hasattr(self.view, "advance_motion"): self.view.advance_motion(self.x()-previous_x, dt)
+            self.stop_walking(); return
         self.move(self.x()+round(step if remaining > 0 else -step), self.y())
+        if hasattr(self.view, "advance_motion"): self.view.advance_motion(self.x()-previous_x, dt)
         self.bubble.move_anchor(self._head_point())
 
     def set_focus(self, minutes):

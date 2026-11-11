@@ -1,0 +1,1124 @@
+{
+  "type": "full-frame-sequence",
+  "version": 1,
+  "canvas": [
+    1254,
+    1254
+  ],
+  "anchor": [
+    627,
+    1156
+  ],
+  "grab_pivot": [
+    627,
+    80
+  ],
+  "source_scale": 0.2,
+  "transition_mode": "opaque-keyframes",
+  "crossfade_ms": 0,
+  "direction_change_ms": 70,
+  "source_frame_size": [
+    512,
+    512
+  ],
+  "atlas_cell": 512,
+  "atlas_columns": 4,
+  "run_enter_speed": 110,
+  "run_exit_speed": 85,
+  "actions": {
+    "pickup": {
+      "type": "full-frame-sequence",
+      "count": 2,
+      "fps": 12,
+      "loop": false,
+      "atlas": "pickup.webp",
+      "source_frames": [
+        {
+          "file": "source/pickup/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "56732275a336f6ac279a8c83442c2a48ef263e45d203bd19c200713075d42cd4",
+          "feet_y": 1120,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              460,
+              377,
+              706,
+              505
+            ]
+          }
+        },
+        {
+          "file": "source/pickup/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "bee7e23220504dce757636f445b6baf2b51aa637b0edcbe1ac8dfcc5b35e08ab",
+          "feet_y": 1010,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 248,
+            "error_percent": -0.402,
+            "landmarks": [
+              467,
+              388,
+              715,
+              535
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png"
+      ],
+      "phase_driver": "time"
+    },
+    "drag_left": {
+      "type": "full-frame-sequence",
+      "count": 4,
+      "fps": 8,
+      "loop": true,
+      "atlas": "drag_left.webp",
+      "source_frames": [
+        {
+          "file": "source/drag_left/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "581c05beac2269a46232ca7b66b05a6fe4f0de659db109c71d39af74679faef8",
+          "feet_y": 1020,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              387,
+              388,
+              633,
+              540
+            ]
+          }
+        },
+        {
+          "file": "source/drag_left/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "924dd9172d8052d4d13073f3cc2d82d9be04e2293d43faf9afe0b1e2279e9794",
+          "feet_y": 1040,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              421,
+              413,
+              668,
+              543
+            ]
+          }
+        },
+        {
+          "file": "source/drag_left/frame-03.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "3b5fe519cf85f985c683166249c8da724cf7c7d3bf3f0c96a1c0ecdfb02c7f90",
+          "feet_y": 1060,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              462,
+              413,
+              708,
+              557
+            ]
+          }
+        },
+        {
+          "file": "source/drag_left/frame-04.webp",
+          "review_key": "key-04.png",
+          "sha256_png": "0dbf82d81e41c5c2d3b6c27a904fe5484aabbb10f543ccf0421a6ea35ef3a776",
+          "feet_y": 1040,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              428,
+              295,
+              675,
+              509
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png",
+        "key-03.png",
+        "key-04.png"
+      ],
+      "phase_driver": "time",
+      "phase_labels": [
+        "最大甩开",
+        "回中",
+        "小幅反摆",
+        "回中"
+      ],
+      "center_index": 1
+    },
+    "drag_right": {
+      "type": "full-frame-sequence",
+      "count": 4,
+      "fps": 8,
+      "loop": true,
+      "atlas": "drag_left.webp",
+      "source_frames": [
+        {
+          "file": "source/drag_left/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "9ec54e7a639351c31c704defdc498a6222b0dfa979581c0dc07a56d6b9581875",
+          "feet_y": 1020,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              387,
+              388,
+              633,
+              540
+            ]
+          }
+        },
+        {
+          "file": "source/drag_left/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "1732125beca01452fd0a80214fef81c91abc83d7286bbcbae6953e94747051aa",
+          "feet_y": 1040,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              421,
+              413,
+              668,
+              543
+            ]
+          }
+        },
+        {
+          "file": "source/drag_left/frame-03.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "e4b90ea488d80d9a62ab05707229ce36e22f21ac1840547ba6ef645d448dfaa2",
+          "feet_y": 1060,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              462,
+              413,
+              708,
+              557
+            ]
+          }
+        },
+        {
+          "file": "source/drag_left/frame-04.webp",
+          "review_key": "key-04.png",
+          "sha256_png": "3d697f91ed415ab8fffd7fdd896e3034f2c8621278685c1553de9d5ac5e1cfd7",
+          "feet_y": 1040,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              428,
+              295,
+              675,
+              509
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png",
+        "key-03.png",
+        "key-04.png"
+      ],
+      "phase_driver": "time",
+      "phase_labels": [
+        "最大甩开",
+        "回中",
+        "小幅反摆",
+        "回中"
+      ],
+      "center_index": 1,
+      "mirror_of": "drag_left"
+    },
+    "release": {
+      "type": "full-frame-sequence",
+      "count": 2,
+      "fps": 12,
+      "loop": false,
+      "atlas": "release.webp",
+      "source_frames": [
+        {
+          "file": "source/release/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "6f3f4a653d49c14c3b0dd562ede7cbb46be7b7df69e773c6bd38ec7994d96a39",
+          "feet_y": 1040,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              450,
+              349,
+              697,
+              570
+            ]
+          }
+        },
+        {
+          "file": "source/release/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "13d4fd7be7cb3c6c3cf52b0ce3cf1e1495caa6c0fc33c91dd91f8014197a9e2f",
+          "feet_y": 1091,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              483,
+              391,
+              730,
+              527
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png"
+      ],
+      "phase_driver": "time"
+    },
+    "fall": {
+      "type": "full-frame-sequence",
+      "count": 2,
+      "fps": 8,
+      "loop": false,
+      "atlas": "fall.webp",
+      "source_frames": [
+        {
+          "file": "source/fall/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "3835fd83c6f502be701d9973f8b7584398b6bff3a42d7d5c8c02e0b103f54d2a",
+          "feet_y": 1080,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              482,
+              391,
+              728,
+              538
+            ]
+          }
+        },
+        {
+          "file": "source/fall/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "319ba66b0dbb4bd029d2e924b3eeb003f2292e871ac244c40e43ba35de2a3005",
+          "feet_y": 1135,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              440,
+              401,
+              687,
+              559
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png"
+      ],
+      "phase_driver": "time"
+    },
+    "land": {
+      "type": "full-frame-sequence",
+      "count": 3,
+      "fps": 10,
+      "loop": false,
+      "atlas": "land.webp",
+      "source_frames": [
+        {
+          "file": "source/land/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "a872a63eddfc1990e5e1b4004f810fa63221decf64803d2829574f2745ff9613",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              440,
+              552,
+              687,
+              668
+            ]
+          }
+        },
+        {
+          "file": "source/land/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "2b6146caa62656199d1a3591a5de4d522ea35fa547d3bb00d66749e7dabf6471",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              472,
+              516,
+              719,
+              712
+            ]
+          }
+        },
+        {
+          "file": "source/land/frame-03.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "bd5d3ed87497ca6666840e9d0f9522dbbea6cb806a1aa8c9422c242b65a9e726",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              469,
+              434,
+              716,
+              570
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png",
+        "key-03.png"
+      ],
+      "phase_driver": "time"
+    },
+    "dizzy": {
+      "type": "full-frame-sequence",
+      "count": 4,
+      "fps": 8,
+      "loop": true,
+      "atlas": "dizzy.webp",
+      "source_frames": [
+        {
+          "file": "source/dizzy/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "4db5776268accbda921db66bf723174d8c0cdd249c6b2dcccf7962cc3fb5aeee",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "包含眼白的脸部轮廓，按walk01的259px对应249px标尺换算；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246.116,
+            "error_percent": -1.158,
+            "landmarks": [
+              457,
+              354,
+              713,
+              568
+            ]
+          }
+        },
+        {
+          "file": "source/dizzy/frame-02.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "97d0fb53e798b26ebabdd6d2273d2a835674612802868e1d7de87485fa7cf37c",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "包含眼白的脸部轮廓，按walk01的259px对应249px标尺换算；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247.077,
+            "error_percent": -0.772,
+            "landmarks": [
+              462,
+              354,
+              719,
+              566
+            ]
+          }
+        },
+        {
+          "file": "source/dizzy/frame-03.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "c2178cc1d678f2078f7fd5236eb51bfede447bd427bc8659f37d873cc7f5a89e",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "包含眼白的脸部轮廓，按walk01的259px对应249px标尺换算；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247.077,
+            "error_percent": -0.772,
+            "landmarks": [
+              417,
+              351,
+              674,
+              551
+            ]
+          }
+        },
+        {
+          "file": "source/dizzy/frame-04.webp",
+          "review_key": "key-04.png",
+          "sha256_png": "8575f0272f5fe34e8794255cbe528d605b6c6b9a6cfd548824b1cbe428657b66",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "包含眼白的脸部轮廓，按walk01的259px对应249px标尺换算；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247.077,
+            "error_percent": -0.772,
+            "landmarks": [
+              457,
+              354,
+              714,
+              569
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-03.png",
+        "key-02.png",
+        "key-04.png"
+      ],
+      "phase_driver": "time",
+      "hold_seconds": 2.1
+    },
+    "recover": {
+      "type": "full-frame-sequence",
+      "count": 2,
+      "fps": 8,
+      "loop": false,
+      "atlas": "recover.webp",
+      "source_frames": [
+        {
+          "file": "source/recover/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "52d1956929ced1c31e263492a12918a35faff1fa3eeeb6c36bf242ff1600af26",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              415,
+              515,
+              661,
+              695
+            ]
+          }
+        },
+        {
+          "file": "source/recover/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "3a4a7e66c2952ae78e80579d443cb007da6182fffc09146c360dce97c826340b",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 249,
+            "error_percent": 0.0,
+            "landmarks": [
+              533,
+              440,
+              782,
+              584
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png"
+      ],
+      "phase_driver": "time"
+    },
+    "start": {
+      "type": "full-frame-sequence",
+      "count": 2,
+      "fps": 10,
+      "loop": false,
+      "atlas": "start.webp",
+      "source_frames": [
+        {
+          "file": "source/start/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "b73011376901b71e7b1ebc1c8b98f2b3514c277cd09fcb698b8e8d82bf688eb2",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              624,
+              455,
+              871,
+              607
+            ]
+          }
+        },
+        {
+          "file": "source/start/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "cecea2c59061e19b3f397ba650b9ed12cbd94ff3fda80fe9441bd7a49296eb5a",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 248,
+            "error_percent": -0.402,
+            "landmarks": [
+              569,
+              408,
+              817,
+              562
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png"
+      ],
+      "phase_driver": "time"
+    },
+    "walk": {
+      "type": "full-frame-sequence",
+      "count": 8,
+      "fps": 8,
+      "loop": true,
+      "atlas": "walk.webp",
+      "source_frames": [
+        {
+          "file": "source/walk/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "09466fe57d0a393362712b9ad6f9016922bb6ce884ec7c3a672cc43ddfb553aa",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 249,
+            "error_percent": 0.0,
+            "landmarks": [
+              597,
+              434,
+              846,
+              586
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-02.webp",
+          "review_key": "key-05.png",
+          "sha256_png": "53bf8a380c757a20d1c66633b344a769bd33dc6c98350c089b1d8ddbce5147f9",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              583,
+              431,
+              830,
+              575
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-03.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "dda26c8092ae72810fa51055eb68d00507d82ae51c2236b97771b3cc72362031",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              544,
+              432,
+              791,
+              556
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-04.webp",
+          "review_key": "key-06.png",
+          "sha256_png": "83dee43b8bcc41f6eda8fa85a5162baf023d5cf1be78b6cd1caa57df5abbbf06",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              551,
+              406,
+              798,
+              551
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-05.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "f1e09f2804f27e6052bf5519243c35b500450afa10cc106a6ed42fee63c2be53",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              590,
+              430,
+              837,
+              578
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-06.webp",
+          "review_key": "key-07.png",
+          "sha256_png": "1f1549e8137e381148670fd87975639498eb24a2b9919d058b44f8daca78565b",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 248,
+            "error_percent": -0.402,
+            "landmarks": [
+              599,
+              435,
+              847,
+              585
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-07.webp",
+          "review_key": "key-04.png",
+          "sha256_png": "c0bd65f27e7fd47f6ac30abedb7c6864148fc3dff28ee48af97381185fc3f433",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              539,
+              413,
+              785,
+              553
+            ]
+          }
+        },
+        {
+          "file": "source/walk/frame-08.webp",
+          "review_key": "key-08.png",
+          "sha256_png": "2c72660c8dae2dd8f90fab81e9fa9657f14dad740e9321cf421f22430155f262",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              539,
+              375,
+              785,
+              546
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-05.png",
+        "key-02.png",
+        "key-06.png",
+        "key-03.png",
+        "key-07.png",
+        "key-04.png",
+        "key-08.png"
+      ],
+      "phase_driver": "distance",
+      "stride_source": 400
+    },
+    "run": {
+      "type": "full-frame-sequence",
+      "count": 8,
+      "fps": 12,
+      "loop": true,
+      "atlas": "run.webp",
+      "source_frames": [
+        {
+          "file": "source/run/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "b910e5b471813a412d99f8af5756622ae5d801b037d830b818d3c0e135acdc6d",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 248,
+            "error_percent": -0.402,
+            "landmarks": [
+              636,
+              432,
+              884,
+              575
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-02.webp",
+          "review_key": "key-05.png",
+          "sha256_png": "b50f7da2fa0537676ef6095882b4e991acc257b4c7d213add11c8f3f869d8ac4",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              645,
+              432,
+              892,
+              581
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-03.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "e07d622593e58f53c26ccf4c701520ff64cbcdb7232e6deeb96193e008b960b5",
+          "feet_y": 1075,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              716,
+              430,
+              963,
+              589
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-04.webp",
+          "review_key": "key-06.png",
+          "sha256_png": "ab9765395d7eb480d031b291fe2e998808c44f142613270d1cfe14bbb1fdcfcb",
+          "feet_y": 1110,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              689,
+              378,
+              936,
+              574
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-05.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "f3bfa7b8eb1e7f0ea3721b9deb996ae0ee02d88b3723c1c3c2c5dc5fe0f71ea5",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              639,
+              431,
+              885,
+              577
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-06.webp",
+          "review_key": "key-07.png",
+          "sha256_png": "feb6b58b8b0f28ab09ee0f9a486f93c6ca4cef9c3fc13d56c1b1fd8da2cbc111",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 246,
+            "error_percent": -1.205,
+            "landmarks": [
+              642,
+              429,
+              888,
+              579
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-07.webp",
+          "review_key": "key-04.png",
+          "sha256_png": "d85ed0245ab1748b43a11943b30b3fa182b02929614e7e9b400be8bb57ef7d36",
+          "feet_y": 1075,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              706,
+              424,
+              953,
+              583
+            ]
+          }
+        },
+        {
+          "file": "source/run/frame-08.webp",
+          "review_key": "key-08.png",
+          "sha256_png": "2035f2780b66e0f58f11ac32f44f2b9d6524826db3855eb596108795b35bc7a1",
+          "feet_y": 1110,
+          "grounded": false,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              675,
+              370,
+              922,
+              563
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-05.png",
+        "key-02.png",
+        "key-06.png",
+        "key-03.png",
+        "key-07.png",
+        "key-04.png",
+        "key-08.png"
+      ],
+      "phase_driver": "distance",
+      "stride_source": 600
+    },
+    "brake": {
+      "type": "full-frame-sequence",
+      "count": 2,
+      "fps": 10,
+      "loop": false,
+      "atlas": "brake.webp",
+      "source_frames": [
+        {
+          "file": "source/brake/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "3f0eb0e231930513ee0aaf284f4fdc2dfabd4a077c7ea5e00914dee9fcb8bbb4",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 248,
+            "error_percent": -0.402,
+            "landmarks": [
+              545,
+              424,
+              793,
+              571
+            ]
+          }
+        },
+        {
+          "file": "source/brake/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "541252618631a27b23ff226856532edd2fb2efa6e233f7dab0c75ca0b4a27b67",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              572,
+              422,
+              819,
+              571
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png"
+      ],
+      "phase_driver": "time"
+    },
+    "turn": {
+      "type": "full-frame-sequence",
+      "count": 3,
+      "fps": 10,
+      "loop": false,
+      "atlas": "turn.webp",
+      "source_frames": [
+        {
+          "file": "source/turn/frame-01.webp",
+          "review_key": "key-01.png",
+          "sha256_png": "2589045a8c5c90a84b402c1276040f1663c52485234465abf0044c2e3af22d62",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              619,
+              439,
+              866,
+              591
+            ]
+          }
+        },
+        {
+          "file": "source/turn/frame-02.webp",
+          "review_key": "key-02.png",
+          "sha256_png": "5bfbefc13f2db64204f5b4035b5779f2bd8906ce9a17ca422511eae962b951c7",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 248,
+            "error_percent": -0.402,
+            "landmarks": [
+              463,
+              402,
+              711,
+              535
+            ]
+          }
+        },
+        {
+          "file": "source/turn/frame-03.webp",
+          "review_key": "key-03.png",
+          "sha256_png": "3b015ff262f1f5b9bcc31c056ff36f34011263fff0c61e1733dcc2882f7ca6aa",
+          "feet_y": 1156,
+          "grounded": true,
+          "head_width_qa": {
+            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
+            "reference_px": 249,
+            "measured_px": 247,
+            "error_percent": -0.803,
+            "landmarks": [
+              619,
+              439,
+              866,
+              591
+            ]
+          }
+        }
+      ],
+      "playback_order": [
+        "key-01.png",
+        "key-02.png",
+        "key-03.png"
+      ],
+      "phase_driver": "time"
+    }
+  }
+}

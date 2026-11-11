@@ -20,6 +20,7 @@ def schedule_pet_smoke_check(window, database, output):
     output.mkdir(parents=True, exist_ok=True)
     state = {'errors': [], 'poses_seen': []}
     pet = window.pet
+    database.set_setting('pet_hide_fullscreen', False)   # 临时自检库：防止验收窗口被全屏检测隐藏
     pet.input_locked = True   # 自检不受手动拖动、点菜单影响
     # 记录台词标注、用户气泡、活动图标的调用，验证 P2 链路
     state['cues'] = []; state['user_bubbles'] = 0; state['activities'] = []
@@ -91,6 +92,19 @@ def schedule_pet_smoke_check(window, database, output):
         pet.dispatch('grab', active=True)
         QTimer.singleShot(200, lambda: state.update(pose_grabbed=pet.view.pose))
         QTimer.singleShot(250, lambda: pet.grab().save(str(output/'pet-grabbed.png')))
+        if rig:
+            def inspect_drag():
+                def done(raw):
+                    diag=json.loads(raw); motion=diag.get('motion')
+                    if motion is None: state['full_frame_drag']=True; return   # 合成占位包保持兼容
+                    state['full_frame_drag']=(motion['type']=='full-frame-sequence' and motion['displayed'].startswith('drag_')
+                                              and motion['extra_swing']==0 and motion['ready'] and not motion['errors'])
+                    state['full_frame_drag_diagnostics']=motion
+                    shot=pet.grab().toImage(); shot.save(str(output/'pet-full-frame-drag.png'))
+                    state['full_frame_visible']=sum(shot.pixelColor(x,y).alpha()>100 for x in range(0,shot.width(),4)
+                                                     for y in range(0,shot.height(),4))>100
+                pet.view.page().runJavaScript('JSON.stringify(rigApi.diagnostics())',done)
+            QTimer.singleShot(450,inspect_drag)
         QTimer.singleShot(700, lambda: pet.dispatch('grab', active=False))
     later(8000, grab)
 
@@ -258,7 +272,36 @@ def schedule_pet_smoke_check(window, database, output):
             QTimer.singleShot(200,restored)
             window.controller.router=original
         QTimer.singleShot(100,poll)
-    later(24200,expression_start)
+    def motion_start():
+        if not rig or not state.get('full_frame_drag_diagnostics'):
+            QTimer.singleShot(2500,expression_start);return
+        # 起步/恢复/贴图加载都可能异步完成：按实际显示状态串联，不能在固定时间点假定已走起来。
+        pet.machine.snapshot=type(pet.machine.snapshot)();pet.dispatch('force_pose',pose='idle',seconds=0.1)
+        def travel(pixels,seconds):
+            before=pet.x();pet.move(before+pixels,pet.y());pet.view.advance_motion(pet.x()-before,seconds)
+        def finish_motion():
+            pet.view.set_walking(0);pet.view.face(1);QTimer.singleShot(400,expression_start)
+        def wait_for(label,done,record=True):
+            deadline=time.monotonic()+2.0
+            def poll():
+                def received(raw):
+                    motion=json.loads(raw).get('motion')
+                    if motion and motion['displayed']==label and motion['ready']:
+                        if record:state.setdefault('full_frame_motion',{})[label]=motion
+                        done();return
+                    if time.monotonic()>=deadline:
+                        state['errors'].append('整帧动作等待超时：'+label);finish_motion();return
+                    QTimer.singleShot(30,poll)
+                pet.view.page().runJavaScript('JSON.stringify(rigApi.diagnostics())',received)
+            poll()
+        def turn():
+            pet.view.face(-1);wait_for('turn',lambda:QTimer.singleShot(350,finish_motion))
+        def brake():
+            pet.view.set_walking(0);wait_for('brake',lambda:wait_for('idle',turn,record=False))
+        def run():
+            travel(40,.1);wait_for('run',brake)
+        pet.view.set_walking(1);travel(12,.2);wait_for('walk',run)
+    later(23500,motion_start)
     EXPRESSION_TIMEOUT = 8.0   # 秒；正常几百毫秒就到最终阶段
 
     def agent():
@@ -327,7 +370,7 @@ def schedule_pet_smoke_check(window, database, output):
         # 兜底：表达检查本身出异常、串联没走到时，也要退出并留下报告，而不是一直挂着
         if not state.get('after_expression_ran'):
             state['errors'].append('表达自检没有走完，兜底退出'); after_expression()
-    later(24200+int(EXPRESSION_TIMEOUT*1000)+6000, safety_exit)
+    later(26000+int(EXPRESSION_TIMEOUT*1000)+6000, safety_exit)
 
     def finish():
         rows = database.recent_messages(10, 'deepseek-whale')
@@ -353,6 +396,16 @@ def schedule_pet_smoke_check(window, database, output):
         required.append('qq_media_settings_ready')
         required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
+        if rig and state.get('full_frame_drag_diagnostics'):
+            required.extend(['full_frame_drag','full_frame_visible'])
+            motions=[state['full_frame_drag_diagnostics'],*state.get('full_frame_motion',{}).values()]
+            state['full_frame_opaque']=all(m.get('visible_character_layers')==1 and m.get('layer_alpha')==1
+                                            and not m.get('fading') for m in motions)
+            required.append('full_frame_opaque')
+            samples=state.get('full_frame_motion',{})
+            state['full_frame_transitions']=all(samples.get(name) and samples[name]['displayed']==name and not samples[name]['errors']
+                                                 for name in ('walk','run','brake','turn'))
+            required.append('full_frame_transitions')
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
