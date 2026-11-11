@@ -34,12 +34,20 @@ class AnimationPackTests(unittest.TestCase):
             self.assertEqual(action.frame_at(2/12+.001),0)
             self.assertEqual(action.frame_at(-1),0)
 
-    def test_default_animation_keeps_character_and_explicit_legacy_fallback(self):
-        whale=load_pack(PACKS_DIR/'deepseek-whale')
-        self.assertEqual(choose_renderer(whale,None)[0], 'spritesheet' if (whale.root/whale.renderer['animation']).is_file() else 'sprites')
-        self.assertEqual(choose_renderer(whale,'sprites',animation_enabled=False)[0],'sprites')
-        self.assertEqual(choose_renderer(whale,'live2d','model.model3.json')[0],'cubism')
-        self.assertEqual(whale.id,'deepseek-whale')
+    def test_clean_and_installed_whale_keep_identity_and_explicit_model(self):
+        from dataclasses import replace
+        with tempfile.TemporaryDirectory() as directory:
+            whale = replace(load_pack(PACKS_DIR/'deepseek-whale'), root=Path(directory))
+            for mode in (None, 'live2d'):
+                self.assertEqual(choose_renderer(whale, mode), ('placeholder', None))
+            animation = whale.root/whale.renderer['animation']
+            animation.parent.mkdir(parents=True)
+            fixture, _ = make_pack(animation.parent)
+            self.assertEqual(fixture, animation)
+            self.assertEqual(choose_renderer(whale, None), ('spritesheet', fixture))
+            self.assertEqual(choose_renderer(whale, 'live2d', ''), ('spritesheet', fixture))
+            self.assertEqual(choose_renderer(whale, 'live2d', 'x.model3.json'), ('cubism', 'x.model3.json'))
+            self.assertEqual(whale.id, 'deepseek-whale')
 
     def test_malformed_specs_paths_and_missing_pose_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

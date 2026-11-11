@@ -34,6 +34,16 @@ QPushButton#Round {{ border-radius: 17px; min-width: 34px; min-height: 34px; pad
 QPushButton#Round:checked, QPushButton#Call:checked {{ background: rgba(77,107,254,36); border-color: {PRIMARY}; color: {PRIMARY}; }}
 QPushButton#Flat {{ background: transparent; border: none; color: {MUTED}; padding: 4px 8px; }}
 QPushButton#Flat:hover {{ color: {PRIMARY}; }}
+QPushButton#Toggle {{ background: transparent; border: 1px solid transparent; border-radius: 14px; padding: 4px 12px; color: {MUTED}; }}
+QPushButton#Toggle:hover {{ color: {PRIMARY}; background: rgba(77,107,254,18); }}
+QPushButton#Toggle:checked {{ color: {PRIMARY}; background: rgba(77,107,254,30); border-color: rgba(77,107,254,90); font-weight: 600; }}
+QPushButton#Mode {{ background: rgba(77,107,254,16); border: none; border-radius: 15px; padding: 5px 12px; color: {PRIMARY}; }}
+QPushButton#Mode:checked {{ background: {PRIMARY}; color: white; font-weight: 600; }}
+QPushButton#Round:disabled {{ color: #B8C0D6; background: transparent; border-color: transparent; }}
+QComboBox#Roles {{ background: transparent; border: 1px solid transparent; padding: 4px 8px; color: {INK}; }}
+QComboBox#Roles:hover {{ border-color: {LINE}; }}
+QWidget#Banner {{ background: rgba(255,247,230,240); border: 1px solid #F3D9A4; border-radius: 12px; }}
+QWidget#Banner QLabel {{ color: #7A4B00; font-size: 13px; }}
 QCheckBox {{ spacing: 6px; color: {MUTED}; }}
 QComboBox {{ background: rgba(255,255,255,230); border: 1px solid {LINE}; border-radius: 14px; padding: 5px 12px; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
@@ -61,4 +71,28 @@ QPushButton:hover {{ background: #EEF2FF; border-color: #C3CEF5; }}
 QTableWidget, QListWidget {{ background: white; border: 1px solid {LINE}; border-radius: 8px; gridline-color: #EEF1F8; selection-background-color: rgba(77,107,254,38); selection-color: {INK}; }}
 QHeaderView::section {{ background: #F4F6FC; border: none; border-bottom: 1px solid {LINE}; padding: 6px; color: {MUTED}; }}
 QLabel {{ color: {INK}; }}
+QListWidget#Nav {{ background: rgba(255,255,255,150); border: none; border-right: 1px solid {LINE}; padding: 10px 6px; outline: 0; }}
+QListWidget#Nav::item {{ padding: 7px 8px; border-radius: 8px; margin: 1px 2px; color: {INK}; }}
+QListWidget#Nav::item:disabled {{ color: {MUTED}; padding-top: 12px; padding-bottom: 2px; }}
+QListWidget#Nav::item:selected {{ background: rgba(77,107,254,30); color: {PRIMARY}; font-weight: 600; }}
+QListWidget#Nav::item:hover:!selected {{ background: rgba(77,107,254,14); }}
+QStackedWidget#Stack, QWidget#PageBody {{ background: transparent; }}
+QLabel#PageTitle {{ font-size: 19px; font-weight: 600; color: {INK}; }}
+QLabel#PageIntro {{ color: {MUTED}; margin-bottom: 4px; }}
+QFrame#Card {{ background: rgba(255,255,255,235); border: 1px solid {LINE}; border-radius: 12px; }}
+QFrame#Soon {{ background: transparent; border: 1px dashed #C9D3EE; border-radius: 12px; }}
+QLabel#CardTitle {{ font-size: 14px; font-weight: 600; color: {INK}; }}
+QLabel#Hint {{ color: {MUTED}; font-size: 12px; }}
+QLabel#Good {{ color: #1E8E5A; }}
+QLabel#Warn {{ color: #C2410C; }}
+QTabWidget#SubTabs::pane {{ border: none; background: transparent; }}
+QPushButton#Primary {{ background: {PRIMARY}; color: white; border: none; border-radius: 14px; padding: 7px 20px; font-weight: 600; }}
+QPushButton#Primary:hover {{ background: {PRIMARY_DARK}; }}
+QPushButton#Link {{ background: transparent; border: none; color: {PRIMARY}; padding: 2px 4px; }}
+QPushButton#Link:hover {{ text-decoration: underline; }}
+QGroupBox {{ background: rgba(255,255,255,235); border: 1px solid {LINE}; border-radius: 12px; margin-top: 22px; padding: 10px 8px 8px 8px; }}
+QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; left: 4px; top: 2px; padding: 0 4px; font-weight: 600; font-size: 14px; color: {INK}; }}
+QComboBox::drop-down {{ border: none; width: 24px; }}
+QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{ border: none; width: 16px; }}
+QWidget#Footer {{ background: rgba(255,255,255,200); border-top: 1px solid {LINE}; }}
 """

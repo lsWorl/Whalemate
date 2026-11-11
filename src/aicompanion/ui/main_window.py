@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction,QIcon,QPixmap
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,
     QListWidget,QListWidgetItem,QSplitter,QComboBox,QCheckBox,QSystemTrayIcon,QMenu,QStyle,QProgressBar,QFileDialog,QMessageBox)
 from aicompanion.avatar.view import AvatarView
+from aicompanion.avatar.model_package import cubism_core_available
 from aicompanion.audio.capture import Microphone
 from aicompanion.voice.echo import EchoGate
 from aicompanion.voice.hotkey import DEFAULT_KEY, key_reader, label as key_label
@@ -29,8 +30,6 @@ from aicompanion.ui.chat_worker import ChatWorker,TaskWorker
 from aicompanion.ui.agent_session import AgentSession
 from aicompanion.usage import meter
 from aicompanion.ui.settings_window import SettingsWindow
-from aicompanion.domain.character import DEFAULT_CHARACTER
-from aicompanion.domain.personas import apply_emilia_preset
 
 
 class MainWindow(QMainWindow):
@@ -49,8 +48,9 @@ class MainWindow(QMainWindow):
             from aicompanion.characters.registry import CharacterRegistry
             registry=CharacterRegistry(self.database,settings); registry.sync()
             controller.character=registry.active()
-        self.registry=registry; self.default_llm_client=controller.llm_client
-        self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.animation_avatars={}; self.animation_failures=set(); self.renderer=None; self.model_label=''
+        self.registry=registry
+        self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.renderer=None; self.model_label=''
+        self.animation_avatars={}; self.animation_failures=set()
         self.tray_hint_shown=False; self.first_token=set()
         # 台词标注：每轮回复一个解析器；开语音时动作挂在句子上，等那句开始播放再执行
         self.vocab=Vocab(); self.cue_streams={}; self.pending_cues={}; self.sentence_cues={}
@@ -60,12 +60,13 @@ class MainWindow(QMainWindow):
         self.items={}; self.texts={}; self.proactive_keys={}; self.closing=False; self.exit_requested=False
         self.delivered={}; self.reply_characters={}; self.reply_voice={}; self.reply_status={}
         # 语气词：每轮回复只发一声反应（或再加第一句短话），文字留在气泡
-        self.interjections=interjection.load(None); self.voiced_first=set(); self.reply_expressions={}; self.last_interjection=''
+        self.interjections=interjection.load(None); self.readers={}; self.voiced_first=set(); self.reply_expressions={}; self.last_interjection=''
         self.asr_queue=deque()
         self.call_active=False; self.call_epoch=0; self.asr_worker=None; self.memory_worker=None
         self.user_speaking=False; self.asr_failures=0
         self.last_interaction=monotonic(); self.first_history_id=None; self.mood='calm'
-        self.speech_client=SpeechClient(settings)
+        self.speech_client=SpeechClient(settings,translation_source=self._translation_client,
+                                        tts_source=lambda:self.controller.router.tts_target(self.controller.character.id))
         self.speech=SpeechOutput(self.speech_client,self); self.microphone=self.qt_microphone=Microphone(self)
         # P4：外放打断。回声门控的耦合系数跨会话保存；Chromium 回声消除后端按需创建
         self.web_microphone=None; self.voice_stats={'barge_ins':0,'cancelled':0,'latencies':[]}
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
         self.speech.mouth.connect(lambda value:self.avatar.set_state(self.mood,value))
         self.speech.speaking.connect(self._speaking)
         self.speech.error.connect(self._speech_error)
+        self.speech.fallback.connect(lambda message:self._status(message))   # 云端声线不可用时退回本地朗读，回复照常
         self.speech.usage.connect(lambda n:self.database.record_usage(self.controller.character.id,'tts_characters',n))
         self.speech.delivered.connect(self._heard)
         self._connect_microphone(self.qt_microphone)
@@ -101,7 +103,9 @@ class MainWindow(QMainWindow):
             self.web_microphone=WebMicrophone(self); self._connect_microphone(self.web_microphone)
         return self.web_microphone
 
-    def _voice_mode(self): return self.database.get_setting('voice_mode','continuous')
+    def _voice_mode(self):
+        from aicompanion.voice.turns import DEFAULT_MODE
+        return self.database.get_setting('voice_mode',DEFAULT_MODE)
 
     def _configure_voice(self):
         """按设置选择收音后端和收音方式。Chromium 后端时她的语音也改由同一网页播放，回声消除才有参考。"""
@@ -139,31 +143,50 @@ class MainWindow(QMainWindow):
         from aicompanion.ui.chat_view import Backdrop, ChatView
         self.setWindowTitle(self.settings.app_name+' · 聊天面板'); self.resize(600,760); self.setMinimumSize(420,520)
         root=Backdrop(); self.backdrop=root; layout=QVBoxLayout(root); layout.setContentsMargins(0,0,0,0); layout.setSpacing(0)
-        # 顶栏：头像、名字、模型、状态、角色切换、语音开关、设置
-        header=QWidget(); header.setObjectName('Header'); top=QHBoxLayout(header); top.setContentsMargins(16,10,12,10); top.setSpacing(10)
+        # 顶栏：头像、名字和模型、状态；右边只留三个常用开关：切换角色、朗读、设置（其余都在设置里）
+        header=QWidget(); header.setObjectName('Header'); top=QHBoxLayout(header); top.setContentsMargins(16,10,12,10); top.setSpacing(8)
         self.avatar_label=QLabel(); self.avatar_label.setFixedSize(44,44); top.addWidget(self.avatar_label)
         names=QVBoxLayout(); names.setSpacing(0)
         self.name_label=QLabel(self.controller.character.name); self.name_label.setObjectName('Name')
         self.model_info=QLabel(''); self.model_info.setObjectName('Model')
         names.addWidget(self.name_label); names.addWidget(self.model_info); top.addLayout(names); top.addStretch()
         self.status_pill=QLabel('就绪'); self.status_pill.setObjectName('StatusPill'); top.addWidget(self.status_pill)
-        self.roles=QComboBox(); self._refresh_roles(); self.roles.currentIndexChanged.connect(self._switch_role); top.addWidget(self.roles)
-        self.speak_toggle=QCheckBox('语音'); self.speak_toggle.toggled.connect(self._toggle_speech); top.addWidget(self.speak_toggle)
-        settings=QPushButton('设置'); settings.setObjectName('Flat'); settings.clicked.connect(self._settings); top.addWidget(settings)
+        self.roles=QComboBox(); self.roles.setObjectName('Roles'); self.roles.setToolTip('切换角色（每个角色有自己的记忆）')
+        self._refresh_roles(); self.roles.currentIndexChanged.connect(self._switch_role); top.addWidget(self.roles)
+        self.speak_toggle=QPushButton('朗读'); self.speak_toggle.setObjectName('Toggle'); self.speak_toggle.setCheckable(True)
+        self.speak_toggle.setToolTip('打开后她会把回复念出来（说多少、用什么声音在 设置 → 声音与通话）')
+        self.speak_toggle.toggled.connect(self._toggle_speech); top.addWidget(self.speak_toggle)
+        settings=QPushButton('设置'); settings.setObjectName('Toggle'); settings.setToolTip('打开设置'); settings.clicked.connect(lambda:self._settings())
+        top.addWidget(settings)
         layout.addWidget(header)
+        # 引导条：聊天模型还没配置时告诉用户现在是离线模拟、去哪里配置（配置好后自动隐藏）
+        self.setup_banner=QWidget(); self.setup_banner.setObjectName('Banner'); banner=QHBoxLayout(self.setup_banner)
+        banner.setContentsMargins(14,8,10,8)
+        self.setup_text=QLabel(''); self.setup_text.setWordWrap(True); banner.addWidget(self.setup_text,1)
+        go=QPushButton('去配置'); go.setObjectName('Send'); go.clicked.connect(lambda:self._settings('models')); banner.addWidget(go)
+        self.setup_banner.hide()
+        wrap_banner=QVBoxLayout(); wrap_banner.setContentsMargins(14,10,14,0); wrap_banner.addWidget(self.setup_banner); layout.addLayout(wrap_banner)
         older=QPushButton('加载更早记录'); older.setObjectName('Flat'); older.clicked.connect(lambda:self._load_history(older=True))
         layout.addWidget(older,0,Qt.AlignmentFlag.AlignHCenter)
         self.chat_list=ChatView('你'); layout.addWidget(self.chat_list,1)
         self.subtitle=QLabel(''); self.subtitle.setObjectName('Subtitle'); self.subtitle.setWordWrap(True); self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle.hide()
         layout.addWidget(self.subtitle)
-        # 输入栏：胶囊输入框 + 打断 + 通话 + 发送
-        bar=QWidget(); bar.setObjectName('InputBar'); row=QHBoxLayout(bar); row.setContentsMargins(14,5,6,5); row.setSpacing(6)
-        self.input_box=QLineEdit(); self.input_box.setObjectName('Input'); self.input_box.setPlaceholderText('说说今天的心情…　（/做 让她动手干活）')
+        # 输入栏：[办事] [附件] 输入框 [打断] [通话] [发送]
+        # “办事”打开时这句话交给她动手做（等同于以 /做 开头）；附件按钮先占位，计划书 v4 功能七“把文件交给她办事”接入后启用
+        bar=QWidget(); bar.setObjectName('InputBar'); row=QHBoxLayout(bar); row.setContentsMargins(6,5,6,5); row.setSpacing(6)
+        self.agent_toggle=QPushButton('办事'); self.agent_toggle.setObjectName('Mode'); self.agent_toggle.setCheckable(True)
+        self.agent_toggle.setToolTip('打开后，这句话会交给她动手去做（读写文件、整理资料等）；改动文件前会先问你')
+        self.agent_toggle.toggled.connect(self._agent_mode_changed); row.addWidget(self.agent_toggle)
+        self.attach_button=QPushButton('＋'); self.attach_button.setObjectName('Round'); self.attach_button.setEnabled(False)
+        self.attach_button.setToolTip('即将支持：把文件交给她办事'); row.addWidget(self.attach_button)
+        self.input_box=QLineEdit(); self.input_box.setObjectName('Input')
         self.input_box.returnPressed.connect(self._send_current_message); row.addWidget(self.input_box,1)
-        stop=QPushButton('■'); stop.setObjectName('Round'); stop.setToolTip('打断她'); stop.clicked.connect(self.interrupt); row.addWidget(stop)
-        self.call_button=QPushButton('开启通话'); self.call_button.setObjectName('Round'); self.call_button.clicked.connect(self._toggle_call); row.addWidget(self.call_button)
+        stop=QPushButton('■'); stop.setObjectName('Round'); stop.setToolTip('打断她（正在说的话、正在做的事都会停下）'); stop.clicked.connect(self.interrupt); row.addWidget(stop)
+        self.call_button=QPushButton('通话'); self.call_button.setObjectName('Round'); self.call_button.setToolTip('开启语音通话：按住收音键（默认右 Ctrl）说话')
+        self.call_button.clicked.connect(self._toggle_call); row.addWidget(self.call_button)
         send=QPushButton('发送'); send.setObjectName('Send'); send.clicked.connect(self._send_current_message); row.addWidget(send)
+        self._agent_mode_changed(False)
         wrap=QVBoxLayout(); wrap.setContentsMargins(14,6,14,4); wrap.setSpacing(4); wrap.addWidget(bar)
         self.level=QProgressBar(); self.level.setObjectName('Level'); self.level.setRange(0,100); self.level.setValue(0); self.level.setTextVisible(False); self.level.setFixedHeight(4)
         wrap.addWidget(self.level); layout.addLayout(wrap)
@@ -187,8 +210,10 @@ class MainWindow(QMainWindow):
             self.avatar_label.setStyleSheet('background:#4D6BFE;color:white;border-radius:22px;font-size:18px;font-weight:600;')
 
     def _build_tray(self):
-        icon=self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
-        self.setWindowIcon(icon); self.tray=QSystemTrayIcon(icon,self)
+        from aicompanion.ui.icons import app_icon
+        icon=app_icon()
+        if icon.isNull(): icon=self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+        self.setWindowIcon(icon); self.tray=QSystemTrayIcon(icon,self); self.tray.setToolTip(self.settings.app_name)
         menu=QMenu(self)
         self.pet_action=QAction('隐藏角色',self); self.pet_action.triggered.connect(self._toggle_pet)
         show=QAction('打开聊天面板',self); show.triggered.connect(self._show_chat)
@@ -206,7 +231,7 @@ class MainWindow(QMainWindow):
         pet=self.pet
         pet.chat_requested.connect(self._show_chat); pet.call_requested.connect(self._toggle_call)
         pet.interrupt_requested.connect(self.interrupt); pet.quit_requested.connect(self.request_exit)
-        pet.settings_requested.connect(self._settings); pet.message_submitted.connect(self.submit)
+        pet.settings_requested.connect(lambda:self._settings()); pet.message_submitted.connect(self.submit)
         pet.character_requested.connect(self._switch_to)
         pet.visibility_changed.connect(lambda visible:self.pet_action.setText('隐藏角色' if visible else '召回角色'))
         pet.appearance_changed.connect(self._apply_avatar)
@@ -283,12 +308,19 @@ class MainWindow(QMainWindow):
         """根据角色包和设置选择显示方式，并放进常驻桌宠窗口。"""
         character=self.controller.character
         pack=self.registry.pack(character.id)
-        kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),character.model_path,
-            animation_enabled=bool(self.database.get_setting(f'pet_animation_enabled:{character.id}',True)))
-        animation_failed=kind=='spritesheet' and str(resource) in self.animation_failures
-        if animation_failed:
-            kind,resource='sprites',pack.sprite_manifest_path()
-        if kind=='sprites' and not animation_failed and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
+        # 旧开关控制逐帧/自绘立绘切换；只提供选装逐帧形象的角色使用当前包的默认值。
+        animation_enabled = (pack is not None and pack.renderer_kind == 'spritesheet') or bool(
+            self.database.get_setting(f'pet_animation_enabled:{character.id}', True))
+        kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),
+                                      character.model_path,animation_enabled=animation_enabled)
+        if kind=='cubism' and not cubism_core_available():
+            if not getattr(self,'_cubism_core_warned',False):
+                self._cubism_core_warned=True
+                self._status('导入的 Live2D 模型需要 Live2D Cubism Core，本项目不附带，已改用角色默认形象。获取方法见 docs/live2d_model_sources.md。')
+            kind,resource=choose_renderer(pack,None,'',animation_enabled=animation_enabled)
+        if kind=='spritesheet' and str(resource) in self.animation_failures:
+            kind,resource=choose_renderer(pack,None,'',animation_enabled=False)
+        if kind=='sprites' and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
             rig_path=self._rig_path(pack)
             if rig_path: kind,resource='rig',rig_path
         if (kind,str(resource))==self.renderer: return
@@ -313,8 +345,8 @@ class MainWindow(QMainWindow):
                     self.animation_avatars[str(resource)]=view
                 self.pet.set_view(view,'spritesheet',pack)
             except (CharacterPackError,ValueError,OSError) as error:
-                self._status('动画加载失败，改用原立绘：'+str(error))
-                kind,resource='sprites',pack.sprite_manifest_path()
+                self._status('动画加载失败：'+str(error))
+                kind,resource=choose_renderer(pack,None,'',animation_enabled=False)
         if kind=='sprites':
             try:
                 view=self.sprite_avatars.get(str(resource)) or SpriteAvatar(resource)
@@ -322,23 +354,24 @@ class MainWindow(QMainWindow):
                 self.pet.set_view(view,'sprites',pack)
             except (CharacterPackError,ValueError) as error:
                 self._status('立绘加载失败：'+str(error)); kind='placeholder'
-        if kind in ('mesh','png','cubism'):
+        if kind=='cubism':
             if self.web_avatar is None:
                 # WebEngine 只在确实需要时创建，鲸娘等立绘角色不占用浏览器内核内存。
                 self.web_avatar=AvatarView(); self.web_avatar.bridge.loaded.connect(self._avatar_loaded)
             self.pet.set_view(self.web_avatar,'webengine',pack)
-            if kind=='mesh': self.web_avatar.set_animated_emilia() if 'Emilia' in str(resource) else self.web_avatar._load_path(resource)
-            elif kind=='png': self.web_avatar.set_preview()
-            elif not self.web_avatar.set_model(resource): self._status('Live2D 模型加载失败，请在设置中重新选择。')
+            if not self.web_avatar.set_model(resource): self._status('Live2D 模型加载失败，请在设置中重新选择。')
         if kind=='placeholder':
-            self.pet.set_view(PlaceholderAvatar('未设置形象\n右键 → 设置'),'placeholder',pack)
+            hint = '未设置形象\n右键 → 设置'
+            if pack and pack.id == 'deepseek-whale':
+                hint = '鲸鲸\n可安装 Aboutme 形象'
+            self.pet.set_view(PlaceholderAvatar(hint),'placeholder',pack)
         self.renderer=(kind,str(resource))
         self.avatar.set_state(self.mood)
 
     def _animation_failed(self,view,resource,message):
         self.animation_failures.add(resource)
         if self.pet.view is view and not self.closing:
-            self._status('动画解码失败，改用原立绘：'+message)
+            self._status('动画解码失败：'+message)
             self.renderer=None; self._apply_avatar()
 
     def _rig_path(self,pack):
@@ -364,21 +397,40 @@ class MainWindow(QMainWindow):
 
     def _apply_identity(self):
         character=self.controller.character
-        client,label=self.registry.client_for(character.id,self.default_llm_client)
-        self.controller.llm_client=client; self.model_label=label; self.model_info.setText(label)
+        # 只更新显示；每轮生成时再按角色和用途取模型（计划书 v4 功能一），不改共享状态
+        label=self.controller.router.label(character.id)
+        self.model_label=label; self.model_info.setText(label)
         self.name_label.setText(character.name)
         self.vocab=Vocab.from_pack(self.registry.pack(character.id)); self.controller.vocabs[character.id]=self.vocab
+        self._refresh_setup_banner()
         pack=self.registry.pack(character.id); self.interjections=interjection.load(pack.root if pack else None)
         self.pet.set_identity(character.name,label,[(c.id,c.name) for c in self.registry.characters()],character.id)
 
     def _avatar_loaded(self, value):
-        label = {'ready': '角色已就绪', 'illustration-ready': '艾米莉娅同人立绘预览已就绪 · 尚未完成 Live2D 绑定',
-            'animation-ready': '艾米莉娅 2D 网格动画已就绪（非 Cubism）'}
+        label = {'ready': '角色已就绪'}
         self._status(label.get(value, value))
 
     def _send_current_message(self):
         text=self.input_box.text().strip()
-        if text: self.input_box.clear(); self.submit(text)
+        if not text: return
+        self.input_box.clear()
+        if self.agent_toggle.isChecked():
+            # 一次一件事：发出任何一句后都回到聊天（Codex PR #33 P2：手写了 /做 前缀时也要关，否则下一句“谢谢”会变成任务）。
+            # 停止词不补前缀，任务忙时打开“办事”说“停”也照样停下。
+            self.agent_toggle.setChecked(False)
+            if not text.startswith(self.AGENT_PREFIXES) and text.rstrip('！!。.') not in self.STOP_WORDS: text='/做 '+text
+        self.submit(text)
+
+    def _agent_mode_changed(self,on):
+        self.input_box.setPlaceholderText('要她做什么？' if on else '和她聊聊…')
+        self.input_box.setToolTip('例如：把桌面上的截图整理到一个文件夹（改动文件前会先问你）' if on else '点左边的“办事”，这句话就交给她动手做')
+
+    def _refresh_setup_banner(self):
+        """聊天模型没配置时显示引导条。"""
+        try: ready=self.controller.router.offline or self.controller.router.configured('chat',self.controller.character.id)
+        except Exception: ready=True
+        self.setup_text.setText('还没有配置聊天模型，现在她只会用离线模拟回复。添加一个 DeepSeek 或 MiniMax 账户就能正常聊天。')
+        self.setup_banner.setVisible(not ready)
 
     AGENT_PREFIXES=('/做','／做','/do ','做件事：')
     STOP_WORDS={'停','停下','停一下','别做了','不用做了','停止'}
@@ -405,7 +457,10 @@ class MainWindow(QMainWindow):
         self.pet.show_user(text)
         self.coordinator.submit(text)
         previous_mood=self.mood
-        self.mood=self.database.load_emotion(self.controller.character.id).mood
+        try:
+            from aicompanion.services.mood_service import MoodService
+            self.mood=MoodService(self.database).current(self.controller.character.id).label()   # 先回落再读（功能三）
+        except Exception: self.mood=self.database.load_emotion(self.controller.character.id).mood
         # 这句话让她变开心（例如被夸）时，回复结束后跳一下庆祝。
         self.celebrate_next=self.mood=='happy' and previous_mood!='happy'
         self.pet.dispatch('message_sent')
@@ -417,12 +472,15 @@ class MainWindow(QMainWindow):
         old=self.coordinator.active
         self.coordinator.cancel(clear_pending)
         for worker in self.workers: worker.cancellation.cancel()
-        if old in self.items: self.items[old].mark('[已打断]')
-        if old:self.controller.expression.cancel(old,self.reply_characters.get(old,self.controller.character.id))
+        # 已经完成（或已失败、已取消）的那一轮不再追改成“被打断”：下一句话、挂断通话、退出都会走到这里，
+        # 那时上一轮早就说完了（Codex 在 PR #38 实机发现的基线问题，V4-8 先修）。只停掉还在念的语音。
+        finished=self.reply_status.get(old) in ('complete','failed','cancelled','suppressed')
+        if old in self.items and not finished: self.items[old].mark('[已打断]')
+        if old and not finished:self.controller.expression.cancel(old,self.reply_characters.get(old,self.controller.character.id))
         self.speech.stop(); self.sentences=SentenceBuffer(); self.subtitle.clear(); self.subtitle.hide()
         self._pet_subtitle(''); self.pet.dispatch('interrupted')
         self.pet.hide_activity(); self.pet.finish_reply(); self.sentence_cues.clear()
-        if old and old in self.reply_characters:
+        if old and old in self.reply_characters and not finished:
             self.reply_status[old]='cancelled'; self._sync_delivery(old)
         self._status('已打断' if not self.call_active else '正在听…')
 
@@ -445,6 +503,9 @@ class MainWindow(QMainWindow):
         self.reply_queries[generation]=query   # 识别到要动手时，把用户原话交给干活的她
         self.delivered[generation]=''; self.reply_characters[generation]=self.controller.character.id
         self.reply_voice[generation]=self._full_voice(); self.reply_status[generation]='generating'
+        if self.reply_voice[generation] and self._speech_style()=='smart':
+            from aicompanion.speech.smart import SmartReader
+            self.readers[generation]=SmartReader()
         self.reply_expressions[generation]=[]
         # 多段回复显示成几个连续气泡、表情包单独一个气泡（见 SegmentedReply）
         self.items[generation]=self.chat_list.reply(self.controller.character.name,'正在想…')
@@ -527,6 +588,7 @@ class MainWindow(QMainWindow):
         if state=='complete':
             self.pet.dispatch('reply_finished',ok=True,celebrate=getattr(self,'celebrate_next',False)); self.celebrate_next=False
             for sentence in self.sentences.feed('',True): self._enqueue_sentence(sentence,generation)
+            self._finish_reader(generation)
             # 没能挂到句子上的标注（语音关闭、或标注在最后一句之后）现在执行
             for cue in self.pending_cues.pop(generation,[]): self.pet.perform(cue)
             if not self.reply_voice.get(generation): self.pet.finish_reply()
@@ -544,7 +606,7 @@ class MainWindow(QMainWindow):
             if key and self.isHidden() and not self.pet.isVisible(): self.tray.showMessage(self.controller.character.name,self.texts[generation][:120])
         else:
             self.speech.stop()
-            self.pet.finish_reply(); self.pending_cues.pop(generation,None); self.pending_tasks.pop(generation,None)
+            self.pet.finish_reply(); self.pending_cues.pop(generation,None); self.pending_tasks.pop(generation,None); self.readers.pop(generation,None)
             if state=='failed': self.pet.dispatch('reply_finished',ok=False,error=error or '回复失败')
             else: self.pet.dispatch('interrupted')
             self.items[generation].mark('[回复未完成]' if self.texts[generation] else '[未能完成回复]')
@@ -573,10 +635,12 @@ class MainWindow(QMainWindow):
 
     # ---- 说话方式：语气词 / 语气词 + 第一句 / 完整朗读 ----------------------------------------
     def _speech_style(self):
-        style=self.database.get_setting('speech_style','interjection')
-        return style if style in interjection.STYLES else 'interjection'
+        style=self.database.get_setting('speech_style',interjection.DEFAULT_STYLE)
+        return style if style in interjection.STYLES else interjection.DEFAULT_STYLE
 
-    def _full_voice(self): return self.speech.enabled and self._speech_style()=='full'
+    def _full_voice(self):
+        """这一轮是否逐句朗读：完整朗读，或智能朗读（短回复全念、长回复取舍分段，计划书 v4 功能八）。"""
+        return self.speech.enabled and self._speech_style() in ('full','smart')
 
     def _voice_reaction(self,generation,sentence,expressions=None):
         """非完整朗读时，一轮回复只在第一句出来时发一声。"""
@@ -593,7 +657,16 @@ class MainWindow(QMainWindow):
     def speak_reply(self,text,expressions=()):
         """干活结果等一次性文字：完整朗读模式念全文，否则只发一声。"""
         if not self.speech.enabled or not text: return
-        if self._full_voice(): self.speech.enqueue(text,'agent')
+        # 每份结果一个独立的朗读轮次：上一份退回本地朗读 / 出错，不影响下一份（Codex PR #39 第 2 项）
+        generation='agent:'+uuid4().hex
+        if self._full_voice() and self._speech_style()=='smart':
+            # 办事结果常常很长：同样按智能朗读取舍、分段
+            from aicompanion.speech.smart import SmartReader
+            reader=SmartReader(); buffer=SentenceBuffer()
+            for sentence in buffer.feed(text)+buffer.feed('',True):
+                for segment in reader.feed(sentence): self.speech.enqueue(segment,generation)
+            for segment in reader.finish(): self.speech.enqueue(segment,generation)
+        elif self._full_voice(): self.speech.enqueue(text,generation)
         else:
             key='once:'+uuid4().hex; self._voice_reaction(key,text,list(expressions)); self.voiced_first.discard(key)
 
@@ -605,10 +678,22 @@ class MainWindow(QMainWindow):
     def _enqueue_sentence(self,sentence,generation):
         if not self.reply_voice.get(generation):
             self._voice_reaction(generation,sentence); return
+        reader=self.readers.get(generation)
+        for segment in (reader.feed(sentence) if reader else [sentence]): self._speak_segment(segment,generation)
+
+    def _finish_reader(self,generation):
+        reader=self.readers.pop(generation,None)
+        if reader and self.reply_voice.get(generation):
+            for segment in reader.finish(): self._speak_segment(segment,generation)
+            # 计划书 v4 功能八要对照的数据：每轮念了多少字（用量页可见）
+            try: self.database.record_usage(self.controller.character.id,'voice_characters',reader.spoken)
+            except Exception: pass
+
+    def _speak_segment(self,segment,generation):
         cues=self.pending_cues.get(generation)
         if cues and self.speech.enabled:
-            self.sentence_cues.setdefault(spoken_text(sentence),[]).extend(cues); self.pending_cues[generation]=[]
-        self.speech.enqueue(sentence,generation)
+            self.sentence_cues.setdefault(spoken_text(segment),[]).extend(cues); self.pending_cues[generation]=[]
+        self.speech.enqueue(segment,generation)
 
     def _sentence_started(self,text):
         for cue in self.sentence_cues.pop(text,[]): self.pet.perform(cue)
@@ -620,8 +705,10 @@ class MainWindow(QMainWindow):
 
     def _sync_delivery(self,generation):
         if generation not in self.reply_characters: return
-        text=self.delivered.get(generation,'') if self.reply_voice.get(generation) else self.texts.get(generation,'')
         status=self.reply_status.get(generation,'generating')
+        # 已完成的回复整段都在气泡里显示过了，按全文记；还在生成 / 被打断的朗读轮次只记已经念出来的部分
+        voiced=self.reply_voice.get(generation) and status!='complete'
+        text=self.delivered.get(generation,'') if voiced else self.texts.get(generation,'')
         self.database.set_delivered_reply(generation,self.reply_characters[generation],text,status)
 
     def _worker_finished(self,worker):
@@ -632,10 +719,11 @@ class MainWindow(QMainWindow):
         self._finish_exit_if_ready()
 
     def _analyze_memory(self):
-        if self.memory_worker or self.settings.llm_provider=='mock': return
-        if self.quota.check_silent('memory')=='stop': return
         character_id=self.controller.character.id
-        worker=TaskWorker(lambda token:self.controller.memory_service.analyze(character_id,self.controller.llm_client,token),self)
+        if self.memory_worker or not self.controller.router.ready('chat',character_id): return
+        if self.quota.check_silent('memory')=='stop': return
+        client=self.controller.client(character_id,'memory')   # 线程启动前取好，线程里不读共享状态
+        worker=TaskWorker(lambda token:self.controller.memory_service.analyze(character_id,client,token),self)
         self.memory_worker=worker; self.tasks.add(worker)
         worker.failed.connect(lambda error:None) # 后台分析失败不破坏主对话。
         worker.finished.connect(lambda w=worker:self._task_finished(w)); worker.start()
@@ -704,12 +792,20 @@ class MainWindow(QMainWindow):
         except Exception as error:   # 整理失败不影响聊天
             self._status('记忆整理失败：'+str(error))
 
+    def _translation_client(self):
+        """日语配音的翻译用当前角色的聊天模型；缓存范围含角色与模型配置修订。没配置时返回 (None, '')。"""
+        character_id=self.controller.character.id
+        router=self.controller.router
+        if not router.ready('chat',character_id): return None,''
+        client,resolved=router.client('chat',character_id,'translation')
+        return client,f'{character_id}|{resolved.model_id}|{resolved.config_revision}|{resolved.credential_revision}'
+
     def _maybe_generate_purposes(self):
         character_id=self.controller.character.id
         if self.purpose_worker or self.closing or not self.purposes.should_generate(character_id): return
-        if self.settings.llm_provider=='mock' or self.quota.check_silent('purpose')=='stop':
-            self.purposes.generate(character_id); return   # 离线或额度用完：用规则生成，不调用模型
-        client=self.controller.llm_client
+        if not self.controller.router.ready('chat',character_id) or self.quota.check_silent('purpose')=='stop':
+            self.purposes.generate(character_id); return   # 离线、没配模型或额度用完：用规则生成，不调用模型
+        client=self.controller.client(character_id,'purpose')
         worker=TaskWorker(lambda token:self.purposes.generate(character_id,client,token),self)
         self.purpose_worker=worker; self.tasks.add(worker)
         worker.failed.connect(lambda error:None)
@@ -749,7 +845,7 @@ class MainWindow(QMainWindow):
             if self.call_active: self._end_call()
             self._status(str(error)); return
         if not self.call_active: return
-        self.call_button.setText('结束通话')
+        self.call_button.setText('挂断')
         self.speak_toggle.setChecked(True); hint=self._call_hint(); self._status(hint)
         self.pet.set_call_active(True)
         if self.pet.isVisible(): self.pet.show_bubble(hint,4)
@@ -761,7 +857,7 @@ class MainWindow(QMainWindow):
         self.speech.set_sink(None)
         self.asr_queue.clear()
         if self.asr_worker: self.asr_worker.cancellation.cancel()
-        self.interrupt(); self.call_button.setText('开启通话'); self.level.setValue(0)
+        self.interrupt(); self.call_button.setText('通话'); self.level.setValue(0)
         self.pet.set_call_active(False)
 
     def _microphone_error(self,message): self._end_call(); self._status(message)
@@ -821,44 +917,55 @@ class MainWindow(QMainWindow):
             self._status('语音识别失败，可以再说一次：'+error)
 
     def _apply_settings(self):
-        character=apply_emilia_preset(self.database,self.controller.character,self.settings.character_preset=='emilia')
-        if character is not self.controller.character:
-            self.controller.character=character
-            self._refresh_roles(); self._load_history()
         # 新配置的专属声线只启用一次；之后尊重用户在设置中选择的朗读方式。
         if self.settings.tts_provider=='qwen' and self.settings.qwen_api_key:
             setup=self.settings.qwen_tts_model+':'+self.settings.qwen_tts_voice
             if self.database.get_setting('qwen_voice_setup')!=setup:
+                # 只切换朗读方式；朗读开关默认关闭，由用户自己打开（负责人 2026-11-11）
                 self.database.set_setting('tts_provider','qwen')
-                self.database.set_setting('speech_enabled',True)
                 self.database.set_setting('qwen_voice_setup',setup)
         character_id=self.controller.character.id
         self.speech_client.asr_provider=self.database.get_setting('asr_provider',self.settings.asr_provider)
         # 环境配置只在该角色首次启用时应用；之后尊重设置界面保存的选择。
         if self.settings.speech_language=='ja' and self.database.get_setting(f'speech_language:{character_id}') is None:
             self.database.set_setting(f'speech_language:{character_id}','ja')
-        if character_id==DEFAULT_CHARACTER.id and self.settings.avatar_preview=='emilia' and self.database.get_setting(f'avatar_mode:{character_id}') is None and not self.registry.pack(character_id):
-            self.database.set_setting(f'avatar_mode:{character_id}','illustration')
+        # 负责人 2026-11-11：鲸鲸默认就用有感情的云端声线。只对从没存过朗读方式的库切换一次；
+        # 明确选过本地朗读（包括旧库里存着的 system）的不动（Codex PR #41 审查 2）。条件见 adopt_default_voice
+        from aicompanion.domain.voice_profile import adopt_default_voice
+        adopt_default_voice(self.database,self.controller.router,character_id,self.settings.tts_provider)
         self.speech.provider=self.database.get_setting('tts_provider',self.settings.tts_provider)
         self.speech.language=self.database.get_setting(f'speech_language:{character_id}',self.settings.speech_language)
         self.speech.role_style=self.database.get_setting(f'japanese_style:{character_id}','')
-        self.speech.voice=(self.database.get_setting(f'qwen_voice:{character_id}',self.settings.qwen_tts_voice)
-            if self.speech.provider=='qwen' else self.controller.character.voice or self.database.get_setting('tts_voice','tongtong'))
+        if self.speech.provider=='breeze':
+            # 音色来自“模型与 Key”页（可按角色设置）；cache_id 含音色、模型、参数和 Key 修订，换任何一项都不会命中旧缓存
+            target=self.controller.router.tts_target(character_id)
+            self.speech.voice=target.cache_id if target else ''
+        else:
+            self.speech.voice=(self.database.get_setting(f'qwen_voice:{character_id}',self.settings.qwen_tts_voice)
+                if self.speech.provider=='qwen' else self.controller.character.voice or self.database.get_setting('tts_voice','tongtong'))
         self.speech.style=self.database.get_setting(f'qwen_style:{character_id}','')
         mood=self.database.get_setting(f'qwen_mood:{character_id}','auto')
         self.speech.mood=self.database.load_emotion(character_id).mood if mood=='auto' else mood
-        enabled=self.database.get_setting('speech_enabled',False)
+        # 计划书 v4 功能八：朗读默认开启；从没动过开关的库也开启。用户手动关过的保持关闭，只提示一次
+        enabled=self.database.get_setting('speech_enabled',True)
+        if enabled is False and not self.database.get_setting('speech_default_hint',False):
+            self.database.set_setting('speech_default_hint',True)
+            QTimer.singleShot(3000,lambda:self.pet.show_bubble('现在可以让我开口说话啦：点聊天面板上的“朗读”就行。',10))
         self.speech.enabled=enabled; self.speak_toggle.setChecked(enabled)
         self._apply_identity(); self._apply_avatar()
         self.controller.agent_enabled=bool(self.database.get_setting('agent_enabled',True))
         self._apply_backdrop()
-        if self.call_active:   # 收音方式或回声后端改了：重开一次通话让新设置生效
-            self._end_call(); self._toggle_call()
+        # 通话中改了收音设置由 _settings 只重启收音；这里不再挂断重开，否则会打断正在进行的回复
 
-    def _settings(self):
-        self._end_call(); self.interrupt()
-        dialog=SettingsWindow(self.controller,self.settings,self,speech_output=self.speech); dialog.exec()
+    def _settings(self,page=None):
+        # 打开设置不打断正在进行的回复、办事或通话（负责人 2026-11-11 实机反馈）：
+        # 生成线程拿的是开始时的角色和模型快照，设置改动只影响下一轮。
+        voice=(self.database.get_setting('input_device',''),self.database.get_setting('echo_backend','qt'),self._voice_mode())
+        dialog=SettingsWindow(self.controller,self.settings,self,speech_output=self.speech,page=page); dialog.exec()
         self._refresh_roles(); self._apply_settings()
+        if self.call_active and voice!=(self.database.get_setting('input_device',''),self.database.get_setting('echo_backend','qt'),self._voice_mode()):
+            # 通话中换了麦克风或收音方式：只重启收音，不挂断、不打断她正在说的话
+            self.microphone.stop(); self._configure_voice(); self.microphone.start(self._microphone_device())
 
     def _switch_role(self,index):
         self._switch_to(self.roles.itemData(index))

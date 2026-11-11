@@ -14,7 +14,7 @@ from aicompanion.storage.database import Database
 class SocialBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.db = Database(Path(self.tmp.name)/'test.sqlite3'); self.db.initialize()
-        self.now = 100000.; self.social = SocialMemory(self.db, 'emilia', clock=lambda: self.now)
+        self.now = 100000.; self.social = SocialMemory(self.db, 'deepseek-whale', clock=lambda: self.now)
     def tearDown(self): self.tmp.cleanup()
 
 

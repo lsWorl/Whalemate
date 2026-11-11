@@ -505,7 +505,7 @@ class HeartbeatTests(Base):
             with urllib.request.urlopen(request, timeout=5) as response: reply = json.loads(response.read())
         finally:
             server.close()
-        self.assertEqual(reply, {'ok': True, 'groups': ['30003'], 'media': {'vision': True, 'collect': True, 'name': '鲸娘'}})
+        self.assertEqual(reply, {'ok': True, 'groups': ['30003'], 'media': {'vision': True, 'collect': True, 'name': '鲸鲸'}})
         self.assertEqual(runtime.last_heartbeat['groups'], [{'id': '30003', 'name': '测试群'}])   # 不合法的群号丢掉
         self.assertTrue(runtime.last_heartbeat['onebot']['connected'])
 

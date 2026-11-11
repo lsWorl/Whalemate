@@ -1,7 +1,7 @@
 """形象包工具：把分层源图编译成骨骼模型，并提供一个标注支点、实时预览的小窗口。规格见 docs/tasks/T6-rig-studio.md。
 
-  python tools/rig_studio.py compile art/deepseek-whale src/aicompanion/characters/deepseek-whale/rig
-  python tools/rig_studio.py studio  art/deepseek-whale [--out <编译输出目录>]
+  python tools/rig_studio.py compile <分层包目录> output/rig
+  python tools/rig_studio.py studio <分层包目录> --out output/rig
   python tools/rig_studio.py compile-poses <pose-layered-v2 目录> [输出目录] [--verify] [--texture-scale 0.5]
      十姿态分层包（原鲸娘逐姿态切片）→ AICompanionPoseRig；默认输出到 characters/deepseek-whale/rig。
      --verify 把切片按 z 回拼，和 originals/ 逐像素比对；任何一张有差异或缺原图就失败，并且不改动输出目录。

@@ -118,7 +118,7 @@ class LocationMigrationTests(StorageBase):
         expected = {'开心庆祝', '思考疑惑', '困了晚安', '惊讶被戳', '无语出错', '耐心等待'}
         rows = catalog.rows()
         self.assertEqual({r['metadata']['category'] for r in rows}, expected)
-        sprites = Path(locations.__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'
+        sprites = catalog.builtin_root
         for row in rows:
             # 原创图按内容哈希认领：直接通过审核并启用，补上内置中文说明，字节与仓库原图一致
             self.assertEqual((row['review_status'], row['enabled'], row['metadata']['license']), ('approved', 1, 'project-original'))
@@ -130,7 +130,7 @@ class LocationMigrationTests(StorageBase):
         context = ExpressionContext('synthetic-before', character.id, 'desktop:'+character.id)
         prompt = service.prompt(service.prepare(context, character, '好开心'))
         self.assertIn('开心、庆祝、赞同', prompt); self.assertNotIn(str(self.memes), prompt)
-        # 用户后加的分类：没有许可前不提供；用户在图库页确认来源和许可（授权）后才进入候选
+        # 用户后加的分类：默认当作自己的图直接进入候选（负责人 2026-11-11）；用户在图库页停用后不再提供
         user = self.memes/'用户新增分类'; user.mkdir()
         from test_expression_catalog import png
         (user/'custom.png').write_bytes(png(0xff0cc85a))
@@ -139,11 +139,11 @@ class LocationMigrationTests(StorageBase):
         self.assertEqual(before, {p.relative_to(self.memes): p.read_bytes() for p in self.memes.rglob('*') if p.is_file()})
         catalog.scan()
         custom = next(r for r in catalog.rows() if r['relative_path'] == '用户新增分类/custom.png')
-        self.assertEqual((custom['review_status'], custom['metadata']['semantic']), ('pending_review', '用户新增分类'))
+        self.assertEqual((custom['review_status'], custom['metadata']['semantic']), ('approved', '用户新增分类'))
         listed = lambda turn: service.prompt(service.prepare(replace(context, generation_id=turn), character, '用户新增分类'))
-        self.assertNotIn('用户新增分类', listed('synthetic-pending'))
-        catalog.review(custom['asset_id'], author='合成作者', source='synthetic:test', license='user-owned')
-        self.assertIn('用户新增分类', listed('synthetic-after'))
+        self.assertIn('用户新增分类', listed('synthetic-owned'))
+        catalog.enable(custom['asset_id'], False)
+        self.assertNotIn('用户新增分类', listed('synthetic-disabled'))
         self.assertFalse((self.memes/'manifest.json').exists())
 
     def test_custom_database_filename_is_preserved(self):

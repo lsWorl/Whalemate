@@ -57,15 +57,13 @@ def main():
     app = QApplication([]); app.setQuitOnLastWindowClosed(False)
     temp = tempfile.TemporaryDirectory()
     db = Database(Path(temp.name)/'call.sqlite3'); db.initialize()
-    settings = Settings('AICompanion', db.database_path, 'mock', 'https://example.invalid', '', 'mock', .8, 10,
-        asr_provider='qwen', tts_provider='qwen', qwen_api_key='fixture', qwen_tts_voice='fixture',
-        speech_language='ja', avatar_preview='emilia', character_preset='emilia')
+    settings = Settings('AICompanion', db.database_path, offline=True,
+        asr_provider='qwen', tts_provider='qwen', qwen_api_key='fixture', qwen_tts_voice='fixture', speech_language='ja')
     window = MainWindow(ChatController(db, MemoryService(db), MockLLMClient()), settings)
     fixture = CallFixture(); window.speech_client = fixture; window.speech.client = fixture
-    state = {'virtual_microphone': True, 'avatar_ready': False, 'audio_played': False, 'errors': []}
+    state = {'virtual_microphone': True, 'audio_played': False, 'errors': []}
     window.microphone.start = lambda device='': state.update(microphone_open=True)
     window.microphone.stop = lambda: state.update(microphone_open=False)
-    window.avatar.bridge.loaded.connect(lambda value: state.update(avatar_ready=value=='illustration-ready'))
     window.speech.error.connect(lambda error: state['errors'].append(error))
     window.show()
 
@@ -136,7 +134,7 @@ def main():
     code = app.exec()
     state.update(exit_code=code, recognition_requests=fixture.calls, cancelled_requests=fixture.cancelled,
         remaining_workers=len(window.workers)+len(window.tasks)+len(window.speech.workers))
-    required = ['avatar_ready', 'audio_played', 'queued_start_preserves_speaking', 'no_early_reply',
+    required = ['audio_played', 'queued_start_preserves_speaking', 'no_early_reply',
         'waits_for_pending_asr', 'users_combined_before_reply', 'voice_interrupt_stops_audio',
         'empty_not_saved', 'late_result_ignored', 'three_errors_pause_call', 'cancelled_queue_empty',
         'settings_model_switch', 'settings_provider_saved']

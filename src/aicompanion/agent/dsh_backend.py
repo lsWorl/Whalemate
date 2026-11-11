@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 import json
 import os
@@ -25,7 +26,7 @@ from typing import Callable
 
 from aicompanion.agent.paths import protected_reason, task_folders
 
-DEFAULT_MODEL = 'deepseek-v4-flash'
+DEFAULT_MODEL = 'deepseek-flash'   # 只在测试里不传 target 时用
 MCP_PREFIX = 'mcp__aicompanion__'
 DISABLED_ROWS = ('tool-pwsh', 'tool-bash', 'persistent-pwsh', 'persistent-bash', 'tool-fs', 'tool-fs-search', 'tool-jobs',
                  'tool-workflow', 'ptc-runtime')
@@ -33,6 +34,51 @@ PATCH = ("# AICompanion：不随请求上传会话日志；关掉自带的改文
          "- id: session-log-deepseek\n  config:\n    enabled: false\n"
          + ''.join(f'- id: {row}\n  disabled: true\n' for row in DISABLED_ROWS))
 PROMPT_TIMEOUT = 30*60
+CREDENTIALS_DIR = 'aicompanion-credentials'   # 本应用自己的 managed 凭据目录，每次启动清空
+
+
+# llm-pi-ai 内置目录里没有、需要在补丁里声明的模型（MiniMax 官方文档：100 万上下文，支持图片，思考关不掉；
+# 不声明思考档位，请求里就不带 thinking 参数，由服务端按默认深度思考——带 disabled 会被拒绝）
+MODEL_SPECS = {'MiniMax-M3.1-Flash': {'contextWindow': 1_000_000, 'maxTokens': 131072, 'input': ['text', 'image']}}
+
+
+def runtime_patch(home: Path, target=None) -> str:
+    """运行时补丁。
+
+    凭据：DSH 默认先读 `$DSH_HOME/.credentials.yaml`（managed，优先级高于环境变量），里面若有旧 Key 会压过设置页选定的 Key
+    （Codex 审计 R2，实测复现）。这里把 managed 文件改指到本应用自己的空文件，用户原有的凭据文件不读、不删。
+
+    MiniMax 办事：Harness 的 llm-pi-ai 多供应商路由默认不注册任何路由，要在配置里给出供应商才会激活。只激活本次选定的那一条，
+    apiKeyEnv 指向的变量里是本机 Key 中转的一次性令牌、地址是中转（见 DshAgent._relay_target / key_relay.py），
+    中转再把请求发往账户主机的 Anthropic 兼容接口。"""
+    from aicompanion.providers.router import AGENT_MODELS, AGENT_ROUTES, PI_AI_ROUTES
+    store = (Path(home)/CREDENTIALS_DIR/'.credentials.yaml').as_posix()
+    text = PATCH + f"- id: credentials\n  config:\n    path: {json.dumps(store)}\n    watch: false\n"
+    route = getattr(target, 'route', '')
+    if route in PI_AI_ROUTES:
+        models = ''.join(f"          - id: {json.dumps(m)}\n" + ''.join(f"            {k}: {json.dumps(v)}\n" for k, v in MODEL_SPECS.get(m, {}).items())
+                         for m in AGENT_MODELS[route])
+        base = f"        baseURL: {json.dumps(target.base_url)}\n" if getattr(target, 'base_url', '') else ''
+        text += (f"- id: llm-pi-ai\n  config:\n    providers:\n      {route}:\n        apiKeyEnv: {AGENT_ROUTES[route][0]}\n"
+                 + base + "        models:\n" + models)
+    return text
+
+
+def prepare_home(home: Path) -> Path:
+    """启动前准备：清空本应用的 managed 凭据文件，返回运行时的当前目录（本应用专用的空目录）。
+    DSH 还会把“当前目录/.env”和“$DSH_HOME/.env”当兜底凭据来源；当前目录由我们建、不放 .env，
+    `$DSH_HOME/.env` 存在时拒绝启动并提示（那是用户放的文件，不替用户删除）。"""
+    home = Path(home)
+    if (home/'.env').exists():
+        raise RuntimeError(f'办事运行时目录里有 .env 文件（{home}），里面的 Key 可能被 Harness 读到；请先把它移走再试。')
+    store = home/CREDENTIALS_DIR; store.mkdir(parents=True, exist_ok=True)
+    managed = store/'.credentials.yaml'; managed.write_text('', encoding='utf-8')
+    try: os.chmod(managed, 0o600)   # 运行时要求凭据文件不能对其他用户可读（Windows 上无影响）
+    except OSError: pass
+    run = home/'run'; run.mkdir(exist_ok=True)
+    if (run/'.env').exists():
+        raise RuntimeError(f'办事运行时目录里有 .env 文件（{run}），请先把它移走再试。')
+    return run
 
 
 def dsh_home() -> Path:
@@ -61,13 +107,31 @@ def pick_workspace(goal: str, default: str) -> Path:
     return path if path.is_dir() and not protected_reason(path.resolve()) else Path.home()
 
 
-def dsh_base_url(base_url: str) -> str | None:
-    """聊天用的是 OpenAI 兼容地址，DSH 走 Messages 接口：官方地址就交给 DSH 用默认值，自建代理原样传入。"""
-    from urllib.parse import urlparse
-    if not base_url: return None
-    host = (urlparse(base_url).hostname or '').lower()
-    if host == 'api.deepseek.com': return None
-    return base_url
+# 运行时需要的系统变量（Windows 进程、代理、编码）。其余一概不传：父进程里可能有各家的 API Key，
+# DSH 内置多家供应商路由，会读到它们（计划书 v4 硬底线：Harness 子进程只拿到本次选定的 Key）。
+ENV_KEEP = ('SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATH', 'PATHEXT', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'HOME',
+            'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432', 'COMMONPROGRAMFILES',
+            'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_IDENTIFIER', 'OS', 'USERNAME', 'USERDOMAIN',
+            'COMPUTERNAME', 'LANG', 'LC_ALL', 'TZ', 'PYTHONIOENCODING', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+            'http_proxy', 'https_proxy', 'no_proxy')
+
+
+def child_environment(selected: tuple, parent=None) -> dict:
+    """白名单里的系统变量 + 本次选定的凭据。大小写不敏感地匹配（Windows 环境变量不分大小写）。"""
+    parent = os.environ if parent is None else parent
+    keep = {name.upper() for name in ENV_KEEP}
+    env = {k: v for k, v in parent.items() if k.upper() in keep}
+    env.update(dict(selected))
+    return env
+
+
+def loopback_direct(env: dict) -> dict:
+    """本机回环地址不走代理：MiniMax 办事经 127.0.0.1 上的 Key 中转，用户设了 HTTP(S)_PROXY 时也要直连。"""
+    names = [k for k in env if k.upper() == 'NO_PROXY'] or ['NO_PROXY']
+    for name in names:
+        items = [i for i in (env.get(name) or '').split(',') if i.strip()]
+        env[name] = ','.join(items + [h for h in ('127.0.0.1', 'localhost') if h not in items])
+    return env
 
 
 @dataclass
@@ -175,41 +239,63 @@ class DshAgent:
         self.conn: AcpConnection | None = None; self.key = None; self.lock = threading.Lock()
         self.mcp_servers: list[dict] = []   # mcp_server.McpToolServer.acp_entry()
         self.session_id = None; self.stopping = False; self.done = threading.Event()
+        self.relay = None                  # MiniMax 办事的本机 Key 中转（key_relay.KeyRelay）
 
     # ---- 运行时 -----------------------------------------------------------------
-    def _launch(self, api_key: str, base_url: str):
-        env = os.environ.copy()
+    def _relay_target(self, selected: tuple, target):
+        """MiniMax（llm-pi-ai）路由：起本机 Key 中转，补丁地址改指中转，子进程里的 Key 换成一次性令牌（Codex PR #32 P1）。
+        Harness 自带的 fetch 会跟随跨主机跳转并带上 x-api-key，所以真 Key 不交给它。其他路由原样返回。"""
+        from aicompanion.providers.router import AGENT_ROUTES, PI_AI_ROUTES
+        from aicompanion.agent.key_relay import KeyRelay
+        route = getattr(target, 'route', '')
+        if route not in PI_AI_ROUTES: return selected, target
+        name = AGENT_ROUTES[route][0]
+        key = dict(selected).get(name, '')
+        if not key or not getattr(target, 'base_url', ''): raise RuntimeError('办事没有选定的 Key 或接口地址')
+        self.relay = KeyRelay(target.base_url, key)
+        selected = tuple((k, self.relay.token if k == name else v) for k, v in selected)
+        return selected, dataclasses.replace(target, env=selected, base_url=self.relay.base_url)
+
+    def _launch(self, selected: tuple, target=None):
+        selected, target = self._relay_target(selected, target)
         home = dsh_home(); home.mkdir(parents=True, exist_ok=True)
-        patch = home/'aicompanion.patch.yml'; patch.write_text(PATCH, encoding='utf-8')
+        patch = home/'aicompanion.patch.yml'; patch.write_text(runtime_patch(home, target), encoding='utf-8')
+        run = prepare_home(home)
+        env = loopback_direct(child_environment(selected))
         env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
-        if api_key: env['DEEPSEEK_API_KEY'] = api_key
-        if dsh_base_url(base_url): env['DEEPSEEK_BASE_URL'] = dsh_base_url(base_url)
         if self.launcher: return self.launcher(env)
         from aicompanion.agent import sandbox
         from deepseek_harness_runtime import resolve_bundled_launch_args
         env = sandbox.child_env(env)
         args = [*resolve_bundled_launch_args(), '--profile', 'acp', '--patch', str(patch)]
         def start():
-            # 运行时的当前目录固定在 C 盘数据目录：打包的虚拟路径按当前盘拼接，放 D 盘会找不到 koffi.node（实测）
+            # 运行时的当前目录固定在 C 盘数据目录下（run 子目录）：打包的虚拟路径按当前盘拼接，放 D 盘会找不到 koffi.node（实测）
             return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8',
-                                    env=env, cwd=str(home), bufsize=1, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                                    env=env, cwd=str(run), bufsize=1, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if sandbox.IS_WINDOWS:
             with sandbox.low_integrity(): return start()   # 运行时和它的子进程都是低完整性
         return start()
 
-    def _ensure(self, api_key: str, base_url: str) -> AcpConnection:
+    def _ensure(self, selected: tuple, target=None) -> AcpConnection:
+        """凭据、路由或地址变了（换 Key、换路由）就重启运行时；进程启动时的环境变量和补丁之后改不了。"""
         with self.lock:
-            key = (api_key, base_url)
+            key = (getattr(target, 'route', ''), getattr(target, 'base_url', ''), tuple(selected))
             if self.conn is not None and self.key == key and self.conn.proc.poll() is None: return self.conn
             self._close_locked()
-            conn = AcpConnection(self._launch(api_key, base_url))
-            conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
-            self.conn, self.key = conn, key
+            try:
+                conn = AcpConnection(self._launch(tuple(selected), target))
+                self.conn = conn
+                conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
+            except BaseException:
+                self._close_locked(); raise
+            self.key = key
             return conn
 
     def _close_locked(self):
         conn, self.conn, self.key = self.conn, None, None
+        relay, self.relay = self.relay, None
         if conn is not None: conn.close()
+        if relay is not None: relay.close()
 
     def close(self):
         with self.lock: self._close_locked()
@@ -240,8 +326,9 @@ class DshAgent:
         return None
 
     # ---- 跑一个任务 ----------------------------------------------------------------
-    def run(self, prompt: str, cwd: Path, model: str = DEFAULT_MODEL, api_key: str = '', base_url: str = '',
-            on_event: Callable[[str, dict], None] | None = None) -> DshResult:
+    def run(self, prompt: str, cwd: Path, target=None, on_event: Callable[[str, dict], None] | None = None) -> DshResult:
+        """target：providers.router.AgentTarget（路由、模型、只含选定凭据的环境变量）。测试可不传。"""
+        route, model, selected = (target.route, target.model_id, target.env) if target else ('deepseek-official', DEFAULT_MODEL, ())
         on_event = on_event or (lambda kind, data: None)
         self.stopping = False; self.done.clear(); self.session_id = None
         steps: list = []; text: list[str] = []; context = {'used': [], 'chars': 0, 'final_from': 0}; calls: dict = {}
@@ -267,16 +354,20 @@ class DshAgent:
 
         conn = None
         try:
-            conn = self._ensure(api_key, base_url)
+            conn = self._ensure(selected, target)
             conn.listeners.append(listen)
             session = conn.request('session/new', {'cwd': str(cwd), 'mcpServers': self.mcp_servers}, 60)
             self.session_id = session.get('sessionId')
             if not self.session_id: raise RuntimeError('DSH 没有返回会话')
-            wanted = json.dumps(['deepseek-official', model], separators=(',', ':'))
+            wanted = json.dumps([route, model], separators=(',', ':'))
             option = next((o for o in session.get('configOptions') or [] if o.get('id') == 'model'), None)
             if option and option.get('currentValue') != wanted and model:
                 try: conn.request('session/set_config_option', {'sessionId': self.session_id, 'configId': 'model', 'value': wanted}, 30)
-                except Exception: pass   # 模型名不认识时用 DSH 的默认模型
+                except Exception as error:
+                    # 不认识这个路由或模型时不退回 DSH 默认模型（那会用另一家的 Key 计费），直接报错
+                    scope = f'（{target.source}）' if target is not None and getattr(target, 'source', '') else ''
+                    raise RuntimeError(f'Harness 不支持办事模型 {model}{scope}。请到设置 → 模型与 Key，在对应的设置范围里把“办事”'
+                                       f'换成 Harness 支持的模型') from error
             if self.stopping: raise InterruptedError
             reply = conn.request('session/prompt', {'sessionId': self.session_id, 'prompt': [{'type': 'text', 'text': prompt}]}, PROMPT_TIMEOUT)
             reason = reply.get('stopReason') or 'end_turn'

@@ -100,8 +100,19 @@ def install(dest=DEST, cache=CACHE, *, offline=False):
     temporary.replace(dest/'animations.json')
     return dest/'animations.json'
 
+def install_directory(program_dir=None):
+    if program_dir is None and not (ROOT/'AICompanion.exe').is_file():
+        return DEST
+    directory = Path(program_dir or ROOT).resolve()
+    whale = directory/'_internal/aicompanion/characters/deepseek-whale'
+    if not (directory/'AICompanion.exe').is_file() or not (whale/'character.json').is_file():
+        raise ValueError('请选择包含 AICompanion.exe 和 _internal 的桌宠程序目录。')
+    return whale/'animation-aboutme'
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--offline',action='store_true',help='仅使用校验通过的本机缓存')
+    parser.add_argument('--program-dir', type=Path, help='安装到指定的 Windows 桌宠程序目录')
     args=parser.parse_args()
-    print(install(offline=args.offline))
+    print(install(dest=install_directory(args.program_dir), offline=args.offline))

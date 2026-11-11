@@ -13,7 +13,6 @@ from aicompanion.characters.registry import CharacterRegistry
 
 from aicompanion.config import load_settings
 from aicompanion.controllers.chat_controller import ChatController
-from aicompanion.llm.factory import create_llm_client
 from aicompanion.services.memory_service import MemoryService
 from aicompanion.storage.database import Database
 from aicompanion.ui.main_window import MainWindow
@@ -61,16 +60,17 @@ def main() -> int:
     #QApplication用于创建 GUI 应用程序
     from aicompanion.body.webengine_flags import apply_webengine_flags
     apply_webengine_flags()
+    from aicompanion.ui.icons import app_icon, use_own_taskbar_identity
+    use_own_taskbar_identity()
     app = QApplication(sys.argv)
+    app.setWindowIcon(app_icon())   # 所有窗口和对话框默认用鲸娘图标
     # 发布包自检只使用临时数据库和离线模型，不读取或上传用户聊天。
-    smoke_directory = tempfile.TemporaryDirectory() if any(flag in sys.argv for flag in ('--smoke-test','--pet-smoke-test','--emilia-smoke-test')) else None
+    smoke_directory = tempfile.TemporaryDirectory() if any(flag in sys.argv for flag in ('--smoke-test','--pet-smoke-test')) else None
     try:
         settings = load_settings()
         if smoke_directory:
-            settings = replace(settings, llm_provider='mock', database_path=Path(smoke_directory.name)/'smoke.sqlite3',
-                               tts_provider='system',qwen_api_key='',speech_language='zh',avatar_preview='',character_preset='')
-        if settings.llm_timeout_seconds <= 0 or not 0 <= settings.llm_temperature <= 2:
-            raise ValueError('请检查 LLM_TIMEOUT_SECONDS 与 LLM_TEMPERATURE。')
+            settings = replace(settings, offline=True, database_path=Path(smoke_directory.name)/'smoke.sqlite3',
+                               tts_provider='system',qwen_api_key='',speech_language='zh')
     except Exception as error:
         if smoke_directory:
             print('配置错误:',error,flush=True)
@@ -93,8 +93,6 @@ def main() -> int:
             # 聊天平台的局部保存按钮也可选图库：已有选择优先，不用旧路径记录倒灌。
             if not database.get_setting('qq_meme_root', ''):
                 database.set_setting('qq_meme_root', str(settings.meme_directory))
-        if '--emilia-smoke-test' in sys.argv:
-            database.set_setting('avatar_mode:emilia','animated-illustration')
         if not smoke_directory:
             # T21：第一次启动时装入预置词库（常用梗），以后只补新版本新增的词；失败不影响启动
             try:
@@ -103,13 +101,12 @@ def main() -> int:
             except Exception:
                 pass
         memory_service = MemoryService(database)
-        llm_client = create_llm_client(settings)
         # 角色包同步到数据库（鲸娘等），并恢复上次选择的角色。
         registry = CharacterRegistry(database, settings)
         registry.sync()
-        if '--emilia-smoke-test' in sys.argv:
-            registry.set_active('emilia')
-        controller = ChatController(database, memory_service, llm_client)
+        # 模型按“角色 + 能力 + 用途”从设置里的模型配置解析（计划书 v4 功能一）
+        from aicompanion.providers.router import ModelRouter
+        controller = ChatController(database, memory_service, ModelRouter(database, settings))
         controller.character = registry.active()
         window = MainWindow(controller=controller, settings=settings, registry=registry)
     except Exception as error:
@@ -140,10 +137,7 @@ def main() -> int:
         app.aboutToQuit.connect(lambda: qq.shutdown(database))
         QTimer.singleShot(1500, window.pet.drop_in)  # 从屏幕顶部掉下来，落地后打招呼
     if smoke_directory:
-        if '--emilia-smoke-test' in sys.argv:
-            from aicompanion.ui.emilia_smoke_check import schedule_emilia_smoke_check
-            schedule_emilia_smoke_check(window,database,Path.cwd()/'bundle-emilia-smoke')
-        elif '--pet-smoke-test' in sys.argv:
+        if '--pet-smoke-test' in sys.argv:
             from aicompanion.ui.pet_smoke_check import schedule_pet_smoke_check
             schedule_pet_smoke_check(window, database, Path.cwd()/'bundle-pet-smoke')
         else:

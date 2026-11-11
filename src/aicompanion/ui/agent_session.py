@@ -9,7 +9,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal
 
-from aicompanion.agent.dsh_backend import DEFAULT_MODEL, DshAgent, pick_workspace, problem
+from aicompanion.agent.dsh_backend import DshAgent, pick_workspace, problem
 from aicompanion.agent.paths import protected_reason, task_folders
 from aicompanion.agent.tools_server import Task, ToolBox
 from aicompanion.agent.mcp_server import McpToolServer, dependency_problem
@@ -63,14 +63,17 @@ class AgentSession(QObject):
         if self.busy: w.pet.show_bubble('我手上还有活没做完，等我一下～', 5); return False
         missing = problem() or dependency_problem()
         if missing: w.pet.show_bubble(missing, 8); w._status(missing); return False
-        if w.settings.llm_provider == 'mock' or not getattr(w.settings, 'llm_api_key', ''):
-            w.pet.show_bubble('离线模式下没法干活，需要先配置 DeepSeek 接口。', 8); return False
+        target = w.controller.router.agent_target(w.controller.character.id)
+        if target is None:
+            problem_text = getattr(w.controller.router, 'agent_problem', lambda cid: '')(w.controller.character.id) \
+                or '还没有配置办事模型，请到设置的“模型与 Key”页选择。'
+            w.pet.show_bubble(problem_text, 12); w._status(problem_text); return False
         if w.quota.check_silent('agent') == 'stop':
             w.pet.show_bubble('今天"干活"的词元额度用完了，明天再帮你做吧。', 8); return False
         database = w.database; character = w.controller.character
         self.goal = goal
         cwd = pick_workspace(goal, database.get_setting('dsh_workspace', ''))
-        model = database.get_setting('dsh_model', DEFAULT_MODEL) or DEFAULT_MODEL
+        model = target.model_id
         allowed = self._allowed(goal, cwd)
         prompt = self._prompt(goal, cwd, allowed)
         run_id = database.add_agent_run(character.id, goal)
@@ -96,7 +99,7 @@ class AgentSession(QObject):
             except Exception as error:
                 database.finish_agent_run(run_id, 'failed', '', str(error)[:12000], 0, 0, 0.0)
                 raise
-            result = self.dsh.run(prompt, cwd, model, w.settings.llm_api_key, w.settings.llm_base_url, on_event)
+            result = self.dsh.run(prompt, cwd, target, on_event)
             tokens, cost = self._usage(run_id)
             result.run_id, result.tokens, result.cost, result.cwd = run_id, tokens, cost, str(cwd)
             database.finish_agent_run(run_id, result.status, result.text[:2000], '' if result.status in ('done', 'cancelled') else (result.text[:500]+'\n'+result.raw)[:12000],
@@ -180,8 +183,10 @@ class AgentSession(QObject):
         blog = database.get_setting('blog_root', '')
         from pathlib import Path
         project = Path(__file__).resolve().parents[3]
-        lines = [f'你是{character.name}。{(character.description or "")[:900]}',
-                 f'说话方式：{(character.speaking_style or "")[:600]}',
+        from aicompanion.domain.bond import current as current_bond
+        bond = current_bond(database, character.id)
+        lines = [bond.fill(f'你是{character.name}。{(character.description or "")[:900]}', character.name), bond.prompt(),
+                 bond.fill(f'说话方式：{(character.speaking_style or "")[:600]}', character.name),
                  '最后给用户的回复要保持上面的人设：一两句口语，像同事口头交代做了什么、结果在哪，不写报告、不列清单、不用 Markdown 标题，除非用户要细节。',
                  '做事要求：用户的电脑是 Windows。看文件、改文件、删文件、跑 PowerShell 都用 aicompanion 开头的那组工具；'
                  '尽量在后台完成，不要让用户手动操作；用户点名的路径、文件名、程序就用那个，不要擅自换；一句话里有几件事要按顺序全部做完。',
@@ -278,6 +283,12 @@ class AgentSession(QObject):
         w.pet.hide_activity(); w.pet.close_confirm(); w.pet.dispatch('waiting', active=False)
         ok = result.status == 'done'
         w.pet.dispatch('work_finished', ok=ok, error=result.text if not ok else '')
+        if ok:
+            # 计划书 v4 功能三：一起把事办成了，她会开心一阵
+            try:
+                from aicompanion.services.mood_service import MoodService
+                MoodService(w.database).event(w.controller.character.id, 'achievement', reason=f'一起办完了：{self.goal[:20]}')
+            except Exception: pass
         # 最终回复里的表情 / 动作标注：执行后从文字里去掉（和聊天一致）
         from aicompanion.pet.script import CueStream
         text, cues = CueStream(w.vocab).feed(result.text, final=True)

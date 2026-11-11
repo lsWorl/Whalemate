@@ -71,7 +71,7 @@ class BridgePage(QWidget):
         for key in CHIME: self.chime.addItem(CHIME_TEXT[key], key)
         self.chime.setCurrentIndex(max(0, self.chime.findData(setting(database, 'bridge_chime'))))
         self.chime.setToolTip('群里的消息她都"听得到"。没人叫她时按这里决定要不要插话；她也可能觉得没什么好说而不说。')
-        pl.addRow('你的 QQ 号（她管你叫爹）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
+        pl.addRow('你的 QQ 号（她认得你，按人格里设定的关系相处）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
         # 用户 2026-11-09：主动问候 / 心事随机发到桌面或 QQ 私聊（不在电脑前时更常发 QQ）
         self.proactive_qq = QCheckBox('她主动找你说话时，也会发到 QQ 私聊（不在电脑前时更常发 QQ）')
         self.proactive_qq.setChecked(bool(database.get_setting('proactive_qq_enabled', True)))
@@ -83,7 +83,7 @@ class BridgePage(QWidget):
         self.memes_enabled = QCheckBox('聊天时可以发表情包')
         self.memes_enabled.setChecked(bool(database.get_setting('qq_memes_enabled', True)))
         self.meme_root = QLineEdit(str(database.get_setting('qq_meme_root', '') or ''))
-        self.meme_root.setPlaceholderText('留空使用自带鲸娘表情；也可选本地表情包目录')
+        self.meme_root.setPlaceholderText('留空使用自带鲸鲸表情；也可选本地表情包目录')
         choose_memes = QPushButton('选择图库…'); choose_memes.clicked.connect(self._choose_memes)
         meme_row = QHBoxLayout(); meme_row.addWidget(self.meme_root, 1); meme_row.addWidget(choose_memes)
         pl.addRow('', self.vision_enabled); pl.addRow('', self.memes_enabled); pl.addRow('表情图库', meme_row)
@@ -127,7 +127,6 @@ class BridgePage(QWidget):
         renew = QPushButton('换一个'); renew.clicked.connect(self._renew)
         token_row = QHBoxLayout(); token_row.addWidget(self.token, 1); token_row.addWidget(copy); token_row.addWidget(renew)
         self.daily = QSpinBox(); self.daily.setRange(0, 2000); self.daily.setValue(int(setting(database, 'bridge_public_daily'))); self.daily.setSuffix(' 条 / 天')
-        self.vision_model = QLineEdit(str(database.get_setting('qq_vision_model', 'deepseek-flash') or 'deepseek-flash'))
         self.meme_cooldown = QSpinBox(); self.meme_cooldown.setRange(0, 3600)
         self.meme_cooldown.setValue(int(database.get_setting('qq_meme_cooldown', 60)))
         self.meme_cooldown.setSuffix(' 秒')
@@ -139,13 +138,13 @@ class BridgePage(QWidget):
         self.versions = QLabel(''); self.versions.setWordWrap(True)
         form.addRow('', self.enabled); form.addRow('接口端口', self.port); form.addRow('插件令牌', token_row)
         form.addRow('群和陌生人每天最多回复', self.daily); form.addRow('', self.autostart); form.addRow('Python 包镜像', self.index)
-        form.addRow('识图模型', self.vision_model); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
+        form.addRow('识图模型', QLabel('在“模型与 Key”页的“识图”一项里选择')); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
         form.addRow('组件目录', self.root); form.addRow('', open_logs); form.addRow('', existing); form.addRow('组件版本', self.versions)
         al = QVBoxLayout(self.advanced); al.addWidget(inner); inner.setVisible(False)
         self.advanced.toggled.connect(inner.setVisible)
         layout.addWidget(self.advanced)
         note = QLabel('桌宠会从 NapCat 和 AstrBot 的官方发布地址下载原版组件，放在上面的组件目录里，不改你电脑上的 QQ。'
-                      '扫码登录和账号验证需要你自己完成。你（爹）的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
+                      '扫码登录和账号验证需要你自己完成。你的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
                       '不想在群里被提到的记忆，到"记忆"页标成"只在私下用"。聊天平台上她不会动手干活。')
         note.setWordWrap(True); note.setStyleSheet('color:#666'); layout.addWidget(note); layout.addStretch(1)
 
@@ -401,7 +400,6 @@ class BridgePage(QWidget):
         db.set_setting('proactive_qq_enabled', self.proactive_qq.isChecked())
         db.set_setting('qq_memes_enabled', self.memes_enabled.isChecked())
         db.set_setting('qq_meme_root', self.meme_root.text().strip())
-        db.set_setting('qq_vision_model', self.vision_model.text().strip() or 'deepseek-flash')
         db.set_setting('qq_meme_cooldown', self.meme_cooldown.value())
         db.set_setting('qq_avatars_enabled', self.avatar_enabled.isChecked())
         db.set_setting('qq_social_learning', self.learning.isChecked())

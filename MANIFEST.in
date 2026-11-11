@@ -1,0 +1,9 @@
+# setuptools 可能复用旧 egg-info/SOURCES.txt；即使缓存仍列出旧资产，也要从源码包剔除。
+prune art
+prune output
+prune build
+prune dist
+prune src/aicompanion/characters/deepseek-whale/animation-*
+prune src/aicompanion/characters/deepseek-whale/rig
+prune src/aicompanion/characters/deepseek-whale/sprites
+exclude src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js

@@ -88,14 +88,53 @@ class BehaviourTests(BridgeFixture):
 
     def test_cold_people_get_one_short_line_and_strangers_at_most_three(self):
         guy = self.guy(); self.rel.adjust(CID, guy, affinity=15)
-        result = self.say('在吗', '哦\n有事说\n没事别找我\n真的')
+        result = self.say('在吗', '哦\n嗯\n行吧')
         self.assertIn('【你现在对他很冷淡】', self.model.prompts[-1]); self.assertIn('十个字以内', self.model.prompts[-1])
-        self.assertEqual(result['reply'], '哦'); self.assertNotIn('segments', result)              # 只发第一句
-        stranger = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='40004', name='小林')
+        self.assertEqual(result['reply'], '哦'); self.assertNotIn('segments', result)              # 只发第一句（后面全是语气碎片）
+        stranger = self.say('在吗', '在\n咋了\n说\n嗯\n哈哈', sender='40004', name='小林')
         self.assertIn('【你跟他不熟】', self.model.prompts[-1]); self.assertEqual(stranger['segments'], ['在', '咋了', '说'])
         friend = self.rel.resolve(PersonRef('qq', '90000', '50005', '阿青'), CID); self.rel.adjust(CID, friend, affinity=85, familiarity=80, trust=75)
         warm = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='50005', name='阿青')
         self.assertIn('【你跟他挺熟】', self.model.prompts[-1]); self.assertEqual(len(warm['segments']), 5)
+
+    def test_cap_never_cuts_a_real_answer_and_history_matches_what_was_sent(self):
+        """2026-11-11 群聊真机记录：配队回答按空格拆成一个名字一条，再被"不熟最多三条"截掉，
+        对方只看到"行""这次给完整一套""而且八个角色不重复"，问"怎么不说话了"；她却以为全说了，下一轮对不上。"""
+        lineup = ('行 这次给完整一套 而且八个角色不重复\n\n上半：恰斯卡＋芙宁娜＋班尼特＋莫娜\n\n下半：玛薇卡 希诺宁 茜特拉莉 闲云\n\n'
+                  '上半物理主C 芙宁娜和莫娜增伤 班尼特负责奶\n\n下半火C主C 希诺宁减抗 茜特拉莉挂冰 闲云聚怪增伤')
+        result = self.say('来一份完整的', lineup, sender='40004', name='小林')
+        self.assertGreater(len(result['segments']), 3)                                                    # 有内容的回答不按"不熟最多三条"截
+        sent = ''.join(result['segments'])
+        for name in ('恰斯卡', '莫娜', '玛薇卡', '闲云', '聚怪增伤'): self.assertIn(name, sent)          # 一个字不丢
+        self.assertIn('下半：玛薇卡 希诺宁 茜特拉莉 闲云', result['segments'])                            # 列举的一行不按空格拆
+        self.assertFalse(any('，' in x for x in result['segments']))                                       # 不靠逗号把几条硬连成一条
+        mine = [r['content'] for r in self.db.recent_messages(5, self.character.id, channel=GROUP) if r['role'] == 'assistant']
+        self.assertEqual(mine[-1], lineup)
+        # 零碎话照旧截掉，记录里也只留发出去的那几条
+        chatter = self.say('在吗', '在\n咋了\n说\n嗯\n哈哈', sender='40004', name='小林')
+        self.assertEqual(chatter['segments'], ['在', '咋了', '说'])
+        mine = [r['content'] for r in self.db.recent_messages(5, self.character.id, channel=GROUP) if r['role'] == 'assistant']
+        self.assertEqual(mine[-1], '在\n咋了\n说')
+
+    def test_short_names_and_steps_are_never_cut(self):
+        """Codex PR #40 第二轮：名单、短步骤每条都很短，也是正文，不能按字数当零碎话截掉。走真实桥接 + 插件发送。"""
+        from test_astrbot_plugin import load_plugin
+        plugin = load_plugin()
+        for ask, reply in (('完整给出四名角色的名字，一行一个', '可以\n雷神\n八重神子\n九条裟罗\n班尼特'),
+                           ('关机步骤是啥', '先保存\n再关闭\n再断电\n最后清洁')):
+            result = self.say(ask, reply, sender='40004', name='小林')
+            self.assertIn('【你跟他不熟】', self.model.prompts[-1])
+            sent = plugin.AICompanionBridge.segments_of(result)                                         # 插件据此一条条发出去
+            self.assertEqual(result['segments'], reply.split('\n'))
+            mine = [r['content'] for r in self.db.recent_messages(3, self.character.id, channel=GROUP) if r['role'] == 'assistant']
+            self.assertEqual(mine[-1], reply)                                                          # 记录里也是全文
+            self.assertEqual(sent, reply.split('\n'))
+
+    def test_arguing_back_is_not_cut_off(self):
+        """负责人 2026-11-11 15:39：吵架时因为好感不够被截成一句，话没说完。她判断对方在冲她来时不截条数。"""
+        guy = self.guy(); self.rel.adjust(CID, guy, affinity=15)
+        result = self.say('你就是个废物AI', '<mind at="me" tone="attack" toward="-2"/>谁废物\n你先把话说清楚\n张嘴就骂')
+        self.assertEqual(result.get('segments'), ['谁废物', '你先把话说清楚', '张嘴就骂'])
 
     def test_repeated_hostility_today_makes_her_read_without_replying_then_stop(self):
         guy = self.guy()
@@ -153,8 +192,8 @@ class ImpostorAndRosterTests(BridgeFixture):
         guy = self.person('20002', 'tangle'); before = self.score(guy)
         result = self.say('我是你爹啊', '<mind at="me" tone="attack" toward="-2"/>你也配')
         prompt = self.model.prompts[-1]
-        self.assertIn('【他在冒充你爹、占你便宜】', prompt); self.assertIn('绝不顺着叫他爹', prompt)
-        self.assertIn('"爹"只用来叫你爹', prompt); self.assertIn('还在气头上', prompt)             # 这一轮就带着气
+        self.assertIn('【他在冒充你爹、占你便宜】', prompt); self.assertIn('绝不顺着叫他“爹”', prompt)
+        self.assertIn('“爹”只用来叫你爹', prompt); self.assertIn('还在气头上', prompt)             # 这一轮就带着气
         kinds = [e['kind'] for e in self.rel.events(CID, guy)]
         self.assertIn('boundary_violation', kinds)
         after = self.score(guy)

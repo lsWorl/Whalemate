@@ -324,14 +324,18 @@ class PlaceholderAvatar(QWidget):
     landed = Signal()
 
     def __init__(self, text='未设置形象', parent=None):
-        super().__init__(parent); self.text = text
+        super().__init__(parent); self.text = text; self.pose = None
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.native_size = (240, 320); self.dragging = False
 
     def set_state(self, mood='calm', mouth=0): pass
     def set_surface(self, desktop): pass
     def set_voice_active(self, active): pass
-    def set_pose(self, pose): pass
+    def set_pose(self, pose):
+        if self.pose != pose:
+            self.pose = pose
+            self.poseShown.emit(pose)
+
     def hop(self, *args, **kwargs): pass
     def bounce(self, *args, **kwargs): pass
     def face(self, direction): pass

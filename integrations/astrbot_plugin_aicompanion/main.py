@@ -25,12 +25,13 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.5'
+PLUGIN_VERSION = '0.9.6'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
-# 和桌宠 expression/segments.py 的 QQ_FLOOD_LIMIT 保持一致（Codex 审查 17012ca P2：两边不一致时 7～8 段会退回整段或主动消息整条丢失）
-MAX_SEGMENTS = 8
+# 和桌宠 expression/segments.py 的 QQ_SEGMENTS_MAX 保持一致（Codex 审查 17012ca P2：两边不一致时会退回整段或主动消息整条丢失）。
+# 0.9.6：不再按 8 段防刷屏合并（负责人 2026-11-11：按打字速度慢慢发就不会刷屏），这里只是格式上限
+MAX_SEGMENTS = 64
 AT_ONLY = '[@了你一下，没说别的]'
 # 商城表情（mface）的图片只从 QQ 自己的固定主机下载
 MARKET_HOSTS = {'gxh.vip.qq.com', 'i.gtimg.cn'}
@@ -408,12 +409,11 @@ class AICompanionBridge(Star):
     @staticmethod
     def segments_of(result) -> list:
         """桌宠拆好的多段回复（每段一条消息）；旧桌宠没有 segments 时整段作为一条。
-        防刷屏：超过 MAX_SEGMENTS 段时，多出来的并进最后一条（不丢内容，主动消息也照常发出）。"""
+        桌宠拆几段就发几条，不合并；超过 MAX_SEGMENTS（异常输入）时整段作为一条。"""
         reply=str(result.get('reply') or '').strip()
         segments=result.get('segments')
-        if (isinstance(segments,list) and 1<=len(segments)<=64 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
+        if (isinstance(segments,list) and 1<=len(segments)<=MAX_SEGMENTS and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
             segments=[x.strip() for x in segments]
-            if len(segments)>MAX_SEGMENTS:segments=segments[:MAX_SEGMENTS-1]+['，'.join(segments[MAX_SEGMENTS-1:])]
             return segments
         return [reply] if reply else []
 

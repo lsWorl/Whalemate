@@ -1,6 +1,6 @@
 """常驻桌面的角色窗口：应用启动即显示，聊天面板按需从角色身上打开。
 
-- 鲸娘等立绘角色使用原生 SpriteAvatar；艾米莉娅和外部 Cubism 模型沿用 WebEngine 视图。
+- 鲸娘等立绘角色使用原生 SpriteAvatar；用户导入的 Cubism 模型沿用 WebEngine 视图。
 - 状态由 pet.state 的状态机决定，本窗口只负责显示、交互、气泡和桌面集成。
 """
 from __future__ import annotations
@@ -241,7 +241,7 @@ class DesktopPetWindow(QWidget):
         return self.mapToGlobal(QPoint(self.width()//2, 10))
 
     def _apply_state(self):
-        if self.view_kind not in ('sprites', 'rig', 'spritesheet') or self.view is None: return
+        if self.view_kind not in ('sprites', 'rig', 'spritesheet', 'placeholder') or self.view is None: return
         self.view.set_pose(self.machine.current(time.monotonic()))
         if hasattr(self.view, 'set_gaze') and self.isVisible():
             # 眼神跟着鼠标：离得近才看，太远就自己东张西望。
@@ -594,10 +594,6 @@ class DesktopPetWindow(QWidget):
             poses = menu.addMenu('做个动作')
             for label, pose in DEMO_POSES:
                 poses.addAction(label, lambda checked=False, p=pose: self.dispatch('force_pose', pose=p, seconds=2.5))
-        elif self.view_kind == 'webengine' and hasattr(self.view, 'play_motion') and self.view.bridge.path.name.endswith('.animation.json'):
-            actions = menu.addMenu('做个动作')
-            for label, name in [('轻轻问候', 'greet'), ('点头', 'nod'), ('轻轻摇头', 'shake'), ('歪头', 'tilt'), ('害羞低头', 'shy'), ('轻摆手', 'wave')]:
-                actions.addAction(label, lambda checked=False, motion=name: self.view.play_motion(motion))
         size = menu.addMenu('大小')
         for scale in SCALES:
             action = size.addAction(f'{int(scale*100)}%', lambda checked=False, s=scale: self.set_scale(s))
@@ -648,8 +644,9 @@ class DesktopPetWindow(QWidget):
                                       ('qwen', '千问 紫'), ('kimi', 'Kimi 黑蓝'), ('minimax', 'MiniMax 玫红橙'), ('harness', 'Harness 纯黑')]:
                     action = schemes.addAction(label, lambda checked=False, sc=scheme: (self.database.set_setting('rig_scheme', sc), self.appearance_changed.emit()))
                     action.setCheckable(True); action.setChecked(scheme == current)
-            self._toggle(looks, '闲着时到处走走', 'pet_wander', True, lambda on: on or self.stop_walking())
-            self._toggle(looks, '松手后落到屏幕底边（重力）', 'pet_gravity', True)
+        if self.view_kind in ('spritesheet','rig'):
+            self._toggle(options, '闲着时到处走走', 'pet_wander', True, lambda on: on or self.stop_walking())
+        self._toggle(options, '松手后落到屏幕底边（重力）', 'pet_gravity', True)
         menu.addAction('设置…', self.settings_requested.emit)
         menu.addSeparator()
         menu.addAction('让她休息（隐藏到托盘）', self.rest)

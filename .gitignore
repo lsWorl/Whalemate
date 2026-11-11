@@ -48,6 +48,10 @@ htmlcov/
 /docs/pet-v2/*-sprites.jpg
 /src/aicompanion/characters/*/sprites/_preview.jpg
 
+# Live2D Cubism Core uses Live2D's proprietary license and is never committed or shipped;
+# download it locally with tools/fetch_avatar.py when importing external Live2D models.
+/src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js
+
 # Third-party reference checkout; imported textures remain local-only.
 /Coopanion/
 

@@ -130,7 +130,10 @@ class LiveFixtureTests(unittest.TestCase):
             self.assertEqual(report['cases'], [])
 
     def test_environment_credentials_and_redaction(self):
-        self.assertEqual(self.module.credentials({}), ('', 'https://api.deepseek.com/v1'))
-        self.assertEqual(self.module.credentials({'DEEPSEEK_API_KEY': 'fake-key', 'LLM_BASE_URL': 'https://example.invalid'}),
+        self.assertEqual(self.module.credentials({}), ('', ''))
+        # 只认 DeepSeek 自己的变量，不再读 LLM_*（计划书 v4：模型配置只来自设置页）
+        self.assertEqual(self.module.credentials({'LLM_API_KEY': 'old', 'DEEPSEEK_API_KEY': 'fake-key', 'DEEPSEEK_BASE_URL': 'https://example.invalid'}),
                          ('fake-key', 'https://example.invalid'))
+        target = self.module.target('fake-key', '')
+        self.assertEqual((target.route, dict(target.env)), ('deepseek-official', {'DEEPSEEK_API_KEY': 'fake-key'}))
         self.assertNotIn('fake-key', self.module.redact('message contains fake-key', 'fake-key'))

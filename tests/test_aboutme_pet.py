@@ -70,7 +70,7 @@ class AboutmeInstallTests(unittest.TestCase):
     def test_clean_checkout_falls_back_without_startup_download(self):
         with tempfile.TemporaryDirectory() as directory:
             whale=replace(load_pack(PACKS_DIR/'deepseek-whale'),root=Path(directory))
-            self.assertEqual(choose_renderer(whale,None)[0],'sprites')
+            self.assertEqual(choose_renderer(whale,None),('placeholder',None))
             self.assertEqual(choose_renderer(whale,'live2d','model.model3.json')[0],'cubism')
 
 @unittest.skipUnless(AVAILABLE,"素材安装测试需要已有 studio/Pillow；运行桌宠不需要")

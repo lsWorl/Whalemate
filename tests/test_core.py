@@ -35,13 +35,14 @@ class ConfigurationTests(unittest.TestCase):
         settings=self.load({'LLM_API_KEY':'dummy-chat','SPEECH_API_KEY':'dummy-speech'})
         self.assertEqual(settings.speech_api_key,'dummy-speech')
 
-    def test_same_host_preserves_compatible_fallback(self):
+    def test_speech_never_borrows_chat_key_even_on_same_host(self):
+        # 计划书 v4 硬底线：凭据不串。同主机也不能推断是同一个账户
         settings=self.load({'LLM_BASE_URL':'https://open.bigmodel.cn/api/paas/v4','LLM_API_KEY':'dummy-chat'})
-        self.assertEqual(settings.speech_api_key,'dummy-chat')
-
-    def test_explicit_empty_speech_key_disables_fallback(self):
-        settings=self.load({'LLM_BASE_URL':'https://open.bigmodel.cn/api/paas/v4','LLM_API_KEY':'dummy-chat','SPEECH_API_KEY':''})
         self.assertEqual(settings.speech_api_key,'')
+
+    def test_offline_flag(self):
+        self.assertFalse(self.load({}).offline)
+        self.assertTrue(self.load({'AICOMPANION_OFFLINE':'1'}).offline)
 
 
 class StorageTests(unittest.TestCase):
@@ -53,7 +54,7 @@ class StorageTests(unittest.TestCase):
 
     def test_character_isolation(self):
         self.db.add_character(replace(DEFAULT_CHARACTER,id='other',name='Other'))
-        self.db.add_message('user','A',character_id='emilia')
+        self.db.add_message('user','A',character_id='deepseek-whale')
         self.db.add_message('user','B',character_id='other')
         self.db.upsert_memory('private',fact_key='name')
         self.assertEqual([r['content'] for r in self.db.recent_messages(character_id='other')],['B'])
@@ -63,7 +64,7 @@ class StorageTests(unittest.TestCase):
         self.db.upsert_memory('coffee',fact_key='drink')
         self.db.upsert_memory('tea',fact_key='drink')
         rows=self.db.recent_memories(); self.assertEqual(len(rows),1); self.assertEqual(rows[0]['content'],'tea')
-        self.db.delete_memory(rows[0]['id'],'emilia')
+        self.db.delete_memory(rows[0]['id'],'deepseek-whale')
         self.assertFalse(self.db.upsert_memory('tea again',fact_key='drink'))
         MemoryService(self.db).maybe_extract_memory('我喜欢茶')
         self.assertEqual(self.db.recent_memories(),[])
@@ -73,8 +74,8 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(sqlite3.ProgrammingError): connection.execute('SELECT 1')
 
     def test_proactive_claim_is_persistent(self):
-        self.assertTrue(self.db.claim_proactive('emilia','morning'))
-        self.assertFalse(Database(self.path).claim_proactive('emilia','morning'))
+        self.assertTrue(self.db.claim_proactive('deepseek-whale','morning'))
+        self.assertFalse(Database(self.path).claim_proactive('deepseek-whale','morning'))
 
     def test_migration_preserves_data_and_backup(self):
         old=self.path.parent/'old.sqlite3'
@@ -104,36 +105,36 @@ class StorageTests(unittest.TestCase):
         self.assertEqual((row['content'],row['status']),('partial','failed'))
 
     def test_delivered_reply_is_not_replaced_by_generated_full_text(self):
-        self.db.start_turn('turn', 'emilia')
-        self.db.set_delivered_reply('turn', 'emilia', 'heard', 'generating')
-        self.db.finish_turn('turn', 'emilia', 'heard and unheard', 'complete')
-        self.db.set_delivered_reply('turn', 'emilia', 'heard', 'cancelled')
+        self.db.start_turn('turn', 'deepseek-whale')
+        self.db.set_delivered_reply('turn', 'deepseek-whale', 'heard', 'generating')
+        self.db.finish_turn('turn', 'deepseek-whale', 'heard and unheard', 'complete')
+        self.db.set_delivered_reply('turn', 'deepseek-whale', 'heard', 'cancelled')
         rows=self.db.recent_messages()
         self.assertEqual(len(rows),1)
         self.assertEqual((rows[0]['content'],rows[0]['status']),('heard','cancelled'))
 
     def test_relationship_daily_limit_and_role_isolation(self):
         self.db.add_character(replace(DEFAULT_CHARACTER,id='other',name='Other'))
-        original=self.db.relationship('emilia')['trust']
-        self.db.record_relationship_event('emilia'); self.db.record_relationship_event('emilia')
-        self.assertEqual(self.db.relationship('emilia')['trust'],original+1)
+        original=self.db.relationship('deepseek-whale')['trust']
+        self.db.record_relationship_event('deepseek-whale'); self.db.record_relationship_event('deepseek-whale')
+        self.assertEqual(self.db.relationship('deepseek-whale')['trust'],original+1)
         self.assertEqual(self.db.relationship('other')['trust'],original)
 
     def test_reminder_crud_and_due_only_once(self):
-        self.db.save_reminder('emilia','first','2000-01-01 00:00:00')
-        row=self.db.reminders('emilia')[0]
-        self.db.save_reminder('emilia','updated','2000-01-01 00:00:00',row['id'])
-        self.assertEqual(self.db.due_reminders('emilia')[0]['title'],'updated')
-        self.assertEqual(self.db.due_reminders('emilia'),[])
-        self.db.delete_reminder('emilia',row['id'])
-        self.assertEqual(self.db.reminders('emilia'),[])
+        self.db.save_reminder('deepseek-whale','first','2000-01-01 00:00:00')
+        row=self.db.reminders('deepseek-whale')[0]
+        self.db.save_reminder('deepseek-whale','updated','2000-01-01 00:00:00',row['id'])
+        self.assertEqual(self.db.due_reminders('deepseek-whale')[0]['title'],'updated')
+        self.assertEqual(self.db.due_reminders('deepseek-whale'),[])
+        self.db.delete_reminder('deepseek-whale',row['id'])
+        self.assertEqual(self.db.reminders('deepseek-whale'),[])
 
     def test_deleting_memory_clears_summary(self):
-        self.db.save_summary('emilia','old summary',1)
+        self.db.save_summary('deepseek-whale','old summary',1)
         self.db.upsert_memory('private fact',fact_key='private')
-        self.db.delete_memory(self.db.recent_memories()[0]['id'],'emilia')
-        self.db.save_summary('emilia','must not resurrect',2)
-        self.assertEqual(self.db.load_summary('emilia'),'')
+        self.db.delete_memory(self.db.recent_memories()[0]['id'],'deepseek-whale')
+        self.db.save_summary('deepseek-whale','must not resurrect',2)
+        self.assertEqual(self.db.load_summary('deepseek-whale'),'')
 
 
 class StreamTests(unittest.TestCase):

@@ -4,7 +4,23 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| T20-动画 | Aboutme 大肥鱼画面接入与旧自绘回收 | Codex | 本机实现与检查通过，PR #25 草稿待用户审图和另一方审查 | docs/tasks/T20-original-whale-animation.md；固定上游21源动作、本机安装、旧素材可恢复回收 |
+| T20-动画 | 鲸鲸默认播放本机安装的 Aboutme 大肥鱼，缺包时显示占位形象；归档原创鲸娘美术 | Codex | 待独立审查（PR #25） | [任务说明](tasks/T20-original-whale-animation.md) · [安装与署名](aboutme-pet.md) |
+| OSS-Live2D-Core | Live2D Cubism Core（专有许可）从仓库和打包版本中移除：用户按需运行 `tools/fetch_avatar.py` 下载；缺少时导入提示获取方法、启动退回自带形象；`.gitignore`、wheel 和 `build_windows.py` 都排除 Core | Claude 实现；Codex 审查 | 待审查（`task/oss-live2d-core`，叠在 #44 上） | 负责人 2026-11-11 要求；动到 `ui/main_window.py`、`pyproject.toml`（共享文件，改动见 PR） |
+| OSS-开源准备 | 项目取名 Whalemate · 鲸伴；重写中文主 README 并新增英文版 README.en.md；致谢参考过的开源项目与大肥鱼社区；新增 MIT LICENSE（Live2D Cubism Core 等第三方组件除外） | Claude 文档；Codex 审查；负责人确认 | 待审查（`task/oss-readme`） | 美术素材按 MIT（负责人 2026-11-11 决定）；是否改包名 / 仓库名待定 |
+| PR42-冲突 | 合入当前目标分支 #41，保留关系设定与声线修复记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计另行记录 |
+| PR41-冲突 | 合入最新协作基线，保留默认声线与群聊实施记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计结果另行记录 |
+| PR40-冲突 | 接入已合并 PR #39 的基线，保留语音与群聊两份实施记录 | Codex | 已解决（负责人决定合并 PR） | 仅 Markdown 冲突；负责人明确不做回归测试 |
+| V4-8 回复带语音 | 计划书 v4 功能八：回复默认带语音、长回复分段取舍、大肥鱼声线。**先修 Codex 在 #38 实机发现的基线问题**：已经 complete 且展示完的回复，被下一轮 submit 或退出时 `_end_call → interrupt` 改成 cancelled，重启后显示“被打断”，也会让全文索引（只查 complete）漏掉这些旧消息。实机先验证系统朗读回退；云端声线（音色试听）未配置前不算完成 | Claude 实现；Codex 审查 | 待审查（第一版，`task/v4-8-voice`，从 #38 的 6775d81 拉出） | docs/tasks/V4-8-voice.md |
+| V4-8b 鲸鲸默认声线 | 负责人 2026-11-11：鲸鲸默认用网上 AI 视频那种有感情的少女声线。角色声线设定（`domain/voice_profile.py`）；MiniMax 语音客户端（和聊天共用 MiniMax 账户）；没在模型页配语音时用角色默认声线，候选音色在设置里换；心情明显时指定情绪，其余交给模型按台词自动选。音色听感由负责人试听拍板 | Claude 实现；Codex 审查 | 待审查（`task/v4-8b-whale-voice`，叠在 #39 之上） | docs/tasks/V4-8b-whale-voice.md |
+| V4-2b 关系设定 | 负责人 2026-11-11：人设不要写死父女（女朋友、妹妹都行），项目是情感框架。人格包加“和你的关系”（预设 + 自定义），提示词、QQ 群标记、冒充检测、聊天卡、办事人设都按当前关系；记忆统一写“用户” | Claude 实现；Codex 审查 | 待审查（`task/v4-2b-bond`，当前叠在 #41 之上；Codex 首轮 2 个 P2 已修，待复核） | docs/tasks/V4-2b-bond.md |
+| V4-9 陪伴日期（基础版） | 计划书 v4 功能九：认识第几天（按日历日）、聊过几天、纪念日（第 100 天、周年、她的生日、办成事周年、公历和农历节日）、用户添加生日和纪念日（可按农历）；私下聊天时当天提一句、一天只提一次；群里不带；设置里“我们的日子”；schema 11→12；新依赖 lunar_python==1.4.9（负责人同意）。提前提醒、聊天里确认生日留到后续 | Claude 实现；Codex 审查 | 代码审查及 Windows 核心界面走查通过（临时数据 / 模拟回复）；1 项 P3 布局待优化；真实模型 / QQ 未验；待负责人合并 PR #43 | docs/tasks/V4-9-companion-dates.md |
+| V4-6a 记忆召回基础与整份请求预算 | 计划书 v4 功能六的阶段二部分：存档旧事、更早聊天（FTS5 trigram 全文索引）、以前办过的事按关联召回；整份请求按用途预算、已知窗口硬上限拦截（目前只接入聊天生成链路，识图、后台分析、办事尚未接入）；schema 9→10 | Claude 实现；Codex 审查 | 待审查（与 V4-3 同在 PR #38） | 见 implementation_status 2026-11-11 |
+| V4-3 持续情绪 | 计划书 v4 功能三：心情由事件推动、按半衰期回落；人格情绪倾向；来源复用同一轮 <mind/>；久别、办成事；提示词说明程度和原因；设置里看心情、手动哄好；schema 10→11 | Claude 实现；Codex 审查 | 已修复 Codex 第一轮 4 项，待复核（PR #38） | docs/tasks/V4-3-mood.md |
+| V4-改名鲸鲸 | 默认角色改名“鲸鲸”（原“鲸娘”）：角色包名字、内置人格 v6、已有库一次性改名，QQ 认新旧两个名字 | Claude 实现；Codex 审查 | 待审查 | 负责人 2026-11-11 要求；叠在 V4-2 上 |
+| V4-2 人格包 | 计划书 v4 功能二：人格新建 / 编辑 / 复制 / 切换 / 删除、版本回退、导入导出（兼容 SillyTavern 角色卡）、预览、内置人格升级不覆盖；schema 8→9 | Claude 实现；Codex 审查 | 已修复 Codex R1～R3，待 Codex 复核 | docs/tasks/V4-2-persona.md |
+| V4-界面翻新 | 设置分组导航与概览引导、聊天面板精简、应用图标；计划书加入“界面与引导”和附件办事 | Claude 实现；Codex 审查 | 已合入（PR #33） | 负责人 2026-11-11 要求 |
+| V4-MiniMax办事 | 办事接入 MiniMax（llm-pi-ai 路由，含 M3.1-Flash） | Claude 实现；Codex 审查及冲突修复 | 已合入（PR #32） | 负责人 2026-11-11 要求；处理 R3 已知问题 |
+| V4-图库减负 | 表情图库：自己的图默认可用、含义自动识别、批量操作 | Claude 实现；Codex 审查 | 待审查 | 负责人 2026-11-11 实机反馈；见 implementation_status 同日记录 |
 | T14 | 智能表情正式开发：资产、同次生成、桌面与 QQ | Claude 实现；Codex 审计 | 已合入（PR #13）；负责人真机试用中 | docs/tasks/T14-smart-expression-design.md |
 | T17 | 收集别人发的表情包、向群友学发图习惯、聊天短句分条 | Claude 实现；Codex 审计 | 已合入（PR #16、#17、#18） | docs/tasks/T17-sticker-learning.md |
 | T15 | 自主社交人格与人物关系系统 | Claude 实现；Codex 审查 | 进行中（Claude，`task/t15-relationship`） | docs/tasks/T15-relationship.md；人物身份、好感 / 熟悉 / 信任、关系事件确定性打分、自主意愿进同一个大脑、人物关系页；schema 6→7；`ui/settings_window.py` 只加一行挂页面 |
@@ -32,3 +48,5 @@
 | T20 | 补 T18 的缺口：当场查没见过的梗并记进词库、查不查用不用由她决定、真实搜索验收脚本、小圈子来源、语境对照评测 | Claude 实现；Codex 审查 | 待审查（Claude，`task/t20-community-gaps`，叠在 T19 上） | docs/tasks/T20-community-gaps.md |
 | T21 | 预置词库：B 站、游戏、二次元、抽象圈的常用梗 336 个，首次启动装入；附 T18–T21 真机测试手册 | Claude 实现；Codex 审查 | 待审查（Claude，`task/t21-seed-lexicon`） | docs/tasks/T21-seed-lexicon.md |
 | T22 | 说了不理就真的不理、按好感分三档决定回几条回不回、回得更像真人、和外人聊不用逗号、预置词库第 2 版（二游 / 米哈游 / 抽象 +167） | Claude 实现；Codex 审查 | 待审查（Claude，和 T21 同在 `task/t21-seed-lexicon`） | docs/tasks/T22-outsider-stance.md |
+| PLAN-V4 | 项目计划书 v4：模型自由切换、人格包、持续情绪、自己的生活、真正退出、记忆召回与预算、圈子与跨天办事；开发参考成熟方案 | Claude 文档；Codex 审查；负责人确认 | 待审查（Claude，`task/project-plan-v4`） | docs/project_plan_v4.md；以后各功能的任务说明以此为依据 |
+| V4-1 | 阶段一·地基：模型配置、凭据、按能力解析与快照、思考策略、模型设置页（里程碑：能正常聊天） | Claude 实现；Codex 审查；负责人实机验收 | 进行中（Claude，`task/v4-1-model-routing`，叠在 PLAN-V4 上） | docs/tasks/V4-1-model-routing.md；分 V4-1a / 1b / 1c 三个 PR |

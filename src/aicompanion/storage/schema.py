@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 12  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS conversation_turns (
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id),
+    character_id TEXT NOT NULL DEFAULT 'deepseek-whale' REFERENCES characters(id),
     turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text',
     channel TEXT NOT NULL DEFAULT 'desktop', sender TEXT NOT NULL DEFAULT ''
 );
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL,
     importance INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id),
+    character_id TEXT NOT NULL DEFAULT 'deepseek-whale' REFERENCES characters(id),
     category TEXT NOT NULL DEFAULT 'legacy', fact_key TEXT NOT NULL DEFAULT '',
     confidence REAL NOT NULL DEFAULT 1, source_ids TEXT NOT NULL DEFAULT '[]',
     clarity REAL NOT NULL DEFAULT 1, recalled_at TEXT, scope TEXT NOT NULL DEFAULT 'pet'
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
 CREATE TABLE IF NOT EXISTS reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, due_at TEXT,
     status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    character_id TEXT NOT NULL DEFAULT 'emilia' REFERENCES characters(id)
+    character_id TEXT NOT NULL DEFAULT 'deepseek-whale' REFERENCES characters(id)
 );
 CREATE INDEX IF NOT EXISTS ix_messages_character ON chat_messages(character_id, id);
 CREATE INDEX IF NOT EXISTS ix_messages_channel ON chat_messages(character_id, channel, id);
@@ -175,4 +175,33 @@ CREATE TABLE IF NOT EXISTS group_lore (
  weight REAL NOT NULL, mentions INTEGER NOT NULL DEFAULT 1, first_at REAL NOT NULL, last_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_group_lore_channel ON group_lore(character_id, channel);
+-- v9 计划书 v4 功能二 人格包：同一个角色可以有多个人格，切换不丢记忆；每次保存留一个版本可回退
+CREATE TABLE IF NOT EXISTS personas (
+ id TEXT PRIMARY KEY, character_id TEXT NOT NULL, title TEXT NOT NULL, data TEXT NOT NULL,
+ builtin INTEGER NOT NULL DEFAULT 0, pack_version INTEGER NOT NULL DEFAULT 0, user_modified INTEGER NOT NULL DEFAULT 0,
+ created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_personas_character ON personas(character_id);
+CREATE TABLE IF NOT EXISTS persona_versions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, persona_id TEXT NOT NULL, data TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', saved_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_persona_versions ON persona_versions(persona_id, id);
+-- v11 计划书 v4 功能三 持续情绪：各情绪强度（按半衰期回落）和最近的情绪事件（界面里看“为什么”）
+CREATE TABLE IF NOT EXISTS mood_state (character_id TEXT PRIMARY KEY, data TEXT NOT NULL, at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS mood_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+ scale REAL NOT NULL DEFAULT 1, channel TEXT NOT NULL DEFAULT 'desktop', at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mood_events ON mood_events(character_id, id);
+-- v12 计划书 v4 功能九 陪伴日期：用户添加 / 修改的日子（认识那天、生日、自定义）；程序算出来的纪念日不落表，现算
+CREATE TABLE IF NOT EXISTS companion_dates (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, person_id INTEGER, kind TEXT NOT NULL, title TEXT NOT NULL,
+ calendar TEXT NOT NULL DEFAULT 'solar', year INTEGER, month INTEGER NOT NULL, day INTEGER NOT NULL, yearly INTEGER NOT NULL DEFAULT 1,
+ source TEXT NOT NULL DEFAULT 'user', scope TEXT NOT NULL DEFAULT 'private', enabled INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_companion_dates ON companion_dates(character_id, kind);
+-- 哪个日子哪天已经提起过（同一个日子一天只提一次；她退出再启动也不会再庆祝一遍）
+CREATE TABLE IF NOT EXISTS companion_date_mentions (
+ character_id TEXT NOT NULL, key TEXT NOT NULL, day TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(character_id, key, day)
+);
 """

@@ -7,6 +7,27 @@ class ModelPackageError(ValueError):
     """供设置窗口显示的模型包错误。"""
 
 
+# Live2D Cubism Core 适用 Live2D 专有许可，不随本项目的仓库和打包版本分发。
+# 只有导入外部 Live2D 模型时才需要它；默认角色走自己的骨骼渲染和立绘，不受影响。
+CUBISM_CORE = Path(__file__).resolve().parents[1]/'assets/live2d/vendor/live2dcubismcore.min.js'
+
+
+def cubism_core_available(path=None):
+    return Path(path or CUBISM_CORE).is_file()
+
+
+def require_cubism_core(path=None):
+    """没有 Core 时给出能照着做的提示，而不是让网页里的渲染静默失败。"""
+    target = Path(path or CUBISM_CORE)
+    if not target.is_file():
+        raise ModelPackageError(
+            '显示外部 Live2D 模型需要 Live2D Cubism Core。它适用 Live2D 专有许可，本项目不附带。\n'
+            '源码运行：在项目目录执行 .venv\\Scripts\\python.exe tools\\fetch_avatar.py，从 Live2D 官网下载。\n'
+            f'打包版本：从 Live2D 官网下载 Cubism SDK for Web，把 Core/live2dcubismcore.min.js 放到 {target}。\n'
+            '下载和使用前请阅读并同意 Live2D Proprietary Software License。')
+    return target
+
+
 def validate_model_package(path):
     entry = Path(path).resolve()
     if not entry.name.lower().endswith('.model3.json') or not entry.is_file():

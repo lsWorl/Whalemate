@@ -83,7 +83,7 @@ class BridgeServer:
                 'media': {'vision': (self.service.vision_ready() if hasattr(self.service, 'vision_ready') else bool(self.service.database.get_setting('qq_vision_enabled', True))),
                           # 插件据此决定要不要把别人发的表情包原图附上来（关掉收集就不传图）
                           'collect': bool(self.service.database.get_setting('sticker_collect_enabled', True)),
-                          'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸娘')}}
+                          'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸鲸')}}
         if outbox: reply['outbox'] = outbox
         return reply
 

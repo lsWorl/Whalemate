@@ -142,13 +142,13 @@ class MemorySharingTests(BridgeTests.__base__):
         class Analyzer:
             def generate_reply_stream(self_, history, prompt, cancellation=None):
                 seen.append(prompt); yield json.dumps(analysis, ensure_ascii=False)
-        self.controller.llm_client = Analyzer()
+        self.controller.use_client(Analyzer())
         self.assertFalse(self.service.maybe_remember(self.cid, channel, background=False))   # 关着时不整理
         self.db.set_setting('bridge_memory_every', 2)
         self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
         memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#1:job'), None)
         self.assertIsNotNone(memory); self.assertEqual(memory['scope'], 'qq')
-        self.assertIn('不要把群友的事记成爹的', seen[-1])
+        self.assertIn('不要把群友的事记成用户的', seen[-1])
         self.assertEqual(self.db.load_summary(self.cid), '')                # 群聊不写对话摘要
         self.assertEqual(memory_service.pending(self.cid, channel), 0)
         history, prompt = self.controller.context.build(self.controller.character, '大壮')   # 桌面上她也知道
@@ -362,14 +362,14 @@ class SegmentReplyTests(unittest.TestCase):
             class Two:
                 model = 'mock'
                 def generate_reply_stream(self_, history, prompt, cancellation=None): yield '哇！\n\n恭喜爹'
-            case.controller.llm_client = Two()
+            case.controller.use_client(Two())
             result = case.ask(OWNER, '我面试过了')
             self.assertEqual((result['reply'], result.get('segments')), ('哇！\n\n恭喜爹', ['哇！', '恭喜爹']))
             # 只有一条时 reply 也换成整理后的写法（QQ 保留逗号、去掉句末句号），旧插件只看 reply 也能拿到
             class One:
                 model = 'mock'
                 def generate_reply_stream(self_, history, prompt, cancellation=None): yield '在呢，刚摸完鱼。'
-            case.controller.llm_client = One()
+            case.controller.use_client(One())
             result = case.ask(OWNER, '在吗')
             self.assertEqual((result['reply'], result.get('segments')), ('在呢，刚摸完鱼', None))
         finally:
@@ -596,17 +596,17 @@ class MigrationTests(unittest.TestCase):
                 conn.executescript("""CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
                     speaking_style TEXT NOT NULL, model_path TEXT NOT NULL DEFAULT '', voice TEXT NOT NULL DEFAULT '');
                     CREATE TABLE chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, character_id TEXT NOT NULL DEFAULT 'emilia',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, character_id TEXT NOT NULL DEFAULT 'deepseek-whale',
                     turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text');
                     CREATE TABLE memories (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    character_id TEXT NOT NULL DEFAULT 'emilia', category TEXT NOT NULL DEFAULT 'legacy', fact_key TEXT NOT NULL DEFAULT '',
+                    character_id TEXT NOT NULL DEFAULT 'deepseek-whale', category TEXT NOT NULL DEFAULT 'legacy', fact_key TEXT NOT NULL DEFAULT '',
                     confidence REAL NOT NULL DEFAULT 1, source_ids TEXT NOT NULL DEFAULT '[]', clarity REAL NOT NULL DEFAULT 1,
                     recalled_at TEXT, scope TEXT NOT NULL DEFAULT 'pet');
-                    INSERT INTO chat_messages(role,content,character_id) VALUES ('user','旧消息','emilia');
+                    INSERT INTO chat_messages(role,content,character_id) VALUES ('user','旧消息','deepseek-whale');
                     PRAGMA user_version=3;""")
             db = Database(path); db.initialize()
-            rows = db.recent_messages(5, 'emilia')
+            rows = db.recent_messages(5, 'deepseek-whale')
             self.assertEqual([(r['content'], r['channel'], r['sender']) for r in rows], [('旧消息', 'desktop', '')])
             self.assertTrue(list(Path(tmp).glob('old.backup-*.sqlite3')))   # 升级前自动备份
 
@@ -617,15 +617,15 @@ class EarlyV4Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'early.sqlite3'
             db = Database(path); db.initialize()
-            db.add_message('user', '旧的群消息', 'emilia', channel='qq:group:30003')
+            db.add_message('user', '旧的群消息', 'deepseek-whale', channel='qq:group:30003')
             with closing(sqlite3.connect(path)) as conn:
                 conn.execute('ALTER TABLE chat_messages DROP COLUMN sender'); conn.execute('PRAGMA user_version=4'); conn.commit()
             for backup in Path(tmp).glob('*.backup-*'): backup.unlink()
             db = Database(path); db.initialize()
             self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
-            rows = db.recent_messages(5, 'emilia', channel='qq:group:30003')
+            rows = db.recent_messages(5, 'deepseek-whale', channel='qq:group:30003')
             self.assertEqual([(r['content'], r['sender']) for r in rows], [('旧的群消息', '')])
-            db.add_message('user', '新消息', 'emilia', channel='qq:group:30003', sender='qq:1')
+            db.add_message('user', '新消息', 'deepseek-whale', channel='qq:group:30003', sender='qq:1')
             Database(path).initialize()                                      # 重复打开
             self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
             with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)

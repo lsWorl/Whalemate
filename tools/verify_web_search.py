@@ -33,8 +33,8 @@ def run(args, client=None, web=None):
             from dotenv import load_dotenv
             load_dotenv(args.dotenv)
         from aicompanion.config import load_settings
-        from aicompanion.llm.factory import create_llm_client
-        client = create_llm_client(load_settings())
+        from aicompanion.providers import real_chat_client
+        client, _ = real_chat_client(settings=load_settings())
     with tempfile.TemporaryDirectory() as folder:
         db = Database(Path(folder)/'verify.sqlite3'); db.initialize()
         web = web or WebSearch(db, client)

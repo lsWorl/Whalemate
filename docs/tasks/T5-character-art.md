@@ -1,5 +1,7 @@
 # T5：已确认鲸娘的动作与分层素材
 
+> 本文记录原十姿态形象的设计与验收，保留当时的路径。现有素材位置见[原创美术归档](../../art/README.md)，当前角色形象见 [T20](T20-original-whale-animation.md)。
+
 负责：Codex　审查：Claude　分支：`task/t5-character-art`
 
 ## 当前范围（用户于 2026-11-07 更新）

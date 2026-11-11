@@ -9,7 +9,7 @@
 
 用法（需要开发依赖 Pillow、numpy，scipy 可选）：
     python tools/build_character_pack.py output/desktop-pet/asset-pack-v3 \
-        src/aicompanion/characters/deepseek-whale/sprites
+        output/compiled-sprites
 """
 from __future__ import annotations
 

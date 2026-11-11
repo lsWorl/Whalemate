@@ -51,6 +51,7 @@ class QQMediaTests(unittest.TestCase):
         self.db = Database(self.root/'synthetic.sqlite3'); self.db.initialize()
         self.chat = Chat(); self.vision = Vision(); self.factory_args = []
         self.controller = ChatController(self.db, MemoryService(self.db), self.chat)
+        self.controller.use_client(self.chat, vision_model='deepseek-flash')   # 识图配置：同一地址和 Key 的识图模型
         from dataclasses import replace
         self.controller.character=replace(self.controller.character,id='deepseek-whale',name='鲸娘')
         self.db.add_character(self.controller.character)
@@ -150,16 +151,21 @@ class QQMediaTests(unittest.TestCase):
         self.now += 13*3600; self.assertTrue(self.media.vision_ready())
         self.vision.failure = False; self.ask(); self.assertEqual(len(self.vision.calls), 2)
 
-    def test_vision_only_uses_the_chat_providers_own_endpoint_and_key(self):
-        # 负责人 2026-11-09："要看接入的大模型是否有多模态"——换了别家接口也试着用它自己的模型看图；
-        # 密钥只发给聊天本身的那家接口，不会拿去调用别的供应商
+    def test_vision_uses_only_its_own_snapshot_endpoint_and_key(self):
+        # 计划书 v4 功能一：识图按设置里的识图配置取快照，Key 只发往快照里的地址
         self.chat.base_url = 'https://another-provider.example/v1'
         self.ask()
         self.assertEqual([(a['base_url'], a['api_key'], a['model']) for a in self.factory_args],
-                         [('https://another-provider.example/v1', 'synthetic-key', 'chat-model')])
-        self.db.set_setting('qq_vision_model', 'vision-pro'); self.ask(); self.assertEqual(self.factory_args[-1]['model'], 'vision-pro')
+                         [('https://another-provider.example/v1', 'synthetic-key', 'deepseek-flash')])
+        self.controller.use_client(self.chat, vision_model='vision-pro'); self.ask()
+        self.assertEqual(self.factory_args[-1]['model'], 'vision-pro')
         self.chat.base_url = 'http://plain-http.example/v1'; self.ask()
         self.assertEqual(len(self.factory_args), 2); self.assertIn('[图片]', self.chat.calls[-1][0][-1].content)   # 非 https 不送图
+
+    def test_no_vision_model_means_no_image_request(self):
+        self.controller.use_client(self.chat)   # 没配置识图
+        self.ask()
+        self.assertEqual(self.factory_args, []); self.assertIn('[图片]', self.chat.calls[-1][0][-1].content)
 
     def test_quota_rechecked_after_vision_spends_budget(self):
         original = self.vision.chat

@@ -85,6 +85,59 @@ class CollectorTests(Base):
         self.assertEqual(len(self.collector.pending()), 1)
         self.assertEqual(self.collector.stats()['analyzed_today'], 1)
 
+    def test_unreviewed_or_disabled_image_waits_without_using_attempts(self):
+        # Codex 审计 PR #31 R4：许可待确认 / 停用的图不交给模型、不扣次数、不算失败；确认启用后照常识别
+        catalog = self.controller.expression.catalog
+        (self.library/'清单').mkdir(); path = self.library/'清单'/'p.png'; path.write_bytes(png(0xff313131))
+        pack, _ = catalog.register(path, self.library, dict(from_pack=True, analysis='pending'))
+        off = self.ingest(0xff424242)['asset_id']; catalog.enable(off, False)
+        calls = []
+        def analyzer(data, mime): calls.append(1); return dict(GOOD)
+        for _ in range(3): self.assertEqual(self.collector.analyze_pending(analyzer), 0)
+        self.assertEqual((calls, self.collector.stats()['analyzed_today']), ([], 0))
+        for aid in (pack, off):
+            meta = catalog.get(aid)['metadata']; self.assertEqual((meta['analysis'], meta.get('attempts', 0)), ('pending', 0))
+        catalog.review(pack, author='', source='', license='user-owned'); catalog.enable(off, True)
+        self.assertEqual(self.collector.analyze_pending(analyzer), 2); self.assertEqual(len(calls), 2)
+        self.assertEqual({catalog.get(a)['metadata']['analysis'] for a in (pack, off)}, {'done'})
+
+    def test_same_image_is_never_analyzed_twice_concurrently(self):
+        # Codex 审计 PR #31 R3：第一个识图请求还没返回时，另一个入口（重开的图库页 / QQ 服务）不能再领同一张图
+        import threading
+        self.ingest(0xff535353)
+        entered, release = threading.Event(), threading.Event(); calls = []
+        def slow(data, mime): calls.append(1); entered.set(); release.wait(5); return dict(GOOD)
+        first = threading.Thread(target=lambda: self.collector.analyze_pending(slow)); first.start()
+        self.assertTrue(entered.wait(5))
+        other = StickerCollector(self.db, self.controller.expression.catalog)
+        self.assertEqual(other.pending(), [])
+        self.assertEqual(other.analyze_pending(slow), 0)
+        release.set(); first.join(5)
+        self.assertEqual((len(calls), self.collector.stats()['analyzed_today']), (1, 1))
+
+    def test_sticker_analysis_failure_reason_is_recorded_without_error_body(self):
+        from aicompanion.bridge.media import QQMedia
+        media = QQMedia(self.db, self.controller)
+        profile = type('P', (), {'base_url': 'https://example.invalid/v1', 'model_id': 'm', 'config_revision': 0})()
+        media.profile = lambda purpose='vision': profile
+        media._vision_call = lambda *a: '我觉得这张图挺好'
+        self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
+        self.assertIn('格式不对', self.db.get_setting(QQMedia.ERROR_KEY)['reason'])
+        def boom(*a): raise RuntimeError('HTTP 503 secret-request-summary sk-xxx')
+        media._vision_call = boom
+        self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
+        reason = self.db.get_setting(QQMedia.ERROR_KEY)['reason']
+        self.assertIn('HTTP 503', reason); self.assertNotIn('sk-xxx', reason)
+        def minimax(*a):
+            raise RuntimeError("模型响应格式不符合预期：{'choices': None, 'base_resp': {'status_code': 1002, 'status_msg': 'rate limit sk-yyy'}}")
+        media._vision_call = minimax
+        self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
+        reason = self.db.get_setting(QQMedia.ERROR_KEY)['reason']
+        self.assertIn('1002', reason); self.assertIn('限流', reason); self.assertNotIn('sk-yyy', reason)
+        self.ingest(0xff646464)
+        self.collector.analyze_pending(lambda d, m: None)
+        self.assertEqual({k: self.collector.last[k] for k in ('done', 'ok', 'failed')}, {'done': 1, 'ok': 0, 'failed': 1})
+
     def test_no_library_or_disabled_collects_nothing(self):
         self.db.set_setting('qq_meme_root', '')
         self.assertEqual(self.ingest()['status'], 'no_library')   # 不往仓库自带图目录里写
@@ -165,6 +218,7 @@ class BridgeStickerTests(Base):
         self.analyzed = []
         def analyzer(data, mime): self.analyzed.append(mime); return dict(GOOD)
         self.service.media.analyze_sticker = analyzer
+        self.service.media.vision_ready = lambda profile=None: True   # 模拟已配好识图（后台分析每张前会复核，Codex 复审 R5）
         self.service.analyze_soon = lambda background=True: BridgeService.analyze_soon(self.service, background=False)
     def tearDown(self): self.service.close(); super().tearDown()
 
@@ -283,7 +337,7 @@ class BridgeStickerTests(Base):
         class Pick(Model):
             def generate_reply_stream(self_, history, prompt, cancellation=None):
                 ids = re.findall(r'^(s\d+)｜', prompt, re.M); yield '收到'+(f'<sticker id="{ids[0]}"/>' if ids else '')
-        self.controller.llm_client = Pick()
+        self.controller.use_client(Pick())
         for _ in range(2):
             self.service.handle(dict(platform='qq', sender_id='10001', sender_name='爹', group_id='', text='好的',
                                      expression_version=1, bot_account_id='90009'))

@@ -5,16 +5,20 @@
 
 ## 安装
 
-在本任务工作树运行（只需首次联网下载）：
+在源码项目根目录运行下列命令，完成后重启应用。首次安装需要联网。
 
     .venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt
     .venv\Scripts\python.exe tools\install_aboutme_pet.py
 
-离线重装可加 --offline；需要已缓存的全部源 WebP。锁定清单
+使用 Windows 打包版时，也在源码项目根目录运行安装器，将 `--program-dir` 指向实际包含 `AICompanion.exe` 的目录，例如：
+
+    .\.venv\Scripts\python.exe tools\install_aboutme_pet.py --program-dir "D:\Apps\AICompanion"
+
+离线重装可加 `--offline`，需要已缓存的全部源 WebP。锁定清单
 tools/aboutme-pet.lock.json 记录源路径、尺寸、帧率、字节数和 SHA-256；
 下载后校验，缓存损坏直接报错。应用启动不联网、不自动下载。
-未安装时退回基线立绘。包、缓存、预览和回收区都被 Git 忽略，
-公开 PR 只含接入代码与文字记录，不包含第三方贴图。
+未安装时，鲸鲸显示占位形象。包、缓存、预览和回收区都被 Git 忽略，
+公开仓库记录动作清单与安装方法，第三方贴图由安装器从固定的上游提交取得。
 
 ## 归属与使用范围
 
@@ -38,5 +42,4 @@ Aboutme 的整理和动作资源、上游作者的贡献均应保留归属。
 不再把路线长度强行对齐猜测的半步周期。到达后使用现有短淡入衔接待机。
 源动画本身的质量与循环接缝不因打包而被保证。
 
-此前本任务的自绘与专用生成脚本已移入 output/recycle/aboutme-migration-2026-11-11，
-receipt.json 列出原路径；保留用户参考图、T5/T6 基线与协作者文件。
+此前运行使用的原创鲸娘素材见[美术归档说明](../art/README.md)。

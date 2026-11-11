@@ -8,13 +8,13 @@ import time
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication
 
-from aicompanion.ui.sprite_view import SpriteAvatar
+from aicompanion.ui.sprite_view import PlaceholderAvatar, SpriteAvatar
 from aicompanion.ui.animation_view import AnimationAvatar
 try:
     from aicompanion.body.rig_view import RigAvatar
 except ImportError:  # pragma: no cover
     RigAvatar = SpriteAvatar
-NATIVE = (SpriteAvatar, RigAvatar, AnimationAvatar)
+NATIVE = (SpriteAvatar, RigAvatar, AnimationAvatar, PlaceholderAvatar)
 
 
 def schedule_pet_smoke_check(window, database, output):
@@ -30,6 +30,16 @@ def schedule_pet_smoke_check(window, database, output):
     pet.show_activity = lambda kind='thinking': (state['activities'].append(kind), original_activity(kind))[1]
     rig = isinstance(pet.view, RigAvatar)
     animation = isinstance(pet.view, AnimationAvatar)
+    initial_view = pet.view
+    placeholder = isinstance(initial_view, PlaceholderAvatar)
+    pack = window.registry.pack(window.controller.character.id)
+    if pack and pack.renderer_kind == 'spritesheet':
+        installed = (pack.root/pack.renderer['animation']).is_file()
+        state['aboutme_installed'] = installed
+        state['expected_renderer'] = 'AnimationAvatar' if installed else 'PlaceholderAvatar'
+        state['expected_renderer_shown'] = (animation and pet.view.using_aboutme) if installed else placeholder
+    else:
+        state['expected_renderer_shown'] = not placeholder
     animation_frames=[]
     if animation:
         pet.view.frameAdvanced.connect(animation_frames.append)
@@ -42,6 +52,8 @@ def schedule_pet_smoke_check(window, database, output):
         pet.view.bridge.loaded.connect(lambda value: state.update(rig_loaded=value))
     offset = 2500 if rig else 0
     def later(ms, fn): QTimer.singleShot(ms+offset, fn)
+    # 计划书 v4 功能八：新库默认开着朗读（智能朗读）。记下后关掉，后面的检查不出声
+    state['speech_default_on'] = window.speak_toggle.isChecked() and window._speech_style() == 'smart'
     window.speech.enabled = False; window.speak_toggle.setChecked(False)
     window.hide()  # v2：聊天面板平时隐藏，角色独立常驻
 
@@ -52,7 +64,7 @@ def schedule_pet_smoke_check(window, database, output):
     def startup():
         state['pet_visible'] = pet.isVisible()
         state['chat_hidden'] = not window.isVisible()
-        state['native_sprites'] = isinstance(pet.view, NATIVE)
+        state['native_view'] = isinstance(pet.view, NATIVE)
         state['webengine_not_created'] = window.web_avatar is None
         state['always_on_top'] = bool(pet.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
         state['translucent'] = pet.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -129,18 +141,25 @@ def schedule_pet_smoke_check(window, database, output):
     later(17500, scale_and_hide)
     def appearance():
         if not animation: return
-        before=window.controller.character.id
-        pet.set_appearance('sprites')
-        state['animation_switch_to_original']=isinstance(pet.view,SpriteAvatar)
-        pet.set_appearance('spritesheet')
-        state['animation_switch_back']=isinstance(pet.view,AnimationAvatar) and window.controller.character.id==before
+        # 历史版本的关闭动画开关不能让已经安装的鲸鲸再次显示旧美术。
+        cid = window.controller.character.id
+        database.set_setting(f'pet_animation_enabled:{cid}', False)
+        window._apply_avatar()
+        state['legacy_setting_keeps_aboutme'] = isinstance(pet.view, AnimationAvatar) and pet.view.using_aboutme
+        database.set_setting(f'pet_animation_enabled:{cid}', True)
+        window._apply_avatar()
     later(18000,appearance)
 
     def switch_role():
-        window._switch_to('emilia')
-        state['switched_to_emilia'] = window.controller.character.id == 'emilia' and window.web_avatar is not None
+        # 切到一个用户自建的角色（没有形象包），再切回鲸娘
+        from aicompanion.domain.character import CharacterProfile
+        database.add_character(CharacterProfile('自检角色', '用于自检的临时角色', '简短回答。', 'smoke-other'))
+        window._switch_to('smoke-other')
+        state['switched_to_other'] = window.controller.character.id == 'smoke-other'
         window._switch_to('deepseek-whale')
-        state['switched_back'] = isinstance(pet.view, NATIVE) and window.controller.character.id == 'deepseek-whale'
+        if pet.view is not initial_view:
+            pet.view.poseShown.connect(record_pose)
+        state['switched_back'] = type(pet.view) is type(initial_view) and window.controller.character.id == 'deepseek-whale'
     later(18500, switch_role)
     def throw():
         # 从半空甩出去：应当经历下落并精确落在屏幕底边
@@ -191,15 +210,34 @@ def schedule_pet_smoke_check(window, database, output):
         from aicompanion.ui.bridge_page import BridgePage
         page = BridgePage(database); page.timer.stop()
         state['qq_media_settings_ready'] = (page.vision_enabled.isChecked() and page.memes_enabled.isChecked()
-                                            and page.chat_card_enabled.isChecked()
-                                            and page.vision_model.text() == 'deepseek-flash')
+                                            and page.chat_card_enabled.isChecked())
         page.deleteLater()
     later(21500, qq_media)
+
+    def ui_refresh():
+        # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与附件占位、分组设置窗口能逐页打开
+        from aicompanion.ui.settings_window import SettingsWindow
+        state['app_icon_ready'] = not window.windowIcon().isNull() and not window.tray.icon().isNull()
+        state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and not window.attach_button.isEnabled()
+                                         and window.speak_toggle.isCheckable())
+        dialog = SettingsWindow(window.controller, window.settings, window, page='models')
+        try:
+            state['settings_pages_ready'] = (dialog.nav.current() == 'models'
+                                             and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
+            # 计划书 v4 功能二：人格编辑器能载入当前人格
+            state['persona_ready'] = bool(dialog.persona_editor.current_id) and bool(dialog.persona_editor.description.toPlainText())
+            # 计划书 v4 功能三：心情卡能读出当前心情
+            state['mood_ready'] = bool(dialog.mood_card.summary.text())
+            if hasattr(dialog.library_page, 'analyzer') and dialog.library_page.analyzer is not None:
+                dialog.library_page.analyzer.wait(5000)
+        finally:
+            dialog.reject(); dialog.deleteLater()
+    later(21600, ui_refresh)
 
     def expression_start():
         import re
         from uuid import uuid4
-        original=window.controller.llm_client
+        original=window.controller.router
         class ExpressionModel:
             calls=0
             def generate_reply_stream(self,history,prompt,cancellation):
@@ -207,7 +245,7 @@ def schedule_pet_smoke_check(window, database, output):
                 handle=re.search(r'^(s\d+)｜',prompt,re.M).group(1)   # 本轮候选短编号
                 yield '<sticker id="'+handle+'"/>'
                 yield '【开心】好耶，表达自检完成！<挥手>'
-        model=ExpressionModel();window.controller.llm_client=model
+        model=ExpressionModel();window.controller.use_client(model)
         generation=uuid4().hex;window.coordinator.active=generation
         window._start(generation,query='合成的庆祝消息')
         # Codex 审计（ee541d0）：不再固定等 400ms。轮询到这一轮结束、表达决策到达最终阶段（或总超时）再检查，
@@ -246,7 +284,7 @@ def schedule_pet_smoke_check(window, database, output):
                 page.scan();page.worker.finished.connect(library_repeated)
                 window._load_history(); window.show()  # 可见窗口完成布局后再截图，避免离屏抓图使用旧几何。
             except Exception as error:
-                state['errors'].append('表达自检：'+repr(error)); window.controller.llm_client=original
+                state['errors'].append('表达自检：'+repr(error)); window.controller.router=original
                 QTimer.singleShot(300,after_expression); return
             def restored():
                 try:
@@ -255,7 +293,7 @@ def schedule_pet_smoke_check(window, database, output):
                     window.grab().save(str(output/'expression-panel.png')); window.hide()
                 finally:QTimer.singleShot(300,after_expression)
             QTimer.singleShot(200,restored)
-            window.controller.llm_client=original
+            window.controller.router=original
         QTimer.singleShot(100,poll)
     later(24200,expression_start)
     EXPRESSION_TIMEOUT = 8.0   # 秒；正常几百毫秒就到最终阶段
@@ -464,23 +502,24 @@ def schedule_pet_smoke_check(window, database, output):
         state['thinking_icon'] = 'thinking' in state['activities']
         state['forced_ok'] = all(state.get('forced', {}).get(p) == p for p in poses)
         state['remaining_workers'] = len(window.workers)+len(window.tasks)+len(window.speech.workers)
-        required = ['pet_visible', 'chat_hidden', 'native_sprites', 'webengine_not_created', 'always_on_top', 'translucent',
+        required = ['pet_visible', 'chat_hidden', 'expected_renderer_shown', 'native_view', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
-                    'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
+                    'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
         if animation:
-            required.extend(['animation_body_hit','animation_background_decode','animation_switch_to_original','animation_switch_back','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])
+            required.extend(['animation_body_hit','animation_background_decode','legacy_setting_keeps_aboutme','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])
             if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True
             required.append('animation_advances')
             state['animation_advances']=not state.get('failed_animation_frames',False)
 
         required.append('qq_media_settings_ready')
+        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
-        if state.get('center_alpha', 0) < 200: state['failed_checks'].append('center_alpha')
+        if state.get('center_alpha', 0) < (150 if placeholder else 200): state['failed_checks'].append('center_alpha')
         if state.get('pose_after_poke') != 'poked': state['failed_checks'].append('pose_after_poke')
         if state.get('pose_grabbed') != 'grabbed': state['failed_checks'].append('pose_grabbed')
         if rig and state.get('rig_loaded') != 'ready': state['failed_checks'].append('rig_loaded')

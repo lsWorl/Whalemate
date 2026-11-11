@@ -52,24 +52,19 @@ class FixtureClient:
 def main():
     parser=argparse.ArgumentParser(description='Offline GUI and audio smoke test.')
     parser.add_argument('--japanese',action='store_true')
-    parser.add_argument('--illustration',action='store_true')
     parser.add_argument('--experimental',action='store_true')
     args=parser.parse_args()
-    suffix='-actor' if args.experimental else '-japanese' if args.japanese or args.illustration else ''
+    suffix='-actor' if args.experimental else '-japanese' if args.japanese else ''
     app=QApplication([]); app.setQuitOnLastWindowClosed(False)
     temp=tempfile.TemporaryDirectory()
     db=Database(Path(temp.name)/'smoke.sqlite3'); db.initialize()
     db.set_setting('speech_style','full')   # 这个自检验证逐句朗读与字幕
-    settings=Settings('AICompanion',db.database_path,'mock','https://example.invalid','','mock',.8,10,
-        tts_provider='qwen',qwen_tts_voice='fixture',speech_language='ja' if args.japanese else 'zh',
-        avatar_preview='emilia' if args.illustration else '',character_preset='emilia')
+    settings=Settings('AICompanion',db.database_path,offline=True,
+        tts_provider='qwen',qwen_tts_voice='fixture',speech_language='ja' if args.japanese else 'zh')
     window=MainWindow(ChatController(db,MemoryService(db),MockLLMClient()),settings)
     fixture=FixtureClient(args.japanese,args.experimental); window.speech.client=fixture
     window.speak_toggle.setChecked(True); window.show()
-    state={'avatar_ready':False,'speaking':False,'mouth_peak':0,'errors':[],
-           'presentation':'illustration' if args.illustration else 'live2d','subtitles':[]}
-    expected_status='illustration-ready' if args.illustration else 'ready'
-    window.avatar.bridge.loaded.connect(lambda status:state.update(avatar_ready=status==expected_status))
+    state={'speaking':False,'mouth_peak':0,'errors':[],'subtitles':[]}
     window.speech.speaking.connect(lambda active:state.update(speaking=state['speaking'] or active))
     window.speech.mouth.connect(lambda value:state.update(mouth_peak=max(state['mouth_peak'],value)))
     window.speech.error.connect(lambda error:state['errors'].append(error))
@@ -100,7 +95,7 @@ def main():
         remaining_workers=len(window.speech.workers),languages=sorted(fixture.languages))
     # 夹具使用真实日语 WAV，但播放器字幕必须仍为中文原句。
     state['chinese_subtitles']=bool(state['subtitles']) and all(any('\u4e00'<=c<='\u9fff' for c in text) for text in state['subtitles'])
-    state['passed']=all([state['avatar_ready'],state['speaking'],state['mouth_peak']>0,
+    state['passed']=all([state['speaking'],state['mouth_peak']>0,
         state.get('prefetched_before_interrupt'),state.get('heard_before_interrupt'),state.get('stopped'),
         fixture.peak<=2,fixture.cancelled>=1,not window.speech.workers,not state['errors'],code==0,
         state['chinese_subtitles'],fixture.languages=={'ja' if args.japanese else 'zh'}])

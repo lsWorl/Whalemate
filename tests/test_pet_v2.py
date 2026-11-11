@@ -26,16 +26,21 @@ class CharacterPackTests(unittest.TestCase):
         self.assertEqual(errors, [])
         ids = [pack.id for pack in packs]
         self.assertEqual(ids[0], 'deepseek-whale')
-        self.assertIn('emilia', ids)
+        self.assertNotIn('emilia', ids)   # 爱蜜莉雅已删除（2026-11-11 负责人决定）
         self.assertFalse(next(p for p in packs if p.id == 'claude-reader').ready)
 
-    def test_whale_sprites_complete(self):
-        pack = load_pack(PACKS_DIR/'deepseek-whale')
-        data = load_sprite_manifest(pack.sprite_manifest_path())
-        for pose in ['idle', 'talking', 'thinking', 'working', 'celebrate', 'error', 'wait', 'sleepy', 'grabbed', 'poked']:
-            self.assertIn(pose, data['poses'])
-        self.assertIn('eyes_closed_mouth_closed', data['poses']['talking'])
-        self.assertIn('grab_point', data['poses']['grabbed'])
+    def test_custom_sprite_pack_reads_pose_variants(self):
+        # 验证通用立绘格式，不依赖鲸鲸已经归档的运行时贴图。
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'pose.png').touch()
+            poses = {pose: {'base': 'pose.png'} for pose in ('idle', 'thinking', 'talking', 'grabbed')}
+            poses['talking']['eyes_closed_mouth_closed'] = 'pose.png'
+            poses['grabbed']['grab_point'] = [0.5, 0.2]
+            manifest = root/'sprites.json'
+            manifest.write_text(json.dumps({'format': 'AICompanionSpritePack', 'version': 1,
+                                           'size': [100, 200], 'poses': poses}), encoding='utf-8')
+            self.assertEqual(load_sprite_manifest(manifest)['poses'], poses)
 
     def test_whale_has_lines_and_persona(self):
         pack = load_pack(PACKS_DIR/'deepseek-whale')
@@ -74,15 +79,12 @@ class CharacterPackTests(unittest.TestCase):
 class RendererChoiceTests(unittest.TestCase):
     def test_choices(self):
         from aicompanion.characters import choose_renderer
-        whale, emilia = load_pack(PACKS_DIR/'deepseek-whale'), load_pack(PACKS_DIR/'emilia')
-        self.assertEqual(choose_renderer(whale, None)[0], 'spritesheet')
-        self.assertEqual(choose_renderer(whale, 'live2d', '')[0], 'spritesheet')      # 旧默认值不再指向 Haru
+        whale = load_pack(PACKS_DIR/'deepseek-whale')
+        self.assertEqual(whale.name, '鲸鲸')
         self.assertEqual(choose_renderer(whale, 'live2d', 'x.model3.json'), ('cubism', 'x.model3.json'))
-        kind, path = choose_renderer(emilia, None)
-        self.assertEqual(kind, 'mesh'); self.assertTrue(path.is_file())
-        self.assertEqual(choose_renderer(emilia, 'animated-illustration')[0], 'mesh')
-        self.assertTrue(choose_renderer(None, 'illustration')[1].is_file())
         self.assertEqual(choose_renderer(None, 'live2d', ''), ('placeholder', None))
+        # 爱蜜莉雅已删除：旧的立绘显示模式不再有效，没有形象包的角色显示占位
+        self.assertEqual(choose_renderer(None, 'animated-illustration'), ('placeholder', None))
 
     def test_no_haru_references_left(self):
         root = PACKS_DIR.parent
@@ -109,33 +111,32 @@ class RegistryTests(unittest.TestCase):
 
     def test_user_choice_survives_restart(self):
         CharacterRegistry(self.database, settings()).sync()
-        self.database.set_setting(ACTIVE_KEY, 'emilia')
+        from aicompanion.domain.character import CharacterProfile
+        self.database.add_character(CharacterProfile('自建角色', '用户自己写的设定', '简短', 'custom-1'))
+        self.database.set_setting(ACTIVE_KEY, 'custom-1')
         registry = CharacterRegistry(self.database, settings()); registry.sync()
-        self.assertEqual(registry.active().id, 'emilia')
+        self.assertEqual(registry.active().id, 'custom-1')
+
+    def test_placeholder_is_replaced_by_pack_persona_once(self):
+        # 数据库初始化写的是占位角色（与鲸娘同 ID）；同步后换成角色包的名字和人设，用户改过的不再覆盖
+        registry = CharacterRegistry(self.database, settings()); registry.sync()
+        whale = next(c for c in self.database.characters() if c.id == 'deepseek-whale')
+        self.assertEqual(whale.description, registry.pack('deepseek-whale').persona['description'])
+        from dataclasses import replace
+        self.database.update_character(replace(whale, description='我自己写的'))
+        CharacterRegistry(self.database, settings()).sync()
+        self.assertEqual(next(c for c in self.database.characters() if c.id == 'deepseek-whale').description, '我自己写的')
 
     def test_user_edits_and_history_are_kept(self):
         registry = CharacterRegistry(self.database, settings()); registry.sync()
         whale = next(c for c in self.database.characters() if c.id == 'deepseek-whale')
         from dataclasses import replace
         self.database.update_character(replace(whale, name='小鲸'))
-        self.database.add_message('user', 'hello', 'emilia')
+        self.database.add_message('user', 'hello', 'deepseek-whale')
         CharacterRegistry(self.database, settings()).sync()
         self.assertEqual(next(c for c in self.database.characters() if c.id == 'deepseek-whale').name, '小鲸')
-        self.assertEqual(self.database.recent_messages(5, 'emilia')[0]['content'], 'hello')
+        self.assertEqual(self.database.recent_messages(5, 'deepseek-whale')[0]['content'], 'hello')
 
-    def test_client_resolution(self):
-        default = object()
-        registry = CharacterRegistry(self.database, settings(), environ={})
-        client, label = registry.client_for('deepseek-whale', default)
-        self.assertIs(client, default); self.assertIn('DeepSeek', label)
-        client, label = registry.client_for('chatgpt-dragon', default)
-        self.assertIs(client, default); self.assertIn('未配置', label)
-        registry = CharacterRegistry(self.database, settings(), environ={'OPENAI_API_KEY': 'k', 'OPENAI_MODEL': 'm'})
-        client, label = registry.client_for('chatgpt-dragon', default)
-        self.assertIsNot(client, default); self.assertEqual(client.model, 'm')
-        self.assertIs(registry.client_for('chatgpt-dragon', default)[0], client)
-        mock = CharacterRegistry(self.database, settings(llm_provider='mock'), environ={'OPENAI_API_KEY': 'k', 'OPENAI_MODEL': 'm'})
-        self.assertIs(mock.client_for('chatgpt-dragon', default)[0], default)
 
 
 class StateMachineTests(unittest.TestCase):

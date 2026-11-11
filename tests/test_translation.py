@@ -11,7 +11,7 @@ from aicompanion.speech.translation import JapaneseSpeechTranslator
 
 class TranslationTests(unittest.TestCase):
     def setUp(self):
-        self.settings = SimpleNamespace(llm_provider='mock')
+        self.settings = SimpleNamespace(offline=True)
         self.client = Mock()
         self.client.generate_reply_stream.return_value = ['おかえり。', 'ゆっくり話してね。']
         self.translator = JapaneseSpeechTranslator(self.settings, self.client)
@@ -81,7 +81,7 @@ class TranslationTests(unittest.TestCase):
 
 class SpeechLanguageTests(unittest.TestCase):
     def setUp(self):
-        self.client = SpeechClient(SimpleNamespace(llm_provider='mock'))
+        self.client = SpeechClient(SimpleNamespace(offline=True))
         self.client.translator = Mock()
         self.client.translator.translate.return_value = 'おかえり。'
         self.client.qwen = Mock()

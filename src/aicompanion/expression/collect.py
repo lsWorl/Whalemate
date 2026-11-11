@@ -28,6 +28,25 @@ ANALYSIS_DAILY = 100
 MAX_ATTEMPTS = 2
 EXT = {'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp'}
 ANALYZING = threading.Lock()
+# 正在识图的素材（本进程内所有入口共享：图库页的每个 worker、QQ 服务的后台分析）。
+# Codex 审计 PR #31 R3：关掉设置再打开、或 QQ 和图库同时跑时，同一张图不能交给模型两次、扣两次额度。
+_CLAIM_LOCK = threading.Lock()
+_CLAIMED: set[str] = set()
+
+
+def claim(asset_id: str) -> bool:
+    """领取一张图的识图任务；别的入口正在识别这张时返回 False。"""
+    with _CLAIM_LOCK:
+        if asset_id in _CLAIMED: return False
+        _CLAIMED.add(asset_id); return True
+
+
+def release(asset_id: str) -> None:
+    with _CLAIM_LOCK: _CLAIMED.discard(asset_id)
+
+
+def claimed() -> set[str]:
+    with _CLAIM_LOCK: return set(_CLAIMED)
 
 
 def source_tag(scope: str) -> str:
@@ -100,26 +119,57 @@ class StickerCollector:
         return {'status': 'collected', 'asset_id': asset_id, 'meaning': '', 'sha256': digest}
 
     # ---- 分析 ---------------------------------------------------------------------------
-    def pending(self, limit: int = 5) -> list[str]:
+    def pending(self, limit: int = 5, collected: bool | None = None) -> list[str]:
+        """排队等识别含义、现在就能识别的图：收集来的，以及用户图库里没写含义的（负责人 2026-11-11：含义不让用户手填）。
+        collected=None 两种都要；收集关掉时只取图库自己的图。
+        许可待确认或停用的图先留在队列里不取（Codex 审计 PR #31 R4）：不交给模型、不扣额度、不算失败，
+        确认来源 / 重新启用后自然轮到。别的入口正在识别的图也跳过（R3）。"""
+        if collected is None and not self.enabled(): collected = False
+        where = '' if collected is None else (" AND json_extract(metadata,'$.collected')=1" if collected
+                                              else " AND COALESCE(json_extract(metadata,'$.collected'),0)=0")
+        busy = claimed()
         with self.db.transaction() as c:
-            rows = c.execute("""SELECT asset_id FROM expression_assets WHERE json_extract(metadata,'$.collected')=1
-                 AND json_extract(metadata,'$.analysis')='pending' ORDER BY imported_at LIMIT ?""", (limit,)).fetchall()
-        return [r['asset_id'] for r in rows]
+            rows = c.execute("SELECT asset_id FROM expression_assets WHERE json_extract(metadata,'$.analysis')='pending'"
+                             " AND review_status='approved' AND enabled=1"
+                             + where + ' ORDER BY imported_at LIMIT ?', (limit+len(busy),)).fetchall()
+        return [r['asset_id'] for r in rows if r['asset_id'] not in busy][:limit]
+
+    LAST_KEY = 'sticker_analysis_last'   # 最近一批识别的结果和停下的原因（图库页显示；不含图片内容和接口报错正文）
+
+    def analysis_count_today(self) -> int:
+        return int(self.db.get_setting(f'sticker_analysis_count:{self.today().isoformat()}', 0) or 0)
 
     def analyze_pending(self, analyzer, limit: int = 5, alive=None) -> int:
         """分析排队的图（后台线程调用）。analyzer(data, mime) → dict 或 None（失败）。每张先预留当天额度，额度用完就停。
-        alive()：每张开始前再确认一次能不能继续（服务关闭、收集 / 识图被关掉就停，不再把图交给视觉模型）。"""
-        done = 0
+        alive()：每张开始前再确认一次能不能继续（服务关闭、收集 / 识图被关掉、金额额度到限就停，不再把图交给视觉模型）。
+        只有真的把图交给模型、模型没给出结果才算一次失败；本地暂时不能处理的（许可待确认、停用、别处在识别）
+        原样留在队列里，不扣次数（R4）。
+        结果写进 self.last 和设置 LAST_KEY：识别成功几张、失败几张、为什么停下——实机反馈“一直识别含义中”时
+        原来什么都看不到（2026-11-11），现在图库页直接显示原因。"""
+        done = ok = failed = 0; stop = ''
         for asset_id in self.pending(limit):
-            if alive is not None and not alive(): break
-            if not self.enabled(): break
-            if not self.db.reserve_daily(f'sticker_analysis_count:{self.today().isoformat()}', self.analysis_daily()): break
-            media = self.catalog.resolve(asset_id)
-            result = None
-            if media is not None:
+            if alive is not None and not alive(): stop = 'stopped'; break
+            if not claim(asset_id): continue   # 别的入口刚领走
+            try:
+                row = self.catalog.get(asset_id)
+                if row is None or row['metadata'].get('analysis') != 'pending': continue
+                if row['review_status'] != 'approved' or not row['enabled']: continue   # 期间被停用 / 撤销审核：留着
+                if row['metadata'].get('collected') and not self.enabled(): continue   # 收集关掉后不再把收集来的图交给识图
+                media = self.catalog.resolve(asset_id)
+                if media is None:   # 文件不见了或内容变了：没调用模型，不扣当天额度，只记一次失败
+                    self._apply(asset_id, None); done += 1; failed += 1; continue
+                if not self.db.reserve_daily(f'sticker_analysis_count:{self.today().isoformat()}', self.analysis_daily()):
+                    stop = 'daily_limit'; break
                 try: result = analyzer(*media)
                 except Exception: result = None
-            self._apply(asset_id, result); done += 1
+                self._apply(asset_id, result); done += 1
+                if isinstance(result, dict): ok += 1
+                else: failed += 1
+            finally:
+                release(asset_id)
+        self.last = dict(at=round(self.clock()), done=done, ok=ok, failed=failed, stop=stop)
+        try: self.db.set_setting(self.LAST_KEY, self.last)
+        except Exception: pass
         return done
 
     def _apply(self, asset_id: str, result) -> None:
@@ -145,7 +195,9 @@ class StickerCollector:
                     metadata['image_text'] = str(result.get('text') or '')[:40]
                     metadata['annotation_defaults'] = []
                 if not suitable:
-                    metadata['unsuitable_reason'] = str(result.get('reason') or '')[:40]; enabled = 0
+                    metadata['unsuitable_reason'] = str(result.get('reason') or '')[:40]
+                    # 收集来的图不适合就停用；用户自己放进图库的图只记下原因，用不用由用户决定
+                    if metadata.get('collected'): enabled = 0
             c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?', (json.dumps(metadata, ensure_ascii=False), asset_id))
             if enabled is not None: c.execute('UPDATE expression_assets SET enabled=? WHERE asset_id=?', (enabled, asset_id))
         self.db.locked(write)

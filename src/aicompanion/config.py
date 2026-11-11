@@ -4,7 +4,6 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -20,12 +19,9 @@ class Settings:
 
     app_name: str
     database_path: Path
-    llm_provider: str
-    llm_base_url: str
-    llm_api_key: str
-    llm_model: str
-    llm_temperature: float
-    llm_timeout_seconds: int
+    # 聊天、识图、搜索、办事用哪个模型由设置页的模型配置决定（计划书 v4 功能一），不再从 .env 读 LLM_*。
+    # offline=True 时一律用离线模拟模型（发布自检、AICOMPANION_OFFLINE=1）。
+    offline: bool = False
     speech_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     speech_api_key: str = ""
     asr_model: str = "glm-asr-2512"
@@ -36,8 +32,6 @@ class Settings:
     qwen_tts_model: str = "qwen-audio-3.0-tts-flash"
     qwen_tts_voice: str = "longanlingxi"
     speech_language: str = "zh"
-    avatar_preview: str = ""
-    character_preset: str = ""
     qwen_original_tts_voice: str = ""
     asr_provider: str = "zhipu"  # 识别服务独立选择，保持旧版本默认行为。
     qwen_asr_model: str = "qwen-audio-3.0-asr-flash"  # 千问识别模型不复用合成模型名。
@@ -76,25 +70,14 @@ def load_settings() -> Settings:
     if not paths.get('memory_root') and not os.getenv('DATABASE_PATH') and getattr(sys, 'frozen', False):
         legacy = Path(os.getenv('LOCALAPPDATA', str(project_root)))/'AICompanion'/'data'/DATABASE_NAME
         if legacy.is_file() and legacy.resolve() != database_path.resolve(): migration_source = legacy
-    llm_base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").strip()
     speech_base_url = os.getenv("SPEECH_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/")
-    speech_api_key = os.getenv("SPEECH_API_KEY")
-    if speech_api_key is None:
-        # 仅同一服务主机允许复用密钥，避免切换聊天供应商后把密钥发给另一家。
-        llm_host = urlsplit(llm_base_url).hostname
-        speech_host = urlsplit(speech_base_url).hostname
-        speech_api_key = os.getenv("LLM_API_KEY", "") if llm_host and llm_host == speech_host else ""
     return Settings(
         app_name=os.getenv("APP_NAME", "AICompanion"),
         database_path=database_path,
-        llm_provider=os.getenv("LLM_PROVIDER", "mock").strip().lower(),
-        llm_base_url=llm_base_url,
-        llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
-        llm_model=os.getenv("LLM_MODEL", "gpt-4o-mini").strip(),
-        llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.8")),
-        llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
+        offline=os.getenv("AICOMPANION_OFFLINE", "").strip() in ("1", "true", "yes"),
         speech_base_url=speech_base_url,
-        speech_api_key=speech_api_key.strip(),
+        # 语音 Key 独立填写，不再按主机名借用聊天 Key（硬底线：凭据不串）
+        speech_api_key=os.getenv("SPEECH_API_KEY", "").strip(),
         asr_model=os.getenv("ASR_MODEL", "glm-asr-2512"),
         tts_model=os.getenv("TTS_MODEL", "glm-tts"),
         tts_provider=os.getenv("TTS_PROVIDER", "system").strip(),
@@ -103,8 +86,6 @@ def load_settings() -> Settings:
         qwen_tts_model=os.getenv("QWEN_TTS_MODEL", "qwen-audio-3.0-tts-flash").strip(),
         qwen_tts_voice=os.getenv("QWEN_TTS_VOICE", "longanlingxi").strip(),
         speech_language=os.getenv("SPEECH_LANGUAGE", "zh").strip(),
-        avatar_preview=os.getenv("AVATAR_PREVIEW", "").strip(),
-        character_preset=os.getenv("CHARACTER_PRESET", "").strip(),
         qwen_original_tts_voice=os.getenv("QWEN_ORIGINAL_TTS_VOICE", "").strip(),
         asr_provider=os.getenv("ASR_PROVIDER", "zhipu").strip().lower(),
         qwen_asr_model=os.getenv("QWEN_ASR_MODEL", "qwen-audio-3.0-asr-flash").strip(),

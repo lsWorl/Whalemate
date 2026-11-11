@@ -1,5 +1,17 @@
 # Live2D 模型来源与桌宠接入
 
+## Live2D Cubism Core 不随项目分发（2026-11-12）
+
+`live2dcubismcore.min.js` 适用 Live2D Proprietary Software License，已从仓库和打包版本中移除。
+只有导入外部 Live2D 模型时才需要 Core。默认角色鲸鲸使用本机安装的 [Aboutme 帧动画](aboutme-pet.md)，尚未安装时显示占位形象。
+
+- **源码运行**：在项目目录执行 `.venv\Scripts\python.exe tools\fetch_avatar.py`，从 Live2D 官网下载 Cubism SDK for Web 并取出 Core，放到 `src/aicompanion/assets/live2d/vendor/`。这个文件已列入 `.gitignore`，不会被提交。
+- **打包版本**：从 Live2D 官网下载 Cubism SDK for Web，把 `Core/live2dcubismcore.min.js` 放到程序目录的 `_internal/aicompanion/assets/live2d/vendor/`。
+- 缺少 Core 时，设置里导入模型会直接提示获取方法；已经选了外部模型的角色启动时退回自带形象，并在状态栏提示一次。
+- `tools/build_windows.py` 默认从构建结果里删掉 Core。`--keep-cubism-core` 只供自己电脑使用：能导入任意模型的应用带着 Core 对外分发，可能属于 Live2D 的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门协议。
+
+以下是历史记录。
+
 核查日期：2026-10-24。
 
 ## 当前可运行模型

@@ -11,7 +11,7 @@ from pathlib import Path
 
 PACKS_DIR = Path(__file__).resolve().parent
 LIVE2D_ASSETS = PACKS_DIR.parent/'assets/live2d'
-RENDERERS = {'sprites', 'webengine', 'none'}
+RENDERERS = {'spritesheet', 'sprites', 'none'}
 REQUIRED_POSES = ('idle', 'talking', 'thinking')
 
 
@@ -34,10 +34,10 @@ class CharacterPack:
     order: int = 100
     theme: str = ''
     renderer: dict = field(default_factory=dict)
-    provider: dict = field(default_factory=dict)
     voice: dict = field(default_factory=dict)
     persona: dict | None = None
     lines: dict = field(default_factory=dict)
+    previous_names: tuple = ()   # 包以前用过的名字：用户没改过名时，启动时换成新名字（只换一次）
 
     @property
     def ready(self) -> bool:
@@ -53,9 +53,6 @@ class CharacterPack:
 
     def sprite_manifest_path(self) -> Path:
         return self.root/_safe_name(self.renderer.get('path', ''), '立绘配置')
-
-    def webengine_asset(self) -> Path:
-        return LIVE2D_ASSETS/_safe_name(self.renderer.get('asset', ''), '网页渲染素材')
 
     def line(self, key: str, rng: random.Random | None = None, avoid: str = '') -> str:
         """取一句台词；尽量不与上一句重复。没有该类台词时返回空串。"""
@@ -94,7 +91,8 @@ def load_pack(directory: Path) -> CharacterPack:
         if not isinstance(lines, dict): raise CharacterPackError(f'{lines_path} 必须是对象。')
     return CharacterPack(id=pack_id, name=name.strip(), root=Path(directory).resolve(), status=data.get('status', 'ready'),
         order=int(data.get('order', 100)), theme=data.get('theme', ''), renderer=renderer,
-        provider=data.get('provider') or {}, voice=data.get('voice') or {}, persona=persona, lines=lines)
+        voice=data.get('voice') or {}, persona=persona, lines=lines,
+        previous_names=tuple(n.strip() for n in data.get('previous_names') or [] if isinstance(n, str) and n.strip()))
 
 
 def discover(root: Path = PACKS_DIR) -> tuple[list[CharacterPack], list[str]]:
@@ -105,6 +103,8 @@ def discover(root: Path = PACKS_DIR) -> tuple[list[CharacterPack], list[str]]:
         try:
             pack = load_pack(directory)
             if pack.ready and pack.renderer_kind == 'sprites': load_sprite_manifest(pack.sprite_manifest_path())
+            if pack.renderer_kind == 'spritesheet':
+                _safe_name(pack.renderer.get('animation'), '动画清单')
             packs.append(pack)
         except CharacterPackError as error:
             errors.append(str(error))
@@ -139,20 +139,20 @@ def load_sprite_manifest(path: Path) -> dict:
 
 
 def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '', *, animation_enabled: bool = True) -> tuple[str, Path | str | None]:
-    """决定角色用哪种方式显示，返回 (方式, 资源)。
-
-    方式：'spritesheet'（透明逐帧动画）、'sprites'（原生立绘）、'mesh'（艾米莉娅网格动画）、'png'（静态立绘预览）、
-    'cubism'（用户导入的 Live2D 模型）、'placeholder'（无可用形象）。
-    """
-    if avatar_mode == 'live2d' and model_path: return 'cubism', model_path
-    if avatar_mode == 'animated-illustration': return 'mesh', LIVE2D_ASSETS/'Emilia/emilia.animation.json'
-    if avatar_mode == 'illustration': return 'png', LIVE2D_ASSETS/'Emilia/emilia-fanart.png'
-    if pack and pack.ready and pack.renderer_kind == 'sprites':
-        animation = pack.renderer.get('animation')
-        if (animation and animation_enabled and (not pack.renderer.get('animation_optional')
-                or (pack.root/_safe_name(animation, '动画清单')).is_file())):
-            return 'spritesheet', pack.root/_safe_name(animation, '动画清单')
-        return 'sprites', pack.sprite_manifest_path()
-    if pack and pack.ready and pack.renderer_kind == 'webengine': return 'mesh', pack.webengine_asset()
-    if model_path: return 'cubism', model_path
+    """外部模型由用户显式选择。缺少选装动画时保留角色，仍可聊天和设置。"""
+    if avatar_mode == 'live2d' and model_path:
+        return 'cubism', model_path
+    if pack and pack.ready:
+        if pack.renderer_kind in ('spritesheet', 'sprites') and animation_enabled:
+            animation = pack.renderer.get('animation')
+            if animation:
+                manifest = pack.root / _safe_name(animation, '动画清单')
+                if manifest.is_file():
+                    return 'spritesheet', manifest
+        if pack.renderer_kind == 'sprites':
+            return 'sprites', pack.sprite_manifest_path()
+        if pack.renderer_kind == 'spritesheet':
+            return 'placeholder', None
+    if model_path:
+        return 'cubism', model_path
     return 'placeholder', None
