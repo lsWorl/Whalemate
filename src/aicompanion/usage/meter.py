@@ -12,7 +12,7 @@ import json
 import threading
 
 PURPOSES = {
-    'companion': '陪伴聊天', 'agent': '干活', 'memory': '记忆整理', 'purpose': '心事', 'voice': '语音翻译',
+    'companion': '陪伴聊天', 'agent': '干活', 'memory': '记忆整理', 'purpose': '心事', 'life': '自己的生活', 'voice': '语音翻译',
     'qq': 'QQ', 'bili': 'B站',
 }
 # 默认价目（元 / 百万词元）。各家会调价，请在设置里按官网更新。

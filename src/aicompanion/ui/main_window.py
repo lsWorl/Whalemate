@@ -73,7 +73,9 @@ class MainWindow(QMainWindow):
         # P3：记忆整理器（衰减 / 遗忘 / 互动事件）与目的机制（心里惦记的事 → 主动开口）
         self.organizer=MemoryOrganizer(self.database); self.purposes=PurposeEngine(self.database)
         from aicompanion.brain.scheduler import ProactiveScheduler
-        self.outreach_scheduler=ProactiveScheduler(self.database,self.purposes,self.proactive)
+        from aicompanion.brain.life import LifeService
+        self.life=LifeService(self.database); self.life_worker=None   # 功能四：她自己的生活（按兴趣去看点东西，值得说的来分享）
+        self.outreach_scheduler=ProactiveScheduler(self.database,self.purposes,self.proactive,life=self.life)
         self.purpose_ids={}; self.purpose_worker=None; self.scheduler_ticks=0; self.outreaches={}
         # P5：词元按用途记账、每日额度；干活（agent）会话
         meter.set_recorder(meter.database_recorder(self.database)); self.quota=meter.Quota(self.database)
@@ -706,6 +708,7 @@ class MainWindow(QMainWindow):
         if worker==self.asr_worker: self.asr_worker=None
         if worker==self.memory_worker: self.memory_worker=None
         if worker==self.purpose_worker: self.purpose_worker=None
+        if worker==getattr(self,'life_worker',None): self.life_worker=None
         worker.deleteLater(); self._finish_exit_if_ready()
         if self.call_active and not self.asr_worker and self.asr_queue:
             pcm,rate=self.asr_queue.popleft(); self._start_recognition(pcm,rate)
@@ -721,6 +724,7 @@ class MainWindow(QMainWindow):
         if 'aicompanion.voice.local_asr' in sys.modules: sys.modules['aicompanion.voice.local_asr'].release_if_idle()
         if self.scheduler_ticks%10==1: self._organize_memory()
         self._maybe_generate_purposes()
+        self._maybe_live()
         if self.closing or self.call_active or self.workers or self.coordinator.pending or self.speech.busy: return
         if is_focused(self.database): return   # 专注模式：不主动搭话
         if self.quota.check_silent('companion')=='stop': return
@@ -771,6 +775,19 @@ class MainWindow(QMainWindow):
         if not router.ready('chat',character_id): return None,''
         client,resolved=router.client('chat',character_id,'translation')
         return client,f'{character_id}|{resolved.model_id}|{resolved.config_revision}|{resolved.credential_revision}'
+
+    def _maybe_live(self):
+        """空闲时按兴趣去看点东西（后台线程，不挡界面）。没配模型或额度用完：照样去看，但不调模型、只记一句（大多不会拿来说）。"""
+        character=self.controller.character
+        if self.life_worker or self.closing or self.call_active or not self.life.should_start(character.id): return
+        search=self.controller.search_factory(character.id)()
+        client=None
+        if self.controller.router.ready('chat',character.id) and self.quota.check_silent('life')!='stop':
+            client=self.controller.client(character.id,'life')
+        worker=TaskWorker(lambda token:self.life.run(character.id,search,client,token,character.name),self)
+        self.life_worker=worker; self.tasks.add(worker)
+        worker.failed.connect(lambda error:None)
+        worker.finished.connect(lambda w=worker:self._task_finished(w)); worker.start()
 
     def _maybe_generate_purposes(self):
         character_id=self.controller.character.id

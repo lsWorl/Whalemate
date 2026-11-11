@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 13  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录
+SCHEMA_VERSION = 14  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -212,4 +212,13 @@ CREATE TABLE IF NOT EXISTS outreach_log (
  sent_at REAL NOT NULL, settled_at REAL
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
+-- v14 计划书 v4 功能四 有自己的生活：她按兴趣去看的东西。必须有真实来源（标题、链接、摘录），没做完的不算做过
+CREATE TABLE IF NOT EXISTS activities (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'read', interest TEXT NOT NULL,
+ query TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'doing', title TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',
+ site TEXT NOT NULL DEFAULT '', excerpt TEXT NOT NULL DEFAULT '', thought TEXT NOT NULL DEFAULT '', opener TEXT NOT NULL DEFAULT '',
+ worth REAL NOT NULL DEFAULT 0, started_at REAL NOT NULL, finished_at REAL, shared_at REAL, response TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_activities ON activities(character_id, status, finished_at);
 """
+

@@ -10,7 +10,7 @@
 - 上一句他还没回：不开新话题。过一会儿（45～90 分钟）他在电脑前却没理，可能撒娇追一句，也可能自己算了；
   一个话题最多追一次；3 小时还没回就当他没空，记一点点委屈（持续情绪里的“被冷落”，力度很小），之后可以聊别的。
 - 他回了（主动消息之后他说了话）就算接上了。
-- 先后：今天是特别的日子而他还没来 → 心里惦记的事 → 早晚问候 / 闲聊。
+- 先后：今天是特别的日子而他还没来 → 心里惦记的事 → 她自己看到的有意思的事（功能四，brain/life.py）→ 早晚问候 / 闲聊。
 
 记录在 outreach_log：每次主动开口一条，渠道（桌面 / QQ）、状态（sent / answered / followed / let_go / ignored）。
 """
@@ -42,8 +42,8 @@ class Outreach:
 
 
 class ProactiveScheduler:
-    def __init__(self, database, purposes=None, greetings=None, clock=time.time, rng=random.random):
-        self.db, self.purposes, self.greetings = database, purposes, greetings
+    def __init__(self, database, purposes=None, greetings=None, clock=time.time, rng=random.random, life=None):
+        self.db, self.purposes, self.greetings, self.life = database, purposes, greetings, life
         self.clock, self.rng = clock, rng
 
     # ---- 设置 --------------------------------------------------------------------------------
@@ -69,7 +69,9 @@ class ProactiveScheduler:
             if parent: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
             return c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
                              (character_id, outreach.source, outreach.key, channel, 'sent', parent, now)).lastrowid
-        return self.db.locked(work)
+        outreach_id = self.db.locked(work)
+        if outreach.source == 'share' and self.life is not None: self.life.shared(outreach.payload['activity']['id'])
+        return outreach_id
 
     def today_count(self, character_id: str) -> int:
         start = datetime.fromtimestamp(self.clock()).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
@@ -94,15 +96,28 @@ class ProactiveScheduler:
         for row in waiting:
             if self._user_spoke_since(character_id, row['sent_at']):
                 self._set(row['id'], 'answered', now)
+                self._shared_reply(character_id, row, 'answered')
             elif now-row['sent_at'] >= GIVE_UP_SECONDS:
                 self._set(row['id'], 'ignored', now)
                 # 一件事只记一次小委屈：记在最早那条上（追问那句没回不再另记）
                 if row['parent_id']: continue
+                self._shared_reply(character_id, row, 'ignored')
                 try:
                     from aicompanion.services.mood_service import MoodService
                     MoodService(self.db, clock=self.clock).event(character_id, 'ignored', reason='主动找他说话没回', scale=0.4)
                 except Exception:
                     pass
+
+    def _shared_reply(self, character_id, row, response) -> None:
+        """分享的那件事有没有被接住：记到活动上；接住了她开心一点（功能四：你回了以后更新她的心情和这段话题的状态）。"""
+        if row['source'] != 'share' or self.life is None: return
+        try:
+            self.life.answered(int(str(row['key']).split(':', 1)[1]), response)
+            if response == 'answered':
+                from aicompanion.services.mood_service import MoodService
+                MoodService(self.db, clock=self.clock).event(character_id, 'praised', reason='分享的事他接住了', scale=0.4)
+        except Exception:
+            pass
 
     def _set(self, outreach_id: int, status: str, now: float) -> None:
         with self.db.transaction() as c:
@@ -124,7 +139,7 @@ class ProactiveScheduler:
             since = last['settled_at'] if last['status'] in ('let_go', 'ignored') and last['settled_at'] else last['sent_at']
             if now_ts-since < self.gap_seconds(character_id): return None
         return (self._date(character_id, now) or self._purpose(character_id, system_idle, seconds_since_user)
-                or self._greeting(character_id, seconds_since_user))
+                or self._share(character_id, system_idle) or self._greeting(character_id, seconds_since_user))
 
     def _follow_up(self, character_id, last, now_ts, system_idle) -> Outreach | None:
         if last['source'] == 'follow' or last['parent_id']: return None             # 追问过了就不再追
@@ -169,6 +184,13 @@ class ProactiveScheduler:
         row = self.purposes.due(character_id, system_idle, seconds_since_user)
         if not row: return None
         return Outreach('purpose', f"purpose:{row['id']}", self.purposes.intent(row), {'purpose': row})
+
+    def _share(self, character_id, system_idle) -> Outreach | None:
+        """她自己看到的有意思的事（功能四）。他在电脑前时才来说，不然说了也是对着空屋子。"""
+        if self.life is None or system_idle >= PRESENT_SECONDS: return None
+        row = self.life.shareable(character_id)
+        if row is None: return None
+        return Outreach('share', f"share:{row['id']}", self.life.intent(row), {'activity': dict(row)})
 
     def _greeting(self, character_id, seconds_since_user) -> Outreach | None:
         if self.greetings is None: return None

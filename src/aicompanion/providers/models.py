@@ -18,7 +18,7 @@ CAPABILITIES = ('chat', 'vision', 'search', 'agent', 'tts')
 # 用途：同一个模型在不同用途下用不同的思考策略和输出额度。
 # 聊天追求快；识图、表情分析、后台 JSON 分析要保证正文不被推理吃光。
 PURPOSE_KIND = {
-    'companion': 'chat', 'qq': 'chat', 'voice': 'chat', 'proactive': 'chat', 'purpose': 'analysis',
+    'companion': 'chat', 'qq': 'chat', 'voice': 'chat', 'proactive': 'chat', 'purpose': 'analysis', 'life': 'analysis',
     'memory': 'analysis', 'relationship': 'analysis', 'community': 'analysis', 'translation': 'analysis',
     'vision': 'vision', 'avatar': 'vision', 'sticker': 'vision',
 }
