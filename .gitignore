@@ -64,3 +64,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Aboutme 第三方贴图只安装到本机，不随 PR 分发。
+/src/aicompanion/characters/deepseek-whale/animation-aboutme/

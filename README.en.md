@@ -24,8 +24,7 @@
 
 ---
 
-Whalemate (鲸伴, "whale companion") is an AI companion that lives on your Windows desktop. Her default character is
-"Dafeiyu" (大肥鱼, "big fat fish"), a fan-made girl based on the DeepSeek whale. She moves around your desktop, remembers
+Whalemate (鲸伴, "whale companion") is an AI companion that lives on your Windows desktop. The default character, Jingjing (鲸鲸), uses the locally installed Aboutme Dafeiyu (大肥鱼) animations when available. Otherwise, she appears in the project’s own artwork inspired by the DeepSeek whale. She moves around your desktop, remembers
 what you've talked about, answers in her own voice, gets a little moody, and actually does the tasks you hand her.
 
 Unlike a typical chat client, Whalemate cares about *who she is*: **switch the model and she is still herself.**
@@ -37,15 +36,11 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 > what is still on the roadmap. The real status of each feature is tracked in
 > [docs/implementation_status.md](docs/implementation_status.md) (Chinese).
 
-<div align="center">
-<img src="art/deepseek-whale/approved-poses-preview.png" width="720" alt="Dafeiyu's ten poses">
-</div>
-
 ## ✨ Features
 
 ### 🐋 Desktop character
 - A transparent, frameless desktop pet. Only her own pixels catch the mouse: click to poke, drag to pick her up, double-click for quick input.
-- Layered mesh-and-bone animation with ten states (idle, talking, thinking, working, sleepy, celebrating, …). She steps aside when a fullscreen app is in front.
+- With the Aboutme animations installed locally, Jingjing can wave, stretch, drink milk tea and walk across the desktop. She steps aside when a fullscreen app is in front.
 - Characters are organised as *character packs* (persona, lines, model binding, art). Standard Live2D Cubism 3/4 models can also be imported (you need to download Live2D Cubism Core yourself; see "Optional components").
 
 ### 💬 Chat and expression
@@ -101,7 +96,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-She appears straight on your desktop. Right-click her or double-click the tray icon to open the chat panel and settings.
+Jingjing appears in the bundled whale artwork on a fresh install. To use the Aboutme animations, follow the instructions below and restart. A placeholder appears only if both sets of artwork are unavailable. Right-click her or double-click the tray icon to open the chat panel and settings.
 Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1` to force it.
 
 ### Optional components
@@ -111,9 +106,10 @@ Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1`
 | Agent | DeepSeek Harness and the official MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt`, then `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`, or run `tools\setup_dsh.bat` |
 | Local speech recognition | Offline SenseVoice (sherpa-onnx) | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`, or run `tools\setup_local_asr.bat` |
 | Importing external Live2D models | Live2D Cubism Core (Live2D proprietary license, not included) | `.\.venv\Scripts\python.exe tools\fetch_avatar.py` downloads it from Live2D to your machine |
+| Aboutme Dafeiyu | Install desktop animations for Jingjing | Run `.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt`, then `.\.venv\Scripts\python.exe tools\install_aboutme_pet.py`. See the [installation guide](docs/aboutme-pet.md) (Chinese) for packaged builds and offline reinstalls. |
 | Art pack tools | Build and annotate character art packs | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
-Basic chat and the desktop pet don't need any of these. The default character uses Whalemate's own bone animation and sprites and does **not** need Live2D Cubism Core.
+Basic chat and the desktop pet don't need any of these. The Aboutme animations run without Live2D Cubism Core.
 
 ## ⚙️ Configuring models and keys
 
@@ -291,6 +287,7 @@ Special thanks to the creators in the Dafeiyu fan community — her personality,
 
 | Project | What we learned from it |
 | --- | --- |
+| [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets) · [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) | Aboutme prepared the dsh / dsh1 animation sheets from dsh-pet artwork. Jingjing uses these locally installed animations. |
 | [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) | Source attribution for Dafeiyu stickers and the knowledge base (artwork by 可以叫我云大人 / 雾雪) |
 | [bluedafeiyu](https://github.com/lmy414/bluedafeiyu) | The Dafeiyu archive site and its image-rights notes |
 | [astrbot_plugin_feiyu_voice](https://github.com/Esmerubphire/astrbot_plugin_feiyu_voice), [WhaleTalk](https://github.com/Tokimorphling/WhaleTalk-) | The feel of her voice, pre-synthesised fixed lines, volume-driven lip sync |
@@ -301,14 +298,14 @@ If you are an author of one of these projects and something here is inaccurate o
 
 ## 📄 License and notices
 
-Whalemate's code, documentation and artwork are released under the [MIT License](LICENSE). Artwork means the illustrations, textures and icons under `art/`, `src/aicompanion/characters/*/sprites/`, `src/aicompanion/characters/*/rig/textures/` and `src/aicompanion/assets/icons/`. The following are **not** covered by MIT:
+The [MIT License](LICENSE) covers Whalemate's code, documentation, the bundled original whale artwork (sprites and rig textures), application icons (`src/aicompanion/assets/icons/`) and six original sticker images (`src/aicompanion/assets/expression/`).
 
-
+- **Aboutme Dafeiyu** artwork and locally generated animation sheets follow the [upstream asset notice](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt). Use them only for noncommercial purposes and credit PC2005-cloud/dsh-pet in public derivatives. The repository and release packages exclude these assets.
 - **Live2D Cubism Core**, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html). Neither the repository nor the packaged builds **include** Core. It is only needed to import external Live2D models; users download it themselves from Live2D with `tools/fetch_avatar.py`, which means accepting that license. Because Whalemate can import arbitrary models, distributing a build that bundles Core may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/), which requires Live2D review and a special Publication License Agreement; the exemptions for individuals and small businesses do not apply. `tools/build_windows.py` strips Core from builds by default; `--keep-cubism-core` is for your own machine only and must not be distributed.
 - Other third-party libraries and components, under their respective licenses.
 - "DeepSeek", "Claude", "ChatGPT" and related names and logos are trademarks of their respective owners, including logos that appear in the character artwork. The MIT License grants no trademark rights.
 
-**Fan work notice**: the default character "Dafeiyu" is a fan creation based on the DeepSeek whale. This project is **not affiliated with or endorsed by** DeepSeek, Anthropic, OpenAI or any other company.
+**Fan work notice**: Jingjing uses Dafeiyu, a fan creation based on the DeepSeek whale. This project is **not affiliated with or endorsed by** DeepSeek, Anthropic, OpenAI or any other company.
 
 **Voice notice**: this project does not include or distribute any voice model or reference audio of a real voice actor. If you connect your own voice-cloning service, only use voices you recorded yourself or are explicitly licensed to use.
 

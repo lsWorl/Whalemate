@@ -20,7 +20,7 @@
 
 ---
 
-Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色是 DeepSeek 鲸鱼的二创少女“大肥鱼”：
+Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色鲸鲸是以 DeepSeek 鲸鱼为原型的二创少女，桌面形象优先采用本机安装的 Aboutme 大肥鱼，未安装时使用自带的自绘鲸娘。
 她在桌面上动来动去，记得你们聊过的事，用自己的声音回话，会闹点小脾气，你交代的事情她也会动手去做。
 
 和普通的聊天客户端不同，Whalemate 关心的是“她是谁”：**换了模型，她还是她**。人格、记忆、关系和渠道彼此独立，
@@ -30,15 +30,11 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 > 项目在积极开发中，部分功能还没做完。下面的列表会标出哪些已经可用、哪些还在路线图上；
 > 每项功能的实际状态以 [docs/implementation_status.md](docs/implementation_status.md) 为准。
 
-<div align="center">
-<img src="art/deepseek-whale/approved-poses-preview.png" width="720" alt="大肥鱼的十个动作">
-</div>
-
 ## ✨ 功能
 
 ### 🐋 桌面角色
 - 透明无边框的桌宠，只有角色本身响应鼠标：单击戳她、拖动拎起、双击快速输入。
-- 分层网格骨骼动画，有待机、说话、思考、干活、犯困、庆祝等十种状态；全屏应用在前台时自动让开。
+- 本机安装 Aboutme 动画后，鲸鲸会挥手、伸懒腰、喝奶茶并左右走动。全屏应用在前台时自动让开。
 - 角色以“角色包”的形式组织（人设、台词、模型绑定、形象），也支持导入标准 Live2D Cubism 3/4 模型（需要自己下载 Live2D Cubism Core，见下方“可选组件”）。
 
 ### 💬 聊天与表达
@@ -94,7 +90,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-启动后她会直接出现在桌面上。右键角色或双击托盘图标可以打开聊天面板和设置。
+首次启动时，鲸鲸使用程序自带的自绘鲸娘形象。按下方说明安装 Aboutme 素材并重启后，鲸鲸会改用大肥鱼动画。只有两套素材都无法使用时才显示占位形象。右键角色或双击托盘图标可以打开聊天面板和设置。
 没配置模型时自动使用离线模拟回复；想强制离线，可以设置环境变量 `AICOMPANION_OFFLINE=1`。
 
 ### 可选组件
@@ -104,9 +100,10 @@ python -m venv .venv
 | 干活（Agent） | DeepSeek Harness 与官方 MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt` 然后 `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`，或运行 `tools\setup_dsh.bat` |
 | 本地语音识别 | 离线 SenseVoice（sherpa-onnx） | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`，或运行 `tools\setup_local_asr.bat` |
 | 导入外部 Live2D 模型 | Live2D Cubism Core（适用 Live2D 专有许可，本项目不附带） | `.\.venv\Scripts\python.exe tools\fetch_avatar.py`，从 Live2D 官网下载到本机 |
+| Aboutme 大肥鱼 | 在本机为鲸鲸安装桌面动画 | 先运行 `.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt`，再运行 `.\.venv\Scripts\python.exe tools\install_aboutme_pet.py`。打包版安装与离线重装见[接入说明](docs/aboutme-pet.md)。 |
 | 形象包工具 | 编译、标注角色形象包 | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
-基础聊天和桌宠不需要安装这些可选依赖。默认角色用项目自己的骨骼动画和立绘，**不需要** Live2D Cubism Core。
+基础聊天和桌宠不需要安装这些可选依赖。Aboutme 帧动画无需 Live2D Cubism Core。
 
 ## ⚙️ 配置模型与 Key
 
@@ -281,6 +278,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 | 项目 | 参考了什么 |
 | --- | --- |
+| [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets) · [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) | 鲸鲸的桌面动画取自 Aboutme 整理的 dsh / dsh1 图集，原始素材来自 dsh-pet。 |
 | [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) | 大肥鱼表情素材与知识库的来源标注（素材作者：可以叫我云大人 / 雾雪） |
 | [bluedafeiyu](https://github.com/lmy414/bluedafeiyu) | 大肥鱼档案站与图片权利说明 |
 | [astrbot_plugin_feiyu_voice](https://github.com/Esmerubphire/astrbot_plugin_feiyu_voice)、[WhaleTalk](https://github.com/Tokimorphling/WhaleTalk-) | 大肥鱼声线的听感、固定台词预合成、按音量驱动口型 |
@@ -290,14 +288,14 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 ## 📄 许可与声明
 
-本项目的代码、文档和美术素材以 [MIT License](LICENSE) 开源。美术素材指 `art/`、`src/aicompanion/characters/*/sprites/`、`src/aicompanion/characters/*/rig/textures/` 和 `src/aicompanion/assets/icons/` 里的立绘、贴图和图标。以下内容**不在** MIT 许可范围内：
+本项目代码、文档、自绘鲸娘的运行素材（角色包中的立绘和骨骼纹理）、应用图标（`src/aicompanion/assets/icons/`）及六张原创表情图片（`src/aicompanion/assets/expression/`）采用 [MIT License](LICENSE)。
 
-
+- **Aboutme 大肥鱼**素材和据此生成的本机动画图集适用[上游素材声明](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt)。禁止商用，公开二创须署名 PC2005-cloud/dsh-pet。上游图集仅在本机安装，仓库和发布包均不附带。
 - **Live2D Cubism Core**：适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。本项目的仓库和打包版本都**不包含** Core，只有导入外部 Live2D 模型时才需要，由用户运行 `tools/fetch_avatar.py` 从 Live2D 官网自行下载，下载即表示同意该许可。因为能导入任意模型，带着 Core 分发本项目的构建版本可能属于 Live2D 定义的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免不适用。`tools/build_windows.py` 默认会把 Core 从构建结果里去掉；`--keep-cubism-core` 只供自己电脑使用，不要对外分发。
 - 其他第三方库和组件，以各自的许可证为准。
 - “DeepSeek”“Claude”“ChatGPT”等名称和徽标是各自权利人的商标，其中也包括出现在角色立绘里的徽标。MIT 许可不授予任何商标权。
 
-**同人声明**：默认角色“大肥鱼”是网友围绕 DeepSeek 鲸鱼形象创作的二创角色。本项目与 DeepSeek、Anthropic、OpenAI 等公司**没有任何关联**，也没有得到它们的认可。
+**同人声明**：默认角色鲸鲸采用的“大肥鱼”形象是网友围绕 DeepSeek 鲸鱼形象创作的二创角色。本项目与 DeepSeek、Anthropic、OpenAI 等公司**没有任何关联**，也没有得到它们的认可。
 
 **声音声明**：项目不包含、也不分发任何真人声优的声音模型或参考音频。如果你接入自己的音色复刻服务，请只使用自己录制或明确获得授权的声音。
 

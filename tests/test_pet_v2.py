@@ -29,13 +29,17 @@ class CharacterPackTests(unittest.TestCase):
         self.assertNotIn('emilia', ids)   # 爱蜜莉雅已删除（2026-11-11 负责人决定）
         self.assertFalse(next(p for p in packs if p.id == 'claude-reader').ready)
 
-    def test_whale_sprites_complete(self):
-        pack = load_pack(PACKS_DIR/'deepseek-whale')
-        data = load_sprite_manifest(pack.sprite_manifest_path())
-        for pose in ['idle', 'talking', 'thinking', 'working', 'celebrate', 'error', 'wait', 'sleepy', 'grabbed', 'poked']:
-            self.assertIn(pose, data['poses'])
-        self.assertIn('eyes_closed_mouth_closed', data['poses']['talking'])
-        self.assertIn('grab_point', data['poses']['grabbed'])
+    def test_custom_sprite_pack_reads_pose_variants(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'pose.png').touch()
+            poses = {pose: {'base': 'pose.png'} for pose in ('idle', 'thinking', 'talking', 'grabbed')}
+            poses['talking']['eyes_closed_mouth_closed'] = 'pose.png'
+            poses['grabbed']['grab_point'] = [0.5, 0.2]
+            manifest = root/'sprites.json'
+            manifest.write_text(json.dumps({'format': 'AICompanionSpritePack', 'version': 1,
+                                           'size': [100, 200], 'poses': poses}), encoding='utf-8')
+            self.assertEqual(load_sprite_manifest(manifest)['poses'], poses)
 
     def test_whale_has_lines_and_persona(self):
         pack = load_pack(PACKS_DIR/'deepseek-whale')
@@ -75,8 +79,7 @@ class RendererChoiceTests(unittest.TestCase):
     def test_choices(self):
         from aicompanion.characters import choose_renderer
         whale = load_pack(PACKS_DIR/'deepseek-whale')
-        self.assertEqual(choose_renderer(whale, None)[0], 'sprites')
-        self.assertEqual(choose_renderer(whale, 'live2d', '')[0], 'sprites')      # 旧默认值不再指向 Haru
+        self.assertEqual(whale.name, '鲸鲸')
         self.assertEqual(choose_renderer(whale, 'live2d', 'x.model3.json'), ('cubism', 'x.model3.json'))
         self.assertEqual(choose_renderer(None, 'live2d', ''), ('placeholder', None))
         # 爱蜜莉雅已删除：旧的立绘显示模式不再有效，没有形象包的角色显示占位

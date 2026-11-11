@@ -8,12 +8,13 @@ import time
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication
 
-from aicompanion.ui.sprite_view import SpriteAvatar
+from aicompanion.ui.sprite_view import PlaceholderAvatar, SpriteAvatar
+from aicompanion.ui.animation_view import AnimationAvatar
 try:
     from aicompanion.body.rig_view import RigAvatar
 except ImportError:  # pragma: no cover
     RigAvatar = SpriteAvatar
-NATIVE = (SpriteAvatar, RigAvatar)
+NATIVE = (SpriteAvatar, RigAvatar, AnimationAvatar, PlaceholderAvatar)
 
 
 def schedule_pet_smoke_check(window, database, output):
@@ -28,6 +29,29 @@ def schedule_pet_smoke_check(window, database, output):
     pet.show_user = lambda text: (state.update(user_bubbles=state['user_bubbles']+1), original_user(text))[1]
     pet.show_activity = lambda kind='thinking': (state['activities'].append(kind), original_activity(kind))[1]
     rig = isinstance(pet.view, RigAvatar)
+    animation = isinstance(pet.view, AnimationAvatar)
+    initial_view = pet.view
+    placeholder = isinstance(initial_view, PlaceholderAvatar)
+    pack = window.registry.pack(window.controller.character.id)
+    if pack and pack.renderer_kind == 'spritesheet':
+        installed = (pack.root/pack.renderer['animation']).is_file()
+        state['aboutme_installed'] = installed
+        if installed:
+            state['expected_renderer'] = 'AnimationAvatar'
+            state['expected_renderer_shown'] = animation and pet.view.using_aboutme
+        else:
+            # 出厂自绘形象在没有 Aboutme 的新安装中也应正常显示。
+            expected = RigAvatar if database.get_setting('rig_enabled', True) else SpriteAvatar
+            state['expected_renderer'] = expected.__name__
+            state['expected_renderer_shown'] = isinstance(pet.view, expected)
+    else:
+        state['expected_renderer_shown'] = not placeholder
+    animation_frames=[]
+    if animation:
+        pet.view.frameAdvanced.connect(animation_frames.append)
+        state['pose_transitions_started']=[];state['pose_transitions_finished']=[]
+        pet.view.transitionStarted.connect(lambda a,b:state['pose_transitions_started'].append([a,b]))
+        pet.view.transitionFinished.connect(lambda a,b:state['pose_transitions_finished'].append([a,b]))
     state['renderer'] = type(pet.view).__name__
     if rig:
         # 骨骼渲染要等 WebEngine 页面和贴图加载；时间线整体后移。
@@ -46,14 +70,21 @@ def schedule_pet_smoke_check(window, database, output):
     def startup():
         state['pet_visible'] = pet.isVisible()
         state['chat_hidden'] = not window.isVisible()
-        state['native_sprites'] = isinstance(pet.view, NATIVE)
+        state['native_view'] = isinstance(pet.view, NATIVE)
         state['webengine_not_created'] = window.web_avatar is None
         state['always_on_top'] = bool(pet.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
         state['translucent'] = pet.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         image = pet.grab().toImage()
         state['corner_alpha'] = image.pixelColor(1, 1).alpha()
         state['center_alpha'] = image.pixelColor(image.width()//2, int(image.height()*.55)).alpha()
-        if rig:
+        if animation:
+            # 动画透明区域随帧改变，不裁剪窗口；输入穿透使用当前帧 alpha。
+            state['mask_active']=pet.mask().isEmpty()
+            state['mask_excludes_corner']=not pet.view.hit(pet.view.rect().topLeft())
+            state['animation_body_hit']=pet.view.hit(pet.view.rect().center())
+            state['animation_background_decode']=pet.view.decoder.thread() is not QApplication.instance().thread()
+            state['animation_frame_count']=len(set(animation_frames))
+        elif rig:
             # 骨骼形象不裁剪窗口；穿透靠光标探测。直接问网页：角落不命中、身体命中。
             state['mask_active'] = pet.mask().isEmpty()
             pet.view.page().runJavaScript('JSON.stringify(rigApi.gpu())', lambda raw: state.update(webgl=raw))
@@ -114,6 +145,25 @@ def schedule_pet_smoke_check(window, database, output):
         pet.summon(); state['summoned'] = pet.isVisible()
         pet.save_geometry(); state['geometry_saved'] = bool(database.get_setting('desktop_pet_geometry'))
     later(17500, scale_and_hide)
+    def appearance():
+        if rig and state.get('aboutme_installed') is False:
+            # 同一份无 Aboutme 的发行包，关闭骨骼后仍应显示自绘整图。
+            database.set_setting('rig_enabled', False)
+            window._apply_avatar()
+            state['fallback_sprite_shown'] = isinstance(pet.view, SpriteAvatar)
+            pet.grab().save(str(output/'pet-fallback-sprites.png'))
+            database.set_setting('rig_enabled', True)
+            window._apply_avatar()
+            state['fallback_rig_restored'] = isinstance(pet.view, RigAvatar)
+        if not animation: return
+        # 历史版本的关闭动画开关不能让已经安装的鲸鲸再次显示旧美术。
+        cid = window.controller.character.id
+        database.set_setting(f'pet_animation_enabled:{cid}', False)
+        window._apply_avatar()
+        state['legacy_setting_keeps_aboutme'] = isinstance(pet.view, AnimationAvatar) and pet.view.using_aboutme
+        database.set_setting(f'pet_animation_enabled:{cid}', True)
+        window._apply_avatar()
+    later(18000,appearance)
 
     def switch_role():
         # 切到一个用户自建的角色（没有形象包），再切回鲸娘
@@ -122,7 +172,9 @@ def schedule_pet_smoke_check(window, database, output):
         window._switch_to('smoke-other')
         state['switched_to_other'] = window.controller.character.id == 'smoke-other'
         window._switch_to('deepseek-whale')
-        state['switched_back'] = isinstance(pet.view, NATIVE) and window.controller.character.id == 'deepseek-whale'
+        if pet.view is not initial_view:
+            pet.view.poseShown.connect(record_pose)
+        state['switched_back'] = type(pet.view) is type(initial_view) and window.controller.character.id == 'deepseek-whale'
     later(18500, switch_role)
     def throw():
         # 从半空甩出去：应当经历下落并精确落在屏幕底边
@@ -321,8 +373,129 @@ def schedule_pet_smoke_check(window, database, output):
         # 表达检查结束后再做额度检查和退出（原来固定在 25.0s / 26.5s，表达检查变成"等到完成"后改成串联）
         if state.get('after_expression_ran'): return
         state['after_expression_ran'] = True
-        try: offer_and_quota()
-        finally: QTimer.singleShot(1500, window.request_exit)
+        def finish_checks():
+            try: offer_and_quota()
+            finally: QTimer.singleShot(1500, window.request_exit)
+        if not animation:
+            finish_checks();return
+        def check_walking():
+            view=pet.view;view.perform('expression','neutral')
+            pet.machine.snapshot=type(pet.machine.snapshot)();pet.machine.shown='idle';pet._apply_state()
+            start=(pet.x(),pet.y());reference=not view.supports_vertical_walk
+            routes=[(-60,0),(60,0)] if reference else [(-60,-40),(0,30),(50,0)]
+            state['walk_routes']=[];state['walk_frame_indices']=[]
+            def walk_next(index):
+                if index==len(routes):
+                    if reference:
+                        state['walk_mode']='aboutme_left_right' if view.using_aboutme else 'reference_left_right'
+                        state['walk_flow']=(len(state['walk_routes'])==2 and [r['gait'] for r in state['walk_routes']]==['walking_left','walking_right']
+                            and all(r['moved_x'] and not r['moved_y'] and r['target_reached'] for r in state['walk_routes'])
+                            and len(set(state['walk_frame_indices']))>=3)
+                    else:
+                        state['walk_mode']='legacy_2d'
+                        state['walk_flow']=(len(state['walk_routes'])==3 and state['walk_routes'][0]['gait']=='walking_back'
+                            and all(r['moved_x'] or r['moved_y'] for r in state['walk_routes'])
+                            and state['walk_routes'][0]['moved_x'] and state['walk_routes'][0]['moved_y']
+                            and len(set(state['walk_frame_indices']))>=3)
+                    finish_checks();return
+                dx,dy=routes[index];before=(pet.x(),pet.y());pet.walk_to(before[0]+dx,before[1]+dy)
+                target=pet._walk_target;deadline=time.monotonic()+(6. if reference else 4.);gait=[None]
+                def wait_walk():
+                    if view.walking_ready:
+                        gait[0]=view._loaded;state['walk_frame_indices'].append(view._index)
+                    if pet._walk_target is None:
+                        state['walk_routes'].append({'gait':gait[0],
+                            'moved_x':pet.x()!=before[0],'moved_y':pet.y()!=before[1],
+                            'target_reached':target is not None and (pet.x(),pet.y())==tuple(round(v) for v in target)})
+                        pet.grab().save(str(output/f'pet-walk-{index}.png'))
+                        if not state['walk_routes'][-1]['target_reached']:state['errors'].append('行走目标未到达')
+                        QTimer.singleShot(40,lambda:walk_next(index+1))
+                    elif time.monotonic()>=deadline:
+                        state['errors'].append('二维行走超时');pet.stop_walking();finish_checks()
+                    else:QTimer.singleShot(25,wait_walk)
+                QTimer.singleShot(25,wait_walk)
+            walk_next(0)
+
+        def check_reference(index=0):
+            keys=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle']
+            aboutme=pet.view.using_aboutme
+            if aboutme:keys=list(pet.view.pack.actions)
+            if not (pet.view.using_reference or aboutme):state['reference_flow']=True;check_walking();return
+            if index==0:state['reference_actions']=[]
+            if index==len(keys):state['reference_flow']=state['reference_actions']==keys;check_walking();return
+            key=keys[index];pet.view.face(-1 if key=='walking_left' else 1);pet.view.play_action(key)
+            deadline=time.monotonic()+4.
+            def ready():
+                if pet.view._loaded==key and not pet.view.transitioning:
+                    clip=pet.view.pack.actions[key]
+                    if aboutme:
+                        if clip.fps!=12 or clip.count not in (59,80,120,180):state['errors'].append('Aboutme 动作规格不符：'+key)
+                    else:
+                        expected=(240,24) if key.startswith('walking') else (120,12)
+                        if (clip.count,clip.fps)!=expected:state['errors'].append('新动作规格不符：'+key)
+                    state['reference_actions'].append(key);QTimer.singleShot(80,lambda:check_reference(index+1))
+                elif time.monotonic()>deadline:state['errors'].append('新动作加载超时：'+key);finish_checks()
+                else:QTimer.singleShot(25,ready)
+            ready()
+
+        def check_personality(index=0):
+            keys=['smug','pout','shy','surprised','milk_tea','stretch']
+            if index==0:state['personality_actions']=[]
+            if index==len(keys):
+                state['personality_flow']=state['personality_actions']==keys
+                check_reference();return
+            key=keys[index];pet.view.perform('motion' if key in ('milk_tea','stretch') else 'expression',key)
+            deadline=time.monotonic()+3.
+            def wait_action():
+                if pet.view._loaded==pet.view.pack.poses.get(key,key) and not pet.view.transitioning:
+                    state['personality_actions'].append(key)
+                    pet.grab().save(str(output/f'pet-personality-{key}.png'))
+                    QTimer.singleShot(150,lambda:check_personality(index+1))
+                elif time.monotonic()>=deadline:
+                    state['errors'].append('性格动作未按时显示：'+key);finish_checks()
+                else:QTimer.singleShot(25,wait_action)
+            QTimer.singleShot(25,wait_action)
+
+        # 实际播放站→坐→托腮→待机，包含两段衔接；不只核对 pose 字符串。
+        reference_before=pet.view.using_reference
+        if reference_before:pet._animation_variant(False)
+        targets=['idle','working','thinking','idle'];state['pose_transition_targets']=[]
+        transition_start=len(state['pose_transitions_finished'])
+        # 前面的聊天特意播放挥手；本段单独验证姿态，清掉上一段的短时表演。
+        pet.stop_walking();pet._stop_fall();pet._life_timer.stop()
+        pet.view._cue=None;pet.view._cue_until=0.;pet.view.set_drag(False)
+
+        def next_target(index):
+            if index>=len(targets):
+                expected=[['idle','working'],['working','idle']]  # 思考与待机同组直接混合，避免多余的待机绕行。
+                state['pose_transition_flow']=(state['pose_transition_targets']==targets if pet.view.using_aboutme
+                    else all(pair in state['pose_transitions_finished'][transition_start:] for pair in expected))
+                if reference_before:
+                    pet._animation_variant(True);state['animation_version_rollback']=pet.view.using_reference
+                else:state['animation_version_rollback']=True
+                check_personality();return
+            pose=targets[index]
+            pet.machine.snapshot=type(pet.machine.snapshot)()
+            pet.dispatch('force_pose',pose=pose,seconds=8.)
+            deadline=time.monotonic()+3.
+            def wait_pose():
+                view=pet.view
+                if isinstance(view,AnimationAvatar) and view._loaded==pose and not view.transitioning:
+                    state['pose_transition_targets'].append(pose)
+                    if pose=='working':pet.grab().save(str(output/'pet-transition-working.png'))
+                    QTimer.singleShot(30,lambda:next_target(index+1))
+                elif time.monotonic()>=deadline:
+                    state['errors'].append('动作过渡未按时衔接：'+pose);finish_checks()
+                else:QTimer.singleShot(25,wait_pose)
+            QTimer.singleShot(25,wait_pose)
+        settled_deadline=time.monotonic()+3.
+        def wait_chat_done():
+            if not window.workers and not window.tasks and not window.speech.workers:
+                pet.view._cue=None;pet.view._cue_until=0.;pet.view.set_walking(0);next_target(0)
+            elif time.monotonic()>=settled_deadline:
+                state['errors'].append('聊天线程未释放，无法独立验收过渡');finish_checks()
+            else:QTimer.singleShot(25,wait_chat_done)
+        wait_chat_done()
     def safety_exit():
         # 兜底：表达检查本身出异常、串联没走到时，也要退出并留下报告，而不是一直挂着
         if not state.get('after_expression_ran'):
@@ -344,19 +517,26 @@ def schedule_pet_smoke_check(window, database, output):
         state['thinking_icon'] = 'thinking' in state['activities']
         state['forced_ok'] = all(state.get('forced', {}).get(p) == p for p in poses)
         state['remaining_workers'] = len(window.workers)+len(window.tasks)+len(window.speech.workers)
-        required = ['pet_visible', 'chat_hidden', 'native_sprites', 'webengine_not_created', 'always_on_top', 'translucent',
+        required = ['pet_visible', 'chat_hidden', 'expected_renderer_shown', 'native_view', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
+        if animation:
+            required.extend(['animation_body_hit','animation_background_decode','legacy_setting_keeps_aboutme','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])
+            if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True
+            required.append('animation_advances')
+            state['animation_advances']=not state.get('failed_animation_frames',False)
 
+        if rig and state.get('aboutme_installed') is False:
+            required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
         required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
-        if state.get('center_alpha', 0) < 200: state['failed_checks'].append('center_alpha')
+        if state.get('center_alpha', 0) < (150 if placeholder else 200): state['failed_checks'].append('center_alpha')
         if state.get('pose_after_poke') != 'poked': state['failed_checks'].append('pose_after_poke')
         if state.get('pose_grabbed') != 'grabbed': state['failed_checks'].append('pose_grabbed')
         if rig and state.get('rig_loaded') != 'ready': state['failed_checks'].append('rig_loaded')
