@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -175,4 +175,15 @@ CREATE TABLE IF NOT EXISTS group_lore (
  weight REAL NOT NULL, mentions INTEGER NOT NULL DEFAULT 1, first_at REAL NOT NULL, last_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_group_lore_channel ON group_lore(character_id, channel);
+-- v9 计划书 v4 功能二 人格包：同一个角色可以有多个人格，切换不丢记忆；每次保存留一个版本可回退
+CREATE TABLE IF NOT EXISTS personas (
+ id TEXT PRIMARY KEY, character_id TEXT NOT NULL, title TEXT NOT NULL, data TEXT NOT NULL,
+ builtin INTEGER NOT NULL DEFAULT 0, pack_version INTEGER NOT NULL DEFAULT 0, user_modified INTEGER NOT NULL DEFAULT 0,
+ created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_personas_character ON personas(character_id);
+CREATE TABLE IF NOT EXISTS persona_versions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, persona_id TEXT NOT NULL, data TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', saved_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_persona_versions ON persona_versions(persona_id, id);
 """

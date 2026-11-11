@@ -21,12 +21,16 @@ class CharacterRegistry:
 
     def sync(self) -> None:
         """为每个就绪角色包补齐数据库行和初始语音设置；已有的用户修改不覆盖。"""
+        from aicompanion.services.persona_service import PersonaService
+        personas = PersonaService(self.database)
         existing = {character.id for character in self.database.characters()}
         for pack in self.packs.values():
             if not pack.ready: continue
             if pack.persona and pack.id not in existing:
                 self.database.add_character(CharacterProfile(pack.name, pack.persona['description'], pack.persona['speaking_style'], pack.id))
-            elif pack.persona and pack.id in existing: self._replace_placeholder(pack); self._upgrade_persona(pack)
+            elif pack.persona and pack.id in existing and not personas.personas(pack.id):
+                # 人格包启用之前的老库：先按原来的规则替换占位 / 升级人设，下面再从结果建人格
+                self._replace_placeholder(pack); self._upgrade_persona(pack)
             if pack.id not in existing and pack.id not in {c.id for c in self.database.characters()}: continue
             language = pack.voice.get('language')
             if language and self.database.get_setting(f'speech_language:{pack.id}') is None:
@@ -35,6 +39,11 @@ class CharacterRegistry:
             voice = self.environ.get(voice_env, '').strip() if voice_env else ''
             if voice and self.database.get_setting(f'qwen_voice:{pack.id}') is None:
                 self.database.set_setting(f'qwen_voice:{pack.id}', voice)
+        # 计划书 v4 功能二：每个角色至少有一个人格；角色包的人设是内置人格，包升级时只更新用户没改过的内置人格
+        for character in self.database.characters():
+            pack = self.pack(character.id)
+            try: personas.ensure(character, pack.persona if pack else None)
+            except Exception: pass   # 人格表异常不影响启动；角色表里的设定照常可用
         # v2 首次启动默认切到鲸娘，只做一次；之后尊重用户的选择。
         if self.database.get_setting(DEFAULT_KEY) is None:
             if self.pack(DEFAULT_CHARACTER_ID) and any(c.id == DEFAULT_CHARACTER_ID for c in self.database.characters()):

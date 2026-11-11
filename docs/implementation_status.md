@@ -1226,3 +1226,22 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 子进程的 `NO_PROXY` 补上 `127.0.0.1,localhost`，用户设了代理时中转请求也直连。中转和运行时同生共死：换路由、地址或 Key 重启运行时时一起换，令牌也换。DeepSeek 路由不变。
 - 验证：容器离线单测 811 项通过、38 项跳过。新增 `KeyRelayTest`（跨主机 307 时目标服务收不到 Key、令牌和路径校验、SSE 流式与令牌换 Key、上游报错透传）；真实 DSH 0.2.1rc2 运行时（Linux 版）回归 `test_minimax_cross_host_redirect_does_not_leak_key` 按 Codex 的步骤复现（A 307 到 localhost:B）：B 一次都没收到请求，任务不算完成；临时去掉中转时同一用例失败（B 收到 Key），确认用例能抓住这个问题。原有 MiniMax 两路由 × 两模型 × 两轮回归改为经中转运行，仍全部通过。
 - 没验证：Windows 上的真实运行时回归与桌宠 Smoke Test（容器以 root 运行，QtWebEngine 起不来）；低完整性进程连回环口在 Windows 实机上的表现；真实 MiniMax 服务。
+
+## 2026-11-11：V4-2 人格包（Claude）
+
+计划书 v4 功能二，阶段二第一项。设计见 `docs/tasks/V4-2-persona.md`。
+
+- 新增 `domain/persona.py`：人格数据与清洗；提示词附加段（背景、示例、命中的世界书）；导入本项目格式、SillyTavern JSON 和 PNG 角色卡；导出本项目格式和 SillyTavern v2。
+- 新增 `services/persona_service.py`：存取、切换、保存（留版本，最多 30 个）、复制、删除（内置人格和正在用的不能删）、回退、导入、首次启用迁移、角色包升级不覆盖用户修改、恢复内置原文。当前人格写回角色表的设定和说话风格。
+- schema 8→9，新增 `personas`、`persona_versions` 两张表，不改已有表。旧库照常备份后升级，**不需要删库**。
+- `characters/registry.py`：启动时给每个角色补齐人格；已经启用人格的角色，角色包升级改由人格服务处理（旧的“直接改角色表”逻辑只在第一次启用前运行一次）。
+- `services/context_service.py`：聊天提示词加入当前人格的背景、说话示例和命中的世界书。
+- 新增 `ui/persona_page.py`（人格编辑器），放进 设置 → 角色与形象；保存设置时先保存人格，设定和说话风格以当前人格为准。
+- 验证：
+  - 容器离线全量测试通过（含新增 `tests/test_persona.py` 14 项）；
+  - 桌宠自检新增 `persona_ready`；
+  - 离屏截图检查了人格编辑器。
+- 没验证：
+  - Windows 实机；
+  - 真实模型下切换人格后语气变化是否明显（用“预览她会怎么说”和实际聊天试）；
+  - 真实 SillyTavern 角色卡（只用了按规范构造的合成卡片）。

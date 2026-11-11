@@ -185,6 +185,8 @@ def schedule_pet_smoke_check(window, database, output):
         try:
             state['settings_pages_ready'] = (dialog.nav.current() == 'models'
                                              and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
+            # 计划书 v4 功能二：人格编辑器能载入当前人格
+            state['persona_ready'] = bool(dialog.persona_editor.current_id) and bool(dialog.persona_editor.description.toPlainText())
             if hasattr(dialog.library_page, 'analyzer') and dialog.library_page.analyzer is not None:
                 dialog.library_page.analyzer.wait(5000)
         finally:
@@ -345,7 +347,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.append('storage_locations_ready')
 
         required.append('qq_media_settings_ready')
-        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready'])
+        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')

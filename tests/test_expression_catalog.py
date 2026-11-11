@@ -167,7 +167,8 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(c.execute('PRAGMA quick_check').fetchone()[0],'ok')
         with migrated.transaction() as c:
             self.assertEqual(c.execute("SELECT scope FROM memories WHERE fact_key='synthetic:private'").fetchone()[0],'private')
-            self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0],8)
+            from aicompanion.storage.schema import SCHEMA_VERSION
+            self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0],SCHEMA_VERSION)
             self.assertEqual(c.execute('PRAGMA quick_check').fetchone()[0],'ok')
 
     def test_forbidden_provenance_rejected_before_reading_source(self):

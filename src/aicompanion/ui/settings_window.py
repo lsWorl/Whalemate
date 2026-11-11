@@ -31,30 +31,33 @@ class SettingsWindow(QDialog):
 
         # ---- 角色与形象 ---------------------------------------------------------------------
         self.name=QLineEdit(controller.character.name)
-        self.description=QPlainTextEdit(controller.character.description); self.description.setMinimumHeight(110)
-        self.style=QPlainTextEdit(controller.character.speaking_style); self.style.setMinimumHeight(80)
+        # 计划书 v4 功能二：设定和说话风格属于“人格”，在人格编辑器里改；这里的 description / style 指向编辑器的输入框
+        from aicompanion.ui.persona_page import PersonaEditor
+        registry=getattr(parent,'registry',None); pack=registry.pack(cid) if registry is not None else None
+        self.persona_editor=PersonaEditor(controller,pack.persona if pack else None,self)
+        self.description=self.persona_editor.description; self.style=self.persona_editor.style
         self.model=QLineEdit(controller.character.model_path)
         self.avatar_mode=QComboBox()
         self.avatar_mode.addItem('角色包默认形象','sprites')
         self.avatar_mode.addItem('导入的 Live2D 模型','live2d')
         self.avatar_mode.setCurrentIndex(max(0,self.avatar_mode.findData(self.database.get_setting(f'avatar_mode:{cid}','sprites'))))
         choose=QPushButton('选择 Live2D 模型…'); choose.clicked.connect(self.choose_model)
-        new=QPushButton('用这些内容新建一个独立角色'); new.clicked.connect(self.create_character)
+        new=QPushButton('用当前编辑的人格新建一个独立角色（不共享记忆）'); new.clicked.connect(self.create_character)
         self.panel_background=QLineEdit(self.database.get_setting('panel_background',''))
         self.panel_background.setPlaceholderText('留空 = data/private-art/panel-background.png')
         pick_bg=QPushButton('选择图片…'); pick_bg.clicked.connect(self._pick_background)
         bg_row=QHBoxLayout(); bg_row.addWidget(self.panel_background,1); bg_row.addWidget(pick_bg)
         self.panel_opacity=QSpinBox(); self.panel_opacity.setRange(0,100); self.panel_opacity.setSuffix(' %')
         self.panel_opacity.setValue(int(round(float(self.database.get_setting('panel_background_opacity',0.16) or 0)*100)))
-        persona=Page('角色与形象','她是谁、怎么说话、长什么样。改名字和设定不会影响记忆和关系。')
-        who=QFormLayout(); who.addRow('名字',self.name); who.addRow('角色设定',self.description); who.addRow('说话习惯',self.style)
-        persona.add(Section('她是谁','角色设定和说话习惯会直接影响她的每一句话。',who)).add(new)
+        persona=Page('角色与形象','她是谁、怎么想怎么说、长什么样。换人格、改名字都不会影响记忆和关系。')
+        who=QFormLayout(); who.addRow('名字',self.name)
+        identity=persona.add(Section('她是谁','名字属于她自己，换人格也不会变。',who)); identity.add(new)
+        persona.add(Section('人格','同一个她可以有几种性格：新建、复制、切换、导入 SillyTavern 角色卡，每次保存都留一个版本可以回退。'
+                                  '“设为当前”后下一句话就用新人格。',self.persona_editor))
         looks=QFormLayout(); looks.addRow('桌面形象',self.avatar_mode); looks.addRow('Live2D 模型',self.model); looks.addRow('',choose)
         persona.add(Section('桌面形象','默认用角色包自带的立绘动画；也可以导入自己的 Live2D 模型（.model3.json）。',looks))
         panel=QFormLayout(); panel.addRow('背景图',bg_row); panel.addRow('背景不透明度',self.panel_opacity)
         persona.add(Section('聊天面板外观','背景图只在本机使用，不会上传或随项目分发。',panel))
-        persona.add(ComingSoon('人格包','同一个她换上不同性格：自己写、导入导出（兼容 SillyTavern 角色卡常用字段）、保存版本可回退；'
-                                    '切换人格不丢记忆和关系。'))
         persona.finish()
 
         # ---- 声音与通话 ---------------------------------------------------------------------
@@ -409,8 +412,10 @@ class SettingsWindow(QDialog):
     def save(self):
         if self.model_page is not None and not self.model_page.save(): return
         if not self.name.text().strip() or not self._validate_model_input(): return
-        character=replace(self.controller.character,name=self.name.text().strip(),description=self.description.toPlainText(),
-                          speaking_style=self.style.toPlainText(),model_path=self.model.text().strip(),
+        if not self.persona_editor.save(): return
+        # 设定和说话风格以当前人格为准（人格编辑器保存时已写回角色表）；这里只改名字、形象和声音
+        current=next((c for c in self.database.characters() if c.id==self.controller.character.id),self.controller.character)
+        character=replace(current,name=self.name.text().strip(),model_path=self.model.text().strip(),
                           voice=self.controller.character.voice if self.provider.currentData() in ('qwen','breeze') else self.selected_voice())
         self.database.update_character(character); self.controller.character=character
         if self.provider.currentData()=='qwen':
