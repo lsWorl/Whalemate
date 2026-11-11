@@ -96,9 +96,8 @@ class AdminTests(unittest.TestCase):
         self.admin.choose('chat', None, f'{ds.id}/deepseek-flash')
         with self.assertRaisesRegex(ValueError, '识图'): self.admin.choose('vision', None, f'{ds.id}/deepseek-v4-pro')
         self.admin.choose('vision', 'deepseek-whale', f'{mm.id}/MiniMax-M3')
-        with self.assertRaisesRegex(ValueError, '暂未接通'):                                # Codex 审计 R3：MiniMax 办事尚未接通
-            self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3')
-        self.assertEqual(agent_route(next(a for a in self.admin.accounts() if a.id == mm.id)), 'minimax-cn')   # 国内站对应 minimax-cn 路由
+        self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3')
+        self.assertEqual(self.admin.binding('agent', None).route, 'minimax-cn')            # 国内站走 minimax-cn 路由
         self.assertNotIn(f'{bz.id}/breeze-tts-2', [m.id for m in self.admin.models('agent')])
         with self.assertRaisesRegex(ValueError, '音色'): self.admin.choose('tts', None, f'{bz.id}/breeze-tts-2')
         self.admin.choose('tts', 'deepseek-whale', f'{bz.id}/breeze-tts-2', voice='voc_whale', language='zh', speed=1.2)
@@ -137,24 +136,21 @@ class AdminTests(unittest.TestCase):
     def test_agent_lists_only_harness_models_and_explains_scope(self):
         from aicompanion.providers.models import Binding
         mm = self.admin.add_account('minimax-cn', key='k')
-        self.admin.add_model(mm.id, 'MiniMax-M3.1-Flash', ('chat', 'tools'))
-        self.assertNotIn('MiniMax-M3.1-Flash', [m.model_id for m in self.admin.models('agent')])
-        with self.assertRaisesRegex(ValueError, '暂未接通'):
-            self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3.1-Flash')
+        self.admin.add_model(mm.id, 'MiniMax-Text-01', ('chat', 'tools'))                   # Harness 用不了的模型
+        self.assertEqual(sorted(m.model_id for m in self.admin.models('agent')), ['MiniMax-M3', 'MiniMax-M3.1-Flash'])
+        with self.assertRaisesRegex(ValueError, 'Harness 不支持'):
+            self.admin.choose('agent', None, f'{mm.id}/MiniMax-Text-01')
         self.assertIn('还没有配置办事模型', self.router.agent_problem('deepseek-whale'))
         # 旧配置里留下的不支持模型：不启用，提示说清是哪一层设置
-        self.router.store.bind(Binding('agent', f'{mm.id}/MiniMax-M3.1-Flash', route='minimax-cn'))
+        self.router.store.bind(Binding('agent', f'{mm.id}/MiniMax-Text-01', route='minimax-cn'))
         self.assertIsNone(self.router.agent_target('deepseek-whale'))
         self.assertIn('全局默认', self.router.agent_problem('deepseek-whale'))
-        # MiniMax 办事暂未接通（Codex 审计 R3）：下拉里没有，提示写明只能用 DeepSeek
-        self.assertEqual(self.admin.models('agent'), [])
-        self.router.store.bind(Binding('agent', f'{mm.id}/MiniMax-M3', route='minimax-cn'))
-        self.assertIsNone(self.router.agent_target('deepseek-whale'))
-        self.assertIn('暂未接通', self.router.agent_problem('deepseek-whale'))
-        ds = self.admin.add_account('deepseek', key='kd')
-        self.admin.choose('agent', 'deepseek-whale', f'{ds.id}/deepseek-flash')
+        # 角色单独选 MiniMax-M3.1-Flash 办事
+        self.admin.choose('agent', 'deepseek-whale', f'{mm.id}/MiniMax-M3.1-Flash')
         target = self.router.agent_target('deepseek-whale')
-        self.assertEqual((target.model_id, target.source), ('deepseek-flash', '角色单独设置'))
+        self.assertEqual((target.model_id, target.source, target.base_url),
+                         ('MiniMax-M3.1-Flash', '角色单独设置', 'https://api.minimaxi.com/anthropic'))
+        self.assertEqual(dict(target.env), {'MINIMAX_CN_API_KEY': 'k'})
         self.assertEqual(self.router.agent_problem('deepseek-whale'), '')
 
     def test_test_chat_uses_configured_client(self):

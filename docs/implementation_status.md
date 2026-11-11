@@ -1183,3 +1183,31 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
   - 验证：新增 4 条测试（每天上限 / 识图失败的提示、R5 两个场景、失败原因不含错误正文），在 4df931f 上失败、修复后通过；容器离线全量 811 项通过、6 项跳过。
   - 没验证：Windows 实机；真实识图模型的回答格式。
 - 实机数据库排查（负责人同意只读查看，2026-11-11）：171 张自有图，1 张识别成功、47 张各失败 2 次、1 张失败 1 次，当天识别计数已到默认上限 100，所以之后一直停在“识别含义中”。95 次失败在用量表里都没有记录，说明请求在拿到正常结果前就失败了；MiniMax 常把限流、余额、审核、参数错误放在 HTTP 200 的 `base_resp` 里返回，客户端会报“响应格式不符合预期”，这与看到的现象一致，但具体错误码当时没有记下。处理：识图失败原因加记平台错误码和中文说明（不记平台返回的正文）；识别失败的图状态显示“含义没识别出来”。
+
+## 2026-11-11：办事接入 MiniMax（Claude）
+
+负责人要求引入 MiniMax 办事（处理审计 R3 登记的已知问题）。
+
+- Harness 的 llm-pi-ai 多供应商路由默认不注册路由。`dsh_backend.runtime_patch(home, target)` 只在本次选的是 MiniMax 时，在补丁里激活那一条路由（`minimax` 或 `minimax-cn`）：`apiKeyEnv` 指向选定 Key 的环境变量（补丁里只有变量名），`baseURL` 用账户地址的主机加 `/anthropic`（Anthropic 兼容接口，Key 只发往账户登记的主机），并列出可用模型。内置目录没有 MiniMax-M3.1-Flash，补丁里按官方文档声明（100 万上下文、支持图片）；不声明思考档位，请求不带 `thinking` 参数（这个模型关不掉思考，发 disabled 会被拒绝），由服务端按默认深度思考。
+- 可办事的 MiniMax 模型：MiniMax-M3.1-Flash、MiniMax-M3、MiniMax-M2.7、MiniMax-M2.7-highspeed（后两个需要在模型页自己添加）。路由、地址或 Key 变化时重启运行时。
+- R2 的凭据隔离保持不变：managed 凭据文件仍指向本应用的空文件，MiniMax Key 只从选定的环境变量来。
+- 验证：容器离线单测通过；用真实 DSH 0.2.1rc2 运行时（Linux 版）+ 本机模拟 Anthropic Messages 服务 + 假 Key 跑了 `minimax` / `minimax-cn` × M3.1-Flash / M3 共 4 组，每组两轮：Harness 接受模型选择，请求发往 `/anthropic/v1/messages`，带的是选定 Key（预置的 managed 旧 Key 没被用），M3.1-Flash 请求里没有 `thinking` 参数，第二轮带着上一轮的思考块正常完成。该回归在 `tests/test_dsh.py`（未安装运行时时跳过）。
+- 没验证：真实 MiniMax 服务（需要负责人用自己的 Key 按测试手册第 8 节试）；M3.1-Flash 默认思考深度下的速度和费用；Windows 上的真实运行时回归。
+
+### 2026-11-11 补充：Codex PR #32 审计 P1（跳转带 Key）修复（Claude）
+
+Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 默认跟随跳转，账户主机返回跨主机 307 时 `x-api-key` 原样带到新地址；Harness 配置里没有关闭跟随跳转的开关，Python 侧的禁止跳转也管不到子进程。
+
+- 新增 `agent/key_relay.py`：MiniMax 办事时，桌宠进程在 127.0.0.1 随机端口起一个 Key 中转。补丁里的 `baseURL` 改指中转，Harness 子进程环境变量里的“Key”换成每次启动随机生成的令牌，**真 Key 不进 Harness 进程**。
+- 中转核对令牌（常量时间比较）后换成真 Key，用项目统一的不跟随跳转的 `net.open_url` 转发到账户主机；上游返回 3xx 时回 502、不转交 Location。只转发账户地址路径（`/anthropic`）下的请求；令牌不对回 401，真 Key 本身也换不来转发。响应按块流式转回（SSE），上游 4xx/5xx 的报错原样给 Harness 显示。
+- 子进程的 `NO_PROXY` 补上 `127.0.0.1,localhost`，用户设了代理时中转请求也直连。中转和运行时同生共死：换路由、地址或 Key 重启运行时时一起换，令牌也换。DeepSeek 路由不变。
+- 验证：容器离线单测 811 项通过、38 项跳过。新增 `KeyRelayTest`（跨主机 307 时目标服务收不到 Key、令牌和路径校验、SSE 流式与令牌换 Key、上游报错透传）；真实 DSH 0.2.1rc2 运行时（Linux 版）回归 `test_minimax_cross_host_redirect_does_not_leak_key` 按 Codex 的步骤复现（A 307 到 localhost:B）：B 一次都没收到请求，任务不算完成；临时去掉中转时同一用例失败（B 收到 Key），确认用例能抓住这个问题。原有 MiniMax 两路由 × 两模型 × 两轮回归改为经中转运行，仍全部通过。
+- 没验证：Windows 上的真实运行时回归与桌宠 Smoke Test（容器以 root 运行，QtWebEngine 起不来）；低完整性进程连回环口在 Windows 实机上的表现；真实 MiniMax 服务。
+
+## 2026-11-11：PR #32 同步基线与文档冲突修复（Codex）
+
+- PR #31 已合入；在独立工作区将 `collaboration-baseline` 的 `4f9ed763d97320a508470ae6d266af83c99b853e` 同步到 PR #32，保留 MiniMax 路由与 Key 中转修复、图库 R1～R5 和识图诊断，以及计划书“回复带语音 / 陪伴日期”的现有内容。
+- 唯一需要手动解决的冲突是本文件：先保留图库后续修复记录，再保留 MiniMax 接入及跳转 Key 修复记录；测试手册自动合并，双方条目均保留。没有手动改运行代码或测试逻辑。
+- 核对：MiniMax 的 agent / router / 模型页及相关测试与原 PR #32 `7d7b1e5` 一致；图库运行代码及相关测试与同步基线一致；无未解决条目或冲突标记，`git diff --check` 通过。
+- 已启动的整合检查已完成：独立合成用户目录运行 `tools/run_checks.bat` 的相同检查（临时批处理仅替换解释器绝对路径），819 项中 812 通过、7 跳过；Windows 桌宠 Smoke `passed: true`、`failed_checks: []`，退出码 0。记录见 `output/PR32-conflict-fix-2026-11-11/`。后续只补充本文档与任务状态，未为文档再次运行全套测试。
+- 未验证真实 MiniMax 账号、费用、延迟与真实 QQ；没有读取真实 `.env` 或数据库。冲突修复提交仍由 Claude 复核，PR 由负责人合并。

@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 import json
 import os
@@ -36,12 +37,31 @@ PROMPT_TIMEOUT = 30*60
 CREDENTIALS_DIR = 'aicompanion-credentials'   # 本应用自己的 managed 凭据目录，每次启动清空
 
 
-def runtime_patch(home: Path) -> str:
-    """运行时补丁。凭据：DSH 默认先读 `$DSH_HOME/.credentials.yaml`（managed，优先级高于环境变量），
-    里面若有旧 Key 会压过设置页选定的 Key（Codex 审计 R2，实测复现）。这里把 managed 文件改指到本应用自己的空文件，
-    用户原有的凭据文件不读、不删。"""
+# llm-pi-ai 内置目录里没有、需要在补丁里声明的模型（MiniMax 官方文档：100 万上下文，支持图片，思考关不掉；
+# 不声明思考档位，请求里就不带 thinking 参数，由服务端按默认深度思考——带 disabled 会被拒绝）
+MODEL_SPECS = {'MiniMax-M3.1-Flash': {'contextWindow': 1_000_000, 'maxTokens': 131072, 'input': ['text', 'image']}}
+
+
+def runtime_patch(home: Path, target=None) -> str:
+    """运行时补丁。
+
+    凭据：DSH 默认先读 `$DSH_HOME/.credentials.yaml`（managed，优先级高于环境变量），里面若有旧 Key 会压过设置页选定的 Key
+    （Codex 审计 R2，实测复现）。这里把 managed 文件改指到本应用自己的空文件，用户原有的凭据文件不读、不删。
+
+    MiniMax 办事：Harness 的 llm-pi-ai 多供应商路由默认不注册任何路由，要在配置里给出供应商才会激活。只激活本次选定的那一条，
+    apiKeyEnv 指向的变量里是本机 Key 中转的一次性令牌、地址是中转（见 DshAgent._relay_target / key_relay.py），
+    中转再把请求发往账户主机的 Anthropic 兼容接口。"""
+    from aicompanion.providers.router import AGENT_MODELS, AGENT_ROUTES, PI_AI_ROUTES
     store = (Path(home)/CREDENTIALS_DIR/'.credentials.yaml').as_posix()
-    return PATCH + f"- id: credentials\n  config:\n    path: {json.dumps(store)}\n    watch: false\n"
+    text = PATCH + f"- id: credentials\n  config:\n    path: {json.dumps(store)}\n    watch: false\n"
+    route = getattr(target, 'route', '')
+    if route in PI_AI_ROUTES:
+        models = ''.join(f"          - id: {json.dumps(m)}\n" + ''.join(f"            {k}: {json.dumps(v)}\n" for k, v in MODEL_SPECS.get(m, {}).items())
+                         for m in AGENT_MODELS[route])
+        base = f"        baseURL: {json.dumps(target.base_url)}\n" if getattr(target, 'base_url', '') else ''
+        text += (f"- id: llm-pi-ai\n  config:\n    providers:\n      {route}:\n        apiKeyEnv: {AGENT_ROUTES[route][0]}\n"
+                 + base + "        models:\n" + models)
+    return text
 
 
 def prepare_home(home: Path) -> Path:
@@ -102,6 +122,15 @@ def child_environment(selected: tuple, parent=None) -> dict:
     keep = {name.upper() for name in ENV_KEEP}
     env = {k: v for k, v in parent.items() if k.upper() in keep}
     env.update(dict(selected))
+    return env
+
+
+def loopback_direct(env: dict) -> dict:
+    """本机回环地址不走代理：MiniMax 办事经 127.0.0.1 上的 Key 中转，用户设了 HTTP(S)_PROXY 时也要直连。"""
+    names = [k for k in env if k.upper() == 'NO_PROXY'] or ['NO_PROXY']
+    for name in names:
+        items = [i for i in (env.get(name) or '').split(',') if i.strip()]
+        env[name] = ','.join(items + [h for h in ('127.0.0.1', 'localhost') if h not in items])
     return env
 
 
@@ -210,13 +239,29 @@ class DshAgent:
         self.conn: AcpConnection | None = None; self.key = None; self.lock = threading.Lock()
         self.mcp_servers: list[dict] = []   # mcp_server.McpToolServer.acp_entry()
         self.session_id = None; self.stopping = False; self.done = threading.Event()
+        self.relay = None                  # MiniMax 办事的本机 Key 中转（key_relay.KeyRelay）
 
     # ---- 运行时 -----------------------------------------------------------------
-    def _launch(self, selected: tuple):
+    def _relay_target(self, selected: tuple, target):
+        """MiniMax（llm-pi-ai）路由：起本机 Key 中转，补丁地址改指中转，子进程里的 Key 换成一次性令牌（Codex PR #32 P1）。
+        Harness 自带的 fetch 会跟随跨主机跳转并带上 x-api-key，所以真 Key 不交给它。其他路由原样返回。"""
+        from aicompanion.providers.router import AGENT_ROUTES, PI_AI_ROUTES
+        from aicompanion.agent.key_relay import KeyRelay
+        route = getattr(target, 'route', '')
+        if route not in PI_AI_ROUTES: return selected, target
+        name = AGENT_ROUTES[route][0]
+        key = dict(selected).get(name, '')
+        if not key or not getattr(target, 'base_url', ''): raise RuntimeError('办事没有选定的 Key 或接口地址')
+        self.relay = KeyRelay(target.base_url, key)
+        selected = tuple((k, self.relay.token if k == name else v) for k, v in selected)
+        return selected, dataclasses.replace(target, env=selected, base_url=self.relay.base_url)
+
+    def _launch(self, selected: tuple, target=None):
+        selected, target = self._relay_target(selected, target)
         home = dsh_home(); home.mkdir(parents=True, exist_ok=True)
-        patch = home/'aicompanion.patch.yml'; patch.write_text(runtime_patch(home), encoding='utf-8')
+        patch = home/'aicompanion.patch.yml'; patch.write_text(runtime_patch(home, target), encoding='utf-8')
         run = prepare_home(home)
-        env = child_environment(selected)
+        env = loopback_direct(child_environment(selected))
         env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
         if self.launcher: return self.launcher(env)
         from aicompanion.agent import sandbox
@@ -231,20 +276,26 @@ class DshAgent:
             with sandbox.low_integrity(): return start()   # 运行时和它的子进程都是低完整性
         return start()
 
-    def _ensure(self, selected: tuple) -> AcpConnection:
-        """凭据或地址变了（换 Key、换路由）就重启运行时；进程启动时的环境变量之后改不了。"""
+    def _ensure(self, selected: tuple, target=None) -> AcpConnection:
+        """凭据、路由或地址变了（换 Key、换路由）就重启运行时；进程启动时的环境变量和补丁之后改不了。"""
         with self.lock:
-            key = tuple(selected)
+            key = (getattr(target, 'route', ''), getattr(target, 'base_url', ''), tuple(selected))
             if self.conn is not None and self.key == key and self.conn.proc.poll() is None: return self.conn
             self._close_locked()
-            conn = AcpConnection(self._launch(key))
-            conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
-            self.conn, self.key = conn, key
+            try:
+                conn = AcpConnection(self._launch(tuple(selected), target))
+                self.conn = conn
+                conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
+            except BaseException:
+                self._close_locked(); raise
+            self.key = key
             return conn
 
     def _close_locked(self):
         conn, self.conn, self.key = self.conn, None, None
+        relay, self.relay = self.relay, None
         if conn is not None: conn.close()
+        if relay is not None: relay.close()
 
     def close(self):
         with self.lock: self._close_locked()
@@ -303,7 +354,7 @@ class DshAgent:
 
         conn = None
         try:
-            conn = self._ensure(selected)
+            conn = self._ensure(selected, target)
             conn.listeners.append(listen)
             session = conn.request('session/new', {'cwd': str(cwd), 'mcpServers': self.mcp_servers}, 60)
             self.session_id = session.get('sessionId')

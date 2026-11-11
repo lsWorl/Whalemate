@@ -19,6 +19,7 @@ from aicompanion.providers.credentials import CredentialStore
 from aicompanion.providers.models import (DEFAULT_MAX_OUTPUT_WHEN_THINKING, DEFAULT_THINKING, PURPOSE_KIND,
                                           ModelProfile, ProviderProfile, Resolved, kind_for_url)
 from aicompanion.providers.store import ModelConfigStore
+from urllib.parse import urlsplit
 
 # Harness 路由 → 它读取的 Key 环境变量与地址变量（锁定的 DSH 0.2.1rc2 内置；新路由验证后再加）
 AGENT_ROUTES = {
@@ -26,15 +27,17 @@ AGENT_ROUTES = {
     'minimax': ('MINIMAX_API_KEY', None),
     'minimax-cn': ('MINIMAX_CN_API_KEY', None),
 }
-# 各路由现在能办事的模型。DeepSeek 两个模型已用锁定的 DSH 0.2.1rc2 验证。
-# MiniMax：模型虽在 Harness 目录里，但 llm-pi-ai 的 MiniMax 路由要在补丁里显式配置才会激活，现在设置 Key 也会被拒绝为
-# unknown model option（Codex 审计 R3，实测）。接入并验证前先不开放，界面和提示里写明“暂未接通”。
+# 各路由能办事的模型（锁定的 DSH 0.2.1rc2 实测）。
+# MiniMax 走 Harness 的 llm-pi-ai 多供应商路由（Anthropic 兼容接口），由 dsh_backend 在补丁里按本次选定的路由激活；
+# 内置目录有 M3 / M2.7 / M2.7-highspeed，MiniMax-M3.1-Flash 不在目录里，补丁里显式声明（dsh_backend.MODEL_SPECS）。
 AGENT_MODELS = {
     'deepseek-official': ('deepseek-flash', 'deepseek-v4-pro'),
-    'minimax': (),
-    'minimax-cn': (),
+    'minimax': ('MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
+    'minimax-cn': ('MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
 }
-AGENT_NOT_READY = '办事暂时只能用 DeepSeek 的模型（MiniMax 办事还在接入，暂未接通）'
+# 经 llm-pi-ai 激活的路由：Key 发往“账户地址的主机 + /anthropic”（和账户登记的主机一致，不另找地址）
+PI_AI_ROUTES = ('minimax', 'minimax-cn')
+AGENT_NOT_READY = '这个服务的办事（Harness）支持还没有验证'
 OFFLINE_LABEL = '离线模拟模型'
 
 
@@ -72,6 +75,13 @@ class AgentTarget:
     env: tuple            # ((变量名, 值), ...)，只放本次选定的凭据
     label: str
     source: str = ''      # 这份设置在哪里改：“全局默认”或“角色单独设置”，出错提示里告诉用户
+    base_url: str = ''    # llm-pi-ai 路由（MiniMax）的接口地址，写进运行时补丁；DeepSeek 用环境变量，这里留空
+
+
+def anthropic_endpoint(base_url: str) -> str:
+    """MiniMax 账户地址（OpenAI 兼容，如 https://api.minimaxi.com/v1）对应的 Anthropic 兼容地址：同一主机 + /anthropic。"""
+    parts = urlsplit(str(base_url or ''))
+    return f'{parts.scheme}://{parts.netloc}/anthropic' if parts.scheme and parts.netloc else ''
 
 
 def thinking_params(kind: str, model: ModelProfile, purpose: str) -> tuple[dict, int | None]:
@@ -202,7 +212,8 @@ class ModelRouter:
                 env = [(key_env, key)]
                 if base_env and provider.base_url and provider.base_url.rstrip('/') != 'https://api.deepseek.com':
                     env.append((base_env, provider.base_url))
-                return AgentTarget(binding.route, model.model_id, tuple(env), f'{provider.label} · {model.model_id}', source)
+                base_url = anthropic_endpoint(provider.base_url) if binding.route in PI_AI_ROUTES else ''
+                return AgentTarget(binding.route, model.model_id, tuple(env), f'{provider.label} · {model.model_id}', source, base_url)
         return None
 
     def agent_problem(self, character_id: str | None = None) -> str:
@@ -219,7 +230,7 @@ class ModelRouter:
                 return f'办事模型（{scope}）已被删除。请到{where}重新选择“办事”。'
             supported = AGENT_MODELS.get(binding.route, ())
             if not supported:
-                return f'{AGENT_NOT_READY}。现在的办事模型 {model.model_id}（{scope}）用不了，请到{where}“办事”改选 DeepSeek 的模型。'
+                return f'{AGENT_NOT_READY}。现在的办事模型 {model.model_id}（{scope}）用不了，请到{where}“办事”改选其他模型。'
             if model.model_id not in supported:
                 return (f'办事模型 {model.model_id}（{scope}）Harness 不支持。请到{where}“办事”改选：'
                         + '、'.join(supported) + '。')

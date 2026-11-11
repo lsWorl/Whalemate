@@ -1,4 +1,6 @@
 """干活：DSH（ACP）后端用假运行时测，工具把关用临时文件夹测。不联网、不需要真的 DSH。"""
+import dataclasses
+import http.server
 import json
 import os
 from pathlib import Path
@@ -10,6 +12,7 @@ from unittest.mock import patch
 
 from aicompanion.agent import dsh_backend
 from aicompanion.agent.dsh_backend import DshAgent, pick_workspace
+from aicompanion.agent.key_relay import KeyRelay
 from aicompanion.providers.router import AgentTarget
 from aicompanion.agent.tools_server import Task, ToolBox, is_read_only_command
 from aicompanion.agent.mcp_server import McpToolServer, tool_client
@@ -131,18 +134,22 @@ class AcpBackendTest(unittest.TestCase):
     def test_launch_receives_only_selected_key_and_restarts_on_key_change(self):
         launched = []
         agent = DshAgent(launcher=lambda env: launched.append(env) or FakeRuntime(SCRIPT))
-        first = AgentTarget('minimax', 'MiniMax-M3', (('MINIMAX_API_KEY', 'one'),), 'MiniMax')
+        first = AgentTarget('minimax', 'MiniMax-M3', (('MINIMAX_API_KEY', 'one'),), 'MiniMax', base_url='https://api.minimax.io/anthropic')
         with patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'leak'}):
             agent.run('x', Path('.'), first); agent.run('x', Path('.'), first)
-            agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-M3', (('MINIMAX_API_KEY', 'two'),), 'MiniMax'))
+            agent.run('x', Path('.'), dataclasses.replace(first, env=(('MINIMAX_API_KEY', 'two'),)))
         self.assertEqual(len(launched), 2)                                       # 同一把 Key 复用运行时，换 Key 重启
-        self.assertEqual([e['MINIMAX_API_KEY'] for e in launched], ['one', 'two'])
+        tokens = [e['MINIMAX_API_KEY'] for e in launched]
+        self.assertTrue(set(tokens).isdisjoint({'one', 'two'}))                 # Codex PR #32 P1：真 Key 不进 Harness，只给一次性令牌
+        self.assertNotEqual(tokens[0], tokens[1])                                # 重启换新令牌
         self.assertTrue(all('DEEPSEEK_API_KEY' not in e for e in launched))
-        agent.close()
+        self.assertTrue(all('127.0.0.1' in e['NO_PROXY'].split(',') for e in launched))   # 中转在回环口，不能被用户代理截走
+        agent.close(); self.assertIsNone(agent.relay)
 
     def test_unknown_route_fails_instead_of_falling_back(self):
         runtime = FakeRuntime(SCRIPT, reject_model=True); agent = DshAgent(launcher=lambda env: runtime)
-        result = agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-Unknown', (('MINIMAX_API_KEY', 'k'),), 'MiniMax'))
+        result = agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-Unknown', (('MINIMAX_API_KEY', 'k'),), 'MiniMax',
+                                                   base_url='https://api.minimax.io/anthropic'))
         self.assertEqual(result.status, 'failed'); self.assertIn('不支持', result.text)
         self.assertFalse(any(m.get('method') == 'session/prompt' for m in runtime.sent))   # 不会用默认模型照常干活
         agent.close()
@@ -163,9 +170,138 @@ class AcpBackendTest(unittest.TestCase):
             (home/'.env').write_text('DEEPSEEK_API_KEY=x', encoding='utf-8')
             with self.assertRaisesRegex(RuntimeError, '.env'): dsh_backend.prepare_home(home)
 
+    def test_minimax_patch_activates_only_selected_route(self):
+        with tempfile.TemporaryDirectory() as temp:
+            deepseek = dsh_backend.runtime_patch(Path(temp), AgentTarget('deepseek-official', 'deepseek-flash', (), 'DeepSeek'))
+            self.assertNotIn('llm-pi-ai', deepseek)
+            text = dsh_backend.runtime_patch(Path(temp), AgentTarget('minimax-cn', 'MiniMax-M3', (('MINIMAX_CN_API_KEY', 'k'),),
+                                                                     'MiniMax', base_url='https://api.minimaxi.com/anthropic'))
+            self.assertIn('      minimax-cn:\n        apiKeyEnv: MINIMAX_CN_API_KEY\n        baseURL: "https://api.minimaxi.com/anthropic"', text)
+            self.assertIn('- id: "MiniMax-M3.1-Flash"\n            contextWindow: 1000000', text)
+            self.assertNotIn('k\n', text.split('llm-pi-ai')[1])                        # 补丁里只有变量名，没有 Key
+            self.assertNotIn('      minimax:\n', text)                                  # 只激活选定的那一条
+
+    def test_runtime_restarts_when_route_changes(self):
+        launched = []
+        agent = DshAgent(launcher=lambda env: launched.append(env) or FakeRuntime(SCRIPT))
+        same_env = (('MINIMAX_API_KEY', 'one'),)
+        agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-M3', same_env, 'MiniMax', base_url='https://api.minimax.io/anthropic'))
+        agent.run('x', Path('.'), AgentTarget('minimax', 'MiniMax-M3', same_env, 'MiniMax', base_url='https://other.example/anthropic'))
+        self.assertEqual(len(launched), 2); agent.close()
+
     def test_pick_workspace(self):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(pick_workspace('随便聊聊', folder), Path(folder))
+
+
+def _serve(handler_cls):
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler_cls)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def _redirecting_pair():
+    """Codex PR #32 的复现：A 收到请求就 307 到另一台主机（localhost:B），B 记下收到的鉴权头。"""
+    hits = []
+    class Destination(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get('content-length') or 0))
+            hits.append(('B', self.headers.get('x-api-key'), self.headers.get('authorization')))
+            self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', '2')
+            self.end_headers(); self.wfile.write(b'{}')
+    b = _serve(Destination)
+    class Origin(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get('content-length') or 0))
+            hits.append(('A', self.headers.get('x-api-key'), self.path))
+            self.send_response(307); self.send_header('location', f'http://localhost:{b.server_address[1]}/redirect-destination')
+            self.send_header('content-length', '0'); self.end_headers()
+    a = _serve(Origin)
+    return a, b, hits
+
+
+class KeyRelayTest(unittest.TestCase):
+    """Codex PR #32 P1：Harness 的 fetch 跟随跨主机跳转并带上 x-api-key。真 Key 只在中转里，跳转一律拦截。"""
+
+    def post(self, relay, path='/anthropic/v1/messages', token=None, body=b'{"model":"m"}', header='x-api-key'):
+        import urllib.request, urllib.error
+        value = relay.token if token is None else token
+        headers = {'content-type': 'application/json', header: value if header == 'x-api-key' else f'Bearer {value}'}
+        request = urllib.request.Request(f'http://127.0.0.1:{relay.port}{path}', data=body, headers=headers, method='POST')
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        try:
+            with opener.open(request, timeout=10) as response: return response.status, response.read(), dict(response.headers)
+        except urllib.error.HTTPError as error: return error.code, error.read(), dict(error.headers)
+
+    def test_cross_host_redirect_never_carries_key(self):
+        a, b, hits = _redirecting_pair()
+        relay = KeyRelay(f'http://127.0.0.1:{a.server_address[1]}/anthropic', 'FAKE_SELECTED_KEY')
+        try:
+            status, body, headers = self.post(relay)
+            self.assertEqual(status, 502); self.assertIn('跳转', json.loads(body)['error']['message'])
+            self.assertNotIn('location', {k.lower() for k in headers})              # 跳转地址不交给 Harness
+            self.assertEqual(hits, [('A', 'FAKE_SELECTED_KEY', '/anthropic/v1/messages')])   # 只发往账户主机，B 一次都没收到
+        finally:
+            relay.close(); a.shutdown(); b.shutdown()
+
+    def test_token_and_path_are_checked(self):
+        seen = []
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get('content-length') or 0)); seen.append(self.path)
+                self.send_response(200); self.send_header('content-length', '0'); self.end_headers()
+        up = _serve(Upstream)
+        relay = KeyRelay(f'http://127.0.0.1:{up.server_address[1]}/anthropic', 'REAL')
+        try:
+            self.assertEqual(self.post(relay, token='wrong')[0], 401)
+            self.assertEqual(self.post(relay, token='REAL')[0], 401)                 # 真 Key 本身也换不来转发
+            self.assertEqual(self.post(relay, path='/other/v1/messages')[0], 404)
+            self.assertEqual(self.post(relay, path='/anthropic/../x')[0], 404)
+            self.assertEqual(seen, [])
+        finally:
+            relay.close(); up.shutdown()
+
+    def test_streams_response_and_swaps_token_for_key(self):
+        seen = []
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            protocol_version = 'HTTP/1.1'
+            def log_message(self, *args): pass
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get('content-length') or 0))
+                seen.append((self.path, self.headers.get('x-api-key'), self.headers.get('authorization'), body))
+                self.send_response(200); self.send_header('content-type', 'text/event-stream'); self.send_header('connection', 'close')
+                self.end_headers()
+                for i in range(3): self.wfile.write(f'event: ping\ndata: {i}\n\n'.encode()); self.wfile.flush()
+        up = _serve(Upstream)
+        relay = KeyRelay(f'http://127.0.0.1:{up.server_address[1]}/anthropic', 'REAL')
+        try:
+            status, body, headers = self.post(relay, path='/anthropic/v1/messages?beta=true')
+            self.assertEqual((status, headers.get('content-type')), (200, 'text/event-stream'))
+            self.assertEqual(body.count(b'event: ping'), 3)
+            self.assertEqual(seen[0], ('/anthropic/v1/messages?beta=true', 'REAL', None, b'{"model":"m"}'))
+            self.post(relay, header='authorization')                                 # Bearer 方式也换成真 Key
+            self.assertEqual(seen[1][1:3], (None, 'Bearer REAL'))
+        finally:
+            relay.close(); up.shutdown()
+
+    def test_upstream_errors_pass_through(self):
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get('content-length') or 0))
+                body = b'{"type":"error","error":{"type":"authentication_error","message":"bad key"}}'
+                self.send_response(401); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(body)))
+                self.end_headers(); self.wfile.write(body)
+        up = _serve(Upstream)
+        relay = KeyRelay(f'http://127.0.0.1:{up.server_address[1]}/anthropic', 'REAL')
+        try:
+            status, body, _ = self.post(relay)
+            self.assertEqual(status, 401); self.assertIn(b'bad key', body)          # 服务端的报错原样给 Harness 显示
+        finally:
+            relay.close(); up.shutdown()
 
 
 class ToolBoxTest(unittest.TestCase):
@@ -461,33 +597,44 @@ def _runtime_available():
 @unittest.skipUnless(_runtime_available(), '没有安装 DeepSeek Harness 运行时')
 class RealRuntimeCredentialTest(unittest.TestCase):
     """真实运行时 + 本机模拟 Messages 服务 + 假 Key（Codex 审计 R2 的复现方式）。不联网、不读真实凭据。"""
-    def test_selected_key_beats_stale_managed_file(self):
-        import http.server, subprocess, time
+    def drive(self, target, managed='', server=None):
+        """用真实运行时跑一轮：返回模拟服务收到的 [(路径, Key, 请求体)]。target.base_url 里的 PORT 换成模拟服务端口。
+        MiniMax 路由和生产一样经本机 Key 中转（DshAgent._relay_target）。传 server 时用它代替模拟服务，返回各轮的回复。"""
+        import dataclasses, http.server, subprocess, time
         from deepseek_harness_runtime import resolve_bundled_launch_args
         seen = []
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args): pass
             def do_POST(self):
-                self.rfile.read(int(self.headers.get('content-length') or 0))
-                seen.append(self.headers.get('x-api-key') or self.headers.get('authorization'))
+                body = json.loads(self.rfile.read(int(self.headers.get('content-length') or 0)) or b'{}')
+                seen.append((self.path, self.headers.get('x-api-key') or self.headers.get('authorization'), body))
                 self.send_response(200); self.send_header('content-type', 'text/event-stream'); self.end_headers()
                 def event(kind, data): self.wfile.write(f'event: {kind}\ndata: {json.dumps(data)}\n\n'.encode())
                 event('message_start', {'type': 'message_start', 'message': {'id': 'm', 'type': 'message', 'role': 'assistant',
-                      'model': 'deepseek-flash', 'content': [], 'stop_reason': None, 'usage': {'input_tokens': 1, 'output_tokens': 0}}})
-                event('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'text', 'text': ''}})
-                event('content_block_delta', {'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta', 'text': 'ok'}})
+                      'model': body.get('model', ''), 'content': [], 'stop_reason': None, 'usage': {'input_tokens': 1, 'output_tokens': 0}}})
+                event('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'thinking', 'thinking': '', 'signature': ''}})
+                event('content_block_delta', {'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'thinking_delta', 'thinking': '想一下'}})
                 event('content_block_stop', {'type': 'content_block_stop', 'index': 0})
+                event('content_block_start', {'type': 'content_block_start', 'index': 1, 'content_block': {'type': 'text', 'text': ''}})
+                event('content_block_delta', {'type': 'content_block_delta', 'index': 1, 'delta': {'type': 'text_delta', 'text': 'ok'}})
+                event('content_block_stop', {'type': 'content_block_stop', 'index': 1})
                 event('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {'output_tokens': 1}})
                 event('message_stop', {'type': 'message_stop'})
-        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        custom = server is not None
+        if not custom:
+            server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        port = str(server.server_address[1])
+        target = dataclasses.replace(target, env=tuple((k, v.replace('PORT', port)) for k, v in target.env),
+                                     base_url=target.base_url.replace('PORT', port))
+        agent = DshAgent(); replies = []
+        selected, target = agent._relay_target(target.env, target)
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)
-            (home/'.credentials.yaml').write_text('version: 1\nrefs:\n  DEEPSEEK_API_KEY: FAKE_MANAGED_OLD_KEY\n', encoding='utf-8')
-            patch_file = home/'p.yml'; patch_file.write_text(dsh_backend.runtime_patch(home), encoding='utf-8')
+            if managed: (home/'.credentials.yaml').write_text(managed, encoding='utf-8')
+            patch_file = home/'p.yml'; patch_file.write_text(dsh_backend.runtime_patch(home, target), encoding='utf-8')
             run = dsh_backend.prepare_home(home)
-            env = dsh_backend.child_environment((('DEEPSEEK_API_KEY', 'FAKE_SELECTED_NEW_KEY'),
-                                                 ('DEEPSEEK_BASE_URL', f'http://127.0.0.1:{server.server_address[1]}')))
+            env = dsh_backend.loopback_direct(dsh_backend.child_environment(selected))
             env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
             proc = subprocess.Popen([*resolve_bundled_launch_args(), '--profile', 'acp', '--patch', str(patch_file)],
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
@@ -507,7 +654,47 @@ class RealRuntimeCredentialTest(unittest.TestCase):
                     self.fail(f'{method} 没有回应')
                 request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}})
                 session = request('session/new', {'cwd': str(run), 'mcpServers': []})['result']['sessionId']
-                request('session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': 'hi'}]})
+                chosen = request('session/set_config_option', {'sessionId': session, 'configId': 'model',
+                                 'value': json.dumps([target.route, target.model_id], separators=(',', ':'))})
+                self.assertIn('result', chosen, f'Harness 拒绝了 {target.route}/{target.model_id}')
+                for text in ('hi', 'again'):   # 两轮：第二轮带着上一轮的思考块，确认多轮不出错
+                    reply = request('session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': text}]}, wait=180)
+                    if custom: return replies.append(reply) or replies
+                    self.assertEqual(reply.get('result', {}).get('stopReason'), 'end_turn', reply)
             finally:
-                proc.kill(); proc.wait(); server.shutdown(); server.server_close()
-        self.assertTrue(seen); self.assertEqual(set(seen), {'FAKE_SELECTED_NEW_KEY'})
+                proc.kill(); proc.wait(); agent.close()
+                proc.stdin.close(); proc.stdout.close()
+                if not custom: server.shutdown(); server.server_close()
+        return seen
+
+    def test_selected_key_beats_stale_managed_file(self):
+        target = AgentTarget('deepseek-official', 'deepseek-flash', (('DEEPSEEK_API_KEY', 'FAKE_SELECTED_NEW_KEY'),
+                             ('DEEPSEEK_BASE_URL', 'http://127.0.0.1:PORT')), 'DeepSeek')
+        seen = self.drive(target, managed='version: 1\nrefs:\n  DEEPSEEK_API_KEY: FAKE_MANAGED_OLD_KEY\n')
+        self.assertTrue(seen); self.assertEqual({key for _, key, _ in seen}, {'FAKE_SELECTED_NEW_KEY'})
+
+    def test_minimax_routes_are_activated_with_only_selected_key(self):
+        # 负责人 2026-11-11：引入 MiniMax 办事。llm-pi-ai 路由按补丁激活；M3.1-Flash 不在内置目录，补丁里声明
+        for route, env_name in (('minimax-cn', 'MINIMAX_CN_API_KEY'), ('minimax', 'MINIMAX_API_KEY')):
+            for model in ('MiniMax-M3.1-Flash', 'MiniMax-M3'):
+                with self.subTest(route=route, model=model):
+                    target = AgentTarget(route, model, ((env_name, 'FAKE_MM_KEY'),), 'MiniMax', base_url='http://127.0.0.1:PORT/anthropic')
+                    seen = self.drive(target, managed=f'version: 1\nrefs:\n  {env_name}: FAKE_MANAGED_OLD_KEY\n')
+                    self.assertEqual(len(seen), 2)
+                    for path, key, body in seen:
+                        self.assertEqual((path.split('?')[0], key, body['model']), ('/anthropic/v1/messages', 'FAKE_MM_KEY', model))
+                    if model == 'MiniMax-M3.1-Flash':   # 思考关不掉：不能发 thinking: disabled（会被拒绝）
+                        self.assertNotIn('thinking', seen[0][2])
+
+    def test_minimax_cross_host_redirect_does_not_leak_key(self):
+        # Codex PR #32 P1 的原样复现：真实 Harness，A 返回 307 跳到 localhost:B。B 不得收到 Key，任务也不能算完成
+        a, b, hits = _redirecting_pair()
+        try:
+            target = AgentTarget('minimax-cn', 'MiniMax-M3.1-Flash', (('MINIMAX_CN_API_KEY', 'FAKE_SELECTED_KEY'),), 'MiniMax',
+                                 base_url=f'http://127.0.0.1:{a.server_address[1]}/anthropic')
+            replies = self.drive(target, server=a)
+        finally:
+            a.shutdown(); b.shutdown()
+        self.assertTrue(hits); self.assertEqual({h[0] for h in hits}, {'A'})      # 跳转目标一次都没收到请求
+        self.assertTrue(all(h[1] == 'FAKE_SELECTED_KEY' for h in hits))
+        self.assertNotEqual(replies[0].get('result', {}).get('stopReason'), 'end_turn', replies[0])
