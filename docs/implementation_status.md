@@ -1411,4 +1411,8 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 做了什么：项目对外名称定为 **Whalemate · 鲸伴**（包名 `aicompanion` 和仓库名不变）；`README.md` 重写为中文主版本，新增英文版 `README.en.md`，两边互相链接；致谢一节按“运行时依赖 / 设计参考 / AstrBot 社区插件 / 大肥鱼社区”列出计划书和任务说明里参考过的项目，并写明 GPL / AGPL 项目只借鉴思路；新增 `LICENSE`（MIT），README 写明 Live2D Cubism Core、第三方组件和各公司商标不在 MIT 范围内，并加上同人与声音声明。
 - 依据：`docs/project_plan_v4.md`、`docs/tasks.md`、`docs/tasks/*.md` 中出现的参考仓库；`src/aicompanion/assets/live2d/LICENSE.md`。
 - 怎么验证：只改 Markdown 和新增 LICENSE，不涉及代码，未运行回归；人工核对 README 中引用的本地路径都存在于仓库中。
-- 没验证：GitHub 页面上的实际渲染效果；README 里的功能状态按 `docs/tasks.md` 当日状态写，之后需要随任务进展更新。美术素材（`art/`、角色贴图）的对外许可尚未由负责人单独确认，目前随仓库按 MIT 处理。
+- 没验证：GitHub 页面上的实际渲染效果；README 里的功能状态按 `docs/tasks.md` 当日状态写，之后需要随任务进展更新。
+- 审查修复（Codex PR #44 第一轮，1 项 P1、2 项 P2）：
+  - P1：MIT 只覆盖代码和文档。美术素材（`art/`、角色 `sprites/`、`rig/textures/`、`assets/icons/`）的对外许可**尚未由负责人决定**，在中英文 README 里明确排除，并注明保留所有权利；`art/README.md` 补了同样的说明。
+  - P2：可选依赖的安装命令改为 `.\.venv\Scripts\python.exe -m pip install ...`，和快速开始用同一个虚拟环境。
+  - P2：许可说明补上 Live2D“可扩展应用”的情况：本项目支持导入任意模型，可能属于这一类，发行前需要 Live2D 审核并签订专门协议，小规模豁免不适用。依据是 Live2D 官方说明页；**分类和授权都还没有向 Live2D 确认**。

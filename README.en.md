@@ -108,9 +108,9 @@ Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1`
 
 | Component | Purpose | Install |
 | --- | --- | --- |
-| Agent | DeepSeek Harness and the official MCP SDK | `pip install -r requirements-agent-lock.txt`, then `pip install -e ".[agent]"`, or run `tools\setup_dsh.bat` |
-| Local speech recognition | Offline SenseVoice (sherpa-onnx) | `pip install -e ".[local-asr]"`, or run `tools\setup_local_asr.bat` |
-| Art pack tools | Build and annotate character art packs | `pip install -e ".[studio]"` |
+| Agent | DeepSeek Harness and the official MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt`, then `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`, or run `tools\setup_dsh.bat` |
+| Local speech recognition | Offline SenseVoice (sherpa-onnx) | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`, or run `tools\setup_local_asr.bat` |
+| Art pack tools | Build and annotate character art packs | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
 Basic chat and the desktop pet don't need any of these.
 
@@ -300,9 +300,11 @@ If you are an author of one of these projects and something here is inaccurate o
 
 ## 📄 License and notices
 
-Whalemate is released under the [MIT License](LICENSE). The following are **not** covered by MIT and remain under their own terms:
+Whalemate's **code and documentation** are released under the [MIT License](LICENSE). The following are **not** covered by MIT:
 
-- `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`: Live2D Cubism Core, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html). Businesses with annual revenue of JPY 10 million or more need a separate Cubism SDK Release License to distribute it; see [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md).
+- **Artwork**: illustrations, textures and icons under `art/`, `src/aicompanion/characters/*/sprites/`, `src/aicompanion/characters/*/rig/textures/` and `src/aicompanion/assets/icons/`. Their public license has **not been decided yet**, and all rights are reserved until it is. Please open an issue before using them outside this project.
+
+- `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`: Live2D Cubism Core, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html); see [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md). Normally, businesses with annual revenue of JPY 10 million or more need a separate Cubism SDK Release License to distribute it. **However, because Whalemate can import arbitrary external Live2D models, it may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/).** Such applications must be reviewed by Live2D and sign a special Publication License Agreement before release, and the exemptions for individuals and small businesses **do not apply**. This project has not yet confirmed its classification with Live2D or obtained that license. Please check with Live2D yourself before distributing a build that includes Cubism Core.
 - Other third-party libraries and components, under their respective licenses.
 - "DeepSeek", "Claude", "ChatGPT" and related names and logos are trademarks of their respective owners.
 

@@ -101,9 +101,9 @@ python -m venv .venv
 
 | 组件 | 用途 | 安装 |
 | --- | --- | --- |
-| 干活（Agent） | DeepSeek Harness 与官方 MCP SDK | `pip install -r requirements-agent-lock.txt` 然后 `pip install -e ".[agent]"`，或运行 `tools\setup_dsh.bat` |
-| 本地语音识别 | 离线 SenseVoice（sherpa-onnx） | `pip install -e ".[local-asr]"`，或运行 `tools\setup_local_asr.bat` |
-| 形象包工具 | 编译、标注角色形象包 | `pip install -e ".[studio]"` |
+| 干活（Agent） | DeepSeek Harness 与官方 MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt` 然后 `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`，或运行 `tools\setup_dsh.bat` |
+| 本地语音识别 | 离线 SenseVoice（sherpa-onnx） | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`，或运行 `tools\setup_local_asr.bat` |
+| 形象包工具 | 编译、标注角色形象包 | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
 基础聊天和桌宠不需要安装这些可选依赖。
 
@@ -289,9 +289,11 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 ## 📄 许可与声明
 
-本项目以 [MIT License](LICENSE) 开源。以下内容**不在** MIT 许可范围内，以各自的许可为准：
+本项目的**代码和文档**以 [MIT License](LICENSE) 开源。以下内容**不在** MIT 许可范围内：
 
-- `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`：Live2D Cubism Core，适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。年营业额 1000 万日元以上的企业分发时需要另外取得 Cubism SDK 发行许可，详见 [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md)。
+- **美术素材**：`art/`、`src/aicompanion/characters/*/sprites/`、`src/aicompanion/characters/*/rig/textures/` 和 `src/aicompanion/assets/icons/` 里的立绘、贴图和图标。这些素材的对外许可**还没有确定**，确定之前保留所有权利。如果想在本项目以外使用，请先提 Issue 询问。
+
+- `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`：Live2D Cubism Core，适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)，详见 [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md)。一般情况下，年营业额 1000 万日元以上的企业分发时需要另外取得 Cubism SDK 发行许可。**但本项目支持导入任意外部 Live2D 模型，可能属于 Live2D 定义的[可扩展应用（Expandable Application）](https://www.live2d.com/en/sdk/license/expandable/)。** 这类应用发行前必须经过 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免**不适用**。本项目还没有向 Live2D 确认分类，也没有取得这项授权。分发包含 Cubism Core 的构建版本之前，请先自行向 Live2D 确认。
 - 其他第三方库和组件，以各自的许可证为准。
 - “DeepSeek”“Claude”“ChatGPT”等名称和徽标是各自权利人的商标。
 
