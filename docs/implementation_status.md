@@ -1179,3 +1179,13 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - R2 的凭据隔离保持不变：managed 凭据文件仍指向本应用的空文件，MiniMax Key 只从选定的环境变量来。
 - 验证：容器离线单测通过；用真实 DSH 0.2.1rc2 运行时（Linux 版）+ 本机模拟 Anthropic Messages 服务 + 假 Key 跑了 `minimax` / `minimax-cn` × M3.1-Flash / M3 共 4 组，每组两轮：Harness 接受模型选择，请求发往 `/anthropic/v1/messages`，带的是选定 Key（预置的 managed 旧 Key 没被用），M3.1-Flash 请求里没有 `thinking` 参数，第二轮带着上一轮的思考块正常完成。该回归在 `tests/test_dsh.py`（未安装运行时时跳过）。
 - 没验证：真实 MiniMax 服务（需要负责人用自己的 Key 按测试手册第 8 节试）；M3.1-Flash 默认思考深度下的速度和费用；Windows 上的真实运行时回归。
+
+### 2026-11-11 补充：Codex PR #32 审计 P1（跳转带 Key）修复（Claude）
+
+Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 默认跟随跳转，账户主机返回跨主机 307 时 `x-api-key` 原样带到新地址；Harness 配置里没有关闭跟随跳转的开关，Python 侧的禁止跳转也管不到子进程。
+
+- 新增 `agent/key_relay.py`：MiniMax 办事时，桌宠进程在 127.0.0.1 随机端口起一个 Key 中转。补丁里的 `baseURL` 改指中转，Harness 子进程环境变量里的“Key”换成每次启动随机生成的令牌，**真 Key 不进 Harness 进程**。
+- 中转核对令牌（常量时间比较）后换成真 Key，用项目统一的不跟随跳转的 `net.open_url` 转发到账户主机；上游返回 3xx 时回 502、不转交 Location。只转发账户地址路径（`/anthropic`）下的请求；令牌不对回 401，真 Key 本身也换不来转发。响应按块流式转回（SSE），上游 4xx/5xx 的报错原样给 Harness 显示。
+- 子进程的 `NO_PROXY` 补上 `127.0.0.1,localhost`，用户设了代理时中转请求也直连。中转和运行时同生共死：换路由、地址或 Key 重启运行时时一起换，令牌也换。DeepSeek 路由不变。
+- 验证：容器离线单测 811 项通过、38 项跳过。新增 `KeyRelayTest`（跨主机 307 时目标服务收不到 Key、令牌和路径校验、SSE 流式与令牌换 Key、上游报错透传）；真实 DSH 0.2.1rc2 运行时（Linux 版）回归 `test_minimax_cross_host_redirect_does_not_leak_key` 按 Codex 的步骤复现（A 307 到 localhost:B）：B 一次都没收到请求，任务不算完成；临时去掉中转时同一用例失败（B 收到 Key），确认用例能抓住这个问题。原有 MiniMax 两路由 × 两模型 × 两轮回归改为经中转运行，仍全部通过。
+- 没验证：Windows 上的真实运行时回归与桌宠 Smoke Test（容器以 root 运行，QtWebEngine 起不来）；低完整性进程连回环口在 Windows 实机上的表现；真实 MiniMax 服务。

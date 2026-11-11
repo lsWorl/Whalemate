@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 import json
 import os
@@ -48,7 +49,8 @@ def runtime_patch(home: Path, target=None) -> str:
     （Codex 审计 R2，实测复现）。这里把 managed 文件改指到本应用自己的空文件，用户原有的凭据文件不读、不删。
 
     MiniMax 办事：Harness 的 llm-pi-ai 多供应商路由默认不注册任何路由，要在配置里给出供应商才会激活。只激活本次选定的那一条，
-    Key 按 apiKeyEnv 从环境变量取（只有选定的那一把），地址用账户主机的 Anthropic 兼容接口。"""
+    apiKeyEnv 指向的变量里是本机 Key 中转的一次性令牌、地址是中转（见 DshAgent._relay_target / key_relay.py），
+    中转再把请求发往账户主机的 Anthropic 兼容接口。"""
     from aicompanion.providers.router import AGENT_MODELS, AGENT_ROUTES, PI_AI_ROUTES
     store = (Path(home)/CREDENTIALS_DIR/'.credentials.yaml').as_posix()
     text = PATCH + f"- id: credentials\n  config:\n    path: {json.dumps(store)}\n    watch: false\n"
@@ -120,6 +122,15 @@ def child_environment(selected: tuple, parent=None) -> dict:
     keep = {name.upper() for name in ENV_KEEP}
     env = {k: v for k, v in parent.items() if k.upper() in keep}
     env.update(dict(selected))
+    return env
+
+
+def loopback_direct(env: dict) -> dict:
+    """本机回环地址不走代理：MiniMax 办事经 127.0.0.1 上的 Key 中转，用户设了 HTTP(S)_PROXY 时也要直连。"""
+    names = [k for k in env if k.upper() == 'NO_PROXY'] or ['NO_PROXY']
+    for name in names:
+        items = [i for i in (env.get(name) or '').split(',') if i.strip()]
+        env[name] = ','.join(items + [h for h in ('127.0.0.1', 'localhost') if h not in items])
     return env
 
 
@@ -228,13 +239,29 @@ class DshAgent:
         self.conn: AcpConnection | None = None; self.key = None; self.lock = threading.Lock()
         self.mcp_servers: list[dict] = []   # mcp_server.McpToolServer.acp_entry()
         self.session_id = None; self.stopping = False; self.done = threading.Event()
+        self.relay = None                  # MiniMax 办事的本机 Key 中转（key_relay.KeyRelay）
 
     # ---- 运行时 -----------------------------------------------------------------
+    def _relay_target(self, selected: tuple, target):
+        """MiniMax（llm-pi-ai）路由：起本机 Key 中转，补丁地址改指中转，子进程里的 Key 换成一次性令牌（Codex PR #32 P1）。
+        Harness 自带的 fetch 会跟随跨主机跳转并带上 x-api-key，所以真 Key 不交给它。其他路由原样返回。"""
+        from aicompanion.providers.router import AGENT_ROUTES, PI_AI_ROUTES
+        from aicompanion.agent.key_relay import KeyRelay
+        route = getattr(target, 'route', '')
+        if route not in PI_AI_ROUTES: return selected, target
+        name = AGENT_ROUTES[route][0]
+        key = dict(selected).get(name, '')
+        if not key or not getattr(target, 'base_url', ''): raise RuntimeError('办事没有选定的 Key 或接口地址')
+        self.relay = KeyRelay(target.base_url, key)
+        selected = tuple((k, self.relay.token if k == name else v) for k, v in selected)
+        return selected, dataclasses.replace(target, env=selected, base_url=self.relay.base_url)
+
     def _launch(self, selected: tuple, target=None):
+        selected, target = self._relay_target(selected, target)
         home = dsh_home(); home.mkdir(parents=True, exist_ok=True)
         patch = home/'aicompanion.patch.yml'; patch.write_text(runtime_patch(home, target), encoding='utf-8')
         run = prepare_home(home)
-        env = child_environment(selected)
+        env = loopback_direct(child_environment(selected))
         env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
         if self.launcher: return self.launcher(env)
         from aicompanion.agent import sandbox
@@ -255,14 +282,20 @@ class DshAgent:
             key = (getattr(target, 'route', ''), getattr(target, 'base_url', ''), tuple(selected))
             if self.conn is not None and self.key == key and self.conn.proc.poll() is None: return self.conn
             self._close_locked()
-            conn = AcpConnection(self._launch(tuple(selected), target))
-            conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
-            self.conn, self.key = conn, key
+            try:
+                conn = AcpConnection(self._launch(tuple(selected), target))
+                self.conn = conn
+                conn.request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}}, 60)
+            except BaseException:
+                self._close_locked(); raise
+            self.key = key
             return conn
 
     def _close_locked(self):
         conn, self.conn, self.key = self.conn, None, None
+        relay, self.relay = self.relay, None
         if conn is not None: conn.close()
+        if relay is not None: relay.close()
 
     def close(self):
         with self.lock: self._close_locked()
