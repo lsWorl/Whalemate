@@ -10,7 +10,7 @@
 
 - AGENTS.md：保留五条原意，作为双方共用规则。
 - docs/architecture-principles.md：说明身份、人格、关系、表达与用户塑造权的边界及评审检查项。
-- docs/project_plan_v3.md：在总体架构中引用共同约束。
+- docs/project_plan_v3.md：在总体架构中引用共同约束（已于 2026-11-12 删除，用 `git show 7ebc39c:docs/project_plan_v3.md` 查看）。
 - docs/tasks.md：登记本任务。CLAUDE.md 继续引用 AGENTS.md，不另复制一套规则。
 
 不修改运行代码、数据库或真实账号配置。P0 仍停在审查阶段，T14—T17 按确认后的顺序推进。

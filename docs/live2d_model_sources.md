@@ -1,58 +1,27 @@
-# Live2D 模型来源与桌宠接入
+# 导入外部 Live2D 模型
 
-## Live2D Cubism Core 不随项目分发（2026-11-12）
+默认角色不使用 Live2D。只有想换成自己的 Cubism 模型时才需要看这份说明。
+2026-11-12 起删除了艾米莉娅和 Haru 示例的旧记录，需要时可在提交 `7ebc39c` 及之前的历史中查看。
 
-`live2dcubismcore.min.js` 适用 Live2D Proprietary Software License，已从仓库和打包版本中移除。
-默认角色（鲸鲸）用项目自己的骨骼动画和立绘，不需要它；只有导入外部 Live2D 模型时才需要。
+## 先准备 Live2D Cubism Core
+
+`live2dcubismcore.min.js` 适用 Live2D Proprietary Software License，本项目的仓库和打包版本都不包含它。
 
 - **源码运行**：在项目目录执行 `.venv\Scripts\python.exe tools\fetch_avatar.py`，从 Live2D 官网下载 Cubism SDK for Web 并取出 Core，放到 `src/aicompanion/assets/live2d/vendor/`。这个文件已列入 `.gitignore`，不会被提交。
 - **打包版本**：从 Live2D 官网下载 Cubism SDK for Web，把 `Core/live2dcubismcore.min.js` 放到程序目录的 `_internal/aicompanion/assets/live2d/vendor/`。
 - 缺少 Core 时，设置里导入模型会直接提示获取方法；已经选了外部模型的角色启动时退回自带形象，并在状态栏提示一次。
 - `tools/build_windows.py` 默认从构建结果里删掉 Core。`--keep-cubism-core` 只供自己电脑使用：能导入任意模型的应用带着 Core 对外分发，可能属于 Live2D 的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门协议。
 
-以下是历史记录。
+## 导入步骤
 
-核查日期：2026-10-24。
+1. 保留完整的模型文件夹，至少包括 `.model3.json`、它引用的 `.moc3` 和 PNG 纹理。
+2. 打开设置里的“桌面形象”，选择“导入 Live2D 模型”，选中 `.model3.json`。
+3. 程序会先检查包内文件、模型版本和引用路径，再检查 Core，最后实际加载。
+4. 观察桌面上的显示效果，确认眼睛、嘴型、表情和待机动作。
 
-## 当前可运行模型
+## 兼容性
 
-项目已包含官方 Cubism SDK 示例 Haru 的真实 `.moc3`、纹理、动作、表情和物理文件。
-来源为 Live2D 官方 SDK for Web，下载工具见 `tools/fetch_avatar.py`；其 LICENSE.md、NOTICE.md 随资源保留。
-这是用于验证程序功能的示例角色，不是艾米莉娅。桌宠窗口会明确标注。
-
-## 找到的艾米莉娅模型
-
-- [作者 Christina 发布的 Steam 创意工坊模型](https://steamcommunity.com/sharedfiles/filedetails/?id=2439919004)：标题为 `emilia [Live2D 3.0 content]`，页面注明 Cubism 3.0 导出。
-- [作者在页面中提供的演示视频](https://www.bilibili.com/video/BV1Ny4y1b77f)。
-
-该页面注明使用 FaceRig 中的此模型需要 FaceRig Live2D Module DLC。
-目前没有取得作者提供的独立运行包，也没有验证其在本程序中的参数、动作或使用许可。
-因此这里只记录来源，不能声称已经导入或保证兼容；没有通过第三方下载器绕过 Steam 的订阅或内容获取流程。
-同名的 Angel Emilia 商品不是《Re:Zero》角色，不能当作相应形象推荐。
-
-可以通过作者提供的渠道取得模型，或向作者索取适合本地桌宠使用的 Cubism 运行包。
-无需为了运行已导出的模型安装 Cubism Editor；只有修改、重新绑定和导出源工程时才需要制作工具。
-
-## 导入方式
-
-1. 保留完整文件夹，至少包括 `.model3.json`、它引用的 `.moc3` 和 PNG 纹理。
-2. 启动 AICompanion，进入桌宠，在 `...` 菜单中选择“导入已绑定 Live2D 模型”。
-3. 选择 `.model3.json`；程序先检查包内文件、模型标记和引用路径，再用 Core 实际加载。
-4. 观察窗口加载状态，并验收眼睛、嘴、害羞、失落、轻微生气和待机效果。
-
-本轮没有下载第三方目标模型，也没有制作假的 `.moc3`。PNG、PSD、`.cmo3` 不能直接冒充运行包。
-当前内置运行库支持 Cubism 3/4，较新版本须重新导出兼容版本或另行升级运行库。
-口型与表情按模型实际存在的参数驱动；标准 `ParamCheek` 缺失时可使用 Haru 的 `ParamTere`，没有绑定的参数不会凭空产生效果。
-若其他模型采用专用参数名，需要单独做映射和实测，不能仅凭文件后缀保证表情兼容。
-
-## 桌宠限制
-
-透明区域目前仍属于窗口命中范围，不支持逐像素鼠标穿透。可通过拖动调整位置或从菜单收回聊天窗口。
-2026-10-24 后续按用户要求移除全部常驻按钮、标题、字幕和状态提示，桌面只显示角色。
-操作入口保留在右键菜单；没有全局捕获键盘或持续记录屏幕。
-默认置顶可在菜单关闭，位置恢复支持负坐标副屏和移除显示器后的归位；多 DPI 真机拖动手感仍需人工体验。
-隐藏主聊天窗口不等于退出；通过桌宠或托盘的“退出应用”才能停止后台任务和主动问候。
-
-用户后续接受基于现有图片制作 Live2D 风格效果，本机现已改为独立的艾米莉娅 2D 网格动画，
-不再默认展示 Haru。该替代路线不是此文前半部分讨论的 Cubism 目标模型，来源与制作提示词
-见 `src/aicompanion/assets/live2d/Emilia/animation-source.md`。
+- 只支持 Cubism 3/4 的 `.model3.json`。旧版 `model.json`、PNG、PSD、`.cmo3` 都不能直接使用，需要先在 Cubism Editor 里导出运行包。
+- 模型资源必须用包内相对路径，不能通过 URL、绝对路径或 `..` 读取模型目录以外的文件。
+- 口型和表情按模型里实际存在的参数驱动。模型用专用参数名时，需要单独做映射和实测，不能只凭文件后缀保证效果。
+- 请只导入你有权使用的模型，并遵守模型作者的使用条款。
