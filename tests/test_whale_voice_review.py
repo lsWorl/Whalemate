@@ -175,6 +175,51 @@ class WindowTests(Base):
             dialog.deleteLater()
         self.assertEqual(self.db.get_setting('tts_provider'), 'qwen')                          # 改过的照常保存
 
+    def choose_provider_and_save(self, *values):
+        dialog = self.settings_window()
+        try:
+            for value in values: dialog.provider.setCurrentIndex(dialog.provider.findData(value))
+            dialog.save()
+        finally:
+            dialog.deleteLater()
+
+    def test_switching_back_to_local_speech_is_an_explicit_choice(self):
+        # Codex PR #41 复核：新库 → 设置窗口打开期间添加 MiniMax 账户 → 选千问再选回本地朗读 → 保存；
+        # 首尾值相同，但这是明确选择，要落库，之后生产 _apply_settings 不能切到云端
+        import aicompanion.ui.settings_window as module
+        controller = ChatController(self.db, MemoryService(self.db), self.router)
+        controller.character = self.db.characters()[0]
+        with mock.patch.object(module, 'QMediaDevices', SimpleNamespace(audioInputs=lambda: [])):
+            dialog = module.SettingsWindow(controller, self.settings, page='voice')
+        try:
+            self.assertEqual(dialog.provider.currentData(), 'system')
+            self.add_minimax()
+            dialog.provider.setCurrentIndex(dialog.provider.findData('qwen'))
+            dialog.provider.setCurrentIndex(dialog.provider.findData('system'))
+            dialog.save()
+        finally:
+            dialog.deleteLater()
+        self.assertEqual(self.db.get_setting('tts_provider'), 'system')
+        fake = self.apply_settings(self.router)
+        self.assertEqual((fake.speech.provider, self.db.get_setting('tts_provider')), ('system', 'system'))
+        self.assertIsNone(self.db.get_setting('voice_profile_setup'))
+
+    def test_local_choice_saved_before_adding_account_is_kept(self):
+        # 另一种顺序：先选回本地朗读并保存，以后才添加 MiniMax 账户
+        self.choose_provider_and_save('qwen', 'system')
+        self.assertEqual(self.db.get_setting('tts_provider'), 'system')
+        self.add_minimax()
+        fake = self.apply_settings(self.router)
+        self.assertEqual((fake.speech.provider, self.db.get_setting('tts_provider')), ('system', 'system'))
+        self.assertIsNone(self.db.get_setting('voice_profile_setup'))
+
+    def test_untouched_new_library_still_adopts_after_save(self):
+        # 完全没动朗读方式：保存后仍是“未选择”，加了 MiniMax 账户后照常接入默认声线
+        self.choose_provider_and_save()
+        self.assertIsNone(self.db.get_setting('tts_provider'))
+        self.add_minimax()
+        self.assertEqual(self.apply_settings(self.router).speech.provider, 'breeze')
+
 
 if __name__ == '__main__':
     unittest.main()

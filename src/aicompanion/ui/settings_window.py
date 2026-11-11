@@ -67,10 +67,12 @@ class SettingsWindow(QDialog):
         # 之后添加 MiniMax 账户也不会自动用上默认声线（Codex PR #41 审查 2）
         self.stored_tts_provider=self.database.get_setting('tts_provider')
         self.provider.setCurrentIndex(max(0,self.provider.findData(self.stored_tts_provider or settings.tts_provider)))
-        self.initial_tts_provider=self.provider.currentData()
+        # 用户只要在窗口里动过朗读方式（哪怕最后又选回本地朗读），就是明确选择，保存时要落库（Codex PR #41 复核）
+        self.tts_provider_touched=False
         self.voice=QComboBox(); self.voice.setEditable(True)
         self._voice_provider_changed()
         self.provider.currentIndexChanged.connect(self._voice_provider_changed)
+        self.provider.currentIndexChanged.connect(self._tts_provider_touched)
         self.voice_style=QPlainTextEdit(self.database.get_setting(f'qwen_style:{cid}',DEFAULT_STYLE))
         self.voice_style.setMaximumHeight(74)
         self.voice_mood=QComboBox()
@@ -305,6 +307,8 @@ class SettingsWindow(QDialog):
         path,_=QFileDialog.getOpenFileName(self,'选择背景图','', '图片 (*.png *.jpg *.jpeg *.webp)')
         if path: self.panel_background.setText(path)
 
+    def _tts_provider_touched(self,*args): self.tts_provider_touched=True
+
     def _voice_provider_changed(self,*args):
         self.voice.clear()
         if self.provider.currentData()=='qwen':
@@ -465,7 +469,7 @@ class SettingsWindow(QDialog):
         self.database.set_setting(f'avatar_mode:{character.id}',self.avatar_mode.currentData())
         self.database.set_setting(f'japanese_style:{character.id}',self.japanese_style.toPlainText())
         tts_provider=self.provider.currentData()
-        if self.stored_tts_provider is not None or tts_provider!=self.initial_tts_provider:
+        if self.stored_tts_provider is not None or self.tts_provider_touched:
             self.database.set_setting('tts_provider',tts_provider)
         for key,value in [('input_device',self.input.currentData()),
                           ('asr_provider',self.asr_provider.currentData()),('voice_mode',self.voice_mode.currentData()),
