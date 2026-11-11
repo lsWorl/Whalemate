@@ -147,6 +147,22 @@ class AcpBackendTest(unittest.TestCase):
         self.assertFalse(any(m.get('method') == 'session/prompt' for m in runtime.sent))   # 不会用默认模型照常干活
         agent.close()
 
+    def test_managed_credentials_redirected_to_own_empty_file(self):
+        # Codex 审计 R2：DSH 默认先读 $DSH_HOME/.credentials.yaml（优先级高于环境变量）；改指到本应用自己的空文件
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            (home/'.credentials.yaml').write_text('version: 1\nrefs:\n  DEEPSEEK_API_KEY: OLD\n', encoding='utf-8')
+            text = dsh_backend.runtime_patch(home)
+            self.assertIn('- id: credentials', text); self.assertIn(dsh_backend.CREDENTIALS_DIR, text)
+            own = home/dsh_backend.CREDENTIALS_DIR/'.credentials.yaml'
+            own.parent.mkdir(); own.write_text('version: 1\nrefs:\n  DEEPSEEK_API_KEY: STALE\n', encoding='utf-8')
+            run = dsh_backend.prepare_home(home)
+            self.assertEqual(own.read_text(encoding='utf-8'), '')                       # 自己的文件每次启动清空
+            self.assertIn('OLD', (home/'.credentials.yaml').read_text(encoding='utf-8'))   # 用户的文件不读、不删
+            self.assertEqual(run, home/'run')
+            (home/'.env').write_text('DEEPSEEK_API_KEY=x', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, '.env'): dsh_backend.prepare_home(home)
+
     def test_pick_workspace(self):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(pick_workspace('随便聊聊', folder), Path(folder))
@@ -432,3 +448,66 @@ class ToolBoxTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def _runtime_available():
+    try:
+        from deepseek_harness_runtime import resolve_bundled_launch_args
+        resolve_bundled_launch_args(); return True
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_runtime_available(), '没有安装 DeepSeek Harness 运行时')
+class RealRuntimeCredentialTest(unittest.TestCase):
+    """真实运行时 + 本机模拟 Messages 服务 + 假 Key（Codex 审计 R2 的复现方式）。不联网、不读真实凭据。"""
+    def test_selected_key_beats_stale_managed_file(self):
+        import http.server, subprocess, time
+        from deepseek_harness_runtime import resolve_bundled_launch_args
+        seen = []
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get('content-length') or 0))
+                seen.append(self.headers.get('x-api-key') or self.headers.get('authorization'))
+                self.send_response(200); self.send_header('content-type', 'text/event-stream'); self.end_headers()
+                def event(kind, data): self.wfile.write(f'event: {kind}\ndata: {json.dumps(data)}\n\n'.encode())
+                event('message_start', {'type': 'message_start', 'message': {'id': 'm', 'type': 'message', 'role': 'assistant',
+                      'model': 'deepseek-flash', 'content': [], 'stop_reason': None, 'usage': {'input_tokens': 1, 'output_tokens': 0}}})
+                event('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'text', 'text': ''}})
+                event('content_block_delta', {'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta', 'text': 'ok'}})
+                event('content_block_stop', {'type': 'content_block_stop', 'index': 0})
+                event('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {'output_tokens': 1}})
+                event('message_stop', {'type': 'message_stop'})
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            (home/'.credentials.yaml').write_text('version: 1\nrefs:\n  DEEPSEEK_API_KEY: FAKE_MANAGED_OLD_KEY\n', encoding='utf-8')
+            patch_file = home/'p.yml'; patch_file.write_text(dsh_backend.runtime_patch(home), encoding='utf-8')
+            run = dsh_backend.prepare_home(home)
+            env = dsh_backend.child_environment((('DEEPSEEK_API_KEY', 'FAKE_SELECTED_NEW_KEY'),
+                                                 ('DEEPSEEK_BASE_URL', f'http://127.0.0.1:{server.server_address[1]}')))
+            env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
+            proc = subprocess.Popen([*resolve_bundled_launch_args(), '--profile', 'acp', '--patch', str(patch_file)],
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                    encoding='utf-8', env=env, cwd=str(run), bufsize=1,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            try:
+                counter = [0]
+                def request(method, params, wait=90):
+                    counter[0] += 1
+                    proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': counter[0], 'method': method, 'params': params})+'\n'); proc.stdin.flush()
+                    deadline = time.monotonic()+wait
+                    while time.monotonic() < deadline:
+                        line = proc.stdout.readline()
+                        if not line: break
+                        message = json.loads(line)
+                        if message.get('id') == counter[0]: return message
+                    self.fail(f'{method} 没有回应')
+                request('initialize', {'protocolVersion': 1, 'clientCapabilities': {'fs': {'readTextFile': False, 'writeTextFile': False}, 'terminal': False}})
+                session = request('session/new', {'cwd': str(run), 'mcpServers': []})['result']['sessionId']
+                request('session/prompt', {'sessionId': session, 'prompt': [{'type': 'text', 'text': 'hi'}]})
+            finally:
+                proc.kill(); proc.wait(); server.shutdown(); server.server_close()
+        self.assertTrue(seen); self.assertEqual(set(seen), {'FAKE_SELECTED_NEW_KEY'})

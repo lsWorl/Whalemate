@@ -33,6 +33,32 @@ PATCH = ("# AICompanion：不随请求上传会话日志；关掉自带的改文
          "- id: session-log-deepseek\n  config:\n    enabled: false\n"
          + ''.join(f'- id: {row}\n  disabled: true\n' for row in DISABLED_ROWS))
 PROMPT_TIMEOUT = 30*60
+CREDENTIALS_DIR = 'aicompanion-credentials'   # 本应用自己的 managed 凭据目录，每次启动清空
+
+
+def runtime_patch(home: Path) -> str:
+    """运行时补丁。凭据：DSH 默认先读 `$DSH_HOME/.credentials.yaml`（managed，优先级高于环境变量），
+    里面若有旧 Key 会压过设置页选定的 Key（Codex 审计 R2，实测复现）。这里把 managed 文件改指到本应用自己的空文件，
+    用户原有的凭据文件不读、不删。"""
+    store = (Path(home)/CREDENTIALS_DIR/'.credentials.yaml').as_posix()
+    return PATCH + f"- id: credentials\n  config:\n    path: {json.dumps(store)}\n    watch: false\n"
+
+
+def prepare_home(home: Path) -> Path:
+    """启动前准备：清空本应用的 managed 凭据文件，返回运行时的当前目录（本应用专用的空目录）。
+    DSH 还会把“当前目录/.env”和“$DSH_HOME/.env”当兜底凭据来源；当前目录由我们建、不放 .env，
+    `$DSH_HOME/.env` 存在时拒绝启动并提示（那是用户放的文件，不替用户删除）。"""
+    home = Path(home)
+    if (home/'.env').exists():
+        raise RuntimeError(f'办事运行时目录里有 .env 文件（{home}），里面的 Key 可能被 Harness 读到；请先把它移走再试。')
+    store = home/CREDENTIALS_DIR; store.mkdir(parents=True, exist_ok=True)
+    managed = store/'.credentials.yaml'; managed.write_text('', encoding='utf-8')
+    try: os.chmod(managed, 0o600)   # 运行时要求凭据文件不能对其他用户可读（Windows 上无影响）
+    except OSError: pass
+    run = home/'run'; run.mkdir(exist_ok=True)
+    if (run/'.env').exists():
+        raise RuntimeError(f'办事运行时目录里有 .env 文件（{run}），请先把它移走再试。')
+    return run
 
 
 def dsh_home() -> Path:
@@ -188,7 +214,8 @@ class DshAgent:
     # ---- 运行时 -----------------------------------------------------------------
     def _launch(self, selected: tuple):
         home = dsh_home(); home.mkdir(parents=True, exist_ok=True)
-        patch = home/'aicompanion.patch.yml'; patch.write_text(PATCH, encoding='utf-8')
+        patch = home/'aicompanion.patch.yml'; patch.write_text(runtime_patch(home), encoding='utf-8')
+        run = prepare_home(home)
         env = child_environment(selected)
         env.update({'DSH_HOME': str(home), 'DSH_TELEMETRY_DISABLED': '1', 'DSH_PERMISSION_MODE': 'workspace-write'})
         if self.launcher: return self.launcher(env)
@@ -197,9 +224,9 @@ class DshAgent:
         env = sandbox.child_env(env)
         args = [*resolve_bundled_launch_args(), '--profile', 'acp', '--patch', str(patch)]
         def start():
-            # 运行时的当前目录固定在 C 盘数据目录：打包的虚拟路径按当前盘拼接，放 D 盘会找不到 koffi.node（实测）
+            # 运行时的当前目录固定在 C 盘数据目录下（run 子目录）：打包的虚拟路径按当前盘拼接，放 D 盘会找不到 koffi.node（实测）
             return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8',
-                                    env=env, cwd=str(home), bufsize=1, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                                    env=env, cwd=str(run), bufsize=1, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if sandbox.IS_WINDOWS:
             with sandbox.low_integrity(): return start()   # 运行时和它的子进程都是低完整性
         return start()
