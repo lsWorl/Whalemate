@@ -379,8 +379,11 @@ class MainWindow(QMainWindow):
         text=self.input_box.text().strip()
         if not text: return
         self.input_box.clear()
-        if self.agent_toggle.isChecked() and not text.startswith(self.AGENT_PREFIXES):
-            text='/做 '+text; self.agent_toggle.setChecked(False)   # 一次一件事：交出去后回到聊天
+        if self.agent_toggle.isChecked():
+            # 一次一件事：发出任何一句后都回到聊天（Codex PR #33 P2：手写了 /做 前缀时也要关，否则下一句“谢谢”会变成任务）。
+            # 停止词不补前缀，任务忙时打开“办事”说“停”也照样停下。
+            self.agent_toggle.setChecked(False)
+            if not text.startswith(self.AGENT_PREFIXES) and text.rstrip('！!。.') not in self.STOP_WORDS: text='/做 '+text
         self.submit(text)
 
     def _agent_mode_changed(self,on):

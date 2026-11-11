@@ -92,7 +92,7 @@ class UiRefreshTests(unittest.TestCase):
         sent = []
         from PySide6.QtWidgets import QLineEdit
         fake = SimpleNamespace(input_box=QLineEdit(), agent_toggle=QPushButton(), AGENT_PREFIXES=MainWindow.AGENT_PREFIXES,
-                               submit=lambda text: sent.append(text))
+                               STOP_WORDS=MainWindow.STOP_WORDS, submit=lambda text: sent.append(text))
         fake.agent_toggle.setCheckable(True)
         fake.input_box.setText('整理桌面'); fake.agent_toggle.setChecked(True)
         MainWindow._send_current_message(fake)
@@ -101,6 +101,30 @@ class UiRefreshTests(unittest.TestCase):
         self.assertEqual(sent[-1], '你好')
         fake.agent_toggle.setChecked(True); fake.input_box.setText('/做 写周报'); MainWindow._send_current_message(fake)
         self.assertEqual(sent[-1], '/做 写周报')                                              # 已经带前缀不重复加
+        self.assertFalse(fake.agent_toggle.isChecked())                                         # Codex PR #33 P2：手写前缀也复位
+        fake.input_box.setText('谢谢'); MainWindow._send_current_message(fake)
+        self.assertEqual(sent[-1], '谢谢')                                                      # 下一句仍是普通聊天
+        fake.agent_toggle.setChecked(True); fake.input_box.setText('停！'); MainWindow._send_current_message(fake)
+        self.assertEqual(sent[-1], '停！'); self.assertFalse(fake.agent_toggle.isChecked())    # 停止词不补前缀
+
+    def test_stop_word_reaches_stop_branch_while_busy(self):
+        # Codex PR #33 P2 的第二个场景：经生产 _send_current_message + submit，任务忙时说“停”要进入停止分支，不能变成新任务
+        from aicompanion.ui.main_window import MainWindow
+        from PySide6.QtWidgets import QLineEdit
+        calls = []
+        fake = SimpleNamespace(input_box=QLineEdit(), agent_toggle=QPushButton(), AGENT_PREFIXES=MainWindow.AGENT_PREFIXES,
+                               STOP_WORDS=MainWindow.STOP_WORDS, closing=False,
+                               agent=SimpleNamespace(busy=True, start=lambda goal: calls.append(('start', goal))),
+                               _stop_agent=lambda: calls.append(('stop',)), pet=SimpleNamespace(show_user=lambda text: None),
+                               database=SimpleNamespace(add_message=lambda *a, **k: None),
+                               controller=SimpleNamespace(character=SimpleNamespace(id='whale')))
+        fake.submit = lambda text, source='text': MainWindow.submit(fake, text, source)
+        fake.agent_toggle.setCheckable(True)
+        fake.agent_toggle.setChecked(True); fake.input_box.setText('/做 整理合成文件'); MainWindow._send_current_message(fake)
+        self.assertFalse(fake.agent_toggle.isChecked())
+        fake.input_box.setText('停'); MainWindow._send_current_message(fake)                   # 开关已复位的情况
+        fake.agent_toggle.setChecked(True); fake.input_box.setText('停'); MainWindow._send_current_message(fake)   # 又打开了“办事”
+        self.assertEqual(calls, [('start', '整理合成文件'), ('stop',), ('stop',)])               # 两次都停，没有启动新任务
 
 
 if __name__ == '__main__':
