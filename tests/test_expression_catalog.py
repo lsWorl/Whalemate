@@ -177,7 +177,10 @@ class OriginalSpriteCopyTests(unittest.TestCase):
         original = rows['happy/celebrate.png']
         self.assertEqual((original['review_status'], original['metadata']['license']), ('approved', 'project-original'))
         self.assertEqual(original['metadata']['semantic'], '开心、庆祝、赞同')
-        self.assertEqual(rows[self.path.relative_to(self.library).as_posix()]['review_status'], 'pending_review')
+        own = rows[self.path.relative_to(self.library).as_posix()]
+        # 负责人 2026-11-11：用户自己放进图库的图默认当作自己的图直接可用，含义排队自动识别
+        self.assertEqual((own['review_status'], own['enabled'], own['metadata']['license']), ('approved', 1, 'user-owned'))
+        self.assertEqual(own['metadata']['analysis'], 'pending'); self.assertNotIn('analysis', original['metadata'])
 
     def copy_pending(self):
         import shutil

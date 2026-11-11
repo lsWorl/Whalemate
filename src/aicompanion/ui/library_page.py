@@ -1,17 +1,23 @@
-"""图库沿用聊天平台路径；耗时扫描/导入在后台，审核和启停直接保存。"""
+"""图库沿用聊天平台路径；耗时扫描/导入/识别在后台，启停和来源可批量修改并直接保存。
+
+负责人 2026-11-11：自己放进图库或手动导入的图默认当作“自己的图（自用）”直接可用；含义由识图模型自动识别，
+不要求用户填写作者、来源和含义。素材清单导入的图仍按清单写明的许可，没写的标成“许可待确认”。"""
 import json
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon,QPixmap
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QPushButton,QCheckBox,
  QTableWidget,QTableWidgetItem,QLineEdit,QComboBox,QPlainTextEdit,QFileDialog,QMessageBox,QApplication,QSpinBox)
-from aicompanion.expression.catalog import AssetCatalog,LICENSES
+from aicompanion.expression.catalog import AssetCatalog,LICENSES,LICENSE_LABELS
 from aicompanion.ui.chat_worker import TaskWorker
 
 class LibraryPage(QWidget):
-    def __init__(self,database,character_id,parent=None):
+    ANALYZE_BATCH=10
+    def __init__(self,database,character_id,parent=None,controller=None):
         super().__init__(parent);self.catalog=AssetCatalog(database);self.character_id=character_id;self.worker=None
+        self.controller=controller;self.analyzer=None
         layout=QVBoxLayout(self)
-        hint=QLabel('沿用“聊天平台”的表情包目录。导入不会覆盖原图；未知许可先隔离。作者和来源应填写实际授权证据。')
+        hint=QLabel('沿用“聊天平台”的表情包目录。放进目录或导入的图默认当作你自己的图，直接可用；含义会用识图模型自动识别。'
+                   '素材清单里没写许可的图标为“许可待确认”，选中后在“来源”里选一项即可启用。')
         hint.setWordWrap(True);layout.addWidget(hint)
         self.summary=QLabel();self.summary.setWordWrap(True);layout.addWidget(self.summary)
         # 收集 QQ 里别人发的表情包（用户 2026-11-09）：存进图库"收集的表情"目录，识图分析含义后直接可用
@@ -27,19 +33,27 @@ class LibraryPage(QWidget):
         collect.addWidget(self.analysis_daily);collect.addStretch(1);layout.addLayout(collect)
         self.collect_status=QLabel();self.collect_status.setWordWrap(True);layout.addWidget(self.collect_status)
         row=QHBoxLayout()
-        for label,fn in [('刷新图库索引',self.scan),('导入图片',self.pick_import),('导入素材清单',self.pick_pack),('启用 / 禁用',self.toggle),('清理缩略图缓存',self.clear_cache)]:
+        for label,fn in [('刷新图库',self.scan),('导入图片',self.pick_import),('导入素材清单',self.pick_pack),('清理缩略图缓存',self.clear_cache)]:
             button=QPushButton(label);button.clicked.connect(fn);row.addWidget(button)
         layout.addLayout(row)
-        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['预览 / 分类','含义','审核 / 启用','许可','最近使用'])
+        self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['预览 / 分类','含义','状态','来源','最近使用'])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers);self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # 可多选（Ctrl / Shift 点选，或“全选”），下面的按钮对所有选中的图生效
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.itemSelectionChanged.connect(self.select);layout.addWidget(self.table)
-        form=QFormLayout();self.semantic=QLineEdit();self.intents=QLineEdit();self.emotions=QLineEdit()
-        self.author=QLineEdit();self.source=QLineEdit();self.license=QComboBox();self.license.addItems(['unknown']+list(LICENSES))
-        for label,field in [('表情含义',self.semantic),('表达意图（逗号分隔）',self.intents),('情绪（逗号分隔）',self.emotions),
-                            ('原作者',self.author),('来源 / 授权证据',self.source),('许可证',self.license)]:form.addRow(label,field)
-        layout.addLayout(form)
-        approve=QPushButton('保存标注并确认许可、启用选中图片');approve.clicked.connect(self.approve);layout.addWidget(approve)
-        self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setMaximumHeight(105);layout.addWidget(self.details)
+        batch=QHBoxLayout()
+        for label,fn in [('全选',self.table.selectAll),('启用选中',lambda:self.enable_selected(True)),('停用选中',lambda:self.enable_selected(False)),
+                         ('重新识别含义',self.reanalyze)]:
+            button=QPushButton(label);button.clicked.connect(fn);batch.addWidget(button)
+        self.license=QComboBox()
+        for value in LICENSES:self.license.addItem(LICENSE_LABELS.get(value,value),value)
+        batch.addWidget(QLabel('来源'));batch.addWidget(self.license)
+        apply=QPushButton('设为选中图片的来源');apply.clicked.connect(self.set_license);batch.addWidget(apply)
+        batch.addStretch(1);layout.addLayout(batch)
+        meaning=QHBoxLayout();meaning.addWidget(QLabel('含义（自动识别，一般不用改）'))
+        self.semantic=QLineEdit();self.semantic.setPlaceholderText('选中一张图后可以改；留空保存 = 重新自动识别');meaning.addWidget(self.semantic,1)
+        save=QPushButton('保存含义');save.clicked.connect(self.save_meaning);meaning.addWidget(save);layout.addLayout(meaning)
+        self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setMaximumHeight(90);layout.addWidget(self.details)
         self.status=QLabel();self.status.setWordWrap(True);self.status.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.status)
         # 最近几轮"发没发表情、卡在哪一步"：没发图时能直接看出是没候选、模型选了文字、格式没解析、图片校验失败还是显示 / 发送失败
         decisions=QHBoxLayout();decisions.addWidget(QLabel('最近的表达决策（不含聊天内容）'))
@@ -48,6 +62,7 @@ class LibraryPage(QWidget):
         again=QPushButton('刷新');again.clicked.connect(self.show_traces);decisions.addWidget(again);layout.addLayout(decisions)
         self.trace_view=QPlainTextEdit();self.trace_view.setReadOnly(True);self.trace_view.setMaximumHeight(120);layout.addWidget(self.trace_view)
         self.refresh()
+        self.analyze_soon()   # 打开图库页时顺手识别还没识别含义的图（配置了识图模型才会）
     def selected(self):
         row=self.table.currentRow()
         return self.table.item(row,0).data(Qt.ItemDataRole.UserRole) if row>=0 and self.table.item(row,0) else None
@@ -61,13 +76,16 @@ class LibraryPage(QWidget):
             if row['thumbnail']:
                 pix=QPixmap();pix.loadFromData(row['thumbnail']);item.setIcon(QIcon(pix))
             self.table.setItem(n,0,item)
-            values=[m.get('semantic',''),'已审核' if row['review_status']=='approved' else '待审核',
-                    m.get('license','unknown'),'已使用' if row['asset_id'] in last else '未使用']
-            values[1]+=' / '+('启用' if row['enabled'] else '停用')
+            values=[m.get('semantic',''),self.state(row),LICENSE_LABELS.get(m.get('license','unknown'),m.get('license','unknown')),
+                    '已使用' if row['asset_id'] in last else '未使用']
             for col,value in enumerate(values,1):self.table.setItem(n,col,QTableWidgetItem(str(value)))
         self.show_traces()
         stats=self.catalog.stats()
-        self.summary.setText(f"图库：{self.catalog.root}\n共 {stats['total']} 张，已审核 {stats['approved']}，待审核 {stats['pending']}；缩略图缓存 {stats['thumbnail_bytes']//1024} KiB")
+        waiting=sum(1 for r in rows if r['metadata'].get('analysis')=='pending')
+        self.summary.setText(f"图库：{self.catalog.root}\n共 {stats['total']} 张，可用 {sum(1 for r in rows if r['enabled'] and r['review_status']=='approved')}"
+                             +(f"，许可待确认 {stats['pending']}" if stats['pending'] else '')
+                             +(f"，等识别含义 {waiting}（{self.analysis_hint()}）" if waiting else '')
+                             +f"；缩略图缓存 {stats['thumbnail_bytes']//1024} KiB")
         from aicompanion.expression.collect import StickerCollector
         collector=StickerCollector(self.catalog.db,self.catalog);c=collector.stats()
         self.collect_status.setText('还没选表情包目录（"聊天平台"页），收集功能暂不工作。' if collector.root() is None else
@@ -91,27 +109,131 @@ class LibraryPage(QWidget):
                for e in reversed(ExpressionService(self.catalog.db).traces(20))]
         self.trace_view.setPlainText('\n'.join(lines) or '还没有记录。聊几句后点"刷新"。')
 
+    @staticmethod
+    def state(row):
+        m=row['metadata']
+        if row['review_status']!='approved':return '许可待确认'
+        if not row['enabled']:return '停用'+('（不适合发）' if m.get('suitable') is False else '')
+        if m.get('analysis')=='pending':return '可用 · 识别含义中'
+        return '可用'
+    def selected_ids(self):
+        rows=sorted({i.row() for i in self.table.selectedIndexes()})
+        return [self.table.item(r,0).data(Qt.ItemDataRole.UserRole) for r in rows if self.table.item(r,0)]
+    def selected(self):
+        ids=self.selected_ids();return ids[0] if len(ids)==1 else None
     def select(self):
-        row=self.catalog.get(self.selected()) if self.selected() else None
+        ids=self.selected_ids()
+        if len(ids)!=1:
+            self.semantic.clear();self.details.setPlainText(f'已选中 {len(ids)} 张' if ids else '');return
+        row=self.catalog.get(ids[0])
         if not row:return
-        m=row['metadata'];self.semantic.setText(m.get('semantic',''));self.intents.setText(','.join(m.get('intents',[])))
-        self.emotions.setText(','.join(m.get('emotions',[])));self.author.setText(m.get('author',''));self.source.setText(m.get('source',''))
-        self.license.setCurrentText(m.get('license','unknown'))
+        m=row['metadata'];self.semantic.setText(m.get('semantic',''))
+        index=self.license.findData(m.get('license'))
+        if index>=0:self.license.setCurrentIndex(index)
         details={k:v for k,v in row.items() if k not in ('thumbnail',)}
         self.details.setPlainText(json.dumps(details,ensure_ascii=False,indent=2))
     def metadata(self):
-        return dict(character_id=self.character_id,semantic=self.semantic.text()[:160],
-                    intents=[x.strip()[:40] for x in self.intents.text().replace('，',',').split(',') if x.strip()][:8],
-                    emotions=[x.strip()[:40] for x in self.emotions.text().replace('，',',').split(',') if x.strip()][:8],
-                    author=self.author.text().strip(),source=self.source.text().strip(),license=self.license.currentText())
-    def background(self,fn):
-        # finished 会释放 QThread；只用完成信号清空的引用判断忙闲，不访问已删除的 Qt 对象。
-        if self.worker is not None:self.status.setText('正在处理，请稍候');return
+        return dict(character_id=self.character_id)
+    def keep_selection(self,ids):
+        """刷新后重新选中刚才操作的图，方便连续批量操作。"""
+        self.table.blockSignals(True);self.table.clearSelection()
+        from PySide6.QtCore import QItemSelectionModel
+        for r in range(self.table.rowCount()):
+            item=self.table.item(r,0)
+            if item and item.data(Qt.ItemDataRole.UserRole) in ids:
+                self.table.selectionModel().select(self.table.model().index(r,0),
+                    QItemSelectionModel.SelectionFlag.Select|QItemSelectionModel.SelectionFlag.Rows)
+        self.table.blockSignals(False);self.select()
+    def enable_selected(self,enabled):
+        ids=self.selected_ids()
+        if not ids:self.status.setText('先在表格里选中图片（可按住 Ctrl / Shift 多选，或点“全选”）');return
+        pending=0
+        for aid in ids:
+            row=self.catalog.get(aid)
+            if row and row['review_status']!='approved':pending+=1
+            self.catalog.enable(aid,enabled)
+        self.refresh();self.keep_selection(ids)
+        text=f"已{'启用' if enabled else '停用'} {len(ids)-pending} 张"
+        if pending and enabled:text+=f"；{pending} 张许可待确认，在“来源”里选一项后才会使用"
+        self.status.setText(text)
+    def set_license(self):
+        ids=self.selected_ids()
+        if not ids:self.status.setText('先在表格里选中图片');return
+        license=self.license.currentData();failed=[]
+        for aid in ids:
+            row=self.catalog.get(aid)
+            if not row:continue
+            m=row['metadata']
+            try:self.catalog.review(aid,author=m.get('author',''),source=m.get('source',''),license=license)
+            except ValueError as error:failed.append(str(error))
+        self.refresh();self.keep_selection(ids)
+        self.status.setText(f"已把 {len(ids)-len(failed)} 张设为“{LICENSE_LABELS.get(license,license)}”"
+                            +(f"；{len(failed)} 张没改：{failed[0]}" if failed else ''))
+    def save_meaning(self):
+        aid=self.selected()
+        if not aid:self.status.setText('选中一张图再改含义');return
+        text=self.semantic.text().strip()
+        if text:
+            self.catalog.annotate(aid,{'semantic':text[:160]});self.status.setText('已保存含义；以后自动识别不会覆盖')
+        else:
+            self.queue_analysis([aid]);self.status.setText('含义已清空，会重新自动识别')
+        self.refresh();self.keep_selection([aid]);self.analyze_soon()
+    def reanalyze(self):
+        ids=self.selected_ids()
+        if not ids:self.status.setText('先在表格里选中图片');return
+        self.queue_analysis(ids);self.refresh();self.keep_selection(ids)
+        self.status.setText(f'{len(ids)} 张已排队重新识别含义');self.analyze_soon()
+    def queue_analysis(self,ids):
+        """排进自动识别：清掉用户手改标记，识别结果写回含义。"""
+        import json as _json
+        def apply(c):
+            for aid in ids:
+                row=c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?',(aid,)).fetchone()
+                if not row:continue
+                m=_json.loads(row['metadata']);m.update(analysis='pending',attempts=0);m.pop('user_annotated',None)
+                c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(_json.dumps(m,ensure_ascii=False),aid))
+        self.catalog.db.locked(apply)
+    # ---- 自动识别含义（后台，不卡界面） ---------------------------------------------------------
+    def media(self):
+        if self.controller is None:return None
+        from aicompanion.bridge.media import QQMedia
+        return QQMedia(self.catalog.db,self.controller)
+    def analysis_hint(self):
+        media=self.media()
+        if media is None:return '打开设置窗口时自动识别'
+        if not media.vision_ready():return '在“模型”页选好识图模型后自动识别，现在先按分类名使用'
+        return '后台识别中' if self.analyzer is not None else '稍后自动识别'
+    def analyze_soon(self):
+        """后台识别几张等识别含义的图；识完一批再接下一批，直到没有或当天额度用完。"""
+        media=self.media()
+        if media is None or self.analyzer is not None or not media.vision_ready():return False
+        from aicompanion.expression.collect import StickerCollector
+        collector=StickerCollector(self.catalog.db,self.catalog)
+        if not collector.pending(1):return False
+        # 线程挂在主窗口上（和导入一样）：关掉设置窗口时这一批照常识别完，不会因为页面销毁而中断崩溃
+        worker=self.start_worker(lambda token:collector.analyze_pending(media.analyze_sticker,limit=self.ANALYZE_BATCH,
+                                                                        alive=lambda:not token.event.is_set()))
+        self.analyzer=worker
+        worker.succeeded.connect(self.analyzed);worker.finished.connect(self.analysis_finished);worker.start()
+        return True
+    def start_worker(self,fn):
         owner=self.window().parentWidget()
-        worker=TaskWorker(fn,owner or QApplication.instance());self.worker=worker
+        worker=TaskWorker(fn,owner or QApplication.instance())
         if owner is not None and hasattr(owner,'tasks'):
             owner.tasks.add(worker);worker.finished.connect(lambda:owner._task_finished(worker))
         else:worker.finished.connect(worker.deleteLater)
+        return worker
+    def analyzed(self,count):
+        self._progress=bool(count);self.refresh()
+        if count:self.status.setText(f'已自动识别 {count} 张图的含义')
+    def analysis_finished(self):
+        self.analyzer=None
+        # 这一批识别出了东西才接着下一批；额度用完或识图失败（一张都没处理）就停，等下次刷新或打开设置
+        if getattr(self,'_progress',False):self._progress=False;self.analyze_soon()
+    def background(self,fn):
+        # finished 会释放 QThread；只用完成信号清空的引用判断忙闲，不访问已删除的 Qt 对象。
+        if self.worker is not None:self.status.setText('正在处理，请稍候');return
+        worker=self.start_worker(fn);self.worker=worker
         worker.succeeded.connect(self.done);worker.failed.connect(self.failed)
         worker.finished.connect(self.background_finished)
         worker.start();self.status.setText('正在后台校验图片…')
@@ -120,34 +242,28 @@ class LibraryPage(QWidget):
     def failed(self,error):
         self.status.setText('处理失败：'+str(error)[:500]+'；原始素材文件保留')
     def done(self,value):
-        self.refresh()
+        self.refresh();self.analyze_soon()
         if isinstance(value,dict) and all(k in value for k in ('imported','reused','invalid')):
             self.status.setText(f"处理完成：新增 {value['imported']} 张，重复 {value['reused']} 张，失败 {value['invalid']} 张")
         else:self.status.setText('处理完成：'+str(value))
     def scan(self):
         self.background(lambda token:self.catalog.scan(token))
     def pick_import(self):
-        path,_=QFileDialog.getOpenFileName(self,'导入表情包','','图片 (*.png *.jpg *.jpeg *.gif *.webp)')
-        if path:
-            metadata=self.metadata();self.background(lambda token:self.catalog.import_image(path,metadata))
+        paths,_=QFileDialog.getOpenFileNames(self,'导入表情包（可多选）','','图片 (*.png *.jpg *.jpeg *.gif *.webp)')
+        if paths:
+            metadata=self.metadata();self.background(lambda token:self.import_images(paths,metadata,token))
+    def import_images(self,paths,metadata,token=None):
+        counts=dict(imported=0,reused=0,invalid=0)
+        for path in paths:
+            if token is not None:token.check()
+            try:
+                _,reused=self.catalog.import_image(path,metadata);counts['reused' if reused else 'imported']+=1
+            except (ValueError,OSError):
+                if len(paths)==1:raise
+                counts['invalid']+=1
+        return counts
     def pick_pack(self):
         path,_=QFileDialog.getOpenFileName(self,'导入已下载的素材清单','','清单 (*.json)')
         if path:self.background(lambda token:self.catalog.import_pack(path,token))
-    def approve(self):
-        aid=self.selected()
-        if not aid:return
-        try:
-            metadata=self.metadata()
-            self.catalog.review(aid,**{k:metadata[k] for k in ('author','source','license')})
-            metadata.pop('character_id',None)
-            self.catalog.annotate(aid,metadata);self.refresh();self.status.setText('已保存标注和许可确认')
-        except ValueError as error:self.status.setText(str(error))
-    def toggle(self):
-        aid=self.selected();row=self.catalog.get(aid) if aid else None
-        if row:
-            # 待审核的图：切换的是"审核通过后要不要用"的选择（记下来，审核前不会发）
-            current=row['enabled'] if row['review_status']=='approved' else row['metadata'].get('user_enabled') is True
-            self.catalog.enable(aid,not current);self.refresh()
-            self.status.setText('已更新' if row['review_status']=='approved' else '已记下你的选择；待审核图片审核通过前不会发送')
     def clear_cache(self):
-        self.catalog.clear_thumbnails();self.refresh();self.status.setText('仅清理索引内缩略图；原图和审核记录保留，刷新可重建')
+        self.catalog.clear_thumbnails();self.refresh();self.status.setText('仅清理索引内缩略图；原图和设置保留，刷新可重建')

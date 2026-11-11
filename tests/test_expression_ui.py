@@ -74,15 +74,19 @@ class ExpressionUITests(unittest.TestCase):
             (root/'happy').mkdir();(root/'happy/a.png').write_bytes(fixtures.png())
             db.set_setting('qq_meme_root',str(root))
             page=LibraryPage(db,'deepseek-whale');page.catalog.scan();page.refresh()
-            self.assertEqual(page.table.rowCount(),1);page.table.selectRow(0);self.app.processEvents()
-            page.author.setText('合成作者');page.source.setText('synthetic:test');page.license.setCurrentText('user-owned')
-            page.intents.setText('庆祝,附和');page.approve()
-            self.assertEqual(page.catalog.stats()['approved'],1)
-            aid=page.catalog.rows()[0]['asset_id'];self.assertEqual(page.catalog.get(aid)['metadata']['intents'],['庆祝','附和'])
-            # Codex 审计（ee541d0）：已审核但被停用的图，再点"保存标注和许可确认"仍然停用
-            page.catalog.enable(aid,False);page.refresh();page.table.selectRow(0);self.app.processEvents()
-            page.author.setText('合成作者');page.source.setText('synthetic:test');page.license.setCurrentText('user-owned')
-            page.approve();self.assertEqual(page.catalog.get(aid)['enabled'],0)
+            self.assertEqual(page.table.rowCount(),1)
+            # 负责人 2026-11-11：自己放进图库的图默认可用，不要求填作者、来源、含义
+            self.assertEqual(page.catalog.stats()['approved'],1);self.assertIn('可用',page.table.item(0,2).text())
+            self.assertEqual(page.table.item(0,3).text(),'自己的图（自用）')
+            aid=page.catalog.rows()[0]['asset_id']
+            page.table.selectRow(0);self.app.processEvents()
+            page.enable_selected(False);self.assertEqual(page.catalog.get(aid)['enabled'],0)
+            # 改来源不影响停用选择（Codex 审计 ee541d0）
+            page.license.setCurrentIndex(page.license.findData('CC0-1.0'));page.set_license()
+            self.assertEqual((page.catalog.get(aid)['metadata']['license'],page.catalog.get(aid)['enabled']),('CC0-1.0',0))
+            page.enable_selected(True);self.assertEqual(page.catalog.get(aid)['enabled'],1)
+            page.semantic.setText('庆祝');page.save_meaning()
+            self.assertEqual(page.catalog.get(aid)['metadata']['semantic'],'庆祝')
             page.clear_cache();self.assertEqual(page.catalog.stats()['thumbnail_bytes'],0)
             # 收集别人发的表情包：开关和每日分析上限直接保存（用户 2026-11-09）
             self.assertTrue(page.collect.isChecked());page.collect.setChecked(False)
@@ -90,6 +94,56 @@ class ExpressionUITests(unittest.TestCase):
             page.analysis_daily.setValue(30);self.assertEqual(db.get_setting('sticker_analysis_daily'),30)
             self.assertIn('收集来的表情',page.collect_status.text())
             page.deleteLater();self.app.processEvents()
+    def test_library_batch_operations_and_pack_license(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            (root/'happy').mkdir()
+            for n in range(3):(root/'happy'/f'{n}.png').write_bytes(fixtures.png(0xff000000+n*7919))
+            db.set_setting('qq_meme_root',str(root))
+            page=LibraryPage(db,'deepseek-whale');page.catalog.scan();page.refresh()
+            try:
+                self.assertEqual(page.table.rowCount(),3)
+                page.table.selectAll();self.app.processEvents();self.assertEqual(len(page.selected_ids()),3)
+                page.enable_selected(False)
+                self.assertEqual(sum(r['enabled'] for r in page.catalog.rows()),0)
+                self.assertEqual(len(page.selected_ids()),3)                                    # 操作后保持选中，方便接着操作
+                page.enable_selected(True);self.assertEqual(sum(r['enabled'] for r in page.catalog.rows()),3)
+                # 含义排队自动识别；重新识别会清掉手改标记
+                self.assertTrue(all(r['metadata'].get('analysis')=='pending' for r in page.catalog.rows()))
+                # 清单导入、没写许可的图：许可待确认，批量设来源后可用；需要署名的许可缺作者时给出提示
+                pack=page.catalog.get(page.catalog.register(self._pack_image(root),root,{'from_pack':True})[0])
+                page.refresh();self.assertIn('许可待确认',page.summary.text())
+                row=next(r for r in range(page.table.rowCount()) if page.table.item(r,0).data(256)==pack['asset_id'])
+                page.table.clearSelection();page.table.selectRow(row);self.app.processEvents()
+                page.license.setCurrentIndex(page.license.findData('CC-BY-4.0'));page.set_license()
+                self.assertIn('需要原作者',page.status.text())
+                page.license.setCurrentIndex(page.license.findData('user-owned'));page.set_license()
+                self.assertEqual(page.catalog.get(pack['asset_id'])['review_status'],'approved')
+            finally:
+                page.deleteLater();self.app.processEvents()
+    @staticmethod
+    def _pack_image(root):
+        path=root/'happy'/'pack.png';path.write_bytes(fixtures.png(0xff9a9a9a));return path
+    def test_library_auto_meaning_uses_vision(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            (root/'开心').mkdir();(root/'开心'/'a.png').write_bytes(fixtures.png())
+            db.set_setting('qq_meme_root',str(root))
+            from aicompanion.expression.catalog import AssetCatalog
+            AssetCatalog(db).scan()
+            result={'suitable':True,'meaning':'开心到转圈','use_when':['庆祝'],'emotions':['开心']}
+            with mock.patch('aicompanion.bridge.media.QQMedia.vision_ready',return_value=True), \
+                 mock.patch('aicompanion.bridge.media.QQMedia.analyze_sticker',return_value=result):
+                page=LibraryPage(db,'deepseek-whale',controller=SimpleNamespace())
+                try:
+                    worker=page.analyzer;self.assertIsNotNone(worker);self.assertTrue(worker.wait(5000))
+                    for _ in range(4):self.app.processEvents()
+                    row=page.catalog.rows()[0]
+                    self.assertEqual((row['metadata']['semantic'],row['metadata']['analysis']),('开心到转圈','done'))
+                    self.assertEqual(page.table.item(0,1).text(),'开心到转圈')
+                finally:
+                    page.deleteLater();self.app.processEvents()
     def test_worker_orders_attachment_before_text_and_final_without_tts_tags(self):
         with tempfile.TemporaryDirectory() as temp:
             db=Database(Path(temp)/'synthetic.sqlite3');db.initialize()

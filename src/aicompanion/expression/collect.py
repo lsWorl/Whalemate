@@ -100,10 +100,15 @@ class StickerCollector:
         return {'status': 'collected', 'asset_id': asset_id, 'meaning': '', 'sha256': digest}
 
     # ---- 分析 ---------------------------------------------------------------------------
-    def pending(self, limit: int = 5) -> list[str]:
+    def pending(self, limit: int = 5, collected: bool | None = None) -> list[str]:
+        """排队等识别含义的图：收集来的，以及用户图库里没写含义的（负责人 2026-11-11：含义不让用户手填）。
+        collected=None 两种都要；收集关掉时只取图库自己的图。"""
+        if collected is None and not self.enabled(): collected = False
+        where = '' if collected is None else (" AND json_extract(metadata,'$.collected')=1" if collected
+                                              else " AND COALESCE(json_extract(metadata,'$.collected'),0)=0")
         with self.db.transaction() as c:
-            rows = c.execute("""SELECT asset_id FROM expression_assets WHERE json_extract(metadata,'$.collected')=1
-                 AND json_extract(metadata,'$.analysis')='pending' ORDER BY imported_at LIMIT ?""", (limit,)).fetchall()
+            rows = c.execute("SELECT asset_id FROM expression_assets WHERE json_extract(metadata,'$.analysis')='pending'"
+                             + where + ' ORDER BY imported_at LIMIT ?', (limit,)).fetchall()
         return [r['asset_id'] for r in rows]
 
     def analyze_pending(self, analyzer, limit: int = 5, alive=None) -> int:
@@ -112,7 +117,9 @@ class StickerCollector:
         done = 0
         for asset_id in self.pending(limit):
             if alive is not None and not alive(): break
-            if not self.enabled(): break
+            row = self.catalog.get(asset_id)
+            if row is None: continue
+            if row['metadata'].get('collected') and not self.enabled(): continue   # 收集关掉后不再把收集来的图交给识图
             if not self.db.reserve_daily(f'sticker_analysis_count:{self.today().isoformat()}', self.analysis_daily()): break
             media = self.catalog.resolve(asset_id)
             result = None
@@ -145,7 +152,9 @@ class StickerCollector:
                     metadata['image_text'] = str(result.get('text') or '')[:40]
                     metadata['annotation_defaults'] = []
                 if not suitable:
-                    metadata['unsuitable_reason'] = str(result.get('reason') or '')[:40]; enabled = 0
+                    metadata['unsuitable_reason'] = str(result.get('reason') or '')[:40]
+                    # 收集来的图不适合就停用；用户自己放进图库的图只记下原因，用不用由用户决定
+                    if metadata.get('collected'): enabled = 0
             c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?', (json.dumps(metadata, ensure_ascii=False), asset_id))
             if enabled is not None: c.execute('UPDATE expression_assets SET enabled=? WHERE asset_id=?', (enabled, asset_id))
         self.db.locked(write)

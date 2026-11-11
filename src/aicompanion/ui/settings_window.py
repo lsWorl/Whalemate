@@ -164,7 +164,7 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.bridge_page import BridgePage
         self.bridge_page=BridgePage(self.database); self.tabs.addTab(self.bridge_page,'聊天平台')
         from aicompanion.ui.library_page import LibraryPage
-        self.library_page=LibraryPage(self.database,controller.character.id,self); self.tabs.addTab(self.library_page,'表情图库')
+        self.library_page=LibraryPage(self.database,controller.character.id,self,controller=controller); self.tabs.addTab(self.library_page,'表情图库')
         from aicompanion.ui.relationship_page import RelationshipPage   # T15
         self.relationship_page=RelationshipPage(self.database,controller.character.id,self); self.tabs.addTab(self.relationship_page,'人物关系')
         from aicompanion.ui.community_page import CommunityPage   # T18

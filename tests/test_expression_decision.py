@@ -30,6 +30,7 @@ class DecisionTests(unittest.TestCase):
         self.model = Scripted(); self.controller = ChatController(self.db, MemoryService(self.db), self.model)
         self.now = 1000.0; self.controller.expression = ExpressionService(self.db, lambda: self.now)
         self.controller.character = self.character; self.events = []
+        self.path.unlink()   # 夹具里那张图现在默认可用（自己的图），这里只要各测试自己加的图
 
     def add(self, name, **meta):
         self.colors = getattr(self, 'colors', 0)+1   # 每张颜色不同：图库按内容哈希去重
@@ -61,7 +62,9 @@ class DecisionTests(unittest.TestCase):
     def test_report_explains_empty_candidates(self):
         service = ExpressionService(self.db)
         ctx = ExpressionContext('a', self.character.id, 'desktop:x')
-        self.cat.scan()                                              # 文件夹里的图没有许可 → 待审核
+        (self.library/'happy'/'b.png').write_bytes(png(0xff445566))
+        (self.library/'manifest.json').write_text('{"asset_defaults": {"license": "unknown"}}', encoding='utf-8')
+        self.cat.scan()                                              # 清单写明许可不明 → 待确认
         candidates, report = service.prepare_report(ctx, self.character)
         self.assertEqual((candidates, report['reason'], report['filtered']), ((), 'no_eligible_assets', {'pending_review': 1}))
         self.assertEqual(service.prepare_report(replace(ctx, supports_images=False), self.character)[1]['reason'], 'client_no_image_support')
