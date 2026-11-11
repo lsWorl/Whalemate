@@ -27,6 +27,26 @@ def png_card(card: dict, key=b'chara') -> bytes:
     return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0))+chunk(b'tEXt', text)+chunk(b'IEND', b'')
 
 
+def png_chunks(*chunks) -> bytes:
+    def chunk(kind, body):
+        return struct.pack('>I', len(body))+kind+body+struct.pack('>I', zlib.crc32(kind+body) & 0xffffffff)
+    return (b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0))
+            + b''.join(chunk(k, v) for k, v in chunks)+chunk(b'IEND', b''))
+
+
+def ztxt(key: bytes, text: bytes) -> tuple:
+    return b'zTXt', key+b'\0\0'+zlib.compress(text, 9)
+
+
+def itxt(key: bytes, text: bytes) -> tuple:
+    return b'iTXt', key+b'\0\x01\0'+b'\0\0'+zlib.compress(text, 9)   # 压缩标志 1、方法 0、空语言标签和译名
+
+
+def card_text(card: dict, pad=0) -> bytes:
+    data = dict(card, data=dict(card['data'], padding='x'*pad)) if pad else card
+    return base64.b64encode(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+
+
 ST_CARD = {'spec': 'chara_card_v2', 'spec_version': '2.0', 'data': {
     'name': '别家角色', 'description': '{{char}}是个爱吐槽的猫娘。', 'personality': '毒舌但护短',
     'scenario': '{{user}}刚下班回家。', 'first_mes': '哟，回来了？', 'creator_notes': '测试卡',
@@ -139,6 +159,25 @@ class CardTests(unittest.TestCase):
                 self.assertEqual([(e.keys, e.always) for e in data['lore']], [(('小鱼干',), False), ((), True)])  # 禁用的条目不导入
                 self.assertEqual(data['interests'], ('猫', '吐槽'))
 
+    def test_compressed_png_text_is_bounded(self):
+        # Codex PR #35 R3：zTXt / iTXt 解压无上限。普通压缩卡照常导入；解压量或多块累计超过上限时报错，不先整段解压
+        from aicompanion.domain.persona import MAX_CARD_TEXT
+        for chunk in (ztxt(b'chara', card_text(ST_CARD)), itxt(b'ccv3', card_text(ST_CARD))):
+            with self.subTest(kind=chunk[0]):
+                self.assertEqual(read_card(png_chunks(chunk))['title'], '猫娘版')
+        bomb_text = card_text(ST_CARD, pad=6*1024*1024)                                       # 约 8 MB，压缩后只有几 KB
+        for chunk in (ztxt(b'chara', bomb_text), itxt(b'ccv3', bomb_text)):
+            with self.subTest(bomb=chunk[0]):
+                raw = png_chunks(chunk)
+                self.assertLess(len(raw), 64*1024)
+                with self.assertRaisesRegex(PersonaError, '太大'): read_card(raw)
+        half = card_text(ST_CARD, pad=int(MAX_CARD_TEXT*0.45))                                  # 单块不超，两块加起来超
+        self.assertLess(len(half), MAX_CARD_TEXT)
+        with self.assertRaisesRegex(PersonaError, '太大'):
+            read_card(png_chunks(ztxt(b'chara', half), ztxt(b'ccv3', half)))
+        with mock.patch('aicompanion.domain.persona.zlib.decompress', side_effect=AssertionError('不应整段解压')):
+            self.assertEqual(read_card(png_chunks(ztxt(b'chara', card_text(ST_CARD))))['title'], '猫娘版')
+
     def test_own_format_round_trip_and_limits(self):
         persona = Persona('p', 'deepseek-whale', '').with_content({'title': '测试', 'description': '设定\x07', 'speaking_style': '风格',
             'examples': [{'user': '嗨', 'reply': '嗨嗨'}], 'lore': [{'keys': ['鱼'], 'content': '爱吃鱼'}],
@@ -249,6 +288,49 @@ class EditorTests(PersonaBase):
             editor.description.setPlainText('草稿设定'); editor.preview()
             self.assertIn('草稿设定', prompts[0]); self.assertIn('才没担心你', editor.preview_text.text())
             self.assertNotEqual(self.service.active('deepseek-whale').description, '草稿设定')     # 预览不保存
+        finally:
+            editor.deleteLater()
+
+    def test_import_does_not_silently_drop_unsaved_draft(self):
+        # Codex PR #35 R2：编辑中的草稿在导入前要问：取消 → 什么都不变；保存 → 草稿进了原人格；放弃 → 照常导入
+        editor, _ = self.editor()
+        path = Path(self.tmp.name)/'card.png'; path.write_bytes(png_card(ST_CARD))
+        try:
+            original = editor.current_id; count = len(self.service.personas('deepseek-whale'))
+            editor.description.setPlainText('没保存的草稿'); self.assertTrue(editor.dirty)
+            with mock.patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Cancel) as asked:
+                editor.import_file(str(path))
+            asked.assert_called_once()
+            self.assertEqual((editor.current_id, editor.description.toPlainText(), editor.dirty), (original, '没保存的草稿', True))
+            self.assertEqual(len(self.service.personas('deepseek-whale')), count)                    # 取消就不导入
+            bad = Path(self.tmp.name)/'bad.json'; bad.write_text('不是 JSON', encoding='utf-8')
+            with mock.patch.object(QMessageBox, 'warning'), mock.patch.object(QMessageBox, 'question') as asked:
+                editor.import_file(str(bad))
+            asked.assert_not_called()                                                            # 读不进来：不问也不动草稿
+            self.assertEqual(editor.description.toPlainText(), '没保存的草稿')
+            with mock.patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Save):
+                editor.import_file(str(path))
+            self.assertEqual(self.service.get(original).description, '没保存的草稿')            # 草稿先存进原人格
+            self.assertEqual(editor.title.text(), '猫娘版'); self.assertEqual(len(self.service.personas('deepseek-whale')), count+1)
+            editor.description.setPlainText('又一份草稿')
+            with mock.patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Discard):
+                editor.import_file(str(path))
+            self.assertEqual(len(self.service.personas('deepseek-whale')), count+2); self.assertFalse(editor.dirty)
+        finally:
+            editor.deleteLater()
+
+    def test_preview_respects_daily_quota(self):
+        # Codex PR #35 R1：预览也是聊天请求，额度到限就不发
+        calls = []
+        client = SimpleNamespace(generate_reply_stream=lambda history, prompt, token: (calls.append(prompt), iter(['嗯']))[1])
+        self.db.set_setting('quota_daily_total', '0.5')
+        self.db.add_token_usage('companion', 'deepseek-flash', 1000, 1000, cost=1.0, character_id='deepseek-whale')
+        editor, _ = self.editor(client)
+        try:
+            editor.preview()
+            self.assertEqual(calls, []); self.assertIn('已用完', editor.preview_text.text())
+            self.db.set_setting('quota_daily_total', '5')
+            editor.preview(); self.assertEqual(len(calls), 1)                                    # 额度够时照常预览
         finally:
             editor.deleteLater()
 

@@ -18,6 +18,9 @@ from dataclasses import asdict, dataclass, field, replace
 FORMAT = 'AICompanionPersona'
 FORMAT_VERSION = 1
 MAX_FILE_BYTES = 4 * 1024 * 1024          # 角色卡 PNG 常带一张大图，文本本身远小于此
+# PNG 里压缩的卡片文本解压后的上限（Codex PR #35 R3）：文件 4 MB 的限制管不住 zTXt / iTXt 的解压量，几 KB 能解出几 MB。
+# 2 MB 的 base64 约合 1.5 MB JSON，带大世界书的真实卡片也够用；chara、ccv3 各块累计也不超过这个数
+MAX_CARD_TEXT = 2 * 1024 * 1024
 LIMITS = {'title': 40, 'description': 8000, 'background': 8000, 'speaking_style': 4000, 'notes': 2000}
 MAX_EXAMPLES, MAX_EXAMPLE_CHARS = 12, 600
 MAX_LORE, MAX_LORE_CHARS, MAX_KEYS = 64, 1500, 12
@@ -172,9 +175,18 @@ def read_card(raw: bytes) -> dict:
     return normalize(_from_sillytavern(data))
 
 
+def _inflate(data: bytes, budget: int) -> bytes:
+    """有上限的解压：最多解出 budget+1 字节就停，超了报错，不会先把整段解压进内存。"""
+    out = zlib.decompressobj().decompress(data, budget + 1)
+    if len(out) > budget: raise PersonaError('角色卡里的文本太大（解压后超过 2 MB），没有导入')
+    return out
+
+
 def _png_card(raw: bytes) -> dict:
-    """在 PNG 的 tEXt / iTXt / zTXt 块里找 SillyTavern 的 ccv3 或 chara（base64 编码的 JSON）。不解码图片本身。"""
+    """在 PNG 的 tEXt / iTXt / zTXt 块里找 SillyTavern 的 ccv3 或 chara（base64 编码的 JSON）。不解码图片本身。
+    解压后的文本、各块累计量都受 MAX_CARD_TEXT 约束；base64 解码后的 JSON 只会更小，所以 JSON 解析的输入也有上限。"""
     found = {}
+    budget = MAX_CARD_TEXT
     pos = 8
     while pos + 8 <= len(raw):
         length, kind = struct.unpack('>I4s', raw[pos:pos+8]); body = raw[pos+8:pos+8+length]; pos += 12+length
@@ -183,13 +195,18 @@ def _png_card(raw: bytes) -> dict:
         key, _, rest = body.partition(b'\0')
         if key not in (b'chara', b'ccv3'): continue
         try:
-            if kind == b'zTXt': rest = zlib.decompress(rest[1:])
+            if kind == b'zTXt': rest = _inflate(rest[1:], budget)
             elif kind == b'iTXt':
                 compressed, rest = rest[0], rest[2:]
                 rest = rest.split(b'\0', 2)[2]
-                if compressed: rest = zlib.decompress(rest)
+                if compressed: rest = _inflate(rest, budget)
+        except (zlib.error, IndexError):
+            continue
+        budget -= len(rest)
+        if budget < 0: raise PersonaError('角色卡里的文本太大（超过 2 MB），没有导入')
+        try:
             found[key] = json.loads(base64.b64decode(rest).decode('utf-8'))
-        except (ValueError, zlib.error, IndexError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError):
             continue
     data = found.get(b'ccv3') or found.get(b'chara')
     if data is None: raise PersonaError('这张 PNG 里没有角色卡数据')

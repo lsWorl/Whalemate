@@ -144,6 +144,15 @@ class PersonaEditor(QWidget):
                 self.reload(select=target); return
         self._load(self.picker.currentData())
 
+    def _settle_draft(self, why: str) -> bool:
+        """编辑器内容要被换掉前，先处理没保存的改动（Codex PR #35 R2）：保存 / 放弃 / 取消。返回 False 表示别继续。"""
+        if not (self.dirty and self.current_id): return True
+        answer = QMessageBox.question(self, '没保存', f'这个人格改了还没保存。{why}要先保存吗？',
+                                      QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                                      QMessageBox.StandardButton.Save)
+        if answer == QMessageBox.StandardButton.Save: return self.save()
+        return answer == QMessageBox.StandardButton.Discard
+
     def _load(self, persona_id):
         persona = self.service.get(persona_id) if persona_id else None
         if persona is None: return
@@ -234,8 +243,12 @@ class PersonaEditor(QWidget):
         if not path: return
         try:
             with open(path, 'rb') as file: raw = file.read(5*1024*1024)
-            persona = self.service.import_content(self.cid, read_card(raw))
+            content = read_card(raw)
         except (OSError, PersonaError) as error:
+            QMessageBox.warning(self, '没有导入', str(error)); return   # 读不进来：编辑中的草稿原样留着
+        if not self._settle_draft('导入后编辑器会换成导入的人格。'): return
+        try: persona = self.service.import_content(self.cid, content)
+        except PersonaError as error:
             QMessageBox.warning(self, '没有导入', str(error)); return
         self.dirty = False; self.reload(select=persona.id)
         self.status.setText(f'已导入为新人格“{persona.title}”；看过没问题再点“设为当前”。')
@@ -292,6 +305,10 @@ class PersonaEditor(QWidget):
         name = self.controller.character.name
         prompt = (f'你正在扮演 {name}。\n人设：{draft.description}\n说话风格：{draft.speaking_style}\n'
                   + prompt_extras(draft, ask) + '\n这是一次说话风格的预览，像平时聊天那样自然地回一句。')
+        # 预览也是一次聊天请求，按陪伴用途走日金额额度（Codex PR #35 R1）；到限就不发
+        from aicompanion.usage.meter import Quota
+        state, note = Quota(self.db).check('companion')
+        if state == 'stop': self.preview_text.setText('现在没法预览：'+note); return
         try: client = self.controller.client(self.cid, 'companion')
         except Exception as error: self.preview_text.setText('现在没法预览：'+str(error)); return
         self.preview_text.setText('她在想怎么回…')

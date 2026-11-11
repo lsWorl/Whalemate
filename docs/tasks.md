@@ -4,7 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| V4-2 人格包 | 计划书 v4 功能二：人格新建 / 编辑 / 复制 / 切换 / 删除、版本回退、导入导出（兼容 SillyTavern 角色卡）、预览、内置人格升级不覆盖；schema 8→9 | Claude 实现；Codex 审查 | 待审查 | docs/tasks/V4-2-persona.md |
+| V4-2 人格包 | 计划书 v4 功能二：人格新建 / 编辑 / 复制 / 切换 / 删除、版本回退、导入导出（兼容 SillyTavern 角色卡）、预览、内置人格升级不覆盖；schema 8→9 | Claude 实现；Codex 审查 | 已修复 Codex R1～R3，待 Codex 复核 | docs/tasks/V4-2-persona.md |
 | V4-界面翻新 | 设置分组导航与概览引导、聊天面板精简、应用图标；计划书加入“界面与引导”和附件办事 | Claude 实现；Codex 审查 | 已合入（PR #33） | 负责人 2026-11-11 要求 |
 | V4-MiniMax办事 | 办事接入 MiniMax（llm-pi-ai 路由，含 M3.1-Flash） | Claude 实现；Codex 审查及冲突修复 | 已合入（PR #32） | 负责人 2026-11-11 要求；处理 R3 已知问题 |
 | V4-图库减负 | 表情图库：自己的图默认可用、含义自动识别、批量操作 | Claude 实现；Codex 审查 | 待审查 | 负责人 2026-11-11 实机反馈；见 implementation_status 同日记录 |
