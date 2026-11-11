@@ -289,13 +289,12 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 ## 📄 许可与声明
 
-本项目的**代码和文档**以 [MIT License](LICENSE) 开源。以下内容**不在** MIT 许可范围内：
+本项目的代码、文档和美术素材以 [MIT License](LICENSE) 开源。美术素材指 `art/`、`src/aicompanion/characters/*/sprites/`、`src/aicompanion/characters/*/rig/textures/` 和 `src/aicompanion/assets/icons/` 里的立绘、贴图和图标。以下内容**不在** MIT 许可范围内：
 
-- **美术素材**：`art/`、`src/aicompanion/characters/*/sprites/`、`src/aicompanion/characters/*/rig/textures/` 和 `src/aicompanion/assets/icons/` 里的立绘、贴图和图标。这些素材的对外许可**还没有确定**，确定之前保留所有权利。如果想在本项目以外使用，请先提 Issue 询问。
 
 - `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`：Live2D Cubism Core，适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)，详见 [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md)。一般情况下，年营业额 1000 万日元以上的企业分发时需要另外取得 Cubism SDK 发行许可。**但本项目支持导入任意外部 Live2D 模型，可能属于 Live2D 定义的[可扩展应用（Expandable Application）](https://www.live2d.com/en/sdk/license/expandable/)。** 这类应用发行前必须经过 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免**不适用**。本项目还没有向 Live2D 确认分类，也没有取得这项授权。分发包含 Cubism Core 的构建版本之前，请先自行向 Live2D 确认。
 - 其他第三方库和组件，以各自的许可证为准。
-- “DeepSeek”“Claude”“ChatGPT”等名称和徽标是各自权利人的商标。
+- “DeepSeek”“Claude”“ChatGPT”等名称和徽标是各自权利人的商标，其中也包括出现在角色立绘里的徽标。MIT 许可不授予任何商标权。
 
 **同人声明**：默认角色“大肥鱼”是网友围绕 DeepSeek 鲸鱼形象创作的二创角色。本项目与 DeepSeek、Anthropic、OpenAI 等公司**没有任何关联**，也没有得到它们的认可。
 

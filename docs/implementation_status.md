@@ -1416,3 +1416,4 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - P1：MIT 只覆盖代码和文档。美术素材（`art/`、角色 `sprites/`、`rig/textures/`、`assets/icons/`）的对外许可**尚未由负责人决定**，在中英文 README 里明确排除，并注明保留所有权利；`art/README.md` 补了同样的说明。
   - P2：可选依赖的安装命令改为 `.\.venv\Scripts\python.exe -m pip install ...`，和快速开始用同一个虚拟环境。
   - P2：许可说明补上 Live2D“可扩展应用”的情况：本项目支持导入任意模型，可能属于这一类，发行前需要 Live2D 审核并签订专门协议，小规模豁免不适用。依据是 Live2D 官方说明页；**分类和授权都还没有向 Live2D 确认**。
+- 负责人决定（2026-11-11）：美术素材也按 MIT 许可发布。中英文 README 的许可范围改成“代码、文档和美术素材”，`art/README.md` 记录了这项决定；同时写明素材里的公司徽标仍是商标，MIT 不授予商标权。

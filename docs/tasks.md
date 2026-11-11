@@ -4,7 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| OSS-开源准备 | 项目取名 Whalemate · 鲸伴；重写中文主 README 并新增英文版 README.en.md；致谢参考过的开源项目与大肥鱼社区；新增 MIT LICENSE（Live2D Cubism Core 等第三方组件除外） | Claude 文档；Codex 审查；负责人确认 | 待审查（`task/oss-readme`） | 美术素材许可、是否改包名 / 仓库名待负责人决定 |
+| OSS-开源准备 | 项目取名 Whalemate · 鲸伴；重写中文主 README 并新增英文版 README.en.md；致谢参考过的开源项目与大肥鱼社区；新增 MIT LICENSE（Live2D Cubism Core 等第三方组件除外） | Claude 文档；Codex 审查；负责人确认 | 待审查（`task/oss-readme`） | 美术素材按 MIT（负责人 2026-11-11 决定）；是否改包名 / 仓库名待定 |
 | PR40-冲突 | 接入已合并 PR #39 的基线，保留语音与群聊两份实施记录 | Codex | 已解决（负责人决定合并 PR） | 仅 Markdown 冲突；负责人明确不做回归测试 |
 | V4-8 回复带语音 | 计划书 v4 功能八：回复默认带语音、长回复分段取舍、大肥鱼声线。**先修 Codex 在 #38 实机发现的基线问题**：已经 complete 且展示完的回复，被下一轮 submit 或退出时 `_end_call → interrupt` 改成 cancelled，重启后显示“被打断”，也会让全文索引（只查 complete）漏掉这些旧消息。实机先验证系统朗读回退；云端声线（音色试听）未配置前不算完成 | Claude 实现；Codex 审查 | 待审查（第一版，`task/v4-8-voice`，从 #38 的 6775d81 拉出） | docs/tasks/V4-8-voice.md |
 | V4-6a 记忆召回基础与整份请求预算 | 计划书 v4 功能六的阶段二部分：存档旧事、更早聊天（FTS5 trigram 全文索引）、以前办过的事按关联召回；整份请求按用途预算、已知窗口硬上限拦截（目前只接入聊天生成链路，识图、后台分析、办事尚未接入）；schema 9→10 | Claude 实现；Codex 审查 | 待审查（与 V4-3 同在 PR #38） | 见 implementation_status 2026-11-11 |
