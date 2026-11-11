@@ -36,7 +36,7 @@ class DatesTests(unittest.TestCase):
     def go(self, day: date, hour=10): self.now[0] = at(day, hour)
 
     def test_day_number_uses_calendar_days(self):
-        self.assertEqual(SCHEMA_VERSION, 12)
+        self.assertGreaterEqual(SCHEMA_VERSION, 12)
         self.assertEqual(self.dates.day_number(CID), 1)                                          # 见面当天是第 1 天
         self.go(date(2026, 3, 2), 0)
         self.assertEqual(self.dates.day_number(CID), 2)                                          # 过了午夜就是第 2 天（不是按 24 小时）

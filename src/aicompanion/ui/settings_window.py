@@ -170,7 +170,16 @@ class SettingsWindow(QDialog):
         quiet=QHBoxLayout(); quiet.addWidget(QLabel('从')); quiet.addWidget(self.quiet_start); quiet.addWidget(QLabel('到')); quiet.addWidget(self.quiet_end)
         quiet.addWidget(QLabel('不主动打扰')); quiet.addStretch(1)
         proactive_page=Page('主动与提醒','她什么时候可以主动开口，以及你交代给她的提醒。')
-        talk=Section('主动聊天',''); talk.add(self.proactive); talk.add(quiet); proactive_page.add(talk)
+        # 统一主动调度（brain/scheduler.py）：每天最多几次、两次之间至少隔多久；追问也算一次
+        from aicompanion.brain.scheduler import DAILY_LIMIT,GAP_MINUTES
+        self.proactive_limit=QSpinBox(); self.proactive_limit.setRange(0,20); self.proactive_limit.setSuffix(' 次')
+        self.proactive_limit.setValue(int(self.database.get_setting('proactive_daily_limit',DAILY_LIMIT)))
+        self.proactive_gap=QSpinBox(); self.proactive_gap.setRange(10,720); self.proactive_gap.setSingleStep(10); self.proactive_gap.setSuffix(' 分钟')
+        self.proactive_gap.setValue(int(self.database.get_setting('proactive_gap_minutes',GAP_MINUTES)))
+        pace=QHBoxLayout(); pace.addWidget(QLabel('每天最多主动找你')); pace.addWidget(self.proactive_limit)
+        pace.addWidget(QLabel('，两次之间至少隔')); pace.addWidget(self.proactive_gap); pace.addStretch(1)
+        talk=Section('主动聊天','问候、心里惦记的事、纪念日、没回时追一句，都算主动开口。你没回上一句时她不会开新话题，最多撒娇追一句。')
+        talk.add(self.proactive); talk.add(quiet); talk.add(pace); proactive_page.add(talk)
         self.reminder_table=QTableWidget(0,3); self.reminder_table.setHorizontalHeaderLabels(['内容','时间（UTC）','状态'])
         self.reminder_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.reminder_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows); self.reminder_table.setMinimumHeight(160)
@@ -184,7 +193,7 @@ class SettingsWindow(QDialog):
         remove=QPushButton('删除选中'); remove.clicked.connect(self.delete_reminder); rb.addWidget(remove); rb.addStretch(1)
         reminders=Section('提醒','也可以直接在聊天里说“明天九点提醒我……”。'); reminders.add(self.reminder_table); reminders.add(rf); reminders.add(rb)
         proactive_page.add(reminders)
-        proactive_page.add(ComingSoon('自己的生活','她会按兴趣去看、去做点什么，遇到趣事来找你分享，并等你回应；每天主动发言的次数可以在这里调。'))
+        proactive_page.add(ComingSoon('自己的生活','她会按兴趣去看、去做点什么，遇到趣事来找你分享，并等你回应。'))
         proactive_page.add(ComingSoon('允许她自己退出','情绪和情境合适时，她会告别并真的关掉自己；关掉这个开关后她只会表示不想说话。'))
         proactive_page.finish()
         self.refresh_reminders()
@@ -479,7 +488,8 @@ class SettingsWindow(QDialog):
                           ('panel_background',self.panel_background.text().strip()),('panel_background_opacity',self.panel_opacity.value()/100),
                           ('ptt_key',self.ptt_key.currentData()),('echo_backend',self.echo_backend.currentData()),
                           ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
-                          ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value())]: self.database.set_setting(key,value)
+                          ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value()),
+                          ('proactive_daily_limit',self.proactive_limit.value()),('proactive_gap_minutes',self.proactive_gap.value())]: self.database.set_setting(key,value)
         self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
         try: self.storage_page.save()
         except (OSError, ValueError) as error:
