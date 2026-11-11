@@ -75,6 +75,40 @@ class DatesTests(unittest.TestCase):
         self.assertTrue(any('认识第 520 天' in e.title for _, events in upcoming for e in events))
 
 
+    def test_milestone_switch_covers_anniversaries(self):
+        """Codex PR #43 R1：关掉“纪念日”后，认识周年（含默认的她的生日）和第一次办成事周年也不提。"""
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO agent_runs(character_id, goal, status, started_at, ended_at) VALUES (?,?,?,?,?)",
+                      (CID, '整理桌面', 'done', '2026-03-01 09:00:00', '2026-03-01 09:05:00'))
+        self.go(date(2027, 3, 1))
+        self.assertEqual(len(self.dates.events_on(CID)), 2)
+        self.dates.set_options(CID, milestones=False, holidays=False)
+        self.assertEqual(self.dates.events_on(CID), [])
+        self.dates.add(CID, 'her_birthday', '', date(2020, 3, 1))                                  # 用户自己加的日子不跟这个开关
+        self.assertEqual([d.title for d in self.dates.events_on(CID)], ['她的生日'])
+
+    def test_first_achievement_uses_completion_day(self):
+        """Codex PR #43 R3：跨午夜办成的事按完成那天算；旧记录没有完成时间时退回开始时间。"""
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO agent_runs(character_id, goal, status, started_at, ended_at) VALUES (?,?,?,?,?)",
+                      (CID, '跨年任务', 'done', '2025-12-31 23:55:00', '2026-01-01 00:05:00'))
+            c.execute("INSERT INTO agent_runs(character_id, goal, status, started_at, ended_at) VALUES (?,?,?,?,?)",
+                      (CID, '早开工晚完成', 'done', '2025-12-30 08:00:00', '2026-01-02 08:00:00'))
+        self.assertEqual(self.dates.first_achievement(CID), date(2026, 1, 1))
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO agent_runs(character_id, goal, status, started_at, ended_at) VALUES (?,?,?,?,NULL)",
+                      (CID, '旧记录', 'done', '2025-11-01 10:00:00'))
+        self.assertEqual(self.dates.first_achievement(CID), date(2025, 11, 1))
+
+    def test_one_off_lunar_keeps_chosen_day(self):
+        """Codex PR #43 R2：只一次的日子勾了农历也按选中的那天存，不会因为闰月落到普通月。2025-08-01 是闰六月初八。"""
+        self.dates.add(CID, 'custom', '一次性', date(2025, 8, 1), yearly=False, lunar=True)
+        row = self.dates.user_dates(CID)[0]
+        self.assertEqual((row['calendar'], row['year'], row['month'], row['day']), ('solar', 2025, 8, 1))
+        self.go(date(2025, 8, 1)); self.assertIn('一次性', [d.title for d in self.dates.events_on(CID)])
+        self.go(date(2025, 7, 2)); self.assertNotIn('一次性', [d.title for d in self.dates.events_on(CID)])
+
+
 class LunarTests(DatesTests):
     """农历（lunar_python，负责人 2026-11-11 同意引入）：春节、中秋、除夕；农历生日每年落在不同的公历日期。"""
     def test_lunar_holidays(self):
@@ -92,6 +126,15 @@ class LunarTests(DatesTests):
             self.go(day); self.assertIn('你的生日', [d.title for d in self.dates.events_on(CID)])
         self.go(date(2027, 2, 17)); self.assertNotIn('你的生日', [d.title for d in self.dates.events_on(CID)])
         self.assertEqual(lunar_to_solar(2025, 12, 30), date(2026, 2, 16))                       # 腊月只有 29 天：三十按二十九算
+
+
+    def test_lunar_yearly_waits_for_its_first_year(self):
+        """Codex PR #43 R5：按农历每年重复的日子，在第一次发生的那个农历年之前不提。2027-11-11 是农历十月十四。"""
+        self.go(date(2026, 11, 11))
+        self.dates.add(CID, 'custom', '未来纪念日', date(2027, 11, 11), yearly=True, lunar=True)
+        self.assertFalse(any(e.title == '未来纪念日' for _, events in self.dates.upcoming(CID) for e in events))
+        self.go(date(2026, 11, 22)); self.assertNotIn('未来纪念日', [d.title for d in self.dates.events_on(CID)])
+        self.go(date(2027, 11, 11)); self.assertIn('未来纪念日', [d.title for d in self.dates.events_on(CID)])
 
 
 class PromptTests(BridgeFixture):
@@ -114,6 +157,50 @@ class PromptTests(BridgeFixture):
                                  expression_version=1, bot_account_id='90000'))
         group = self.model.prompts[-1]
         self.assertNotIn('认识第', group); self.assertNotIn('生日', group)                      # 群里不带主人的日子
+
+    def _special_today(self):
+        from aicompanion.services.companion_dates import CompanionDates
+        dates = CompanionDates(self.db)
+        self.controller.relationships.owner_person()
+        dates.set_met_on(CID, date.today() - timedelta(days=99))
+        return dates
+
+    def test_concurrent_turns_mention_once(self):
+        """Codex PR #43 R4：桌面这一轮还在说（只出了第一段），主人 QQ 私聊同时来一轮：只有一轮带提醒；说完以后都不再带。"""
+        from aicompanion.domain.cancellation import CancellationToken
+        self._special_today()
+        self.model.replies.append('第一百天啦')
+        desktop = self.controller.generate('t-desk', self.character, CancellationToken(), '在吗')
+        next(desktop)
+        self.assertIn('特别的日子', self.model.prompts[-1])
+        self.model.replies.append('在呢')
+        self.ask('10001', '在吗')                                                                 # 主人 QQ 私聊（同一个 ChatController）
+        self.assertIn('你们认识第 100 天了', self.model.prompts[-1])
+        self.assertNotIn('特别的日子', self.model.prompts[-1])                                    # 被桌面这一轮占着
+        list(desktop)
+        self.model.replies.append('嗯')
+        list(self.controller.generate('t-after', self.character, CancellationToken(), '还在吗'))
+        self.assertNotIn('特别的日子', self.model.prompts[-1])                                    # 说完记成今天提过
+
+    def test_cancelled_turn_releases_reminder(self):
+        """取消 / 失败的一轮不算提过，放掉以后下一轮还能提。"""
+        from aicompanion.domain.cancellation import CancellationToken
+        self._special_today()
+        self.model.replies.append('第一百天')
+        desktop = self.controller.generate('t-cut', self.character, CancellationToken(), '在吗')
+        next(desktop); desktop.close()                                                           # 用户打断
+        self.model.replies.append('第一百天啦')
+        list(self.controller.generate('t-next', self.character, CancellationToken(), '在吗'))
+        self.assertIn('特别的日子', self.model.prompts[-1])
+        self.model.replies.append('嗯')
+        list(self.controller.generate('t-last', self.character, CancellationToken(), '还在吗'))
+        self.assertNotIn('特别的日子', self.model.prompts[-1])
+
+    def test_prompt_without_turn_has_background_only(self):
+        """只看提示词、没有轮次的调用（context.build）不带提醒，免得提了没人记。"""
+        self._special_today()
+        _, prompt = self.controller.context.build(self.character, '在吗')
+        self.assertIn('你们认识第 100 天了', prompt); self.assertNotIn('特别的日子', prompt)
 
     def test_switching_persona_keeps_days(self):
         from aicompanion.services.companion_dates import CompanionDates
@@ -153,5 +240,23 @@ class CardTests(DatesTests):
             self.assertEqual(card.table.rowCount(), 1); self.assertEqual(card.table.item(0, 1).text(), '期末考试')
             card.table.selectRow(0); card.remove(); self.assertEqual(card.table.rowCount(), 0)
             card.holidays.setChecked(False); self.assertFalse(self.dates.options(CID)['holidays'])
+        finally:
+            card.deleteLater()
+
+    def test_toggle_keeps_entered_date(self):
+        """Codex PR #43 R6：填了日期还没点添加，先切一下提醒开关，填的日期不能被改回今天。"""
+        from PySide6.QtCore import QDate
+        from aicompanion.ui.dates_card import DatesCard
+        self.go(date(2026, 11, 11))
+        card = DatesCard(self.db, CID, clock=lambda: self.now[0])
+        try:
+            card.kind.setCurrentIndex(card.kind.findData('birthday')); card.when.setDate(QDate(1999, 6, 9))
+            card.met.setDate(QDate(2026, 1, 1))
+            card.holidays.setChecked(not card.holidays.isChecked())
+            self.assertEqual(card.when.date(), QDate(1999, 6, 9)); self.assertEqual(card.met.date(), QDate(2026, 1, 1))
+            card.add()
+            row = self.dates.user_dates(CID)[0]
+            self.assertEqual((row['year'], row['month'], row['day']), (1999, 6, 9))
+            self.assertEqual(card.when.date(), QDate(2026, 11, 11))                              # 添加完才重置
         finally:
             card.deleteLater()

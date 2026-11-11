@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -24,6 +25,13 @@ HOLIDAYS = {(1, 1): '元旦', (2, 14): '情人节', (5, 1): '劳动节', (10, 1)
 LUNAR_HOLIDAYS = {(1, 1): '春节', (1, 15): '元宵节', (5, 5): '端午节', (7, 7): '七夕', (8, 15): '中秋节'}
 KINDS = {'birthday': '你的生日', 'her_birthday': '她的生日', 'custom': '纪念日'}
 MAX_TITLE = 30
+CLAIM_TTL = 600   # 一轮生成占住提醒最多这么久（秒）：进程里出了意外没走到确认 / 释放，过期后别的轮次还能提
+
+# 同一个日子同一天只提一次（Codex PR #43 R4）：桌面和主人 QQ 私聊可能同时在生成，各自都没 mark 之前会都拿到提醒。
+# 拼提示词时先在这里按（数据库、角色、key、日期）占住，占住的轮次才带提醒；成功说完写进库，失败 / 取消就放掉。
+# 只在内存里：单进程结构（AGENTS.md），重启时没有进行中的轮次，没说完的自然作废。
+_CLAIMS_LOCK = threading.Lock()
+_CLAIMS: dict[tuple[str, str, str, str], tuple[str, float]] = {}
 
 
 @dataclass(frozen=True)
@@ -68,11 +76,12 @@ def solar_to_lunar(when: date) -> tuple[int, int, int] | None:
         return None
 
 
-def _lunar_hits(on: date, month: int, day: int) -> bool:
-    """农历 month 月 day 日每年重复：今天是不是这一天（今天所在的农历年和上一个农历年都看，跨公历年的也对得上）。"""
+def _lunar_hits(on: date, month: int, day: int) -> int | None:
+    """农历 month 月 day 日每年重复：今天是不是这一天（今天所在的农历年和上一个农历年都看，跨公历年的也对得上）。
+    是的话返回落在哪个农历年，用来和起始年份比（Codex PR #43 R5）；不是返回 None。"""
     for year in (on.year, on.year - 1):
-        if lunar_to_solar(year, month, day) == on: return True
-    return False
+        if lunar_to_solar(year, month, day) == on: return year
+    return None
 
 
 class CompanionDates:
@@ -129,7 +138,9 @@ class CompanionDates:
         if kind not in KINDS: raise ValueError('未知的日子类型')
         title = ' '.join(str(title or '').split())[:MAX_TITLE] or KINDS[kind]
         calendar, (year, month, day) = 'solar', (when.year, when.month, when.day)
-        if lunar:
+        # 只一次的日子就是选中的那一天，按公历存最准：换成农历月日会丢掉闰月，落到普通月的同一天（Codex PR #43 R2）。
+        # 农历只影响“每年按哪天重复”；每年重复的闰月日子按同名的普通月过，这是民间常见的做法。
+        if lunar and yearly:
             converted = solar_to_lunar(when)
             if converted is None: raise ValueError('农历换算不可用（缺少 lunar_python），先按公历记')
             calendar, (year, month, day) = 'lunar', converted
@@ -152,10 +163,12 @@ class CompanionDates:
         self.db.set_setting(f'date_options:{character_id}', dict(self.options(character_id), **{k: bool(v) for k, v in changes.items()}))
 
     def first_achievement(self, character_id: str) -> date | None:
-        """第一次一起办成一件事（办事记录里第一条完成的）。"""
+        """第一次一起办成一件事：办成的那一刻（完成时间）最早的一条。按开始时间算的话，跨午夜的任务会把周年记到开工那天，
+        并发时也可能挑错（Codex PR #43 R3）。旧记录没有完成时间时退回开始时间。"""
         try:
             with self.db.transaction() as c:
-                row = c.execute("SELECT MIN(started_at) FROM agent_runs WHERE character_id=? AND status IN ('complete','completed','done','succeeded')",
+                row = c.execute("SELECT MIN(COALESCE(NULLIF(ended_at, ''), started_at)) FROM agent_runs "
+                                "WHERE character_id=? AND status IN ('complete','completed','done','succeeded')",
                                 (character_id,)).fetchone()
             return datetime.fromisoformat(str(row[0])).date() if row and row[0] else None
         except Exception:
@@ -172,16 +185,19 @@ class CompanionDates:
             if options['milestones'] and (n in MILESTONES or (n > 1000 and n % 1000 == 0)):
                 out.append(Day(f'milestone:{n}', f'认识第 {n} 天', 'milestone'))
             years = on.year - met.year
-            if years >= 1 and on == _on(on.year, met.month, met.day):
+            # 周年和下面“第一次办成事”的周年都属于“纪念日”这一类，跟着同一个开关（Codex PR #43 R1）。
+            # 默认的“她的生日”就是认识周年，关掉后一起不提；用户自己加的她的生日不受影响
+            if options['milestones'] and years >= 1 and on == _on(on.year, met.month, met.day):
                 extra = '，也是她的“生日”' if own_birthday is None else ''
                 out.append(Day(f'anniversary:{years}', f'认识 {years} 周年{extra}', 'anniversary'))
         first = self.first_achievement(character_id)
-        if first and on.year > first.year and on == _on(on.year, first.month, first.day):
+        if options['milestones'] and first and on.year > first.year and on == _on(on.year, first.month, first.day):
             out.append(Day(f'first-done:{on.year - first.year}', f'第一次一起办成事 {on.year - first.year} 周年', 'first'))
         for r in rows:
             if not r['enabled']: continue
             if r['calendar'] == 'lunar':
-                hit = (r['yearly'] and _lunar_hits(on, r['month'], r['day'])) or \
+                year = _lunar_hits(on, r['month'], r['day']) if r['yearly'] else None
+                hit = (year is not None and (not r['year'] or year >= r['year'])) or \
                       (not r['yearly'] and r['year'] and lunar_to_solar(r['year'], r['month'], r['day']) == on)
             else:
                 hit = (r['yearly'] and on == _on(on.year, r['month'], r['day']) and (not r['year'] or on.year >= r['year'])) or \
@@ -223,14 +239,62 @@ class CompanionDates:
                 c.execute('INSERT OR IGNORE INTO companion_date_mentions(character_id, key, day, at) VALUES (?,?,?,?)',
                           (character_id, key, day, self.clock()))
 
-    def prompt(self, character_id: str) -> tuple[str, tuple]:
-        """给主人私下聊天的提示词：一句背景（认识第几天），当天有特别的日子且今天还没提过时再加一句提醒。
-        返回（文字，这次提醒到的日子 key）；这一轮成功说完后调用 mark(key) 记下“今天提过了”。"""
+    def background(self, character_id: str) -> str:
+        """平时那一句背景：认识第几天、其中聊过几天。"""
         n = self.day_number(character_id)
-        if n is None: return '', ()
-        text = f'\n你们认识第 {n} 天了，其中 {self.talked_days(character_id)} 天聊过天（这是背景：被问起时照实说，平时不用报数字，也不拿来怪他没来）。'
-        fresh = [d for d in self.events_on(character_id) if not self.mentioned(character_id, d.key)]
+        if n is None: return ''
+        return f'\n你们认识第 {n} 天了，其中 {self.talked_days(character_id)} 天聊过天（这是背景：被问起时照实说，平时不用报数字，也不拿来怪他没来）。'
+
+    def prompt(self, character_id: str, claim: str | None = None) -> tuple[str, tuple]:
+        """给主人私下聊天的提示词：一句背景（认识第几天），当天有特别的日子且今天还没提过时再加一句提醒。
+        返回（文字，这次提醒到的日子 key）。
+        给了 claim（这一轮的 id）时，提醒到的日子会先替这一轮占住，别的轮次同时生成也不会再拿到；说完调 confirm(claim)，
+        失败 / 取消调 release(claim)。不给 claim 时由调用方自己 mark(key)。"""
+        text = self.background(character_id)
+        if not text: return '', ()
+        events = self.events_on(character_id)
+        if claim is None:
+            fresh = [d for d in events if not self.mentioned(character_id, d.key)]
+        else:
+            fresh = self._claim(character_id, events, claim)
         if not fresh: return text, ()
         text += ('\n今天是特别的日子：' + '、'.join(d.title for d in fresh) +
                  '。这一轮可以自然地提一句（像真人那样，一句就好，可以配个表情或语气），今天提过就不用再提。')
         return text, tuple(d.key for d in fresh)
+
+    def _slot(self, character_id: str, key: str, day: date) -> tuple[str, str, str, str]:
+        return (str(getattr(self.db, 'database_path', id(self.db))), character_id, key, day.isoformat())
+
+    def _claim(self, character_id: str, events, claim: str) -> list[Day]:
+        """在锁里看“今天提过没有、别的轮次占了没有”，没有就替这一轮占住。查库和占位在同一把锁里，两轮不会都拿到。"""
+        day, now = self.today(), time.monotonic()
+        taken = []
+        with _CLAIMS_LOCK:
+            for slot, (_, at) in list(_CLAIMS.items()):
+                if now - at > CLAIM_TTL: del _CLAIMS[slot]
+            for d in events:
+                slot = self._slot(character_id, d.key, day)
+                owner = _CLAIMS.get(slot)
+                if (owner and owner[0] != claim) or self.mentioned(character_id, d.key, day): continue
+                _CLAIMS[slot] = (claim, now); taken.append(d)
+        return taken
+
+    def _owned(self, character_id: str, claim: str) -> list[tuple[str, str, str, str]]:
+        base = str(getattr(self.db, 'database_path', id(self.db)))
+        return [slot for slot, (owner, _) in _CLAIMS.items() if owner == claim and slot[0] == base and slot[1] == character_id]
+
+    def confirm(self, character_id: str, claim: str) -> None:
+        """这一轮成功说完：把它占住的日子记成“今天提过了”。先写库再放锁，中间别的轮次不会钻空子。"""
+        with _CLAIMS_LOCK:
+            slots = self._owned(character_id, claim)
+            if not slots: return
+            with self.db.transaction() as c:
+                for _, cid, key, day in slots:
+                    c.execute('INSERT OR IGNORE INTO companion_date_mentions(character_id, key, day, at) VALUES (?,?,?,?)',
+                              (cid, key, day, self.clock()))
+            for slot in slots: _CLAIMS.pop(slot, None)
+
+    def release(self, character_id: str, claim: str) -> None:
+        """这一轮失败、被取消或回复被拦下：放掉占住的日子，下一轮还能提。"""
+        with _CLAIMS_LOCK:
+            for slot in self._owned(character_id, claim): _CLAIMS.pop(slot, None)

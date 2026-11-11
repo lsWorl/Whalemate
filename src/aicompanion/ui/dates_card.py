@@ -48,7 +48,7 @@ class DatesCard(QWidget):
         self.title = QLineEdit(); self.title.setPlaceholderText('名称（纪念日用，例如：期末考试）'); self.title.setMaxLength(30)
         self.when = QDateEdit(); self.when.setCalendarPopup(True); self.when.setDisplayFormat('yyyy-MM-dd')
         self.yearly = QCheckBox('每年'); self.yearly.setChecked(True)
-        self.lunar = QCheckBox('农历'); self.lunar.setToolTip('按农历每年重复：在日历上选那一天的公历日期，会自动换成农历月日')
+        self.lunar = QCheckBox('农历'); self.lunar.setToolTip('按农历每年重复：在日历上选那一天的公历日期，会自动换成农历月日。只一次的日子就是选中的那天，不用勾')
         plus = QPushButton('添加'); plus.clicked.connect(self.add)
         minus = QPushButton('删除选中'); minus.clicked.connect(self.remove)
         for widget in (self.kind, self.title, self.when, self.yearly, self.lunar, plus, minus): add.addWidget(widget)
@@ -61,9 +61,11 @@ class DatesCard(QWidget):
         toggles.addStretch(1); box.addLayout(toggles)
         note = QLabel('这些日子只在你们私下聊天时用，QQ 群里不会说出你的生日。农历生日勾上“农历”，日历里选出生那天就行。')
         note.setObjectName('Hint'); note.setWordWrap(True); box.addWidget(note)
-        self.refresh()
+        self.refresh(reset_met=True, reset_when=True)
 
-    def refresh(self):
+    def refresh(self, reset_met: bool = False, reset_when: bool = False):
+        """重画天数、日程和列表。两个日期输入框只在打开时、改完认识那天 / 添加完以后重置：
+        切换提醒开关、删除日子这类刷新不能把用户还没提交的日期改回今天（Codex PR #43 R6）。"""
         d = self.dates
         n = d.day_number(self.cid); met = d.met_on(self.cid)
         if n is None:
@@ -71,7 +73,9 @@ class DatesCard(QWidget):
         else:
             self.summary.setText(f'认识第 {n} 天，其中 {d.talked_days(self.cid)} 天聊过天。')
         today = d.today()
-        self.met.setDate(_qdate(met or today)); self.met.setMaximumDate(_qdate(today)); self.when.setDate(_qdate(today))
+        self.met.setMaximumDate(_qdate(today))
+        if reset_met: self.met.setDate(_qdate(met or today))
+        if reset_when: self.when.setDate(_qdate(today))
         self.upcoming.clear()
         for day, events in d.upcoming(self.cid):
             when = '今天' if day == today else ('明天' if (day - today).days == 1 else f'{day.month} 月 {day.day} 日（周{WEEKDAYS[day.weekday()]}）')
@@ -93,7 +97,7 @@ class DatesCard(QWidget):
     def change_met(self):
         try: self.dates.set_met_on(self.cid, _pydate(self.met.date()))
         except ValueError as error: self.summary.setText(str(error)); return
-        self.refresh()
+        self.refresh(reset_met=True)
 
     def add(self):
         try:
@@ -101,7 +105,7 @@ class DatesCard(QWidget):
                            lunar=self.lunar.isChecked())
         except ValueError as error:
             self.summary.setText(str(error)); return
-        self.title.clear(); self.refresh()
+        self.title.clear(); self.refresh(reset_when=True)
 
     def remove(self):
         ids = {self.table.item(r.row(), 0).data(256) for r in self.table.selectionModel().selectedRows()}
