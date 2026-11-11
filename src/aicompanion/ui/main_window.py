@@ -733,24 +733,22 @@ class MainWindow(QMainWindow):
         """把调度器选中的这一件说出去：先占位，桌面说完 / QQ 回执成功再确认，没说成就撤掉、心事放回、问候和纪念日的占位放回。"""
         purpose=outreach.payload.get('purpose')
         if purpose: self.database.update_purpose(purpose['id'],'delivering')
-        claimed=outreach.source in ('date','greeting')   # 这两类在 proactive_events 里占了位，没说成要放回去
         # 选中就先占位（pending）：走 QQ 要等插件回执，期间不会再选中同一句（Codex PR #46 第 1 项）
         reserved=self.outreach_scheduler.reserve(character_id,outreach)
 
-        def done(ok,channel,o=outreach,cid=character_id,rid=reserved):
-            if ok: self.outreach_scheduler.confirm(cid,rid,o,channel)
-            else: self.outreach_scheduler.release(rid)
-            if purpose: self.purposes.delivered(purpose['id']) if ok else self.purposes.release(purpose['id'])
-            if not ok and claimed: self.database.release_proactive(cid,o.key)
-        # QQ：插件取走那一刻起对方就可能看到，记成 delivering（回执丢了也不再当作没发过、不会重复追问）
+        def done(result,channel,o=outreach,cid=character_id,rid=reserved):
+            # 桌面传 True / False；QQ 传投递结果（发出 / 部分 / 失败 / 未知，bridge/outbox.py）。心事、问候、纪念日的占位一起收尾
+            self.outreach_scheduler.settle_delivery(cid,rid,o,result,channel)
+        # QQ：放进发件箱时记下轮次（之后按 qq_outbox 对账，重启也接得上）；插件领取、开始发送时记成 delivering
+        queued=lambda turn,rid=reserved:self.outreach_scheduler.attach(rid,turn,'qq')
         taken=lambda turn,rid=reserved:self.outreach_scheduler.handed(rid,turn)
-        if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq'),taken):return
+        if self._proactive_on_qq(outreach.intent,lambda result:done(result,'qq'),taken,queued):return
         generation=self.coordinator.active=uuid4().hex
         self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
         self.outreaches[generation]=done
         self._start(generation,proactive=outreach.intent)
 
-    def _proactive_on_qq(self,intent,done,taken=None):
+    def _proactive_on_qq(self,intent,done,taken=None,queued=None):
         """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
         没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说；插件取件时 taken(轮次)。返回 True 表示这次走 QQ，桌面不再说。"""
         from aicompanion.bridge.server import runtime
@@ -759,7 +757,7 @@ class MainWindow(QMainWindow):
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
         if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
-        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken),self)
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken,on_queued=queued),self)
         self.tasks.add(worker)
         worker.succeeded.connect(lambda turn:None if turn else done(False))
         worker.failed.connect(lambda error:done(False))

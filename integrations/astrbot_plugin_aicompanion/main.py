@@ -25,12 +25,14 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.6'
+PLUGIN_VERSION = '0.10.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
 # 和桌宠 expression/segments.py 的 QQ_SEGMENTS_MAX 保持一致（Codex 审查 17012ca P2：两边不一致时会退回整段或主动消息整条丢失）。
 # 0.9.6：不再按 8 段防刷屏合并（负责人 2026-11-11：按打字速度慢慢发就不会刷屏），这里只是格式上限
+# 0.10.0：主动消息先向桌宠领取、领到才发；回执带第一段实际发出后过了几秒、发出了几段，并且会重试（Codex PR #46 第三轮）。
+#         桌宠只按插件报回的事实判断“发没发到、什么时候发到、纪念日算不算提过”，旧插件不再用来主动发
 MAX_SEGMENTS = 64
 AT_ONLY = '[@了你一下，没说别的]'
 # 商城表情（mface）的图片只从 QQ 自己的固定主机下载
@@ -568,13 +570,21 @@ class AICompanionBridge(Star):
 
     # ---- 主动消息（用户 2026-11-09：桌面和 QQ 都可能随机发送） ----------------------------------------------
     async def deliver_outbox(self, item):
-        """桌宠主动发给爹的 QQ 私聊：按顺序发文字，表情包单独一条（先领取再发，和回复时一样不重发），最后回报发没发成。"""
+        """桌宠主动发给爹的 QQ 私聊：先领取（领不到就不发：可能已经作废），按顺序发文字，表情包单独一条（先领取再发，
+        和回复时一样不重发），最后回报发没发成、第一段实际发出后过了几秒、发出了几段。"""
         import hashlib
         if not isinstance(item, dict): return
         key = str(item.get('id') or ''); user = str(item.get('user_id') or '')
         if not re.fullmatch(r'[a-f0-9]{32}', key) or not re.fullmatch(r'\d{5,12}', user) or key in self.outbox_sent: return
         self.outbox_sent.add(key)
         if len(self.outbox_sent) > 512: self.outbox_sent = {key}
+        try: claim = await self.post_json('/v1/outbox/claim', {'id': key})
+        except Exception: claim = None
+        if not isinstance(claim, dict) or not claim.get('allowed'):
+            if claim is None:   # 没收到领取的答复：桌宠可能已经记成领取了。没发就照实回报，让它别等
+                try: await asyncio.shield(self.ack_outbox({'id': key, 'status': 'failed', 'sent': 0}))
+                except Exception: pass
+            return
         segments = self.segments_of({'reply': '', 'segments': item.get('segments')})
         delays = self.delays_of(item, len(segments))
         expression = item.get('expression') if isinstance(item.get('expression'), dict) else {}
@@ -585,7 +595,7 @@ class AICompanionBridge(Star):
         async def send(component):
             ok = await asyncio.wait_for(self.context.send_message(origin, MessageChain(chain=[component])), timeout=30)
             if ok is False: raise RuntimeError('会话不存在')
-        sent = 0; failed = False
+        sent = 0; failed = False; first = None
         image = None; delivery = ''
         if attachments:
             a = attachments[0]; delivery = str(a.get('delivery_id') or '')
@@ -604,6 +614,7 @@ class AICompanionBridge(Star):
             status = 'unknown'
             try:
                 await send(image[0]); status = 'accepted'; sent += 1
+                if first is None: first = time.monotonic()
             except asyncio.CancelledError: raise
             except Exception as error:
                 if type(error).__name__ == 'ActionFailed': status = 'failed'
@@ -613,7 +624,9 @@ class AICompanionBridge(Star):
             if image and image[1] == 'before_text': await send_image()
             for index, text in enumerate(segments):
                 if index or sent: await self.pause(text, delays[index] if index else None)
-                try: await send(Plain(text)); sent += 1
+                try:
+                    await send(Plain(text)); sent += 1
+                    if first is None: first = time.monotonic()
                 except asyncio.CancelledError: raise
                 except Exception as error:
                     logger.warning(f'AICompanion 主动消息第 {index+1} 条发送失败：{type(error).__name__}'); failed = True; break
@@ -622,8 +635,23 @@ class AICompanionBridge(Star):
                 await send_image()
         finally:
             status = 'failed' if not sent else ('partial' if failed else 'sent')
-            try: await asyncio.shield(self.post_json('/v1/outbox/ack', {'id': key, 'status': status}))
+            report = {'id': key, 'status': status, 'sent': sent}
+            if first is not None: report['first_delay'] = round(time.monotonic()-first, 3)
+            try: await asyncio.shield(self.ack_outbox(report))
             except Exception: pass
+
+    async def ack_outbox(self, report):
+        """回报主动消息的结果；没送到桌宠就重试几次（桌宠那边重复收到同一条只算一次）。first_delay 在每次重试前重新算。"""
+        started = time.monotonic(); base = report.get('first_delay')
+        for wait in (0, 2, 5, 15):
+            if wait: await asyncio.sleep(wait)
+            payload = dict(report)
+            if base is not None: payload['first_delay'] = round(base+time.monotonic()-started, 3)
+            try:
+                if (await self.post_json('/v1/outbox/ack', payload)).get('ok'): return True
+            except asyncio.CancelledError: raise
+            except Exception: pass
+        return False
 
     async def post_json(self, path, payload):
         async with await self.post(path, payload, 5) as response:

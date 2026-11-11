@@ -1574,3 +1574,14 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：993 项通过（跳过 8 项）。新增 8 项回归，在修复前的代码上全部失败。
 - 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（Linux 上 QtWebEngine 一启动就崩溃）；真实 QQ 回执时序；真实模型话术。
 
+## 2026-11-12 PR #46 Codex 第三轮修复（Claude）：QQ 主动消息按插件报回的事实结算
+
+- 做了什么：
+  - 新表 `qq_outbox` 和模块 `bridge/outbox.py`，记下每条 QQ 主动消息的投递状态（排队 → 交出 → 领取 → 发出 / 部分 / 失败 / 未知），以及发件时的角色、这一轮带的纪念日。
+  - 插件升到 0.10.0：领到才发；回执带第一段实际发出后的秒数和发出的段数，会重试。
+  - 调度器按 `qq_outbox` 对账。未知的结果不追问、不记委屈、也不开新话题。
+  - 纪念日只有全部发出才算提过；没被领取的回复重启时从记录里拿掉。
+  - 详见 `docs/tasks/V4-4a-scheduler.md`。
+- 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：1013 项通过（跳过 8 项）。新增回归在 e38ed29 的代码上全部失败或报错。
+- 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 发送；真实模型话术。
+

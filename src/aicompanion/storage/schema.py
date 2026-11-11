@@ -212,5 +212,11 @@ CREATE TABLE IF NOT EXISTS outreach_log (
  sent_at REAL NOT NULL, settled_at REAL, turn_id TEXT, handed_at REAL
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_parent ON outreach_log(parent_id);
+-- 主动发到 QQ 私聊的每一条投递（bridge/outbox.py）：排队 → 交出 → 插件领取 → 发出 / 部分 / 失败 / 未知。
+-- 存进库里是为了重启以后还能对上账：迟到的回执、没被取走的回复、这一轮带的纪念日（date_keys、date_day）
+CREATE TABLE IF NOT EXISTS qq_outbox (
+ turn_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, status TEXT NOT NULL, date_keys TEXT NOT NULL DEFAULT '[]',
+ date_day TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, dequeued_at REAL, claimed_at REAL, first_sent_at REAL, settled_at REAL
+);
 CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
 """

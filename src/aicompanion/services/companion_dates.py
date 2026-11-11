@@ -268,16 +268,27 @@ class CompanionDates:
     def _claim(self, character_id: str, events, claim: str) -> list[Day]:
         """在锁里看“今天提过没有、别的轮次占了没有”，没有就替这一轮占住。查库和占位在同一把锁里，两轮不会都拿到。"""
         day, now = self.today(), time.monotonic()
-        taken = []
+        taken, flying = [], self._in_flight(character_id, day)
         with _CLAIMS_LOCK:
             for slot, (_, until) in list(_CLAIMS.items()):
                 if now > until: del _CLAIMS[slot]
             for d in events:
                 slot = self._slot(character_id, d.key, day)
                 owner = _CLAIMS.get(slot)
-                if (owner and owner[0] != claim) or self.mentioned(character_id, d.key, day): continue
+                if (owner and owner[0] != claim) or self.mentioned(character_id, d.key, day) or d.key in flying: continue
                 _CLAIMS[slot] = (claim, now + CLAIM_TTL); taken.append(d)
         return taken
+
+    def _in_flight(self, character_id: str, day: date) -> set[str]:
+        """还在发往 QQ、没有结果的主动消息里带着的日子（存在库里，重启以后内存占位没了也挡得住）。"""
+        try:
+            with self.db.transaction() as c:
+                rows = c.execute("SELECT date_keys FROM qq_outbox WHERE character_id=? AND date_day=? AND status IN ('queued','dequeued','claimed')",
+                                 (character_id, day.isoformat())).fetchall()
+        except Exception:
+            return set()
+        import json
+        return {key for row in rows for key in json.loads(row[0] or '[]')}
 
     def _owned(self, character_id: str, claim: str) -> list[tuple[str, str, str, str]]:
         base = str(getattr(self.db, 'database_path', id(self.db)))
@@ -293,6 +304,12 @@ class CompanionDates:
                     c.execute('INSERT OR IGNORE INTO companion_date_mentions(character_id, key, day, at) VALUES (?,?,?,?)',
                               (cid, key, day, self.clock()))
             for slot in slots: _CLAIMS.pop(slot, None)
+
+    def held(self, character_id: str, claim: str) -> tuple[list[str], str]:
+        """这一轮占住的日子（key 列表、日期），存进 QQ 投递记录用：回执晚到、程序重启后也知道该记哪几个。"""
+        with _CLAIMS_LOCK:
+            slots = self._owned(character_id, claim)
+        return [slot[2] for slot in slots], (slots[0][3] if slots else '')
 
     def hold(self, character_id: str, claim: str, seconds: float) -> None:
         """生成完了但还没真正送到（主动发到 QQ，要等插件回执）：把这一轮的占位延长到 seconds 秒后，
