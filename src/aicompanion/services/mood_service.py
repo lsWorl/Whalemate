@@ -18,11 +18,12 @@ from aicompanion.domain.mood import EVENT_LABELS, EVENTS, NEGATIVE, Mood, apply,
 
 KEEP_EVENTS = 200
 REUNION_HOURS = 20.0
+# 没有她自己的判断时只认这几类“不会误伤”的词。负面意图（被损、被骂）一律不靠用词猜：
+# “你不是笨蛋”“他说你笨蛋”“笨蛋，干得好”这类句子太多，没有判断就当没发生（Codex PR #38 第三轮）。
 _WORDS = (
     ('apology', re.compile(r'对不起|抱歉|我错了|别生气|消消气|不生气了|哄哄你|原谅我')),
     ('affection', re.compile(r'喜欢你|爱你|抱抱|亲亲|贴贴|想你了?|可爱')),
     ('praised', re.compile(r'谢谢|多谢|辛苦了|厉害|真棒|好棒|太好了|干得漂亮|开心')),
-    ('teased', re.compile(r'讨厌你|笨蛋|闭嘴|烦死了|滚开?|走开|没用')),
     ('worried', re.compile(r'难受|低落|失落|伤心|想哭|好累|崩溃|不开心')),
 )
 CHANNEL_SCALE = (('qq:group:', 0.5), ('qq:', 0.8))
@@ -125,14 +126,11 @@ class MoodService:
     def fallback(text: str, channel: str = 'desktop') -> tuple[str, float] | None:
         """用户消息里明显的词 → (事件, 力度)。只是候选：这一轮她的 <mind/> 有明确判断时以判断为准，没有才用它
         （Codex PR #38 第 3 项：先记下兜底就撤不回了，转述“他说笨蛋”也会让她生气）。
-        前面带“不 / 没 / 别 / 非”的不算（“不开心”不是开心）；看起来是转述、引用别人的话时不记负面事件。"""
+        前面带“不 / 没 / 别 / 非”的不算（“不开心”不是开心）。兜底只会给出正面或担心类事件，不推断负面意图。"""
         text = text or ''
-        from aicompanion.relationship.intent import QUOTED, REPORT
-        quoting = bool(REPORT.search(text) or QUOTED.search(text))
         for kind, pattern in _WORDS:
             for match in pattern.finditer(text):
                 if match.start() > 0 and text[match.start()-1] in '不没别非': continue
-                if kind == 'teased' and quoting: continue
                 return kind, 0.7*channel_scale(channel)
         return None
 

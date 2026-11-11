@@ -109,6 +109,23 @@ class SecondRoundTests(Base):
         self.assertIsNone(MoodService(self.db).on_mind(CID, {'intent': '乐意', 'willing': 0.8}))   # 只表态不评判：仍走兜底
 
 
+class ThirdRoundTests(Base):
+    """Codex PR #38 第三轮（debf37c 实机）：没有 <mind/> 时，歧义词不能推出负面心情。"""
+
+    def test_no_mind_ambiguous_words_do_not_upset_her(self):
+        model = Model('太棒了！恭喜你把项目做完啦'); controller = self.controller(model)
+        text = '你不是笨蛋，我是在给你打气啦。今天终于把项目做完了！'
+        controller.record_user_message(text)
+        list(controller.generate('t3', self.character, CancellationToken(), text))
+        mood = MoodService(self.db).current(CID)
+        self.assertEqual((mood.levels.get('angry', 0), mood.levels.get('sad', 0)), (0, 0))
+        self.assertNotIn('teased', [e['kind'] for e in MoodService(self.db).recent(CID)])
+        for line in ('你真是笨蛋', '闭嘴', '烦死了'):                                          # 没有判断时，负面一律不靠用词猜
+            controller.record_user_message(line); model.reply = '哼'
+            list(controller.generate('t-'+line, self.character, CancellationToken(), line))
+        self.assertEqual(MoodService(self.db).current(CID).levels.get('angry', 0), 0)
+
+
 class FallbackTests(Base):
     def run_turn(self, controller, text, reply):
         controller.record_user_message(text)
@@ -142,7 +159,7 @@ class FallbackTests(Base):
     def test_fallback_rules(self):
         self.assertEqual(MoodService.fallback('我今天不开心')[0], 'worried')
         self.assertIsNone(MoodService.fallback('他说你是笨蛋'))                               # 转述不记负面
-        self.assertEqual(MoodService.fallback('你是笨蛋')[0], 'teased')
+        self.assertIsNone(MoodService.fallback('你是笨蛋'))                                    # 没有判断时不靠用词推断负面意图
         self.assertNotEqual((MoodService.fallback('我不喜欢你这样') or ('',))[0], 'affection')
 
 
