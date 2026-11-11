@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self.items={}; self.texts={}; self.proactive_keys={}; self.closing=False; self.exit_requested=False
         self.delivered={}; self.reply_characters={}; self.reply_voice={}; self.reply_status={}
         # 语气词：每轮回复只发一声反应（或再加第一句短话），文字留在气泡
-        self.interjections=interjection.load(None); self.voiced_first=set(); self.reply_expressions={}; self.last_interjection=''
+        self.interjections=interjection.load(None); self.readers={}; self.voiced_first=set(); self.reply_expressions={}; self.last_interjection=''
         self.asr_queue=deque()
         self.call_active=False; self.call_epoch=0; self.asr_worker=None; self.memory_worker=None
         self.user_speaking=False; self.asr_failures=0
@@ -83,6 +83,7 @@ class MainWindow(QMainWindow):
         self.speech.mouth.connect(lambda value:self.avatar.set_state(self.mood,value))
         self.speech.speaking.connect(self._speaking)
         self.speech.error.connect(self._speech_error)
+        self.speech.fallback.connect(lambda message:self._status(message))   # 云端声线不可用时退回本地朗读，回复照常
         self.speech.usage.connect(lambda n:self.database.record_usage(self.controller.character.id,'tts_characters',n))
         self.speech.delivered.connect(self._heard)
         self._connect_microphone(self.qt_microphone)
@@ -437,12 +438,15 @@ class MainWindow(QMainWindow):
         old=self.coordinator.active
         self.coordinator.cancel(clear_pending)
         for worker in self.workers: worker.cancellation.cancel()
-        if old in self.items: self.items[old].mark('[已打断]')
-        if old:self.controller.expression.cancel(old,self.reply_characters.get(old,self.controller.character.id))
+        # 已经完成（或已失败、已取消）的那一轮不再追改成“被打断”：下一句话、挂断通话、退出都会走到这里，
+        # 那时上一轮早就说完了（Codex 在 PR #38 实机发现的基线问题，V4-8 先修）。只停掉还在念的语音。
+        finished=self.reply_status.get(old) in ('complete','failed','cancelled','suppressed')
+        if old in self.items and not finished: self.items[old].mark('[已打断]')
+        if old and not finished:self.controller.expression.cancel(old,self.reply_characters.get(old,self.controller.character.id))
         self.speech.stop(); self.sentences=SentenceBuffer(); self.subtitle.clear(); self.subtitle.hide()
         self._pet_subtitle(''); self.pet.dispatch('interrupted')
         self.pet.hide_activity(); self.pet.finish_reply(); self.sentence_cues.clear()
-        if old and old in self.reply_characters:
+        if old and old in self.reply_characters and not finished:
             self.reply_status[old]='cancelled'; self._sync_delivery(old)
         self._status('已打断' if not self.call_active else '正在听…')
 
@@ -465,6 +469,9 @@ class MainWindow(QMainWindow):
         self.reply_queries[generation]=query   # 识别到要动手时，把用户原话交给干活的她
         self.delivered[generation]=''; self.reply_characters[generation]=self.controller.character.id
         self.reply_voice[generation]=self._full_voice(); self.reply_status[generation]='generating'
+        if self.reply_voice[generation] and self._speech_style()=='smart':
+            from aicompanion.speech.smart import SmartReader
+            self.readers[generation]=SmartReader()
         self.reply_expressions[generation]=[]
         # 多段回复显示成几个连续气泡、表情包单独一个气泡（见 SegmentedReply）
         self.items[generation]=self.chat_list.reply(self.controller.character.name,'正在想…')
@@ -547,6 +554,7 @@ class MainWindow(QMainWindow):
         if state=='complete':
             self.pet.dispatch('reply_finished',ok=True,celebrate=getattr(self,'celebrate_next',False)); self.celebrate_next=False
             for sentence in self.sentences.feed('',True): self._enqueue_sentence(sentence,generation)
+            self._finish_reader(generation)
             # 没能挂到句子上的标注（语音关闭、或标注在最后一句之后）现在执行
             for cue in self.pending_cues.pop(generation,[]): self.pet.perform(cue)
             if not self.reply_voice.get(generation): self.pet.finish_reply()
@@ -564,7 +572,7 @@ class MainWindow(QMainWindow):
             if key and self.isHidden() and not self.pet.isVisible(): self.tray.showMessage(self.controller.character.name,self.texts[generation][:120])
         else:
             self.speech.stop()
-            self.pet.finish_reply(); self.pending_cues.pop(generation,None); self.pending_tasks.pop(generation,None)
+            self.pet.finish_reply(); self.pending_cues.pop(generation,None); self.pending_tasks.pop(generation,None); self.readers.pop(generation,None)
             if state=='failed': self.pet.dispatch('reply_finished',ok=False,error=error or '回复失败')
             else: self.pet.dispatch('interrupted')
             self.items[generation].mark('[回复未完成]' if self.texts[generation] else '[未能完成回复]')
@@ -593,10 +601,12 @@ class MainWindow(QMainWindow):
 
     # ---- 说话方式：语气词 / 语气词 + 第一句 / 完整朗读 ----------------------------------------
     def _speech_style(self):
-        style=self.database.get_setting('speech_style','interjection')
-        return style if style in interjection.STYLES else 'interjection'
+        style=self.database.get_setting('speech_style',interjection.DEFAULT_STYLE)
+        return style if style in interjection.STYLES else interjection.DEFAULT_STYLE
 
-    def _full_voice(self): return self.speech.enabled and self._speech_style()=='full'
+    def _full_voice(self):
+        """这一轮是否逐句朗读：完整朗读，或智能朗读（短回复全念、长回复取舍分段，计划书 v4 功能八）。"""
+        return self.speech.enabled and self._speech_style() in ('full','smart')
 
     def _voice_reaction(self,generation,sentence,expressions=None):
         """非完整朗读时，一轮回复只在第一句出来时发一声。"""
@@ -613,7 +623,16 @@ class MainWindow(QMainWindow):
     def speak_reply(self,text,expressions=()):
         """干活结果等一次性文字：完整朗读模式念全文，否则只发一声。"""
         if not self.speech.enabled or not text: return
-        if self._full_voice(): self.speech.enqueue(text,'agent')
+        # 每份结果一个独立的朗读轮次：上一份退回本地朗读 / 出错，不影响下一份（Codex PR #39 第 2 项）
+        generation='agent:'+uuid4().hex
+        if self._full_voice() and self._speech_style()=='smart':
+            # 办事结果常常很长：同样按智能朗读取舍、分段
+            from aicompanion.speech.smart import SmartReader
+            reader=SmartReader(); buffer=SentenceBuffer()
+            for sentence in buffer.feed(text)+buffer.feed('',True):
+                for segment in reader.feed(sentence): self.speech.enqueue(segment,generation)
+            for segment in reader.finish(): self.speech.enqueue(segment,generation)
+        elif self._full_voice(): self.speech.enqueue(text,generation)
         else:
             key='once:'+uuid4().hex; self._voice_reaction(key,text,list(expressions)); self.voiced_first.discard(key)
 
@@ -625,10 +644,22 @@ class MainWindow(QMainWindow):
     def _enqueue_sentence(self,sentence,generation):
         if not self.reply_voice.get(generation):
             self._voice_reaction(generation,sentence); return
+        reader=self.readers.get(generation)
+        for segment in (reader.feed(sentence) if reader else [sentence]): self._speak_segment(segment,generation)
+
+    def _finish_reader(self,generation):
+        reader=self.readers.pop(generation,None)
+        if reader and self.reply_voice.get(generation):
+            for segment in reader.finish(): self._speak_segment(segment,generation)
+            # 计划书 v4 功能八要对照的数据：每轮念了多少字（用量页可见）
+            try: self.database.record_usage(self.controller.character.id,'voice_characters',reader.spoken)
+            except Exception: pass
+
+    def _speak_segment(self,segment,generation):
         cues=self.pending_cues.get(generation)
         if cues and self.speech.enabled:
-            self.sentence_cues.setdefault(spoken_text(sentence),[]).extend(cues); self.pending_cues[generation]=[]
-        self.speech.enqueue(sentence,generation)
+            self.sentence_cues.setdefault(spoken_text(segment),[]).extend(cues); self.pending_cues[generation]=[]
+        self.speech.enqueue(segment,generation)
 
     def _sentence_started(self,text):
         for cue in self.sentence_cues.pop(text,[]): self.pet.perform(cue)
@@ -640,8 +671,10 @@ class MainWindow(QMainWindow):
 
     def _sync_delivery(self,generation):
         if generation not in self.reply_characters: return
-        text=self.delivered.get(generation,'') if self.reply_voice.get(generation) else self.texts.get(generation,'')
         status=self.reply_status.get(generation,'generating')
+        # 已完成的回复整段都在气泡里显示过了，按全文记；还在生成 / 被打断的朗读轮次只记已经念出来的部分
+        voiced=self.reply_voice.get(generation) and status!='complete'
+        text=self.delivered.get(generation,'') if voiced else self.texts.get(generation,'')
         self.database.set_delivered_reply(generation,self.reply_characters[generation],text,status)
 
     def _worker_finished(self,worker):
@@ -875,7 +908,11 @@ class MainWindow(QMainWindow):
         self.speech.style=self.database.get_setting(f'qwen_style:{character_id}','')
         mood=self.database.get_setting(f'qwen_mood:{character_id}','auto')
         self.speech.mood=self.database.load_emotion(character_id).mood if mood=='auto' else mood
-        enabled=self.database.get_setting('speech_enabled',False)
+        # 计划书 v4 功能八：朗读默认开启；从没动过开关的库也开启。用户手动关过的保持关闭，只提示一次
+        enabled=self.database.get_setting('speech_enabled',True)
+        if enabled is False and not self.database.get_setting('speech_default_hint',False):
+            self.database.set_setting('speech_default_hint',True)
+            QTimer.singleShot(3000,lambda:self.pet.show_bubble('现在可以让我开口说话啦：点聊天面板上的“朗读”就行。',10))
         self.speech.enabled=enabled; self.speak_toggle.setChecked(enabled)
         self._apply_identity(); self._apply_avatar()
         self.controller.agent_enabled=bool(self.database.get_setting('agent_enabled',True))

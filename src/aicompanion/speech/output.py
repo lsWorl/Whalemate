@@ -108,6 +108,7 @@ class SpeechSegment:
     target: object = None      # Breeze 等模型页配置的语音：入队时取好的完整 TtsTarget，合成和缓存都用它（Codex 审计 R4）
     requested: bool = False
     audio: bytes | None = None
+    fell_back: bool = False    # 原本要云端合成、因本轮云端失败改成了本地念
 
 
 CACHE_CHARS = 16   # 语气词这类短句合成一次存盘，之后不再请求接口
@@ -129,6 +130,8 @@ class SpeechOutput(QObject):
     error = Signal(str)
     usage = Signal(int)
     delivered = Signal(str, str)
+    fallback = Signal(str)       # 云端声线说不了、这一轮退回本地朗读时的提示（计划书 v4 功能八）
+    GAP_MS = 250                 # 同一轮两段之间停一下，不连成一口气（计划书：200～400 毫秒）
 
     def __init__(self, client, parent=None):
         super().__init__(parent)
@@ -144,6 +147,7 @@ class SpeechOutput(QObject):
         self.language = 'zh'
         self.role_style = ''
         self.failed_generation = None
+        self.fallback_generation = None   # 这一轮已经退回本地朗读（云端合成失败）
         self.delivered_count = 0
         self.tts = QTextToSpeech(self)
         self.tts.setLocale(QLocale('zh_CN'))
@@ -199,6 +203,10 @@ class SpeechOutput(QObject):
             self._error('语音队列已满，本轮后续内容仅显示文字。')
             return
         voice, target = self.voice, None
+        if self.provider != 'system' and generation_id and generation_id == getattr(self, 'fallback_generation', None):
+            # 这一轮已经退回本地朗读：后面的句子也直接本地念，不再一句句去试云端
+            self.queue.append(SpeechSegment(text, generation_id, 'system', '', self.mood, self.style, self.language, self.role_style))
+            self._next(); return
         if self.provider == 'breeze':
             # 入队时就定下这句用哪个账户和音色；之后改了设置只影响新句子，排队中的句子不会换成新音色、也不会把新音色存进旧缓存
             source = getattr(self.client, 'tts_source', None)
@@ -259,17 +267,36 @@ class SpeechOutput(QObject):
                 **({'target': j.target} if j.target is not None else {})), self)
             self.workers.add(worker)
             worker.succeeded.connect(lambda raw, j=job, e=epoch: self._ready(j, raw, e))
-            worker.failed.connect(lambda error, e=epoch: self._error(error) if e == self.epoch else None)
+            worker.failed.connect(lambda error, j=job, e=epoch: self._synth_failed(j, error) if e == self.epoch else None)
             worker.finished.connect(lambda w=worker: self._dispose(w))
             worker.start()
 
+    def _synth_failed(self, job, error):
+        """云端合成失败（没配声线、额度用完、网络或服务出错）：这一轮剩下的句子都改用本地朗读，回复照常完成。
+        日语配音本地念不了，才按原来的方式报错停下。"""
+        if job.fell_back:
+            # 这句已经随本轮改成本地念了，晚到的云端失败是过期消息：不能当成本地朗读出错去停播、清队列（Codex PR #39 第 1 项）
+            return
+        if job.provider == 'system' or job.language != 'zh':
+            self._error(error); return
+        generation = job.generation_id
+        for queued in [job, *self.queue]:
+            if queued.generation_id == generation and queued.provider != 'system':
+                queued.provider, queued.requested, queued.audio, queued.target = 'system', True, None, None
+                queued.fell_back = True
+        self.fallback_generation = generation
+        self.fallback.emit('云端声线暂时用不了（' + str(error)[:60] + '），这一轮先用本地朗读。')
+        if self.busy and job is self.current_job:
+            # 正在等这句的音频：直接改成本地念
+            self.busy = False; self.queue.appendleft(job); self.current_job = None; self._next()
+
     def _ready(self, job, raw, epoch):
-        if epoch != self.epoch:
+        if epoch != self.epoch or job.provider == 'system':   # 已经改成本地念的句子，晚到的云端音频不用
             return
         try:
             job.audio = validate_wav(raw)
         except RuntimeError as error:
-            self._error(str(error))
+            self._synth_failed(job, str(error))   # 云端回来的音频坏了，和合成失败一样退回本地念
             return
         if len(job.text) <= CACHE_CHARS:
             try:
@@ -372,12 +399,17 @@ class SpeechOutput(QObject):
 
     def _done(self):
         self._mark_delivered(len(self.current))
+        finished = self.current_id
         self.busy = False
         self.current_job = None
         self._release_audio()
         self.mouth.emit(0)
         self.speaking.emit(False)
-        self._next()
+        if self.queue and self.queue[0].generation_id == finished and self.GAP_MS > 0:
+            epoch = self.epoch
+            QTimer.singleShot(self.GAP_MS, lambda: self._next() if epoch == self.epoch else None)
+        else:
+            self._next()
 
     def _error(self, text):
         self.failed_generation = self.current_id
