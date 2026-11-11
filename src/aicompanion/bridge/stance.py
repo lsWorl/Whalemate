@@ -98,7 +98,7 @@ class Stance:
         if left:
             state = self.state(character_id, person_id)
             return f"不理他（{REASONS.get(state.get('reason'), '不想理')}），还剩约 {int(left//60)+1} 分钟"
-        if profile and profile.get('is_owner'): return '爹：不受这些限制'
+        if profile and profile.get('is_owner'): return '本人：不受这些限制'
         name = {'warm': '热络：可以多聊、开玩笑', 'neutral': '一般：回得短，最多两三条',
                 'cold': '冷淡：只回一句短的，常常已读不回'}[tier(profile, hostility, upset)]
         return name + (f'；他今天已经冲她来了 {hostility} 次' if hostility else '')

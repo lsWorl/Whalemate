@@ -71,7 +71,7 @@ class BridgePage(QWidget):
         for key in CHIME: self.chime.addItem(CHIME_TEXT[key], key)
         self.chime.setCurrentIndex(max(0, self.chime.findData(setting(database, 'bridge_chime'))))
         self.chime.setToolTip('群里的消息她都"听得到"。没人叫她时按这里决定要不要插话；她也可能觉得没什么好说而不说。')
-        pl.addRow('你的 QQ 号（她管你叫爹）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
+        pl.addRow('你的 QQ 号（她认得你，按人格里设定的关系相处）', self.owner); pl.addRow('允许的群', self.groups); pl.addRow('', self.groups_hint)
         # 用户 2026-11-09：主动问候 / 心事随机发到桌面或 QQ 私聊（不在电脑前时更常发 QQ）
         self.proactive_qq = QCheckBox('她主动找你说话时，也会发到 QQ 私聊（不在电脑前时更常发 QQ）')
         self.proactive_qq.setChecked(bool(database.get_setting('proactive_qq_enabled', True)))
@@ -144,7 +144,7 @@ class BridgePage(QWidget):
         self.advanced.toggled.connect(inner.setVisible)
         layout.addWidget(self.advanced)
         note = QLabel('桌宠会从 NapCat 和 AstrBot 的官方发布地址下载原版组件，放在上面的组件目录里，不改你电脑上的 QQ。'
-                      '扫码登录和账号验证需要你自己完成。你（爹）的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
+                      '扫码登录和账号验证需要你自己完成。你的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
                       '不想在群里被提到的记忆，到"记忆"页标成"只在私下用"。聊天平台上她不会动手干活。')
         note.setWordWrap(True); note.setStyleSheet('color:#666'); layout.addWidget(note); layout.addStretch(1)
 

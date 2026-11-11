@@ -148,7 +148,7 @@ class MemorySharingTests(BridgeTests.__base__):
         self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
         memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#1:job'), None)
         self.assertIsNotNone(memory); self.assertEqual(memory['scope'], 'qq')
-        self.assertIn('不要把群友的事记成爹的', seen[-1])
+        self.assertIn('不要把群友的事记成用户的', seen[-1])
         self.assertEqual(self.db.load_summary(self.cid), '')                # 群聊不写对话摘要
         self.assertEqual(memory_service.pending(self.cid, channel), 0)
         history, prompt = self.controller.context.build(self.controller.character, '大壮')   # 桌面上她也知道

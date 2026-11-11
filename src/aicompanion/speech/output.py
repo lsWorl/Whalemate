@@ -195,7 +195,8 @@ class SpeechOutput(QObject):
         values.frombytes(chunk[:len(chunk)//2*2])
         return math.sqrt(sum(x*x for x in values)/len(values))/32768 if values else 0.0
 
-    def enqueue(self, text, generation_id=''):
+    def enqueue(self, text, generation_id='', target=None):
+        """target：调用方直接指定这句用哪个云端账户和音色（设置页试听未保存的候选音色），不传则按当前配置取。"""
         text = spoken_text(text)
         if not self.enabled or not text or generation_id == self.failed_generation:
             return
@@ -209,8 +210,9 @@ class SpeechOutput(QObject):
             self._next(); return
         if self.provider == 'breeze':
             # 入队时就定下这句用哪个账户和音色；之后改了设置只影响新句子，排队中的句子不会换成新音色、也不会把新音色存进旧缓存
-            source = getattr(self.client, 'tts_source', None)
-            target = source() if source else None
+            if target is None:
+                source = getattr(self.client, 'tts_source', None)
+                target = source() if source else None
             voice = target.cache_id if target else ''
         self.queue.append(SpeechSegment(text, generation_id, self.provider, voice, self.mood, self.style, self.language,
                                         self.role_style, target))

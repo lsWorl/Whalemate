@@ -22,7 +22,8 @@ class SpeechClient:
         self.qwen = QwenSpeechClient(settings)
         # Breeze Blue 等在“模型与 Key”页配置的语音合成：tts_source() 返回当前角色的 TtsTarget（含音色），没配置返回 None
         from aicompanion.speech.breeze_client import BreezeSpeechClient
-        self.breeze = BreezeSpeechClient()
+        from aicompanion.speech.minimax_client import MiniMaxSpeechClient
+        self.breeze = BreezeSpeechClient(); self.minimax = MiniMaxSpeechClient()
         self.tts_source = tts_source
         # 日语配音的翻译跟随当前角色的聊天模型（由界面提供，计划书 v4 功能一）
         self.translator = JapaneseSpeechTranslator(settings,source=translation_source)
@@ -94,11 +95,14 @@ class SpeechClient:
             # 优先用入队时取好的快照；没有快照（例如直接调用）才取当前配置
             if target is None: target = self.tts_source() if self.tts_source else None
             if target is None:
-                raise ValueError('还没有在“模型与 Key”页配置 Breeze Blue 音色和 Key。')
-            # 日语台词：先翻译；Breeze 多语言模型能直接读日文，语言代码以模型配置为准
+                raise ValueError('还没有在“模型与 Key”页配置语音合成（Breeze Blue 或 MiniMax 的音色和 Key）。')
+            # 日语台词：先翻译；Breeze 多语言模型、MiniMax 都能直接读日文
             if language=='ja':
                 text=self.translator.translate(text,cancellation,role_style)
                 cancellation.check()
+            if target.provider_kind=='minimax':
+                from dataclasses import replace
+                return self.minimax.synthesize(replace(target,language='ja') if language=='ja' else target,text,cancellation,mood,style)
             return self.breeze.synthesize(target,text,cancellation,mood,style)
         if language=='ja':
             if provider!='qwen':
