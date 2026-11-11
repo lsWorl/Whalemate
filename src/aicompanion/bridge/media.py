@@ -177,18 +177,32 @@ class QQMedia:
                       '"emotions": ["0～3 个情绪词，中性的可以不写"], "text": "图上的文字，没有就空", "reason": "不适合时简单说原因"}'
                       '。sticker 和 suitable 必须写成 JSON 的 true / false。只描述看得见的东西，不解释梗的来历，不推断图里真人的身份。')
 
+    ERROR_KEY = 'sticker_analysis_error'   # 最近一次识图失败的原因：只记状态码 / 异常类型，不记错误正文（可能带请求摘要或凭据）
+
     def analyze_sticker(self, data: bytes, mime: str) -> dict | None:
-        """收集来的表情包：识图分析一次含义（结果存进图库，不进聊天）。失败或接口不可用返回 None，下次再试。"""
+        """收集来的表情包 / 图库里的图：识图分析一次含义（结果存进图库，不进聊天）。失败或接口不可用返回 None，下次再试。
+        失败原因写进 ERROR_KEY，图库页显示（实机反馈 2026-11-11：识别失败时什么都看不到）。"""
         try: profile = self.profile('sticker')
-        except Exception: return None
-        if not self.vision_ready(profile): return None
+        except Exception: return self._sticker_failed('没有可用的识图模型（在“模型”页选好识图模型）')
+        if not self.vision_ready(profile):
+            return self._sticker_failed('识图暂不可用：识图开关关着、接口不是 https，或这家接口最近明确拒收过图片')
         content = [{'type': 'text', 'text': self.STICKER_PROMPT},
                    {'type': 'image_url', 'image_url': {'url': inline_image(data, mime)}}]
         try:
-            return parse_sticker_analysis(self._vision_call(profile, content, 300, 'qq'))
+            text = self._vision_call(profile, content, 300, 'qq')
         except Exception as error:
             self.note_failure(error, profile)
-            return None   # 上游异常可能带请求摘要或凭据，不记录
+            status = re.search(r'\b(?:HTTP\s*)?([45]\d\d)\b', str(error))
+            return self._sticker_failed(f"识图接口出错（{type(error).__name__}{'，HTTP '+status.group(1) if status else ''}）")
+        result = parse_sticker_analysis(text or '')
+        if result is None:
+            return self._sticker_failed('识图模型的回答格式不对（缺少 suitable 判断或含义为空）')
+        return result
+
+    def _sticker_failed(self, reason: str):
+        try: self.db.set_setting(self.ERROR_KEY, {'at': round(self.clock()), 'reason': reason})
+        except Exception: pass
+        return None
 
     @property
     def avatar_key(self): return 'qq_avatars:'+self.controller.character.id

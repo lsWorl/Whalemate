@@ -134,14 +134,21 @@ class StickerCollector:
                              + where + ' ORDER BY imported_at LIMIT ?', (limit+len(busy),)).fetchall()
         return [r['asset_id'] for r in rows if r['asset_id'] not in busy][:limit]
 
+    LAST_KEY = 'sticker_analysis_last'   # 最近一批识别的结果和停下的原因（图库页显示；不含图片内容和接口报错正文）
+
+    def analysis_count_today(self) -> int:
+        return int(self.db.get_setting(f'sticker_analysis_count:{self.today().isoformat()}', 0) or 0)
+
     def analyze_pending(self, analyzer, limit: int = 5, alive=None) -> int:
         """分析排队的图（后台线程调用）。analyzer(data, mime) → dict 或 None（失败）。每张先预留当天额度，额度用完就停。
         alive()：每张开始前再确认一次能不能继续（服务关闭、收集 / 识图被关掉、金额额度到限就停，不再把图交给视觉模型）。
         只有真的把图交给模型、模型没给出结果才算一次失败；本地暂时不能处理的（许可待确认、停用、别处在识别）
-        原样留在队列里，不扣次数（R4）。"""
-        done = 0
+        原样留在队列里，不扣次数（R4）。
+        结果写进 self.last 和设置 LAST_KEY：识别成功几张、失败几张、为什么停下——实机反馈“一直识别含义中”时
+        原来什么都看不到（2026-11-11），现在图库页直接显示原因。"""
+        done = ok = failed = 0; stop = ''
         for asset_id in self.pending(limit):
-            if alive is not None and not alive(): break
+            if alive is not None and not alive(): stop = 'stopped'; break
             if not claim(asset_id): continue   # 别的入口刚领走
             try:
                 row = self.catalog.get(asset_id)
@@ -150,13 +157,19 @@ class StickerCollector:
                 if row['metadata'].get('collected') and not self.enabled(): continue   # 收集关掉后不再把收集来的图交给识图
                 media = self.catalog.resolve(asset_id)
                 if media is None:   # 文件不见了或内容变了：没调用模型，不扣当天额度，只记一次失败
-                    self._apply(asset_id, None); done += 1; continue
-                if not self.db.reserve_daily(f'sticker_analysis_count:{self.today().isoformat()}', self.analysis_daily()): break
+                    self._apply(asset_id, None); done += 1; failed += 1; continue
+                if not self.db.reserve_daily(f'sticker_analysis_count:{self.today().isoformat()}', self.analysis_daily()):
+                    stop = 'daily_limit'; break
                 try: result = analyzer(*media)
                 except Exception: result = None
                 self._apply(asset_id, result); done += 1
+                if isinstance(result, dict): ok += 1
+                else: failed += 1
             finally:
                 release(asset_id)
+        self.last = dict(at=round(self.clock()), done=done, ok=ok, failed=failed, stop=stop)
+        try: self.db.set_setting(self.LAST_KEY, self.last)
+        except Exception: pass
         return done
 
     def _apply(self, asset_id: str, result) -> None:

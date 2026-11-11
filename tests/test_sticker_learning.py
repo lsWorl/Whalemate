@@ -115,6 +115,23 @@ class CollectorTests(Base):
         release.set(); first.join(5)
         self.assertEqual((len(calls), self.collector.stats()['analyzed_today']), (1, 1))
 
+    def test_sticker_analysis_failure_reason_is_recorded_without_error_body(self):
+        from aicompanion.bridge.media import QQMedia
+        media = QQMedia(self.db, self.controller)
+        profile = type('P', (), {'base_url': 'https://example.invalid/v1', 'model_id': 'm', 'config_revision': 0})()
+        media.profile = lambda purpose='vision': profile
+        media._vision_call = lambda *a: '我觉得这张图挺好'
+        self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
+        self.assertIn('格式不对', self.db.get_setting(QQMedia.ERROR_KEY)['reason'])
+        def boom(*a): raise RuntimeError('HTTP 503 secret-request-summary sk-xxx')
+        media._vision_call = boom
+        self.assertIsNone(media.analyze_sticker(png(), 'image/png'))
+        reason = self.db.get_setting(QQMedia.ERROR_KEY)['reason']
+        self.assertIn('HTTP 503', reason); self.assertNotIn('sk-xxx', reason)
+        self.ingest(0xff646464)
+        self.collector.analyze_pending(lambda d, m: None)
+        self.assertEqual({k: self.collector.last[k] for k in ('done', 'ok', 'failed')}, {'done': 1, 'ok': 0, 'failed': 1})
+
     def test_no_library_or_disabled_collects_nothing(self):
         self.db.set_setting('qq_meme_root', '')
         self.assertEqual(self.ingest()['status'], 'no_library')   # 不往仓库自带图目录里写
@@ -195,6 +212,7 @@ class BridgeStickerTests(Base):
         self.analyzed = []
         def analyzer(data, mime): self.analyzed.append(mime); return dict(GOOD)
         self.service.media.analyze_sticker = analyzer
+        self.service.media.vision_ready = lambda profile=None: True   # 模拟已配好识图（后台分析每张前会复核，Codex 复审 R5）
         self.service.analyze_soon = lambda background=True: BridgeService.analyze_soon(self.service, background=False)
     def tearDown(self): self.service.close(); super().tearDown()
 

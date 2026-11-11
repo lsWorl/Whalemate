@@ -169,6 +169,83 @@ class ExpressionUITests(unittest.TestCase):
                     self.assertFalse(page.analyze_soon());self.assertEqual(len(calls),1)   # 已到限：不再启动
                 finally:
                     page.deleteLater();self.app.processEvents()
+    def test_library_reanalyze_explains_why_it_waits_or_failed(self):
+        # 实机反馈 2026-11-11：点“重新识别含义”后一直“识别含义中”，看不到原因。额度满了要直说；识图失败要显示原因，不能报成已识别
+        from types import SimpleNamespace
+        from datetime import date
+        from aicompanion.bridge.media import QQMedia
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            (root/'开心').mkdir();(root/'开心'/'a.png').write_bytes(fixtures.png(0xff202020))
+            db.set_setting('qq_meme_root',str(root))
+            from aicompanion.expression.catalog import AssetCatalog
+            AssetCatalog(db).scan()
+            db.set_setting('sticker_analysis_daily',1);db.set_setting(f'sticker_analysis_count:{date.today().isoformat()}',1)
+            calls=[]
+            def analyze(media,data,mime):
+                calls.append(1);return media._sticker_failed('识图模型的回答格式不对（缺少 suitable 判断或含义为空）')
+            with mock.patch('aicompanion.bridge.media.QQMedia.vision_ready',return_value=True), \
+                 mock.patch('aicompanion.bridge.media.QQMedia.analyze_sticker',autospec=True,side_effect=analyze):
+                page=LibraryPage(db,'deepseek-whale',controller=SimpleNamespace())
+                try:
+                    self.assertIsNone(page.analyzer)
+                    page.table.selectAll();self.app.processEvents();page.reanalyze()
+                    self.assertIn('每天最多分析 1 张',page.status.text());self.assertIn('每天最多分析 1 张',page.summary.text())
+                    self.assertEqual(calls,[])
+                    db.set_setting('sticker_analysis_daily',5);page.reanalyze()
+                    worker=page.analyzer;self.assertIsNotNone(worker);self.assertTrue(worker.wait(5000))
+                    for _ in range(6):self.app.processEvents()
+                    for _ in range(50):
+                        if page.analyzer is None:break
+                        page.analyzer.wait(100);self.app.processEvents()
+                    self.assertEqual(len(calls),2)                                  # 失败一次接着再试一次，两次后停
+                    self.assertIn('回答格式不对',page.status.text());self.assertNotIn('已识别',page.status.text())
+                    self.assertEqual(page.catalog.rows()[0]['metadata']['analysis'],'failed')
+                finally:
+                    page.deleteLater();self.app.processEvents()
+    def _vision_stops_mid_batch(self,first_call):
+        """11 张待识别图，真实 LibraryPage / QQMedia / StickerCollector，只替换识图配置和 _vision_call。"""
+        from types import SimpleNamespace
+        from datetime import date
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);db=Database(root/'synthetic.sqlite3');db.initialize()
+            (root/'开心').mkdir()
+            for n in range(11):(root/'开心'/f'{n}.png').write_bytes(fixtures.png(0xff000000+n*65793+17))
+            db.set_setting('qq_meme_root',str(root))
+            from aicompanion.expression.catalog import AssetCatalog
+            AssetCatalog(db).scan()
+            profile=SimpleNamespace(base_url='https://example.invalid/v1',model_id='mock-vision',config_revision=1)
+            calls=[]
+            def vision_call(media,profile,content,max_tokens,purpose):
+                calls.append(1);return first_call(db)
+            with mock.patch('aicompanion.bridge.media.QQMedia.profile',lambda self,purpose='vision':profile), \
+                 mock.patch('aicompanion.bridge.media.QQMedia._vision_call',autospec=True,side_effect=vision_call):
+                page=LibraryPage(db,'deepseek-whale',controller=SimpleNamespace())
+                try:
+                    for _ in range(50):
+                        if page.analyzer is None:break
+                        page.analyzer.wait(100);self.app.processEvents()
+                    rows=page.catalog.rows()
+                    return (len(calls),int(db.get_setting(f'sticker_analysis_count:{date.today().isoformat()}',0) or 0),
+                            sorted(r['metadata'].get('analysis') for r in rows),sum(int(r['metadata'].get('attempts') or 0) for r in rows),
+                            page.status.text())
+                finally:
+                    page.deleteLater();self.app.processEvents()
+    def test_library_turning_vision_off_mid_batch_keeps_rest_pending(self):
+        # Codex 复审 R5：首张请求期间关闭识图，后面 10 张不扣次数、不记失败，留着等恢复
+        def first(db):
+            db.set_setting('qq_vision_enabled',False)
+            return '{"suitable": true, "meaning": "开心"}'
+        calls,count,states,attempts,_=self._vision_stops_mid_batch(first)
+        self.assertEqual((calls,count,attempts),(1,1,0))
+        self.assertEqual(states,['done']+['pending']*10)
+    def test_library_first_image_rejected_by_api_keeps_rest_pending(self):
+        # Codex 复审 R5：首张被接口拒收图片（HTTP 400 → 标为不支持看图），首张照常记一次失败，其余不动
+        def first(db):raise RuntimeError('HTTP 400 image not supported')
+        calls,count,states,attempts,status=self._vision_stops_mid_batch(first)
+        self.assertEqual((calls,count,attempts),(1,1,1))
+        self.assertEqual(states,['pending']*11)
+        self.assertIn('HTTP 400',status)
     def test_worker_orders_attachment_before_text_and_final_without_tts_tags(self):
         with tempfile.TemporaryDirectory() as temp:
             db=Database(Path(temp)/'synthetic.sqlite3');db.initialize()
