@@ -175,8 +175,9 @@ class ModelRouter:
                 return SearchTarget('wikipedia')
         return SearchTarget('wikipedia')
 
-    def tts_target(self, character_id: str) -> TtsTarget | None:
-        """这个角色的语音合成配置（音色可以按角色单独设置）。没配置或没有 Key 返回 None。"""
+    def tts_target(self, character_id: str, voice_choice: str | None = None) -> TtsTarget | None:
+        """这个角色的语音合成配置（音色可以按角色单独设置）。没配置或没有 Key 返回 None。
+        voice_choice 只影响默认声线的候选音色：设置页试听用它，不写数据库（Codex PR #41 审查 3）。"""
         if self.offline: return None
         config = self.store.load()
         for binding in (config.binding('tts', character_id), config.binding('tts', None)):
@@ -192,9 +193,9 @@ class ModelRouter:
             return TtsTarget(provider.kind, provider.base_url.rstrip('/'), key, model.model_id, binding.voice, binding.language,
                              binding.speed, binding.volume, binding.instructions, cache_id,
                              f'{provider.label} · {model.model_id} · {binding.voice}')
-        return self.default_voice(character_id, config)
+        return self.default_voice(character_id, config, voice_choice)
 
-    def default_voice(self, character_id: str, config=None) -> TtsTarget | None:
+    def default_voice(self, character_id: str, config=None, voice_choice: str | None = None) -> TtsTarget | None:
         """没在模型页配语音时，用角色自己的默认声线（domain/voice_profile.py）：
         有 MiniMax 账户就用它的系统音色（和聊天共用 Key，不用另配）。负责人 2026-11-11：鲸鲸默认就是网上 AI 视频那种有感情的少女声线。
         音色可以在设置里从候选里换（voice_choice:<角色>）。"""
@@ -202,7 +203,8 @@ class ModelRouter:
         profile = profile_for(character_id)
         if profile is None or self.offline: return None
         config = config or self.store.load()
-        choice = self.store.db.get_setting(f'voice_choice:{character_id}', '') if hasattr(self.store, 'db') else ''
+        choice = voice_choice if voice_choice is not None else (
+            self.store.db.get_setting(f'voice_choice:{character_id}', '') if hasattr(self.store, 'db') else '')
         voice = choice if choice in {v for v, _ in profile.minimax_candidates} else profile.minimax_voice
         for provider in config.providers.values():
             if provider.kind != 'minimax' or not provider.credential: continue
@@ -359,5 +361,11 @@ class FixedRouter:
     def search_target(self, character_id) -> SearchTarget: return self.search
 
     def agent_target(self, character_id=None): return None
+
+    # 固定解析器不管语音合成：和 ModelRouter 接口对齐，返回 None 让界面退回本地朗读（Codex PR #41 审查 1：
+    # 少了它们，离线自检 / 预览窗口在 _apply_settings 里直接 AttributeError）
+    def tts_target(self, character_id, voice_choice=None): return None
+
+    def default_voice(self, character_id, config=None, voice_choice=None): return None
 
     def label(self, character_id) -> str: return self.resolve('chat', character_id).label

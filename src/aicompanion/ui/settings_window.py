@@ -63,7 +63,11 @@ class SettingsWindow(QDialog):
         # ---- 声音与通话 ---------------------------------------------------------------------
         self.provider=QComboBox()
         for label,value in [('本地朗读（系统自带，不计费）','system'),('智谱语音','cloud'),('千问动漫声线','qwen'),('云端声线（鲸鲸默认：MiniMax 有感情的少女音；也可在“模型与 Key”页换 Breeze Blue）','breeze')]: self.provider.addItem(label,value)
-        self.provider.setCurrentIndex(max(0,self.provider.findData(self.database.get_setting('tts_provider',settings.tts_provider))))
+        # 记下打开时库里是否存过朗读方式：没存过且用户没改时保存不写入，否则“没选过”会被保存成“明确选了本地朗读”，
+        # 之后添加 MiniMax 账户也不会自动用上默认声线（Codex PR #41 审查 2）
+        self.stored_tts_provider=self.database.get_setting('tts_provider')
+        self.provider.setCurrentIndex(max(0,self.provider.findData(self.stored_tts_provider or settings.tts_provider)))
+        self.initial_tts_provider=self.provider.currentData()
         self.voice=QComboBox(); self.voice.setEditable(True)
         self._voice_provider_changed()
         self.provider.currentIndexChanged.connect(self._voice_provider_changed)
@@ -349,16 +353,25 @@ class SettingsWindow(QDialog):
             return self.voice.itemData(index)
         return self.voice.currentText().strip()
 
-    def _save_voice_choice(self,cid):
-        """默认声线的候选音色（choice:<音色 ID>）：存成 voice_choice:<角色>，路由按它选 MiniMax 音色。"""
+    def _voice_choice(self):
+        """界面上选中的默认声线候选音色 ID（choice:<音色 ID>）；不是候选时返回 None。"""
         value=str(self.voice.currentData() or '') if self.provider.currentData()=='breeze' else ''
-        if value.startswith('choice:'): self.database.set_setting(f'voice_choice:{cid}',value[len('choice:'):])
+        return value[len('choice:'):] if value.startswith('choice:') else None
+
+    def _save_voice_choice(self,cid):
+        """默认声线的候选音色存成 voice_choice:<角色>，路由按它选 MiniMax 音色。只在点“保存”时调用。"""
+        choice=self._voice_choice()
+        if choice is not None: self.database.set_setting(f'voice_choice:{cid}',choice)
 
     def preview_voice(self):
         if not self.speech_output: return
-        self._save_voice_choice(self.controller.character.id)   # 试听当前选中的候选音色
         speech=self.speech_output; speech.stop(); speech.enabled=True
         speech.provider=self.provider.currentData(); speech.voice=self.selected_voice()
+        # 试听当前选中的候选音色：临时取一份合成配置交给这一句，不写数据库；点“取消”后仍是原来的音色（Codex PR #41 审查 3）
+        target=None
+        if speech.provider=='breeze':
+            target=self.controller.router.tts_target(self.controller.character.id,voice_choice=self._voice_choice())
+            if target: speech.voice=target.cache_id
         speech.language=self.speech_language.currentData()
         speech.role_style=self.japanese_style.toPlainText()
         mood=self.voice_mood.currentData()
@@ -366,7 +379,7 @@ class SettingsWindow(QDialog):
         speech.style=self.voice_style.toPlainText()
         # 系统朗读可能同步触发开始信号，先显示准备状态，避免覆盖正在试听的提示。
         self.preview_status.setText('正在准备试听，云端合成会产生少量用量。')
-        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex)
+        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex,target=target)
 
     def _preview_started(self,active):
         if active: self.preview_status.setText('正在试听')
@@ -451,7 +464,10 @@ class SettingsWindow(QDialog):
         self.database.set_setting(f'speech_language:{character.id}',self.speech_language.currentData())
         self.database.set_setting(f'avatar_mode:{character.id}',self.avatar_mode.currentData())
         self.database.set_setting(f'japanese_style:{character.id}',self.japanese_style.toPlainText())
-        for key,value in [('tts_provider',self.provider.currentData()),('input_device',self.input.currentData()),
+        tts_provider=self.provider.currentData()
+        if self.stored_tts_provider is not None or tts_provider!=self.initial_tts_provider:
+            self.database.set_setting('tts_provider',tts_provider)
+        for key,value in [('input_device',self.input.currentData()),
                           ('asr_provider',self.asr_provider.currentData()),('voice_mode',self.voice_mode.currentData()),
                           ('speech_style',self.speech_style.currentData()),
                           ('panel_background',self.panel_background.text().strip()),('panel_background_opacity',self.panel_opacity.value()/100),

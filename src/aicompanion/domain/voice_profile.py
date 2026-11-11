@@ -45,3 +45,21 @@ EMOTIONS = {'happy': 'happy', 'sad': 'sad', 'angry': 'angry'}
 
 def profile_for(character_id: str) -> VoiceProfile | None:
     return PROFILES.get(character_id)
+
+
+def adopt_default_voice(database, router, character_id: str, env_provider: str = 'system') -> bool:
+    """首次自动接入角色默认声线（Codex PR #41 审查 2、1）。只在下面几条都满足时把朗读方式切到云端声线，且只做一次：
+
+    - 数据库里从没存过朗读方式（None）。存过的——包括明确选的“本地朗读（不计费、文本不上传）”——一律不动；
+      旧库里存着 system 的无法区分是默认还是用户选的，按用户选的保留，要用新声线由用户自己去设置里切。
+    - 环境配置没有指定别的朗读方式（TTS_PROVIDER 不是默认的 system 时尊重它）。
+    - 当前角色确实有可用的默认声线（例如已经有 MiniMax 账户）。
+    - router 没有默认声线能力（FixedRouter 等测试 / 诊断 / 预览用的解析器）时安全跳过，不报错。
+    返回是否做了切换。"""
+    if database.get_setting('voice_profile_setup') is not None or database.get_setting('tts_provider') is not None:
+        return False
+    if (env_provider or 'system') != 'system': return False
+    default_voice = getattr(router, 'default_voice', None)
+    if default_voice is None or not default_voice(character_id): return False
+    database.set_setting('tts_provider', 'breeze'); database.set_setting('voice_profile_setup', character_id)
+    return True

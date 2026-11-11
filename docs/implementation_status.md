@@ -1434,3 +1434,19 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 完整保留基线的群聊修复记录与本 PR 的 MiniMax 默认声线记录，未覆盖双方已有功能、测试或未验证说明。
 - 手工冲突修复仅涉及 Markdown，运行代码、插件和测试按 Git 自动合并结果保留。
 - 冲突修复检查双方原记录完整、无冲突标记、差异无空白错误；纯文档处理不单独运行回归。功能审计及其测试结果在 PR 评论另行记录。
+
+## 2026-11-11 PR #41 Codex 审查三项 P2 修复（Claude）
+
+- 做了什么：
+  - **审查 1（FixedRouter 缺接口，离线 Smoke 起不来）**：`FixedRouter` 补上 `tts_target` / `default_voice`，返回 None（固定解析器不管语音合成，界面退回本地朗读）；首次接入的判断挪到 `domain/voice_profile.adopt_default_voice`，router 没有默认声线能力时安全跳过。
+  - **审查 2（首次接入覆盖明确的本地朗读）**：只有库里从没存过 `tts_provider` 且环境 `TTS_PROVIDER` 是默认 system 时才切到云端声线。旧库里存着的 system 无法区分是默认还是用户选的，一律按用户选择保留，要用新声线由用户自己在设置里切。另外设置页保存时，如果库里没存过、用户也没动朗读方式，就不再把默认值写进去，避免“没选过”被存成“明确选了本地朗读”。
+  - **审查 3（试听提前保存音色，取消撤销不了）**：试听不再写 `voice_choice:<角色>`；`router.tts_target(角色, voice_choice=候选)` 临时取一份合成配置，经 `SpeechOutput.enqueue(..., target=)` 只交给这一句试听。只在点“保存”时写库。
+- 怎么验证：容器内 `QT_QPA_PLATFORM=offscreen python -m unittest discover`（tests 目录）**923 项通过、8 项跳过**。新增 `tests/test_whale_voice_review.py`（9 项）：
+  - FixedRouter 接口对齐；用 FixedRouter 调生产 `MainWindow._apply_settings` 不报错；
+  - 库里明确存 system（及 qwen / cloud）+ 配了 MiniMax 账户 → 生产 `_apply_settings` 后仍是原选择；新库 + MiniMax → 用上默认声线，只切一次；环境指定别的朗读方式时不切；
+  - 设置窗口：A → 选 B → 试听（入队的确是 B）→ 取消 → 库和路由仍是 A；再选 B → 保存 → 才是 B；
+  - 没动朗读方式时保存其他设置不写入 `tts_provider`，改过的照常保存。
+  - 把 `src/` 改动撤回后，这些用例 7 项失败 / 报错（含 `AttributeError: 'FixedRouter' object has no attribute 'default_voice'`），确认能复现审查问题。
+- 没验证：
+  - **Windows Smoke（`tools\run_checks.bat`）没在真机跑**：容器没有音频设备，`tools/smoke_pet.py` 在 Qt 多媒体初始化处段错误，与本修复无关；需要在 Windows 上重跑确认 `"passed": true`。
+  - 真实 MiniMax 调用、音色听感照旧未验证。
