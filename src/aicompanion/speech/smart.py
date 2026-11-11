@@ -30,6 +30,23 @@ IMPORTANT = re.compile(r'[？?]|需要你|麻烦你|请你|你要|你得|你可�
 TAILS = ('剩下的写在气泡里啦', '细节我都写在气泡里了', '其余的看气泡就好', '后面的你看字吧')
 
 
+CLAUSE = re.compile(r'(?<=[，,；;、：:])')
+
+
+def _clauses(text: str) -> list[str]:
+    """把一句长话切成不超过 SEGMENT_MAX 字的小句：先按逗号、分号、顿号、冒号，还长就硬切。"""
+    out, current = [], ''
+    for part in CLAUSE.split(text):
+        while len(part) > SEGMENT_MAX:
+            if current: out.append(current); current = ''
+            out.append(part[:SEGMENT_MAX]); part = part[SEGMENT_MAX:]
+        if current and len(current)+len(part) > SEGMENT_MAX // 2:
+            out.append(current); current = ''
+        current += part
+    if current: out.append(current)
+    return [c for c in out if c.strip()]
+
+
 class SmartReader:
     def __init__(self, short: int = SHORT, total: int = TOTAL, rng: random.Random | None = None, tails=TAILS):
         self.short, self.total = short, total
@@ -76,6 +93,12 @@ class SmartReader:
     # ---- 规则 --------------------------------------------------------------------------------
     def _sentence(self, text: str) -> list[str]:
         if not text: return []
+        if len(text) > SEGMENT_MAX:
+            # 一句太长（逗号连成一大串、或者办事结果一次交过来）：先按逗号、分号切成小句再逐个取舍，
+            # 这样不管正文是一个字一个字流过来还是一次给完，念出来的都一样，也不会整段长句原样念（Codex PR #39 第 3 项）
+            out = []
+            for clause in _clauses(text): out += self._sentence(clause)
+            return out
         key = re.sub(r'\W', '', text)
         if key and key in self.seen:   # 重复的话不念第二遍
             return []
@@ -119,9 +142,14 @@ class SmartReader:
         if len(items) == 1: return self._sentence(items[0])
         self.skipped = True
         first = items[0] if len(items[0]) <= 30 else items[0][:28]+'…'
-        return self._accept(f'我列了{len(items)}条，第一条是{first}', '')
+        return self._summary(f'我列了{len(items)}条，第一条是{first}')
 
     def _close_table(self) -> list[str]:
         if not self.in_table: return []
         self.in_table = False; self.skipped = True
-        return self._accept('我做了张表', '')
+        return self._summary('我做了张表')
+
+    def _summary(self, text: str) -> list[str]:
+        """清单、表格的一句概括也占整轮预算：好几组清单 / 表格时，超出预算的就不再念（看气泡）。"""
+        if self.spoken >= self.short and self.spoken+len(text) > self.total: return []
+        return self._accept(text, '')

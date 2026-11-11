@@ -149,6 +149,134 @@ class FinishedReplyStatusTests(unittest.TestCase):
         self.assertEqual(self.status('g3'), ('cancelled', '旧的'))
 
 
+def wav(ms=40):
+    import io, wave
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(b'\0\0'*int(24*ms))
+    return buffer.getvalue()
+
+
+try:
+    from PySide6.QtWidgets import QApplication
+except ImportError:   # pragma: no cover
+    QApplication = None
+
+
+@unittest.skipIf(QApplication is None, '需要 PySide6')
+class ProductionQueueTests(unittest.TestCase):
+    """用真正的 SpeechOutput、真正的 TaskWorker 线程并发合成（Codex PR #39 复核要求的组合用例）。
+    容器里没有音频设备，只把系统朗读引擎和播放器换成会按时“念完”的假对象；队列、预取、回退、出错逻辑都是生产代码。"""
+
+    @classmethod
+    def setUpClass(cls): cls.app = QApplication.instance() or QApplication([])
+
+    def make(self, synthesize):
+        from unittest import mock
+        from PySide6.QtCore import QObject, QTimer, Signal
+        from PySide6.QtMultimedia import QMediaPlayer
+        from PySide6.QtTextToSpeech import QTextToSpeech
+        import aicompanion.speech.output as module
+        said, played = [], []
+
+        class FakeTTS(QObject):
+            State, BoundaryHint = QTextToSpeech.State, QTextToSpeech.BoundaryHint
+            stateChanged = Signal(object); sayingWord = Signal(str, int, int, int); errorOccurred = Signal(object, str)
+            def __init__(self, parent=None): super().__init__(parent); self._state = QTextToSpeech.State.Ready
+            def setLocale(self, locale): pass
+            def state(self): return self._state
+            def errorString(self): return ''
+            def stop(self, *a): self._state = QTextToSpeech.State.Ready
+            def say(self, text):
+                said.append(text); self._state = QTextToSpeech.State.Speaking
+                def end():
+                    self._state = QTextToSpeech.State.Ready; self.stateChanged.emit(QTextToSpeech.State.Ready)
+                QTimer.singleShot(30, end)
+
+        class FakePlayer(QObject):
+            MediaStatus = QMediaPlayer.MediaStatus
+            positionChanged = Signal(int); mediaStatusChanged = Signal(object); errorOccurred = Signal(object, str)
+            def setAudioOutput(self, audio): pass
+            def stop(self): pass
+            def setSource(self, url): pass
+            def setSourceDevice(self, device, url): pass
+            def errorString(self): return ''
+            def play(self):
+                played.append(owner.current)
+                QTimer.singleShot(30, lambda: self.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.EndOfMedia))
+
+        client = SimpleNamespace(calls=[], synthesize=None, tts_source=lambda: SimpleNamespace(cache_id='breeze:test-voice'))
+        def synth(text, voice, token, **kw):
+            client.calls.append(text); return synthesize(text)
+        client.synthesize = synth
+        with mock.patch.object(module, 'QTextToSpeech', FakeTTS), mock.patch.object(module, 'QMediaPlayer', FakePlayer), \
+             mock.patch.object(module, 'QAudioOutput', lambda parent=None: QObject(parent)):
+            owner = module.SpeechOutput(client)
+        cache = tempfile.TemporaryDirectory(); self.addCleanup(cache.cleanup)                 # 短句缓存别写到真实目录，也别读到上次的
+        patcher = mock.patch.object(module, 'cache_dir', lambda: Path(cache.name)); patcher.start(); self.addCleanup(patcher.stop)
+        owner.enabled, owner.provider, owner.GAP_MS = True, 'breeze', 0
+        errors = []; owner.error.connect(errors.append)
+        self.addCleanup(lambda: (owner.stop(), [w.wait(2000) for w in list(owner.workers)]))
+        return owner, client, said, played, errors
+
+    def run_until(self, done, seconds=5.0):
+        import time
+        end = time.monotonic()+seconds
+        while not done() and time.monotonic() < end:
+            self.app.processEvents(); time.sleep(0.005)
+        self.app.processEvents()
+
+    def test_two_concurrent_cloud_failures_still_finish_locally(self):
+        import time
+        def fail(text):
+            time.sleep(0.05); raise RuntimeError('服务暂时不可用')
+        owner, client, said, played, errors = self.make(fail)
+        texts = ['第一句先说这个事情', '第二句接着往下讲讲', '第三句最后收个尾巴']
+        for text in texts: owner.enqueue(text, 'g1')
+        self.run_until(lambda: len(said) == 3 and not owner.busy and not owner.workers)
+        self.assertEqual(said, texts); self.assertEqual(errors, [])                        # 第二个云端失败不会打断本地朗读
+        self.assertGreaterEqual(len(client.calls), 2)                                     # 确实有两句同时在云端合成
+
+    def test_each_agent_result_gets_its_own_turn(self):
+        from aicompanion.ui.main_window import MainWindow
+        state = {'ok': False}
+        def maybe(text):
+            if not state['ok']: raise RuntimeError('云端故障')
+            return wav()
+        owner, client, said, played, errors = self.make(maybe)
+        fake = SimpleNamespace(speech=owner, _full_voice=lambda: True, _speech_style=lambda: 'smart')
+        MainWindow.speak_reply(fake, '第一份结果做好了。')
+        self.run_until(lambda: said and not owner.busy and not owner.workers)
+        self.assertEqual(said, ['第一份结果做好了。'])
+        state['ok'] = True; before = len(client.calls)
+        MainWindow.speak_reply(fake, '第二份结果也好了。')
+        self.run_until(lambda: played and not owner.busy and not owner.workers)
+        self.assertGreater(len(client.calls), before)                                     # 云端恢复后重新用云端，不沿用上一份的回退
+        self.assertEqual(played, ['第二份结果也好了。']); self.assertEqual(said, ['第一份结果做好了。']); self.assertEqual(errors, [])
+
+    def test_one_shot_long_agent_result_is_still_trimmed(self):
+        from aicompanion.ui.main_window import MainWindow
+        queued = []
+        speech = SimpleNamespace(enabled=True, enqueue=lambda text, gid: queued.append((text, gid)))
+        fake = SimpleNamespace(speech=speech, _full_voice=lambda: True, _speech_style=lambda: 'smart')
+        text = '，'.join(f'第{i}步检查了第{i}批文件并挪到新目录' for i in range(1, 60)) + '。'
+        self.assertGreater(len(text), 700)
+        MainWindow.speak_reply(fake, text)
+        spoken = ''.join(t for t, _ in queued)
+        self.assertLessEqual(len(spoken), TOTAL+60); self.assertTrue(all(len(t) <= SEGMENT_MAX for t, _ in queued))
+        self.assertTrue(any(t in spoken for t in TAILS)); self.assertEqual(len({g for _, g in queued}), 1)
+        self.assertTrue(queued[0][1].startswith('agent:'))
+
+    def test_reading_does_not_depend_on_how_text_arrives(self):
+        text = ('搞定啦。' + '，'.join(f'第{i}步检查了第{i}批文件' for i in range(40)) + '。\n- 一\n- 二\n| a | b |\n'
+                + '\n'.join(f'- 第{i}组' for i in range(5)) + '\n| c |\n需要你确认吗？')
+        whole = SmartReader(rng=random.Random(0)); buffer = SentenceBuffer(); one_shot = []
+        for sentence in buffer.feed(text)+buffer.feed('', True): one_shot += whole.feed(sentence)
+        one_shot += whole.finish()
+        self.assertEqual(one_shot, read(text))
+        self.assertLessEqual(len(''.join(one_shot)), TOTAL+60)
+
+
 class DefaultsTests(unittest.TestCase):
     def test_smart_is_default_style(self):
         from aicompanion.pet import interjection

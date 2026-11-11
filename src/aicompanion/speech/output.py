@@ -108,6 +108,7 @@ class SpeechSegment:
     target: object = None      # Breeze 等模型页配置的语音：入队时取好的完整 TtsTarget，合成和缓存都用它（Codex 审计 R4）
     requested: bool = False
     audio: bytes | None = None
+    fell_back: bool = False    # 原本要云端合成、因本轮云端失败改成了本地念
 
 
 CACHE_CHARS = 16   # 语气词这类短句合成一次存盘，之后不再请求接口
@@ -273,12 +274,16 @@ class SpeechOutput(QObject):
     def _synth_failed(self, job, error):
         """云端合成失败（没配声线、额度用完、网络或服务出错）：这一轮剩下的句子都改用本地朗读，回复照常完成。
         日语配音本地念不了，才按原来的方式报错停下。"""
+        if job.fell_back:
+            # 这句已经随本轮改成本地念了，晚到的云端失败是过期消息：不能当成本地朗读出错去停播、清队列（Codex PR #39 第 1 项）
+            return
         if job.provider == 'system' or job.language != 'zh':
             self._error(error); return
         generation = job.generation_id
         for queued in [job, *self.queue]:
             if queued.generation_id == generation and queued.provider != 'system':
                 queued.provider, queued.requested, queued.audio, queued.target = 'system', True, None, None
+                queued.fell_back = True
         self.fallback_generation = generation
         self.fallback.emit('云端声线暂时用不了（' + str(error)[:60] + '），这一轮先用本地朗读。')
         if self.busy and job is self.current_job:
@@ -291,7 +296,7 @@ class SpeechOutput(QObject):
         try:
             job.audio = validate_wav(raw)
         except RuntimeError as error:
-            self._error(str(error))
+            self._synth_failed(job, str(error))   # 云端回来的音频坏了，和合成失败一样退回本地念
             return
         if len(job.text) <= CACHE_CHARS:
             try:

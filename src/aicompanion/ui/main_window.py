@@ -623,14 +623,16 @@ class MainWindow(QMainWindow):
     def speak_reply(self,text,expressions=()):
         """干活结果等一次性文字：完整朗读模式念全文，否则只发一声。"""
         if not self.speech.enabled or not text: return
+        # 每份结果一个独立的朗读轮次：上一份退回本地朗读 / 出错，不影响下一份（Codex PR #39 第 2 项）
+        generation='agent:'+uuid4().hex
         if self._full_voice() and self._speech_style()=='smart':
             # 办事结果常常很长：同样按智能朗读取舍、分段
             from aicompanion.speech.smart import SmartReader
             reader=SmartReader(); buffer=SentenceBuffer()
             for sentence in buffer.feed(text)+buffer.feed('',True):
-                for segment in reader.feed(sentence): self.speech.enqueue(segment,'agent')
-            for segment in reader.finish(): self.speech.enqueue(segment,'agent')
-        elif self._full_voice(): self.speech.enqueue(text,'agent')
+                for segment in reader.feed(sentence): self.speech.enqueue(segment,generation)
+            for segment in reader.finish(): self.speech.enqueue(segment,generation)
+        elif self._full_voice(): self.speech.enqueue(text,generation)
         else:
             key='once:'+uuid4().hex; self._voice_reaction(key,text,list(expressions)); self.voiced_first.discard(key)
 
