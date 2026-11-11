@@ -36,6 +36,19 @@ class ChatController:
         调用方拿到后自己保存，用它把这一轮说完；后台线程不要中途再来取。"""
         return self.router.client('chat',character_id or self.character.id,purpose)[0]
 
+    def _fit(self,character_id,purpose,history,prompt,sections,marks):
+        from aicompanion.services import budget
+        window=max_output=None
+        try:
+            resolved=self.router.resolve('chat',character_id,purpose)
+            window,max_output=getattr(resolved,'context_window',None),getattr(resolved,'max_output',None)
+        except Exception: pass
+        base=marks.get('base',len(prompt)); rel=marks.get('relationship',base); other=marks.get('other',rel); tools=marks.get('tools',other)
+        detail=dict(sections,relationship=rel-base,other=other-rel,tools=tools-other,expression=len(prompt)-tools)
+        kept,report=budget.fit(history,prompt,purpose,window,max_output,detail)
+        budget.save(self.database,character_id,report)
+        return kept
+
     def use_client(self,client,**options):
         """测试与桌宠自检：所有能力都改用这个客户端（options 传给 FixedRouter，例如 vision_model）。"""
         from aicompanion.providers.router import FixedRouter
@@ -49,7 +62,7 @@ class ChatController:
 
     def record_user_message(self,content,source='text',channel='desktop'):
         message_id = self.database.add_message('user',content,self.character.id,source=source,channel=channel)
-        self.emotions.update(self.character.id,content)
+        self.emotions.update(self.character.id,content,'desktop' if source!='qq' else channel)
         if source!='qq':   # 桌面上说话 = 主人来了一次；QQ 上的由桥接按 QQ 身份记
             try:
                 from aicompanion.relationship.service import OWNER_DESKTOP
@@ -74,7 +87,8 @@ class ChatController:
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
-            history,prompt=self.context.build(character,query,channel,scene,situation,through_id)
+            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id)
+            marks={'base':len(prompt)}
             if proactive:
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去；句子中间停顿用逗号，别用空格），不编造经历。'
             # T15：她和对方的关系、此刻的心情精力、对方最近多常找她做事——给同一个大脑做判断的依据，不规定回应方式
@@ -83,12 +97,15 @@ class ChatController:
                 from aicompanion.relationship.service import scope_of
                 emotion=self.database.load_emotion(character.id)
                 prompt+=self.relationships.prompt(character.id,person_id,scope_of(channel),mood=emotion.mood,energy=emotion.energy,public=scene!='pet')
+            marks['relationship']=len(prompt)
             prompt+=self._community(character,query,channel)
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
+            marks['other']=len(prompt)
             if self.agent_enabled and not proactive and offer_tasks:
                 from aicompanion.pet.script import TASK_PROMPT
                 prompt+=TASK_PROMPT
+            marks['tools']=len(prompt)
             candidates,report=self.expression.prepare_report(context,character,query,history)
             prompt+=self.expression.prompt(candidates,proactive=bool(proactive),qq=context.scope.startswith('qq:'))
             if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
@@ -98,7 +115,10 @@ class ChatController:
                                     set(vocab.expressions)|set(vocab.motions) if vocab else None)
             choices={c.asset_id:c for c in candidates}
             from aicompanion.usage.meter import using
-            client=self.client(character.id,'proactive' if proactive else ('qq' if channel.startswith('qq:') else purpose))
+            client_purpose='proactive' if proactive else ('qq' if channel.startswith('qq:') else purpose)
+            client=self.client(character.id,client_purpose)
+            # 计划书 v4 功能六：整份请求预算。人格、记忆、召回、关系、表情候选、办事说明都已拼好，超了从最早的历史裁
+            history=self._fit(character.id,client_purpose,history,prompt,sections,marks)
             with using(purpose,character.id,turn_id):
                 for token in client.generate_reply_stream(history,prompt,cancellation):
                     cancellation.check()
@@ -183,6 +203,12 @@ class ChatController:
                     # T18：先看这句冲谁、谁的话——转述别人的话不扣分，攻击别人记"攻击别人"，冲她来的才按好恶记
                     self.relationships.record(character.id,person_id,kind,0.8,scope=scope_of(channel),evidence=evidence,key='feel:'+turn_id,impact=impact)
                     heated=kind in ('quarrel','insult')
+            if mind and status=='complete':
+                # 计划书 v4 功能三：同一轮的判断顺带推动心情（不额外调用模型）；不论对方是谁都会影响她此刻的心情
+                try:
+                    from aicompanion.services.mood_service import MoodService
+                    MoodService(self.database).on_mind(character.id,mind,channel)
+                except Exception: pass
             if status=='complete':
                 # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）
                 self.relationship_analyzer.maybe_run(character.id,channel,self.client(character.id,'relationship'),
