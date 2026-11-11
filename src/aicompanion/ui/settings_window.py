@@ -104,9 +104,11 @@ class SettingsWindow(QDialog):
         self.echo_backend.setCurrentIndex(max(0,self.echo_backend.findData(self.database.get_setting('echo_backend','qt'))))
         self.asr_provider.setCurrentIndex(max(0,self.asr_provider.findData(self.database.get_setting('asr_provider',settings.asr_provider))))
         self.speech_style=QComboBox()
-        for text,value in [('只说语气词（嘿嘿、诶？），文字看气泡','interjection'),('语气词 + 第一句短话','brief'),('完整朗读每一句','full')]: self.speech_style.addItem(text,value)
-        self.speech_style.setCurrentIndex(max(0,self.speech_style.findData(self.database.get_setting('speech_style','interjection'))))
-        voice_page=Page('声音与通话','朗读默认关闭：在聊天面板点“朗读”打开；点“通话”后按住收音键（默认右 Ctrl）和她说话。')
+        for text,value in [('智能朗读：短回复全念，长回复挑重点分段念（默认）','smart'),('只说语气词（嘿嘿、诶？），文字看气泡','interjection'),
+                           ('语气词 + 第一句短话','brief'),('完整朗读每一句','full')]: self.speech_style.addItem(text,value)
+        from aicompanion.pet.interjection import DEFAULT_STYLE as DEFAULT_SPEECH_STYLE   # 不和千问语气的 DEFAULT_STYLE 重名
+        self.speech_style.setCurrentIndex(max(0,self.speech_style.findData(self.database.get_setting('speech_style',DEFAULT_SPEECH_STYLE))))
+        voice_page=Page('声音与通话','她默认会把回复念出来（智能朗读：长回复只念重点）；不想听就点聊天面板上的“朗读”关掉。点“通话”后按住收音键（默认右 Ctrl）和她说话。')
         speak=QFormLayout(); speak.addRow('说多少',self.speech_style); speak.addRow('朗读方式',self.provider); speak.addRow('声线',self.voice)
         speak.addRow('配音语言',self.speech_language)
         tryit=QHBoxLayout(); tryit.addWidget(preview); tryit.addWidget(self.preview_status,1); speak.addRow('',tryit)
@@ -279,7 +281,7 @@ class SettingsWindow(QDialog):
         row('办事',target is not None,('办事模型：'+target.label) if target else problem,'models')
         providers={'system':'本地朗读','cloud':'智谱语音','qwen':'千问动漫声线','breeze':'Breeze Blue'}
         tts=self.database.get_setting('tts_provider',self.settings.tts_provider)
-        row('声音',True,f'朗读方式：{providers.get(tts,tts)}；在聊天面板点“朗读”打开','voice')
+        row('声音',True,f'朗读方式：{providers.get(tts,tts)}；默认开着，聊天面板上的“朗读”可以关掉','voice')
         from aicompanion.bridge.service import setting as bridge_setting
         bridge=bool(bridge_setting(self.database,'bridge_enabled'))
         row('QQ',bridge,'QQ 桥接已打开' if bridge else '没有接 QQ（可选）','platforms')

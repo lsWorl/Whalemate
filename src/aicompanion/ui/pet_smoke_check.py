@@ -34,6 +34,8 @@ def schedule_pet_smoke_check(window, database, output):
         pet.view.bridge.loaded.connect(lambda value: state.update(rig_loaded=value))
     offset = 2500 if rig else 0
     def later(ms, fn): QTimer.singleShot(ms+offset, fn)
+    # 计划书 v4 功能八：新库默认开着朗读（智能朗读）。记下后关掉，后面的检查不出声
+    state['speech_default_on'] = window.speak_toggle.isChecked() and window._speech_style() == 'smart'
     window.speech.enabled = False; window.speak_toggle.setChecked(False)
     window.hide()  # v2：聊天面板平时隐藏，角色独立常驻
 
@@ -349,7 +351,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.append('storage_locations_ready')
 
         required.append('qq_media_settings_ready')
-        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready'])
+        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
