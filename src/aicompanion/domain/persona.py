@@ -165,7 +165,9 @@ def export_sillytavern(persona: Persona, character_name: str) -> dict:
         'name': character_name, 'description': persona.description, 'personality': persona.speaking_style,
         'scenario': persona.background, 'first_mes': '', 'mes_example': examples, 'creator_notes': persona.notes,
         'system_prompt': '', 'post_history_instructions': '', 'tags': list(persona.interests), 'creator': '',
-        'character_version': persona.title, 'alternate_greetings': [], 'extensions': {'aicompanion': {'temper': dict(persona.temper)}},
+        'character_version': persona.title, 'alternate_greetings': [],
+        # 本项目自己的扩展：情绪倾向和完整的关系设定（Codex PR #42：导出再导入不能把用户写的称呼、相处方式丢回默认的“爹”）
+        'extensions': {'aicompanion': {'temper': dict(persona.temper), 'bond': persona.relation().to_dict()}},
         **({'character_book': book} if persona.lore else {})}}
 
 
@@ -251,8 +253,12 @@ def _from_sillytavern(card: dict) -> dict:
         content = entry.get('content') if isinstance(entry.get('content'), str) else ''
         lore.append({'keys': keys, 'content': _macros(content),
                      'always': bool(entry.get('constant'))})
-    temper = ((data.get('extensions') or {}).get('aicompanion') or {}).get('temper') if isinstance(data.get('extensions'), dict) else None
-    return {'title': str(data.get('character_version') or '').strip() or (name+' 的人格' if name else '导入的人格'),
+    own = (data.get('extensions') or {}).get('aicompanion') if isinstance(data.get('extensions'), dict) else None
+    own = own if isinstance(own, dict) else {}
+    temper = own.get('temper')
+    # 只有本项目导出的卡片才带 bond；别处的卡片没有，就不写这个字段，导入后按默认关系
+    extra = {'bond': own['bond']} if isinstance(own.get('bond'), dict) else {}
+    return {**extra,'title': str(data.get('character_version') or '').strip() or (name+' 的人格' if name else '导入的人格'),
             'description': description, 'speaking_style': '', 'background': background, 'examples': examples,
             'interests': [t for t in (data.get('tags') or []) if isinstance(t, str)], 'lore': lore,
             'temper': temper if isinstance(temper, dict) else {}, 'notes': text('creator_notes')}
