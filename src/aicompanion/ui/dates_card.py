@@ -48,17 +48,18 @@ class DatesCard(QWidget):
         self.title = QLineEdit(); self.title.setPlaceholderText('名称（纪念日用，例如：期末考试）'); self.title.setMaxLength(30)
         self.when = QDateEdit(); self.when.setCalendarPopup(True); self.when.setDisplayFormat('yyyy-MM-dd')
         self.yearly = QCheckBox('每年'); self.yearly.setChecked(True)
+        self.lunar = QCheckBox('农历'); self.lunar.setToolTip('按农历每年重复：在日历上选那一天的公历日期，会自动换成农历月日')
         plus = QPushButton('添加'); plus.clicked.connect(self.add)
         minus = QPushButton('删除选中'); minus.clicked.connect(self.remove)
-        for widget in (self.kind, self.title, self.when, self.yearly, plus, minus): add.addWidget(widget)
+        for widget in (self.kind, self.title, self.when, self.yearly, self.lunar, plus, minus): add.addWidget(widget)
         box.addLayout(add)
 
         toggles = QHBoxLayout()
-        self.milestones = QCheckBox('认识第 100 天、周年这类纪念日'); self.holidays = QCheckBox('节日（元旦、国庆等公历节日）')
+        self.milestones = QCheckBox('认识第 100 天、周年这类纪念日'); self.holidays = QCheckBox('节日（春节、中秋、元旦、国庆等）')
         for check in (self.milestones, self.holidays):
             check.toggled.connect(self.save_options); toggles.addWidget(check)
         toggles.addStretch(1); box.addLayout(toggles)
-        note = QLabel('这些日子只在你们私下聊天时用，QQ 群里不会说出你的生日。农历生日和农历节日下一步支持。')
+        note = QLabel('这些日子只在你们私下聊天时用，QQ 群里不会说出你的生日。农历生日勾上“农历”，日历里选出生那天就行。')
         note.setObjectName('Hint'); note.setWordWrap(True); box.addWidget(note)
         self.refresh()
 
@@ -80,8 +81,9 @@ class DatesCard(QWidget):
         self.table.setRowCount(0)
         for r in rows:
             i = self.table.rowCount(); self.table.insertRow(i)
-            values = (KINDS.get(r['kind'], r['kind']), r['title'], f"{r['year'] or ''}-{r['month']:02d}-{r['day']:02d}".lstrip('-'),
-                      '是' if r['yearly'] else '只一次')
+            when = (f"农历{r['month']}月{r['day']}日" if r['calendar'] == 'lunar'
+                    else f"{r['year'] or ''}-{r['month']:02d}-{r['day']:02d}".lstrip('-'))
+            values = (KINDS.get(r['kind'], r['kind']), r['title'], when, '是' if r['yearly'] else '只一次')
             for j, value in enumerate(values):
                 item = QTableWidgetItem(value); item.setData(256, r['id']); self.table.setItem(i, j, item)
         options = d.options(self.cid)
@@ -94,7 +96,11 @@ class DatesCard(QWidget):
         self.refresh()
 
     def add(self):
-        self.dates.add(self.cid, self.kind.currentData(), self.title.text(), _pydate(self.when.date()), self.yearly.isChecked())
+        try:
+            self.dates.add(self.cid, self.kind.currentData(), self.title.text(), _pydate(self.when.date()), self.yearly.isChecked(),
+                           lunar=self.lunar.isChecked())
+        except ValueError as error:
+            self.summary.setText(str(error)); return
         self.title.clear(); self.refresh()
 
     def remove(self):

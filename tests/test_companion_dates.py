@@ -75,6 +75,25 @@ class DatesTests(unittest.TestCase):
         self.assertTrue(any('认识第 520 天' in e.title for _, events in upcoming for e in events))
 
 
+class LunarTests(DatesTests):
+    """农历（lunar_python，负责人 2026-11-11 同意引入）：春节、中秋、除夕；农历生日每年落在不同的公历日期。"""
+    def test_lunar_holidays(self):
+        for day, title in ((date(2026, 2, 16), '除夕'), (date(2026, 2, 17), '春节'), (date(2026, 9, 25), '中秋节'),
+                           (date(2027, 2, 6), '春节'), (date(2027, 9, 15), '中秋节'), (date(2026, 8, 19), '七夕')):
+            self.go(day); self.assertIn(title, [d.title for d in self.dates.events_on(CID)], day)
+        self.go(date(2026, 9, 24)); self.assertNotIn('中秋节', [d.title for d in self.dates.events_on(CID)])
+
+    def test_lunar_birthday_moves_each_year(self):
+        from aicompanion.services.companion_dates import lunar_to_solar
+        self.dates.add(CID, 'birthday', '', date(2000, 2, 5), lunar=True)                      # 2000-02-05 是正月初一
+        row = self.dates.user_dates(CID)[0]
+        self.assertEqual((row['calendar'], row['month'], row['day']), ('lunar', 1, 1))
+        for day in (date(2026, 2, 17), date(2027, 2, 6)):
+            self.go(day); self.assertIn('你的生日', [d.title for d in self.dates.events_on(CID)])
+        self.go(date(2027, 2, 17)); self.assertNotIn('你的生日', [d.title for d in self.dates.events_on(CID)])
+        self.assertEqual(lunar_to_solar(2025, 12, 30), date(2026, 2, 16))                       # 腊月只有 29 天：三十按二十九算
+
+
 class PromptTests(BridgeFixture):
     def test_private_prompt_has_days_group_does_not_and_mark_after_reply(self):
         from aicompanion.services.companion_dates import CompanionDates

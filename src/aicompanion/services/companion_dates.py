@@ -5,9 +5,9 @@
 
 哪些算特别的日子：
 - 程序算出来的（不落表，现算）：认识第 100、200、300、500、520、1000、1314 天及以后每满 1000 天；每一周年；
-  她的“生日”默认就是认识那天；第一次一起办成一件事的周年。节日只内置公历的（元旦、情人节、劳动节、国庆、圣诞），可以整体关掉；
-  农历节日和农历生日要换算，需要农历库或对照表，留到下一步（见 docs/tasks/V4-9-companion-dates.md）。
-- 用户自己加的：你的生日、她的生日（改默认）、考试和纪念日这类重要日子；可以每年重复，也可以只有一次。
+  她的“生日”默认就是认识那天；第一次一起办成一件事的周年。节日：公历的元旦、情人节、劳动节、国庆、圣诞，
+  农历的除夕、春节、元宵、端午、七夕、中秋（用 lunar_python 换算，负责人 2026-11-11 同意引入），可以整体关掉。
+- 用户自己加的：你的生日、她的生日（改默认）、考试和纪念日这类重要日子；可以每年重复，也可以只有一次；可以按农历记（农历生日）。
 
 怎么用：只在和主人私下聊天时（桌面、主人的 QQ 私聊）带进提示词——平时只是一句背景（认识第几天），
 当天有特别的日子才提醒她“今天可以自然提一句”；这一轮成功说完后记下“今天已经提过”，同一个日子一天只提一次，重启也不重复。
@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 
 MILESTONES = (100, 200, 300, 500, 520, 1000, 1314)
 HOLIDAYS = {(1, 1): '元旦', (2, 14): '情人节', (5, 1): '劳动节', (10, 1): '国庆节', (12, 25): '圣诞节'}
+LUNAR_HOLIDAYS = {(1, 1): '春节', (1, 15): '元宵节', (5, 5): '端午节', (7, 7): '七夕', (8, 15): '中秋节'}
 KINDS = {'birthday': '你的生日', 'her_birthday': '她的生日', 'custom': '纪念日'}
 MAX_TITLE = 30
 
@@ -41,6 +42,37 @@ def _on(year: int, month: int, day: int) -> date:
     """每年重复的日子落到某一年：2 月 29 日在平年按 2 月 28 日算。"""
     try: return date(year, month, day)
     except ValueError: return date(year, month, 28)
+
+
+def lunar_to_solar(year: int, month: int, day: int) -> date | None:
+    """农历 year 年 month 月 day 日（不含闰月）对应的公历日期。这个月没有 30 日时按 29 日算；换算不了返回 None。"""
+    try:
+        from lunar_python import Lunar, LunarMonth
+    except ImportError:   # 依赖没装好：农历的日子先不提，公历照常
+        return None
+    try:
+        days = LunarMonth.fromYm(year, month).getDayCount()
+        solar = Lunar.fromYmd(year, month, min(day, days)).getSolar()
+        return date(solar.getYear(), solar.getMonth(), solar.getDay())
+    except Exception:
+        return None
+
+
+def solar_to_lunar(when: date) -> tuple[int, int, int] | None:
+    """公历 → 农历（年、月、日；闰月按同名月算）。"""
+    try:
+        from lunar_python import Solar
+        lunar = Solar.fromYmd(when.year, when.month, when.day).getLunar()
+        return lunar.getYear(), abs(lunar.getMonth()), lunar.getDay()
+    except Exception:
+        return None
+
+
+def _lunar_hits(on: date, month: int, day: int) -> bool:
+    """农历 month 月 day 日每年重复：今天是不是这一天（今天所在的农历年和上一个农历年都看，跨公历年的也对得上）。"""
+    for year in (on.year, on.year - 1):
+        if lunar_to_solar(year, month, day) == on: return True
+    return False
 
 
 class CompanionDates:
@@ -92,14 +124,20 @@ class CompanionDates:
             rows = c.execute("SELECT * FROM companion_dates WHERE character_id=? AND kind!='met' ORDER BY month, day, id", (character_id,)).fetchall()
         return [dict(r) for r in rows]
 
-    def add(self, character_id: str, kind: str, title: str, when: date, yearly: bool = True) -> int:
+    def add(self, character_id: str, kind: str, title: str, when: date, yearly: bool = True, lunar: bool = False) -> int:
+        """when 是公历日期；lunar=True 时按它对应的农历月日每年重复（农历生日：在日历上选出生那天的公历日期就行）。"""
         if kind not in KINDS: raise ValueError('未知的日子类型')
         title = ' '.join(str(title or '').split())[:MAX_TITLE] or KINDS[kind]
+        calendar, (year, month, day) = 'solar', (when.year, when.month, when.day)
+        if lunar:
+            converted = solar_to_lunar(when)
+            if converted is None: raise ValueError('农历换算不可用（缺少 lunar_python），先按公历记')
+            calendar, (year, month, day) = 'lunar', converted
         def work(c):
             if kind == 'her_birthday':   # 她的生日只有一个：改默认就是替换
                 c.execute("DELETE FROM companion_dates WHERE character_id=? AND kind='her_birthday'", (character_id,))
-            return c.execute("INSERT INTO companion_dates(character_id, kind, title, year, month, day, yearly, source, created_at) VALUES (?,?,?,?,?,?,?,'user',?)",
-                             (character_id, kind, title, when.year, when.month, when.day, int(bool(yearly)), self.clock())).lastrowid
+            return c.execute("INSERT INTO companion_dates(character_id, kind, title, calendar, year, month, day, yearly, source, created_at) VALUES (?,?,?,?,?,?,?,?,'user',?)",
+                             (character_id, kind, title, calendar, year, month, day, int(bool(yearly)), self.clock())).lastrowid
         return self.db.locked(work)
 
     def remove(self, character_id: str, date_id: int) -> None:
@@ -142,14 +180,25 @@ class CompanionDates:
             out.append(Day(f'first-done:{on.year - first.year}', f'第一次一起办成事 {on.year - first.year} 周年', 'first'))
         for r in rows:
             if not r['enabled']: continue
-            hit = (r['yearly'] and on == _on(on.year, r['month'], r['day']) and (not r['year'] or on.year >= r['year'])) or \
-                  (not r['yearly'] and r['year'] and on == date(r['year'], r['month'], r['day']))
+            if r['calendar'] == 'lunar':
+                hit = (r['yearly'] and _lunar_hits(on, r['month'], r['day'])) or \
+                      (not r['yearly'] and r['year'] and lunar_to_solar(r['year'], r['month'], r['day']) == on)
+            else:
+                hit = (r['yearly'] and on == _on(on.year, r['month'], r['day']) and (not r['year'] or on.year >= r['year'])) or \
+                      (not r['yearly'] and r['year'] and on == date(r['year'], r['month'], r['day']))
             if hit:
                 title = r['title'] if r['kind'] == 'custom' else KINDS[r['kind']]
                 if r['kind'] == 'birthday': title = '你的生日'
                 out.append(Day(f"user:{r['id']}:{on.year}", title, r['kind']))
-        if options['holidays'] and (on.month, on.day) in HOLIDAYS:
-            out.append(Day(f'holiday:{on.month}-{on.day}', HOLIDAYS[(on.month, on.day)], 'holiday', private=False))
+        if options['holidays']:
+            if (on.month, on.day) in HOLIDAYS:
+                out.append(Day(f'holiday:{on.month}-{on.day}', HOLIDAYS[(on.month, on.day)], 'holiday', private=False))
+            lunar = solar_to_lunar(on)
+            if lunar and (lunar[1], lunar[2]) in LUNAR_HOLIDAYS and lunar_to_solar(lunar[0], lunar[1], lunar[2]) == on:   # 闰月那天不算
+                out.append(Day(f'lunar:{lunar[1]}-{lunar[2]}', LUNAR_HOLIDAYS[(lunar[1], lunar[2])], 'holiday', private=False))
+            tomorrow = solar_to_lunar(on + timedelta(days=1))
+            if tomorrow and (tomorrow[1], tomorrow[2]) == (1, 1):
+                out.append(Day('lunar:eve', '除夕', 'holiday', private=False))
         return out
 
     def upcoming(self, character_id: str, days: int = 60) -> list[tuple[date, list[Day]]]:
