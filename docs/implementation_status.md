@@ -1243,3 +1243,46 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 验证：`tests/test_ui_refresh.py` 补“手写前缀后开关关闭”“下一句仍为普通聊天”“开关打开时停止词不补前缀”，新增 `test_stop_word_reaches_stop_branch_while_busy`，经生产 `_send_current_message` + `submit` 检查：开着办事发 `/做 整理合成文件` 后开关复位；任务忙时无论开关是否打开，“停”都进入 `_stop_agent`，没有启动新任务。两项用例在修复前的代码上失败，修复后通过。容器全套单测 825 项：787 通过、38 跳过（Windows 专用用例在 Linux 上跳过）。
 - 同时合并 #32 最新提交 `1b4be36`（Codex 的基线同步），解决本文件和 `docs/tasks.md` 的文档冲突，双方记录都保留。
 - 没验证：Windows 上的 `tools\run_checks.bat` 与桌宠 Smoke Test。
+
+## 2026-11-11：V4-2 人格包（Claude）
+
+计划书 v4 功能二，阶段二第一项。设计见 `docs/tasks/V4-2-persona.md`。
+
+- 新增 `domain/persona.py`：人格数据与清洗；提示词附加段（背景、示例、命中的世界书）；导入本项目格式、SillyTavern JSON 和 PNG 角色卡；导出本项目格式和 SillyTavern v2。
+- 新增 `services/persona_service.py`：存取、切换、保存（留版本，最多 30 个）、复制、删除（内置人格和正在用的不能删）、回退、导入、首次启用迁移、角色包升级不覆盖用户修改、恢复内置原文。当前人格写回角色表的设定和说话风格。
+- schema 8→9，新增 `personas`、`persona_versions` 两张表，不改已有表。旧库照常备份后升级，**不需要删库**。
+- `characters/registry.py`：启动时给每个角色补齐人格；已经启用人格的角色，角色包升级改由人格服务处理（旧的“直接改角色表”逻辑只在第一次启用前运行一次）。
+- `services/context_service.py`：聊天提示词加入当前人格的背景、说话示例和命中的世界书。
+- 新增 `ui/persona_page.py`（人格编辑器），放进 设置 → 角色与形象；保存设置时先保存人格，设定和说话风格以当前人格为准。
+- 验证：
+  - 容器离线全量测试通过（含新增 `tests/test_persona.py` 14 项）；
+  - 桌宠自检新增 `persona_ready`；
+  - 离屏截图检查了人格编辑器。
+- 没验证：
+  - Windows 实机；
+  - 真实模型下切换人格后语气变化是否明显（用“预览她会怎么说”和实际聊天试）；
+  - 真实 SillyTavern 角色卡（只用了按规范构造的合成卡片）。
+
+### 2026-11-11 补充：Codex PR #35 审计 R1～R3 修复（Claude）
+
+- **R1 预览绕过额度**：“预览她会怎么说”发请求前按陪伴用途检查日金额额度（复用 `usage.meter.Quota`），到限时显示原因、不发请求。没有新增计费或预扣。
+- **R2 导入丢草稿**：先读取并校验卡片；读不进来时直接提示，不动草稿。读进来后，如果编辑器里有没保存的改动，弹出“保存 / 放弃 / 取消”：取消就不导入，草稿和当前选择保持不变；保存失败也不导入。
+- **R3 PNG 解压无上限**：`zTXt` 和压缩 `iTXt` 改为有上限的解压（`decompressobj` 最多解出上限 +1 字节就停）。解压后的文本、chara / ccv3 各块的累计量都不超过 `MAX_CARD_TEXT`（2 MB），超限报 `PersonaError` 提示用户。base64 解码后的 JSON 更小，所以 JSON 解析的输入也有上限。
+- 同步了 `collaboration-baseline`（#32、#33 已合入），解决了 `implementation_status.md` 和 `tasks.md` 的文档冲突。
+- 验证：`tests/test_persona.py` 新增 3 项，修复前的代码上都失败、修复后通过：
+  - 压缩 zTXt / iTXt 卡片正常导入；约 8 MB 的压缩炸弹（文件小于 64 KB）被拒绝；两块单独都不超、合计超限也被拒绝；不再调用整段解压的 `zlib.decompress`。
+  - 导入时有草稿：取消、读不进来、保存、放弃四种情况。
+  - 额度已用完时预览不发请求；调高额度后照常预览。
+  - 容器全量单测 842 项通过（其中 38 项跳过）。
+- 没验证：Windows 上的 `tools\run_checks.bat` 与桌宠 Smoke Test；导入解析仍在界面线程执行，现在有上限，最坏情况是解析约 2 MB 文本。
+
+### 2026-11-11 补充：PR #35 复审的非阻塞建议——换人格后旧预览清掉（Claude）
+
+- 问题：切换或选中另一个人格后，上一个人格的预览文字还留在界面上，要再点一次预览才刷新，容易误以为是当前人格说的。
+- 改动：
+  - 编辑器换到别的人格时清空预览。
+  - 预览结果写明是哪个人格说的，例如“鲸娘（工作模式）：……”。
+  - 每次预览带一个序号：结果回来前换了人格或又点了预览，旧结果直接丢掉，不显示。
+  - 同一个人格保存后，预览保留。
+- 验证：新增 `test_preview_is_labeled_and_cleared_when_persona_changes`，修复前失败、修复后通过；容器全量单测通过。
+- 没验证：Windows 实机观感。
