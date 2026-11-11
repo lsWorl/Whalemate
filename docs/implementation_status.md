@@ -1405,3 +1405,10 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 手工修改仅涉及 Markdown；运行代码、测试和插件文件按 Git 的自动合并结果保留，没有手工改动。
 - 验证：检查双方原始记录完整保留、无冲突标记、差异无空白错误，非文档文件与自动合并树一致。
 - 按负责人要求，本次纯文档冲突修复不运行回归或真实模型／QQ 测试；不改变 PR #40 功能补丁的审查与验收状态。
+
+## 2026-11-11 开源准备：取名、双语 README 与 MIT 许可（task/oss-readme，Claude）
+
+- 做了什么：项目对外名称定为 **Whalemate · 鲸伴**（包名 `aicompanion` 和仓库名不变）；`README.md` 重写为中文主版本，新增英文版 `README.en.md`，两边互相链接；致谢一节按“运行时依赖 / 设计参考 / AstrBot 社区插件 / 大肥鱼社区”列出计划书和任务说明里参考过的项目，并写明 GPL / AGPL 项目只借鉴思路；新增 `LICENSE`（MIT），README 写明 Live2D Cubism Core、第三方组件和各公司商标不在 MIT 范围内，并加上同人与声音声明。
+- 依据：`docs/project_plan_v4.md`、`docs/tasks.md`、`docs/tasks/*.md` 中出现的参考仓库；`src/aicompanion/assets/live2d/LICENSE.md`。
+- 怎么验证：只改 Markdown 和新增 LICENSE，不涉及代码，未运行回归；人工核对 README 中引用的本地路径都存在于仓库中。
+- 没验证：GitHub 页面上的实际渲染效果；README 里的功能状态按 `docs/tasks.md` 当日状态写，之后需要随任务进展更新。美术素材（`art/`、角色贴图）的对外许可尚未由负责人单独确认，目前随仓库按 MIT 处理。
