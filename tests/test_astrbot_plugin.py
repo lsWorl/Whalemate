@@ -297,31 +297,22 @@ class PluginTests(unittest.TestCase):
             # 不合法的 segments 不用：回退为整段
             self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False,'segments':['在呢',3]}),[('plain','在呢')])
 
-    def test_up_to_flood_limit_segments_keep_order_and_delays(self):
-        # Codex 审查 17012ca P2：桌宠允许 8 段，插件只收 6 段时 7～8 段会退回整段、没有间隔
-        from aicompanion.expression.segments import QQ_FLOOD_LIMIT
-        self.assertEqual(self.module.MAX_SEGMENTS, QQ_FLOOD_LIMIT)
+    def test_every_segment_is_sent_without_merging(self):
+        # Codex 审查 17012ca P2：两边上限要一致；0.9.6 起不按条数防刷屏合并（负责人 2026-11-11：按打字速度慢慢发就不会刷屏）
+        from aicompanion.expression.segments import QQ_SEGMENTS_MAX
+        self.assertEqual(self.module.MAX_SEGMENTS, QQ_SEGMENTS_MAX)
         components=types.ModuleType('astrbot.api.message_components')
         components.Plain=lambda value:('text',value)
-        for count in (7, 8):
+        for count in (7, 8, 11):
             plugin=self.plugin();delays=[]
             async def pause(text,delay=None):delays.append(delay)
             plugin.pause=pause
-            parts=[f'第{n}条' for n in range(count)]; given=[0]+[1.0+n for n in range(count-1)]
+            parts=[f'第{n}条' for n in range(count)]; given=[0]+[1.0+n%5 for n in range(count-1)]
             with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
                 event=Event('聊')
                 out=self.run_handler(plugin,event,{'reply':'\n'.join(parts),'silent':False,'segments':parts,'segment_delays':given})
             self.assertEqual(out,[]);self.assertEqual([m[1][0][1] for m in event.sent_messages],parts)
             self.assertEqual(delays,given[1:])
-        # 超过上限（旧桌宠 / 异常输入）：多的并进最后一条，内容不丢；段数变了就不用给定间隔，自己估
-        plugin=self.plugin();delays=[]
-        async def pause(text,delay=None):delays.append(delay)
-        plugin.pause=pause
-        parts=[f'第{n}条' for n in range(11)]
-        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
-            event=Event('聊');self.run_handler(plugin,event,{'reply':'x','silent':False,'segments':parts,'segment_delays':[0]+[1.0]*10})
-        sent=[m[1][0][1] for m in event.sent_messages]
-        self.assertEqual(len(sent),8);self.assertEqual(sent[-1],'第7条，第8条，第9条，第10条');self.assertEqual(delays,[None]*7)
 
     def test_eight_segments_with_sticker_after_text(self):
         import hashlib

@@ -30,7 +30,7 @@ class SegmentTests(unittest.TestCase):
     def test_count_is_not_capped_and_follows_the_moment(self):
         five = qq_segments('一下\n两下\n三下\n四下\n五下', chance=ALWAYS)
         self.assertEqual(len(five), 5)                                                       # 她换行想分几条就几条，不砍到 3
-        self.assertEqual(len(qq_segments('\n'.join(f'第{n}句' for n in range(12)), chance=ALWAYS)), 8)   # 只防刷屏
+        self.assertEqual(len(qq_segments('\n'.join(f'第{n}句' for n in range(12)), chance=ALWAYS)), 12)   # 不按条数合并（负责人 2026-11-11：慢慢发不会刷屏）
         doc = '1. 第一步\n2. 第二步'
         self.assertEqual(qq_segments(doc), [doc])                                             # 像文档的不拆
         text = '行吧 你自己弄。我看看 这啥啊。算了 不管了'
