@@ -39,15 +39,6 @@
       }
     }
   },
-  "provider": {
-    "label": "DeepSeek",
-    "host": "api.deepseek.com",
-    "base_url": "https://api.deepseek.com",
-    "key_env": "DEEPSEEK_API_KEY",
-    "model_env": "DEEPSEEK_MODEL",
-    "default_model": "deepseek-chat",
-    "supports_tools": true
-  },
   "voice": {
     "language": "zh",
     "qwen_voice_env": "QWEN_ORIGINAL_TTS_VOICE"

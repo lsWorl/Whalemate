@@ -142,7 +142,7 @@ class MemorySharingTests(BridgeTests.__base__):
         class Analyzer:
             def generate_reply_stream(self_, history, prompt, cancellation=None):
                 seen.append(prompt); yield json.dumps(analysis, ensure_ascii=False)
-        self.controller.llm_client = Analyzer()
+        self.controller.use_client(Analyzer())
         self.assertFalse(self.service.maybe_remember(self.cid, channel, background=False))   # 关着时不整理
         self.db.set_setting('bridge_memory_every', 2)
         self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
@@ -362,14 +362,14 @@ class SegmentReplyTests(unittest.TestCase):
             class Two:
                 model = 'mock'
                 def generate_reply_stream(self_, history, prompt, cancellation=None): yield '哇！\n\n恭喜爹'
-            case.controller.llm_client = Two()
+            case.controller.use_client(Two())
             result = case.ask(OWNER, '我面试过了')
             self.assertEqual((result['reply'], result.get('segments')), ('哇！\n\n恭喜爹', ['哇！', '恭喜爹']))
             # 只有一条时 reply 也换成整理后的写法（QQ 保留逗号、去掉句末句号），旧插件只看 reply 也能拿到
             class One:
                 model = 'mock'
                 def generate_reply_stream(self_, history, prompt, cancellation=None): yield '在呢，刚摸完鱼。'
-            case.controller.llm_client = One()
+            case.controller.use_client(One())
             result = case.ask(OWNER, '在吗')
             self.assertEqual((result['reply'], result.get('segments')), ('在呢，刚摸完鱼', None))
         finally:

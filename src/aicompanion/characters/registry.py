@@ -1,4 +1,4 @@
-"""角色注册表：把角色包同步到数据库，并为每个角色解析对应的大模型客户端。"""
+"""角色注册表：把角色包同步到数据库。用哪个模型由设置里的模型配置决定（providers 模块），与角色包无关。"""
 from __future__ import annotations
 
 import os
@@ -18,7 +18,6 @@ class CharacterRegistry:
         if packs is None: packs, self.errors = discover()
         else: self.errors = []
         self.packs = {pack.id: pack for pack in packs}
-        self._router = None
 
     def sync(self) -> None:
         """为每个就绪角色包补齐数据库行和初始语音设置；已有的用户修改不覆盖。"""
@@ -76,25 +75,3 @@ class CharacterRegistry:
 
     def set_active(self, character_id: str) -> None:
         self.database.set_setting(ACTIVE_KEY, character_id)
-
-    @property
-    def router(self):
-        """模型解析器：按“角色单独指定 → 全局 → 角色包推荐 → 旧 .env”选模型（计划书 v4 功能一）。"""
-        if self._router is None:
-            from aicompanion.providers.router import ModelRouter
-            self._router = ModelRouter(self.database, self.settings, packs=self.packs, environ=self.environ)
-        return self._router
-
-    def client_for(self, character_id: str, default_client):
-        """返回 (客户端, 说明)。旧接口，内部交给 ModelRouter。
-
-        结果落在旧 .env 配置时直接返回 default_client（同一份配置建出的同一个客户端），
-        其余情况由解析器按地址、模型和凭据修订缓存客户端，换 Key 后下一次就用新实例。
-        """
-        if self.settings.llm_provider == 'mock':
-            return default_client, '离线模拟模型'
-        resolved = self.router.resolve('chat', character_id)
-        label = resolved.label + (f'（{resolved.note}）' if resolved.note else '')
-        if resolved.source == 'legacy':
-            return default_client, label
-        return self.router.client_for(resolved), label

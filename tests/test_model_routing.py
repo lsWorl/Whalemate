@@ -28,19 +28,6 @@ class FakeProtector:
     def unprotect(self, data): return base64.b64decode(data)[::-1]
 
 
-def settings(**overrides):
-    values = dict(llm_provider='openai_compatible', llm_base_url='https://api.example.com/v1', llm_model='legacy-model',
-                  llm_api_key='', llm_temperature=.8, llm_timeout_seconds=60)
-    values.update(overrides)
-    return SimpleNamespace(**values)
-
-
-def whale_pack():
-    return SimpleNamespace(ready=True, provider={'label': 'DeepSeek', 'host': 'api.deepseek.com', 'base_url': 'https://api.deepseek.com',
-                                                 'key_env': 'DEEPSEEK_API_KEY', 'model_env': 'DEEPSEEK_MODEL',
-                                                 'default_model': 'deepseek-chat'})
-
-
 class Recorder:
     """记下工厂收到的参数，代替真实客户端。"""
     def __init__(self): self.made = []
@@ -55,11 +42,10 @@ class RoutingBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = Database(Path(self.tmp.name) / 'test.sqlite3'); self.db.initialize()
-        self.env = {'LLM_API_KEY': 'legacy-key'}
+        self.env = {}
         self.creds = CredentialStore(self.db, self.env, protector=FakeProtector())
         self.factory = Recorder()
-        self.router = ModelRouter(self.db, settings(), packs={'deepseek-whale': whale_pack()}, credentials=self.creds,
-                                  client_factory=self.factory)
+        self.router = ModelRouter(self.db, SimpleNamespace(offline=False), credentials=self.creds, client_factory=self.factory)
         self.store = ModelConfigStore(self.db)
 
     def tearDown(self): self.tmp.cleanup()
@@ -79,31 +65,26 @@ class RoutingBase(unittest.TestCase):
 
 
 class LayerTests(RoutingBase):
-    def test_without_user_config_matches_old_behaviour(self):
-        # 没设置鲸娘专属 Key：用旧 .env 的默认模型，并说明原因
-        chat = self.router.resolve('chat', 'deepseek-whale')
-        self.assertEqual((chat.source, chat.model_id, chat.credential), ('legacy', 'legacy-model', 'env:LLM_API_KEY'))
-        self.assertIn('未配置 DeepSeek 专属密钥', chat.note)
-        # 配了专属 Key：角色包推荐生效，模型来自环境变量或包内默认
-        self.env['DEEPSEEK_API_KEY'] = 'whale-key'
-        chat = self.router.resolve('chat', 'deepseek-whale')
-        self.assertEqual((chat.source, chat.base_url, chat.model_id), ('pack', 'https://api.deepseek.com', 'deepseek-chat'))
-        self.env['DEEPSEEK_MODEL'] = 'deepseek-flash'
-        self.assertEqual(self.router.resolve('chat', 'deepseek-whale').model_id, 'deepseek-flash')
-        # 其他角色不受影响
-        self.assertEqual(self.router.resolve('chat', 'emilia').source, 'legacy')
+    def test_unconfigured_is_offline_and_never_reads_env(self):
+        self.env.update({'LLM_API_KEY': 'old', 'DEEPSEEK_API_KEY': 'old'})   # 旧 .env 不再被读取
+        client, resolved = self.router.client('chat', 'deepseek-whale')
+        self.assertIs(client, self.router.mock()); self.assertIsNone(resolved)
+        self.assertEqual(self.factory.made, [])
+        self.assertIn('未配置', self.router.label('deepseek-whale'))
+        self.assertFalse(self.router.ready('chat', 'deepseek-whale'))
+        with self.assertRaises(ModelUnavailable): self.router.resolve('vision', 'deepseek-whale')
+        self.assertEqual(self.router.search_target('deepseek-whale').backend, 'wikipedia')
+        self.assertIsNone(self.router.agent_target('deepseek-whale'))
 
-    def test_user_bindings_take_priority(self):
-        self.env['DEEPSEEK_API_KEY'] = 'whale-key'
+    def test_character_binding_beats_global(self):
         self.add_deepseek(); self.add_minimax()
         self.store.bind(Binding('chat', 'minimax-m3'))
-        self.assertEqual(self.router.resolve('chat', 'deepseek-whale').source, 'global')   # 全局设置高于角色包推荐
         self.store.bind(Binding('chat', 'deepseek-flash', character_id='deepseek-whale'))
         whale = self.router.resolve('chat', 'deepseek-whale')
-        self.assertEqual((whale.source, whale.model_id), ('character', 'deepseek-flash'))
+        self.assertEqual((whale.source, whale.model_id, whale.label), ('character', 'deepseek-flash', 'DeepSeek · deepseek-flash'))
         self.assertEqual(self.router.resolve('chat', 'emilia').model_id, 'MiniMax-M3')
         self.store.unbind('chat', 'deepseek-whale')                                          # 恢复继承
-        self.assertEqual(self.router.resolve('chat', 'deepseek-whale').model_id, 'MiniMax-M3')
+        self.assertEqual(self.router.resolve('chat', 'deepseek-whale').source, 'global')
 
     def test_snapshot_is_frozen(self):
         self.add_deepseek(); self.store.bind(Binding('chat', 'deepseek-flash'))
@@ -112,18 +93,27 @@ class LayerTests(RoutingBase):
         self.assertEqual(before.model_id, 'deepseek-flash')          # 已拿到的快照不受新设置影响
         self.assertGreater(self.router.resolve('chat', 'emilia').config_revision, before.config_revision)
 
-    def test_user_binding_without_key_does_not_fall_back(self):
+    def test_missing_key_does_not_fall_back(self):
         self.add_minimax()
         self.store.bind(Binding('chat', 'minimax-m3'))
         self.creds.delete('minimax-main')
         with self.assertRaises(ModelUnavailable):
-            self.router.client('chat', 'emilia')                     # 不偷偷换到别的收费服务
+            self.router.client('chat', 'emilia')                     # 不偷偷换到别的服务，也不退回离线
+        self.assertFalse(self.router.ready('chat', 'emilia'))
 
-    def test_mock_mode_never_builds_clients(self):
-        router = ModelRouter(self.db, settings(llm_provider='mock'), credentials=self.creds, client_factory=self.factory)
-        client, resolved = router.client('chat', 'emilia')
+    def test_offline_mode_never_builds_clients(self):
+        self.add_deepseek(); self.store.bind(Binding('chat', 'deepseek-flash'))
+        router = ModelRouter(self.db, SimpleNamespace(offline=True), credentials=self.creds, client_factory=self.factory)
+        client, _ = router.client('chat', 'emilia')
         self.assertEqual(self.factory.made, []); self.assertEqual(router.label('emilia'), '离线模拟模型')
-        self.assertIs(router.client('chat', 'emilia')[0], client)
+        self.assertIsNone(router.agent_target())
+
+    def test_vision_binding_is_independent(self):
+        self.add_deepseek(); self.add_minimax()
+        self.store.bind(Binding('chat', 'deepseek-flash')); self.store.bind(Binding('vision', 'minimax-m3'))
+        vision = self.router.resolve('vision', 'emilia', 'avatar')
+        self.assertEqual((vision.model_id, vision.credential, vision.temperature), ('MiniMax-M3', 'stored:minimax-main', 0.0))
+        self.assertEqual(self.router.resolve('chat', 'emilia').credential, 'stored:deepseek-main')   # 互不影响
 
 
 class CacheTests(RoutingBase):
@@ -159,9 +149,29 @@ class CacheTests(RoutingBase):
         self.assertEqual(self.creds.get(ref, endpoint='https://new-provider.invalid/v1'), '')
         self.assertEqual(self.creds.get(ref, endpoint='https://third.invalid/v1/'), 'FAKE_NEW_KEY')
 
-    def test_env_key_change_rebuilds_client(self):
+    def test_qq_vision_snapshot_refuses_key_changed_before_request(self):
+        # Codex 审计 R1：QQ 识图先取快照、处理完图片才取 Key；中间换了地址和 Key 时放弃这次识图
+        from types import SimpleNamespace
+        from aicompanion.bridge.media import MediaError, QQMedia
+        ref = self.creds.save('deepseek-main', 'OLD_KEY', endpoint='https://old-provider.invalid/v1')
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://old-provider.invalid/v1', credential=ref))
+        self.store.put_model(MODEL_PRESETS['deepseek-flash']); self.store.bind(Binding('vision', 'deepseek-flash'))
+        made = []
+        media = QQMedia(self.db, SimpleNamespace(router=self.router, character=SimpleNamespace(id='deepseek-whale')),
+                        vision_factory=lambda **kw: made.append(kw))
+        profile = media.profile()
+        self.creds.save('deepseek-main', 'FAKE_NEW_KEY', endpoint='https://new-provider.invalid/v1')
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://new-provider.invalid/v1', credential=ref))
+        with self.assertRaises(MediaError): media._vision_call(profile, [], 10, 'qq')
+        self.assertEqual(made, [])
+
+    def test_env_reference_change_rebuilds_client(self):
+        # 用户也可以选择让 Key 来自某个环境变量
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://api.deepseek.com', credential='env:MY_DS'))
+        self.store.put_model(MODEL_PRESETS['deepseek-flash']); self.store.bind(Binding('chat', 'deepseek-flash'))
+        self.env['MY_DS'] = 'one'
         first, _ = self.router.client('chat', 'emilia')
-        self.env['LLM_API_KEY'] = 'rotated'
+        self.env['MY_DS'] = 'rotated'
         second, _ = self.router.client('chat', 'emilia')
         self.assertIsNot(first, second); self.assertEqual(second.secret, 'rotated')
 
@@ -171,6 +181,29 @@ class CacheTests(RoutingBase):
         vision, _ = self.router.client('vision', 'emilia', 'vision')
         self.assertIsNot(chat, vision)
         self.assertEqual(vision.resolved.max_output, 4000)
+
+
+class TargetTests(RoutingBase):
+    def test_search_binding(self):
+        self.add_deepseek('search-key'); self.add_minimax()
+        self.store.bind(Binding('search', backend='deepseek', provider='deepseek'))
+        self.store.bind(Binding('chat', 'minimax-m3'))                       # 聊天换成 MiniMax 也不改搜索
+        target = self.router.search_target('emilia')
+        self.assertEqual((target.backend, target.api_key), ('deepseek', 'search-key'))
+        self.store.bind(Binding('search', backend='wikipedia', character_id='emilia'))
+        self.assertEqual(self.router.search_target('emilia').backend, 'wikipedia')
+        self.assertEqual(self.router.search_target('deepseek-whale').backend, 'deepseek')
+
+    def test_agent_target_only_carries_selected_key(self):
+        self.add_deepseek('ds-secret'); self.add_minimax('mm-secret')
+        self.store.bind(Binding('agent', 'deepseek-flash', route='deepseek-official'))
+        target = self.router.agent_target()
+        self.assertEqual((target.route, target.model_id, dict(target.env)), ('deepseek-official', 'deepseek-flash', {'DEEPSEEK_API_KEY': 'ds-secret'}))
+        self.store.bind(Binding('agent', 'minimax-m3', route='minimax'))
+        target = self.router.agent_target()
+        self.assertEqual((target.route, target.model_id, dict(target.env)), ('minimax', 'MiniMax-M3', {'MINIMAX_API_KEY': 'mm-secret'}))
+        self.creds.delete('minimax-main')
+        self.assertIsNone(self.router.agent_target())
 
 
 class ThinkingTests(unittest.TestCase):
@@ -193,50 +226,6 @@ class ThinkingTests(unittest.TestCase):
         self.assertEqual(thinking_params('openai_compatible', model, 'companion'), ({}, None))
         custom = ModelProfile('x', 'p', 'any-model', max_output={'chat': 800})
         self.assertEqual(thinking_params('openai_compatible', custom, 'qq'), ({}, 800))
-
-
-class LegacyRuleTests(RoutingBase):
-    def test_vision_follows_chat_provider(self):
-        self.env['DEEPSEEK_API_KEY'] = 'whale-key'
-        vision = self.router.resolve('vision', 'deepseek-whale', 'vision')
-        self.assertEqual((vision.base_url, vision.model_id, vision.credential), ('https://api.deepseek.com', 'deepseek-flash', 'env:DEEPSEEK_API_KEY'))
-        self.assertEqual(vision.temperature, 0.0)
-        # 别家接口、设置还停在 deepseek 系列：改用聊天模型本身
-        self.assertEqual(self.router.resolve('vision', 'emilia', 'vision').model_id, 'legacy-model')
-        self.db.set_setting('qq_vision_model', 'qwen-vl')
-        self.assertEqual(self.router.resolve('vision', 'emilia', 'vision').model_id, 'qwen-vl')
-
-    def test_explicit_vision_binding(self):
-        self.add_minimax(); self.store.bind(Binding('vision', 'minimax-m3'))
-        vision = self.router.resolve('vision', 'emilia', 'avatar')
-        self.assertEqual((vision.source, vision.model_id), ('global', 'MiniMax-M3'))
-        self.assertEqual(self.router.resolve('chat', 'emilia').source, 'legacy')   # 换识图不影响聊天
-
-    def test_search_target(self):
-        self.assertEqual(self.router.search_target('emilia').backend, 'wikipedia')
-        self.env['DEEPSEEK_API_KEY'] = 'whale-key'
-        target = self.router.search_target('deepseek-whale')
-        self.assertEqual((target.backend, target.api_key), ('deepseek', 'whale-key'))
-        # 显式绑定：聊天换成 MiniMax 也不改搜索
-        self.add_deepseek('search-key'); self.add_minimax()
-        self.store.bind(Binding('search', backend='deepseek', provider='deepseek'))
-        self.store.bind(Binding('chat', 'minimax-m3'))
-        target = self.router.search_target('emilia')
-        self.assertEqual((target.backend, target.api_key), ('deepseek', 'search-key'))
-        self.store.bind(Binding('search', backend='wikipedia'))
-        self.assertEqual(self.router.search_target('emilia').backend, 'wikipedia')
-
-    def test_agent_target_only_carries_selected_key(self):
-        self.db.set_setting('dsh_model', 'deepseek-flash')
-        target = self.router.agent_target()
-        self.assertEqual((target.route, target.model_id, dict(target.env)), ('deepseek-official', 'deepseek-flash',
-                         {'DEEPSEEK_API_KEY': 'legacy-key', 'DEEPSEEK_BASE_URL': 'https://api.example.com/v1'}))
-        self.add_minimax('mm-secret')
-        self.store.bind(Binding('agent', 'minimax-m3', route='minimax'))
-        target = self.router.agent_target()
-        self.assertEqual((target.route, target.model_id, dict(target.env)), ('minimax', 'MiniMax-M3', {'MINIMAX_API_KEY': 'mm-secret'}))
-        self.creds.delete('minimax-main')
-        self.assertIsNone(self.router.agent_target())
 
 
 class CredentialTests(unittest.TestCase):

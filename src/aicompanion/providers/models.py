@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# 能力：先做计划书阶段一需要的四种；语音合成 / 识别在后续阶段加入。
-CAPABILITIES = ('chat', 'vision', 'search', 'agent')
+# 能力：聊天、识图、搜索、办事，以及语音合成（tts，音色按角色设置）。语音识别在后续阶段加入。
+CAPABILITIES = ('chat', 'vision', 'search', 'agent', 'tts')
 
 # 用途：同一个模型在不同用途下用不同的思考策略和输出额度。
 # 聊天追求快；识图、表情分析、后台 JSON 分析要保证正文不被推理吃光。
@@ -27,7 +27,7 @@ PURPOSE_KIND = {
 THINKING_POLICIES = ('off', 'default', 'on')
 
 # 供应商种类决定“思考策略”怎么翻译成请求参数。新种类只需在 router.thinking_params 里加一段。
-PROVIDER_KINDS = ('openai_compatible', 'deepseek', 'minimax')
+PROVIDER_KINDS = ('openai_compatible', 'deepseek', 'minimax', 'breezeblue')
 
 
 @dataclass(frozen=True)
@@ -76,6 +76,11 @@ class Binding:
     backend: str = ''                # search：deepseek / wikipedia
     provider: str = ''               # search：用哪个账户的凭据
     route: str = ''                  # agent：Harness 里的路由，例如 deepseek-official / minimax
+    voice: str = ''                  # tts：音色 ID（例如 Breeze Blue 控制台里的 voc_xxx）
+    language: str = ''               # tts：朗读语言代码（zh / en / ja ...），留空交给模型判断
+    speed: float = 1.0               # tts：语速
+    volume: float = 1.0              # tts：音量倍数
+    instructions: str = ''           # tts：固定的语气说明，和当前情绪说明拼在一起发送
 
     @staticmethod
     def from_dict(data: dict) -> 'Binding':
@@ -122,6 +127,8 @@ PROVIDER_PRESETS = {
     'minimax-global': ProviderProfile('minimax-global', 'MiniMax 国际站', 'minimax', 'https://api.minimax.io/v1', 'global', 'payg'),
     # 国内站地址各文档写法不一（api.minimaxi.com / api.minimax.cn），以用户账户页面为准，可在设置里修改。
     'minimax-cn': ProviderProfile('minimax-cn', 'MiniMax 国内站', 'minimax', 'https://api.minimaxi.com/v1', 'cn', 'payg'),
+    # Breeze Blue 开发者 API（ElevenLabs 形态，鉴权头 xi-api-key）。资料核对 2026-11-11：docs.breezeblue.ai
+    'breezeblue': ProviderProfile('breezeblue', 'Breeze Blue', 'breezeblue', 'https://api.breeze.blue/v1', 'global', 'payg'),
 }
 
 MODEL_PRESETS = {
@@ -132,6 +139,10 @@ MODEL_PRESETS = {
                                        ('chat', 'vision', 'tools'), can_disable_thinking=False, context_window=1_000_000),
     'minimax-m3': ModelProfile('minimax-m3', 'minimax-global', 'MiniMax-M3', 'MiniMax M3',
                                ('chat', 'vision', 'tools'), context_window=1_000_000),
+    # 中文、英文用 breeze-tts-2；其他语言（含日语）用多语言版
+    'breeze-tts-2': ModelProfile('breeze-tts-2', 'breezeblue', 'breeze-tts-2', 'Breeze TTS 2', ('tts',)),
+    'breeze-tts-2-multilingual': ModelProfile('breeze-tts-2-multilingual', 'breezeblue', 'breeze-tts-2-multilingual',
+                                              'Breeze TTS 2 多语言', ('tts',)),
 }
 
 
@@ -141,4 +152,5 @@ def kind_for_url(base_url: str) -> str:
     host = (urlsplit(base_url or '').hostname or '').lower()
     if host == 'api.deepseek.com': return 'deepseek'
     if host.endswith('minimax.io') or host.endswith('minimaxi.com') or host.endswith('minimax.cn'): return 'minimax'
+    if host.endswith('breeze.blue'): return 'breezeblue'
     return 'openai_compatible'

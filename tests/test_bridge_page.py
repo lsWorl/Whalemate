@@ -75,7 +75,7 @@ class BridgePageFlowTest(unittest.TestCase):
         self.assertTrue(page.chat_card_enabled.isChecked())
         page.vision_enabled.setChecked(False); page.memes_enabled.setChecked(False)
         page.meme_root.setText(str(Path(self.tmp.name)/'memes'))
-        page.vision_model.setText('deepseek-flash'); page.meme_cooldown.setValue(120)
+        page.meme_cooldown.setValue(120)
         page.avatar_enabled.setChecked(False); page.learning.setChecked(False)
         page.chat_card_enabled.setChecked(False)
         page.community_source.setCurrentIndex(page.community_source.findData('bilibili'))

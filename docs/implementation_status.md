@@ -1105,3 +1105,14 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 验证：容器内 Python 3.13 + PySide6 6.12 离线单测 `python -m unittest discover -s tests`：771 项通过、38 项跳过（新增 `tests/test_model_routing.py` 26 项，含本机端口模拟 301/302/303/307/308 跳转，确认目标端收不到 Authorization；换回 urllib 默认打开方式时该测试失败，说明旧代码确有泄露）。
 - 没验证：Windows 上 DPAPI 加解密（容器不是 Windows，只用假加解密器测试）；`tools\smoke_pet.py`（容器缺音频设备，基线代码同样崩溃，需在 Windows 跑 `tools\run_checks.bat`）；真实 DeepSeek 接口对 `thinking: disabled` 的响应（升级后旧配置走 DeepSeek 官方时会默认关闭思考）。
 
+## 2026-11-11：V4-1b 去掉旧模型配置、调用点改用快照、Breeze Blue 语音合成（Claude）
+
+- 负责人决定开发阶段不兼容旧配置：删除 `.env` 的 `LLM_*`（Settings 新增 `offline`，`AICOMPANION_OFFLINE=1` 或发布自检时启用）、`llm/factory.py`、角色包里的模型推荐和 `CharacterRegistry.client_for`。模型只来自设置里的模型配置（角色单独指定 → 全局）；聊天没配置时以离线模拟运行并在标签上提示，识图没配置不看图，搜索没配置用维基百科，办事没配置不启用。
+- 调用点：ChatController 每轮按角色与用途取客户端（`client()`），去掉 `llm_client`；QQ 识图、查梗二次生成、记忆 / 关系 / 社区分析、目的提炼、日语翻译都在启动后台线程前取好快照；识图“不支持”标记按配置修订区分，推理耗尽额度不再误记为不支持看图；社区学梗按角色的搜索配置建搜索服务。
+- 办事：`AgentTarget` 驱动 DSH，子进程只带白名单系统变量和选定 Key，换 Key 或路由时重启运行时；Harness 不认识路由或模型时任务失败，不退回 DSH 默认模型。
+- 语音 Key 不再按主机名借用聊天 Key。
+- 新增 Breeze Blue 语音合成：模型配置新增 `tts` 能力（音色 ID、语言、语速、音量、固定语气说明，可按角色设置）；`speech/breeze_client.py` 按官方接口 `POST /v1/text-to-speech/{voice}?output_format=wav_24000`（`xi-api-key`）合成；朗读方式下拉新增 Breeze Blue。语音缓存键包含音色、模型、参数和 Key 修订。
+- 复用：`net.fetch` 抽出可取消、限大小的下载循环，千问和 Breeze 共用；`validate_wav` 可指明来源。
+- 验证：容器离线单测 784 项通过、38 项跳过（新增 `tests/test_breeze_tts.py` 12 项，含本机端口真实往返和跳转不跟随；`test_dsh` 新增子进程只带选定 Key、换 Key 重启运行时、未知路由失败三项）。
+- 没验证：Windows DPAPI；`tools\smoke_pet.py`（需 Windows）；真实 Breeze Blue / DeepSeek / MiniMax 接口与 Harness 的 MiniMax 路由；模型设置页尚未完成（V4-1c），在此之前只能通过代码或测试写入配置。**升级后旧 `.env` 的模型配置不再生效**，需在 V4-1c 的设置页重新配置。
+

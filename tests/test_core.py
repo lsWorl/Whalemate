@@ -35,13 +35,14 @@ class ConfigurationTests(unittest.TestCase):
         settings=self.load({'LLM_API_KEY':'dummy-chat','SPEECH_API_KEY':'dummy-speech'})
         self.assertEqual(settings.speech_api_key,'dummy-speech')
 
-    def test_same_host_preserves_compatible_fallback(self):
+    def test_speech_never_borrows_chat_key_even_on_same_host(self):
+        # 计划书 v4 硬底线：凭据不串。同主机也不能推断是同一个账户
         settings=self.load({'LLM_BASE_URL':'https://open.bigmodel.cn/api/paas/v4','LLM_API_KEY':'dummy-chat'})
-        self.assertEqual(settings.speech_api_key,'dummy-chat')
-
-    def test_explicit_empty_speech_key_disables_fallback(self):
-        settings=self.load({'LLM_BASE_URL':'https://open.bigmodel.cn/api/paas/v4','LLM_API_KEY':'dummy-chat','SPEECH_API_KEY':''})
         self.assertEqual(settings.speech_api_key,'')
+
+    def test_offline_flag(self):
+        self.assertFalse(self.load({}).offline)
+        self.assertTrue(self.load({'AICOMPANION_OFFLINE':'1'}).offline)
 
 
 class StorageTests(unittest.TestCase):

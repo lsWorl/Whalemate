@@ -7,7 +7,6 @@ from aicompanion.config import load_settings
 from aicompanion.controllers.chat_controller import ChatController
 from aicompanion.domain.cancellation import CancellationToken
 from aicompanion.domain.personas import apply_emilia_preset
-from aicompanion.llm.factory import create_llm_client
 from aicompanion.services.memory_service import MemoryService
 from aicompanion.storage.database import Database
 
@@ -17,9 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     settings = load_settings()
-    if settings.llm_provider == 'mock':
-        raise ValueError('人设验收需要真实模型，不能用离线固定回复代替。')
-    client = create_llm_client(settings)
+    from aicompanion.providers import real_chat_client
+    client, _ = real_chat_client('emilia', settings=settings)   # 人设验收需要真实模型，没配置时直接退出
     results = []
     scenarios = [
         ('listening', '今天真的很累，不想听建议，就想让你陪我说两句。'),

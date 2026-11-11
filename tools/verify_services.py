@@ -3,14 +3,14 @@ import io
 import wave
 from aicompanion.config import load_settings
 from aicompanion.domain.cancellation import CancellationToken
-from aicompanion.llm.factory import create_llm_client
 from aicompanion.llm.base import ChatTurn
 from aicompanion.speech.client import SpeechClient
 
 
 def main():
     settings=load_settings(); token=CancellationToken()
-    client=create_llm_client(settings)
+    from aicompanion.providers import real_chat_client
+    client,_=real_chat_client(settings=settings)
     reply=''.join(client.generate_reply_stream([ChatTurn('user','今天有点累，请用一句温和的话回应。')],'用中文简短回应。',token))
     print('LLM:',reply,flush=True)
     speech=SpeechClient(settings)

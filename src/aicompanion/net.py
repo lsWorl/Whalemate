@@ -23,3 +23,39 @@ _OPENER = build_opener(NoRedirect())
 def open_url(request, timeout=None):
     """等价于 urlopen，但不跟随重定向。"""
     return _OPENER.open(request, timeout=timeout)
+
+
+def fetch(request, cancellation, timeout=20, limit=25 * 1024 * 1024, opener=None) -> bytes:
+    """读取完整响应体，随时可取消，超过 limit 字节就停止。
+
+    取消时关闭底层 socket，阻塞中的读取立即返回；HTTPError / URLError 原样抛给调用方，
+    由各供应商客户端翻译成不含密钥和请求摘要的提示。语音合成、识别等下载音频的地方共用。
+    """
+    import socket
+    cancellation.check()
+    abort = None
+    try:
+        with (opener.open if opener is not None else open_url)(request, timeout=timeout) as response:
+            sock = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+            if sock:
+                abort = lambda: sock.shutdown(socket.SHUT_RDWR)
+                cancellation.register(abort)
+            chunks, size = [], 0
+            while True:
+                cancellation.check()
+                chunk = response.read(65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > limit:
+                    raise ResponseTooLarge('响应超过大小限制')
+                chunks.append(chunk)
+            cancellation.check()
+            return b''.join(chunks)
+    finally:
+        if abort:
+            cancellation.unregister(abort)
+
+
+class ResponseTooLarge(RuntimeError):
+    pass

@@ -86,7 +86,7 @@ class RelationshipAnalyzer:
         done = int(self.db.get_setting(self.marker(character_id, channel), 0) or 0)
         return sum(1 for r in rows if r['role'] == 'user' and r['id'] > done)
 
-    def maybe_run(self, character_id, channel, client, background=True, trigger=None) -> bool:
+    def maybe_run(self, character_id, channel, client, background=True, trigger=None, search=None) -> bool:
         """够条数、额度允许、这个会话没在分析时，启动一次后台分析。trigger：这次需要的新消息条数（吵起来时传 2，提前分析）。"""
         if not self.db.get_setting('relationship_learning', True): return False
         need = trigger or int(self.db.get_setting('relationship_trigger', TRIGGER) or TRIGGER)
@@ -102,7 +102,7 @@ class RelationshipAnalyzer:
             RUNNING.add(key)
 
         def work():
-            try: self.analyze(character_id, channel, client, CancellationToken())
+            try: self.analyze(character_id, channel, client, CancellationToken(), search=search)
             except Exception: pass   # 分析失败不影响聊天；下次够条数再试
             finally:
                 with RUNNING_LOCK: RUNNING.discard(key)
@@ -110,7 +110,7 @@ class RelationshipAnalyzer:
         else: work()
         return True
 
-    def analyze(self, character_id, channel, client, cancellation) -> int:
+    def analyze(self, character_id, channel, client, cancellation, search=None) -> int:
         rows = self.db.recent_messages(WINDOW, character_id, channel=channel)
         done = int(self.db.get_setting(self.marker(character_id, channel), 0) or 0)
         new = [r for r in rows if r['id'] > done]
@@ -150,7 +150,8 @@ class RelationshipAnalyzer:
         # （Codex 审查 9217558 P2：原来只有 due_terms 非空时才会走到周更检查，平常聊天永远不刷新）。
         # run_due 自己检查开关、额度，热梗有七天去重，不会每批都联网。
         from aicompanion.community.learner import CommunityLearner
-        CommunityLearner(self.db, clock=self.relationships.clock).run_due(getattr(self, 'due_terms', []), client, channel, background=False)
+        # search：按角色的搜索设置建搜索服务；不传时沿用旧规则（看聊天客户端的地址）
+        CommunityLearner(self.db, clock=self.relationships.clock, search=search).run_due(getattr(self, 'due_terms', []), client, channel, background=False)
         return count
 
     def apply(self, character_id, channel, raw, people, last_id) -> int:

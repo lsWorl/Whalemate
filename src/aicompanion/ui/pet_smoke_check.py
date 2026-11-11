@@ -168,15 +168,14 @@ def schedule_pet_smoke_check(window, database, output):
         from aicompanion.ui.bridge_page import BridgePage
         page = BridgePage(database); page.timer.stop()
         state['qq_media_settings_ready'] = (page.vision_enabled.isChecked() and page.memes_enabled.isChecked()
-                                            and page.chat_card_enabled.isChecked()
-                                            and page.vision_model.text() == 'deepseek-flash')
+                                            and page.chat_card_enabled.isChecked())
         page.deleteLater()
     later(21500, qq_media)
 
     def expression_start():
         import re
         from uuid import uuid4
-        original=window.controller.llm_client
+        original=window.controller.router
         class ExpressionModel:
             calls=0
             def generate_reply_stream(self,history,prompt,cancellation):
@@ -184,7 +183,7 @@ def schedule_pet_smoke_check(window, database, output):
                 handle=re.search(r'^(s\d+)｜',prompt,re.M).group(1)   # 本轮候选短编号
                 yield '<sticker id="'+handle+'"/>'
                 yield '【开心】好耶，表达自检完成！<挥手>'
-        model=ExpressionModel();window.controller.llm_client=model
+        model=ExpressionModel();window.controller.use_client(model)
         generation=uuid4().hex;window.coordinator.active=generation
         window._start(generation,query='合成的庆祝消息')
         # Codex 审计（ee541d0）：不再固定等 400ms。轮询到这一轮结束、表达决策到达最终阶段（或总超时）再检查，
@@ -223,7 +222,7 @@ def schedule_pet_smoke_check(window, database, output):
                 page.scan();page.worker.finished.connect(library_repeated)
                 window._load_history(); window.show()  # 可见窗口完成布局后再截图，避免离屏抓图使用旧几何。
             except Exception as error:
-                state['errors'].append('表达自检：'+repr(error)); window.controller.llm_client=original
+                state['errors'].append('表达自检：'+repr(error)); window.controller.router=original
                 QTimer.singleShot(300,after_expression); return
             def restored():
                 try:
@@ -232,7 +231,7 @@ def schedule_pet_smoke_check(window, database, output):
                     window.grab().save(str(output/'expression-panel.png')); window.hide()
                 finally:QTimer.singleShot(300,after_expression)
             QTimer.singleShot(200,restored)
-            window.controller.llm_client=original
+            window.controller.router=original
         QTimer.singleShot(100,poll)
     later(24200,expression_start)
     EXPRESSION_TIMEOUT = 8.0   # 秒；正常几百毫秒就到最终阶段

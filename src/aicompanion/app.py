@@ -13,7 +13,6 @@ from aicompanion.characters.registry import CharacterRegistry
 
 from aicompanion.config import load_settings
 from aicompanion.controllers.chat_controller import ChatController
-from aicompanion.llm.factory import create_llm_client
 from aicompanion.services.memory_service import MemoryService
 from aicompanion.storage.database import Database
 from aicompanion.ui.main_window import MainWindow
@@ -67,10 +66,8 @@ def main() -> int:
     try:
         settings = load_settings()
         if smoke_directory:
-            settings = replace(settings, llm_provider='mock', database_path=Path(smoke_directory.name)/'smoke.sqlite3',
+            settings = replace(settings, offline=True, database_path=Path(smoke_directory.name)/'smoke.sqlite3',
                                tts_provider='system',qwen_api_key='',speech_language='zh',avatar_preview='',character_preset='')
-        if settings.llm_timeout_seconds <= 0 or not 0 <= settings.llm_temperature <= 2:
-            raise ValueError('请检查 LLM_TIMEOUT_SECONDS 与 LLM_TEMPERATURE。')
     except Exception as error:
         if smoke_directory:
             print('配置错误:',error,flush=True)
@@ -103,13 +100,14 @@ def main() -> int:
             except Exception:
                 pass
         memory_service = MemoryService(database)
-        llm_client = create_llm_client(settings)
         # 角色包同步到数据库（鲸娘等），并恢复上次选择的角色。
         registry = CharacterRegistry(database, settings)
         registry.sync()
         if '--emilia-smoke-test' in sys.argv:
             registry.set_active('emilia')
-        controller = ChatController(database, memory_service, llm_client)
+        # 模型按“角色 + 能力 + 用途”从设置里的模型配置解析（计划书 v4 功能一）
+        from aicompanion.providers.router import ModelRouter
+        controller = ChatController(database, memory_service, ModelRouter(database, settings))
         controller.character = registry.active()
         window = MainWindow(controller=controller, settings=settings, registry=registry)
     except Exception as error:

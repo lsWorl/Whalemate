@@ -27,9 +27,6 @@
       }
     }
   },
-  "provider": {
-    "label": "默认模型"
-  },
   "voice": {},
   "lines": "lines.json",
   "persona": null
