@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from uuid import uuid4
 from aicompanion.domain.character import DEFAULT_CHARACTER
 from aicompanion.domain.cancellation import CancellationToken, ReplyCancelled
@@ -38,7 +39,7 @@ class ChatController:
 
     def _fit(self,character_id,purpose,history,prompt,sections,marks):
         from aicompanion.services import budget
-        window=max_output=None
+        window=max_output=resolved=None
         try:
             resolved=self.router.resolve('chat',character_id,purpose)
             window,max_output=getattr(resolved,'context_window',None),getattr(resolved,'max_output',None)
@@ -47,6 +48,8 @@ class ChatController:
         detail=dict(sections,relationship=rel-base,other=other-rel,tools=tools-other,expression=len(prompt)-tools)
         kept,report=budget.fit(history,prompt,purpose,window,max_output,detail)
         budget.save(self.database,character_id,report)
+        if report.blocked:   # 确定超过已知模型上限：不发（不删人格、不删当前这句话）
+            raise budget.BudgetExceeded(budget.refusal(report,getattr(resolved,'label','')))
         return kept
 
     def use_client(self,client,**options):
@@ -203,11 +206,16 @@ class ChatController:
                     # T18：先看这句冲谁、谁的话——转述别人的话不扣分，攻击别人记"攻击别人"，冲她来的才按好恶记
                     self.relationships.record(character.id,person_id,kind,0.8,scope=scope_of(channel),evidence=evidence,key='feel:'+turn_id,impact=impact)
                     heated=kind in ('quarrel','insult')
-            if mind and status=='complete':
-                # 计划书 v4 功能三：同一轮的判断顺带推动心情（不额外调用模型）；不论对方是谁都会影响她此刻的心情
+            if status=='complete':
+                # 计划书 v4 功能三：同一轮的判断顺带推动心情（不额外调用模型）。她有明确判断时以判断为准，
+                # 没有判断才用这条消息的用词兜底（Codex PR #38 第 3 项）
+                pending=getattr(self.emotions,'pending_mood',None); self.emotions.pending_mood=None
                 try:
                     from aicompanion.services.mood_service import MoodService
-                    MoodService(self.database).on_mind(character.id,mind,channel)
+                    mood=MoodService(self.database)
+                    judged=mood.on_mind(character.id,mind,channel) if mind else None
+                    if judged is None and pending and pending[0]==character.id and pending[1]==channel and time.time()-pending[3]<600:
+                        mood.apply_fallback(character.id,pending[2],channel)
                 except Exception: pass
             if status=='complete':
                 # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）

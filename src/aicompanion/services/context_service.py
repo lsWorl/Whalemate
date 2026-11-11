@@ -22,7 +22,7 @@ class ContextService:
         # 计划书 v4 功能三：持续的心情（强度、原因、该怎么表现），先回落再读，顺便同步心情词
         try:
             from aicompanion.services.mood_service import MoodService
-            mood_text = MoodService(self.database).prompt(character.id)
+            mood_text = MoodService(self.database).prompt(character.id, public=not private)
         except Exception:
             mood_text = '当前心情：平静。'
         emotion = self.database.load_emotion(character.id)

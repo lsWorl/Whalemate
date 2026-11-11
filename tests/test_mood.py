@@ -60,8 +60,9 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.db.load_emotion(self.cid).mood, 'calm')                                     # 回落后同步
 
     def test_mind_mapping_respects_target_and_quotes(self):
-        self.assertIsNone(self.mood.on_mind(self.cid, {'voice': 'quote', 'tone': 'attack', 'toward': -3}))
-        self.assertIsNone(self.mood.on_mind(self.cid, {'at': 'other', 'tone': 'attack'}))
+        self.assertEqual(self.mood.on_mind(self.cid, {'voice': 'quote', 'tone': 'attack', 'toward': -3}), 'skip')   # 明确不是冲她
+        self.assertEqual(self.mood.on_mind(self.cid, {'at': 'other', 'tone': 'attack'}), 'skip')
+        self.assertIsNone(self.mood.on_mind(self.cid, {'intent': '乐意'}))                                        # 没有可用判断
         self.assertEqual(self.mood.on_mind(self.cid, {'at': 'me', 'tone': 'attack', 'toward': -3, 'feel': '生气'}), 'insulted')
         self.assertEqual(self.mood.current(self.cid).label(), 'angry')
         self.assertEqual(self.mood.on_mind(self.cid, {'toward': 2, 'feel': '害羞'}), 'affection')
@@ -75,6 +76,8 @@ class ServiceTests(unittest.TestCase):
         from aicompanion.services.emotion_service import EmotionService
         emotions = EmotionService(self.db, clock=lambda: self.now[0])
         emotions.update(self.cid, '抱抱')
+        self.assertEqual(self.mood.current(self.cid).label(), 'calm')                                    # 兜底等这一轮结束再定
+        self.mood.apply_fallback(self.cid, emotions.pending_mood[2])
         self.assertEqual(self.mood.current(self.cid).label(), 'shy')
         self.now[0] += 3*24*HOUR
         emotions.update(self.cid, '我回来了')

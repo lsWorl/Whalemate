@@ -10,6 +10,7 @@ class EmotionService:
     def __init__(self, database: Database, clock=None):
         import time
         self.database = database; self.clock = clock or time.time
+        self.pending_mood = None   # (角色, 频道, 兜底事件, 时间)：这一轮结束时再定要不要记
 
     def update(self, character_id, text, channel='desktop'):
         from aicompanion.services.mood_service import MoodService
@@ -21,10 +22,14 @@ class EmotionService:
         previous = self.database.get_setting(key) if channel == 'desktop' else None
         now = self.clock()
         if channel == 'desktop': self.database.set_setting(key, now)
+        pending = None
         try:
-            MoodService(self.database, clock=self.clock).on_user_message(character_id, text, channel, previous)
+            mood = MoodService(self.database, clock=self.clock)
+            mood.on_user_message(character_id, text, channel, previous)
+            pending = mood.fallback(text, channel)
         except Exception:
             pass   # 心情出错不影响聊天
+        self.pending_mood = (character_id, channel, pending, now)   # 等这一轮的 <mind/> 再定（chat_controller._after_turn）
         if any(word in text for word in ('开心','谢谢','高兴','成功')):
             self.database.record_relationship_event(character_id)
         return self.database.load_emotion(character_id)

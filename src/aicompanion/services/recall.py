@@ -5,6 +5,8 @@
 2. **更早的聊天**：最近 30 条之外的聊天，按关键词在全文索引里找（storage/fts.py），只找同一个频道（群里的话不会出现在桌面，
    反过来也一样），也不越过“删除记忆”时设下的水位线。
 3. **按关联直接查**：提到以前让她办过的事，带上那次办事的目标和结果。只在私下（桌面 / 主人私聊）用。
+   用户删过记忆以后，删除之前的办事记录不再召回（办事记录本身留作审计）：删掉的事实内容已经没有了，
+   没法判断旧任务里有没有提到它，所以保守地整段不用，和聊天记录的“删除水位线”一致（Codex PR #38 第 2 项）。
 
 关键词靠中文二字 / 三字片段的重合度，不需要分词库，也不调模型（不额外花钱、不增加延迟）。同义词和省略说法要等语义检索（阶段四）。
 """
@@ -131,7 +133,8 @@ class RecallService:
             # 3. 按关联直接查：以前办过的事（只在私下用）
             if scene == 'pet':
                 runs = c.execute("SELECT id, goal, status, started_at, result FROM agent_runs WHERE character_id=? AND status!='running' "
-                                 "ORDER BY id DESC LIMIT 200", (character_id,)).fetchall()
+                                 "AND started_at > COALESCE((SELECT datetime(MAX(deleted_at),'localtime') FROM memory_tombstones "
+                                 "WHERE character_id=?), '') ORDER BY id DESC LIMIT 200", (character_id, character_id)).fetchall()
                 scored = sorted(((r, score(query, r['goal'])) for r in runs), key=lambda item: item[1], reverse=True)
                 result.tasks = [(r, s) for r, s in scored if s >= 3][:TASK_LIMIT]
         return result
