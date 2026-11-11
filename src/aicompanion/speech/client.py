@@ -4,7 +4,9 @@ import io
 import json
 from uuid import uuid4
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from aicompanion.net import open_url as urlopen  # 不跟随跳转，密钥不外泄
 import wave
 
 from aicompanion.domain.cancellation import CancellationToken

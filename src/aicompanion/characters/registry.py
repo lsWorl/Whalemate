@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import urlsplit
 
 from aicompanion.characters import CharacterPack, discover
 from aicompanion.domain.character import CharacterProfile
@@ -19,7 +18,7 @@ class CharacterRegistry:
         if packs is None: packs, self.errors = discover()
         else: self.errors = []
         self.packs = {pack.id: pack for pack in packs}
-        self._clients = {}
+        self._router = None
 
     def sync(self) -> None:
         """为每个就绪角色包补齐数据库行和初始语音设置；已有的用户修改不覆盖。"""
@@ -78,27 +77,24 @@ class CharacterRegistry:
     def set_active(self, character_id: str) -> None:
         self.database.set_setting(ACTIVE_KEY, character_id)
 
-    def client_for(self, character_id: str, default_client):
-        """返回 (客户端, 说明)。
+    @property
+    def router(self):
+        """模型解析器：按“角色单独指定 → 全局 → 角色包推荐 → 旧 .env”选模型（计划书 v4 功能一）。"""
+        if self._router is None:
+            from aicompanion.providers.router import ModelRouter
+            self._router = ModelRouter(self.database, self.settings, packs=self.packs, environ=self.environ)
+        return self._router
 
-        优先使用角色包声明的专属密钥；没有专属密钥但默认模型就是同一家时直接复用；
-        否则退回默认模型，并在说明中如实标出。
+    def client_for(self, character_id: str, default_client):
+        """返回 (客户端, 说明)。旧接口，内部交给 ModelRouter。
+
+        结果落在旧 .env 配置时直接返回 default_client（同一份配置建出的同一个客户端），
+        其余情况由解析器按地址、模型和凭据修订缓存客户端，换 Key 后下一次就用新实例。
         """
-        pack = self.packs.get(character_id)
-        provider = pack.provider if pack else {}
-        label = provider.get('label', '默认模型')
-        if self.settings.llm_provider == 'mock' or not provider.get('host'):
-            return default_client, f'{label} · {self.settings.llm_model}' if self.settings.llm_provider != 'mock' else '离线模拟模型'
-        key = self.environ.get(provider.get('key_env', ''), '').strip() if provider.get('key_env') else ''
-        base = (self.environ.get(provider.get('base_url_env', ''), '') if provider.get('base_url_env') else '') or provider.get('base_url', '')
-        model = (self.environ.get(provider.get('model_env', ''), '') if provider.get('model_env') else '') or provider.get('default_model', '')
-        if key and base and model:
-            cache_key = (character_id, base, model)
-            if cache_key not in self._clients:
-                from aicompanion.llm.openai_compatible_client import OpenAICompatibleClient
-                self._clients[cache_key] = OpenAICompatibleClient(base_url=base.strip(), api_key=key, model=model.strip(),
-                    temperature=self.settings.llm_temperature, timeout_seconds=self.settings.llm_timeout_seconds)
-            return self._clients[cache_key], f'{label} · {model.strip()}'
-        if urlsplit(self.settings.llm_base_url).hostname == provider['host']:
-            return default_client, f'{label} · {self.settings.llm_model}'
-        return default_client, f'默认模型 · {self.settings.llm_model}（未配置 {label} 专属密钥）'
+        if self.settings.llm_provider == 'mock':
+            return default_client, '离线模拟模型'
+        resolved = self.router.resolve('chat', character_id)
+        label = resolved.label + (f'（{resolved.note}）' if resolved.note else '')
+        if resolved.source == 'legacy':
+            return default_client, label
+        return self.router.client_for(resolved), label

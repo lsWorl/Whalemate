@@ -1097,3 +1097,11 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - `AGENTS.md` 的计划书指向改为 v4，v3 保留为历史；`docs/tasks.md` 登记 PLAN-V4。
 - 没验证：本轮只写文档，未改运行代码，未运行离线检查；计划中的所有功能都待实现，待实测事项均未执行。
 
+## 2026-11-10：V4-1a 模型配置与按能力解析（Claude）
+
+- 新增 `src/aicompanion/providers/`：`models.py`（账户 / 模型 / 绑定 / 快照与 DeepSeek、MiniMax 预设）、`credentials.py`（`env:` 与 DPAPI 加密的 `stored:` 凭据）、`store.py`（`app_settings.model_config` 一条带版本的 JSON）、`router.py`（四层查找、按用途的思考参数、客户端缓存、搜索与 Agent 目标）。
+- 新增 `src/aicompanion/net.py`，合并原来三份 `NoRedirect`；`OpenAICompatibleClient` 与智谱语音客户端改用它，鉴权头不再跟随跳转。客户端新增 `extra`、`max_tokens` 参数，不传时请求体与旧版完全相同。
+- `CharacterRegistry.client_for` 改由解析器实现，接口不变。
+- 验证：容器内 Python 3.13 + PySide6 6.12 离线单测 `python -m unittest discover -s tests`：771 项通过、38 项跳过（新增 `tests/test_model_routing.py` 26 项，含本机端口模拟 301/302/303/307/308 跳转，确认目标端收不到 Authorization；换回 urllib 默认打开方式时该测试失败，说明旧代码确有泄露）。
+- 没验证：Windows 上 DPAPI 加解密（容器不是 Windows，只用假加解密器测试）；`tools\smoke_pet.py`（容器缺音频设备，基线代码同样崩溃，需在 Windows 跑 `tools\run_checks.bat`）；真实 DeepSeek 接口对 `thinking: disabled` 的响应（升级后旧配置走 DeepSeek 官方时会默认关闭思考）。
+
