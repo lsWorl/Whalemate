@@ -11,7 +11,7 @@ from pathlib import Path
 
 PACKS_DIR = Path(__file__).resolve().parent
 LIVE2D_ASSETS = PACKS_DIR.parent/'assets/live2d'
-RENDERERS = {'sprites', 'webengine', 'none'}
+RENDERERS = {'sprites', 'none'}
 REQUIRED_POSES = ('idle', 'talking', 'thinking')
 
 
@@ -52,9 +52,6 @@ class CharacterPack:
 
     def sprite_manifest_path(self) -> Path:
         return self.root/_safe_name(self.renderer.get('path', ''), '立绘配置')
-
-    def webengine_asset(self) -> Path:
-        return LIVE2D_ASSETS/_safe_name(self.renderer.get('asset', ''), '网页渲染素材')
 
     def line(self, key: str, rng: random.Random | None = None, avoid: str = '') -> str:
         """取一句台词；尽量不与上一句重复。没有该类台词时返回空串。"""
@@ -140,13 +137,9 @@ def load_sprite_manifest(path: Path) -> dict:
 def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '') -> tuple[str, Path | str | None]:
     """决定角色用哪种方式显示，返回 (方式, 资源)。
 
-    方式：'sprites'（原生立绘）、'mesh'（艾米莉娅网格动画）、'png'（静态立绘预览）、
-    'cubism'（用户导入的 Live2D 模型）、'placeholder'（无可用形象）。
+    方式：'sprites'（原生立绘）、'cubism'（用户导入的 Live2D 模型）、'placeholder'（无可用形象）。
     """
     if avatar_mode == 'live2d' and model_path: return 'cubism', model_path
-    if avatar_mode == 'animated-illustration': return 'mesh', LIVE2D_ASSETS/'Emilia/emilia.animation.json'
-    if avatar_mode == 'illustration': return 'png', LIVE2D_ASSETS/'Emilia/emilia-fanart.png'
     if pack and pack.ready and pack.renderer_kind == 'sprites': return 'sprites', pack.sprite_manifest_path()
-    if pack and pack.ready and pack.renderer_kind == 'webengine': return 'mesh', pack.webengine_asset()
     if model_path: return 'cubism', model_path
     return 'placeholder', None

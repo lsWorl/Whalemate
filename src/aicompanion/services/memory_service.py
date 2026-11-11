@@ -25,7 +25,7 @@ class MemoryService:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def build_memory_context(self, query="", character_id="emilia", scene="pet") -> str:
+    def build_memory_context(self, query="", character_id="deepseek-whale", scene="pet") -> str:
         """按相关性、重要度和清晰度挑记忆；模糊的会标出来；和这句话相关而被用上的记忆清晰度回升。"""
         from aicompanion.brain.memory_card import render, select_for_prompt
         selected = select_for_prompt(self.database.memory_card(character_id), query, 8, scene)
@@ -58,7 +58,7 @@ class MemoryService:
             return not any(similar(content, r['content']) for r in private)
         return guard
 
-    def maybe_extract_memory(self, user_message: str, character_id="emilia", source_id=None) -> None:
+    def maybe_extract_memory(self, user_message: str, character_id="deepseek-whale", source_id=None) -> None:
         # 离线规则仅识别明确稳定信息，否定、假设和过去偏好交给模型分析。
         patterns = [("identity", "name", r"(?:我的名字是|我叫)([^，。！？\n]{1,20})"),
                     ("preference", "like", r"^我喜欢([^，。！？\n]{1,40})[。！]?$"),

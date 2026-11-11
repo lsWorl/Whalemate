@@ -25,8 +25,6 @@ class SettingsWindow(QDialog):
         self.avatar_mode=QComboBox()
         self.avatar_mode.addItem('角色包默认形象','sprites')
         self.avatar_mode.addItem('导入的 Live2D 模型','live2d')
-        self.avatar_mode.addItem('艾米莉娅同人立绘预览（未绑定）','illustration')
-        self.avatar_mode.addItem('艾米莉娅 2D 网格动画（非 Cubism）','animated-illustration')
         self.avatar_mode.setCurrentIndex(max(0,self.avatar_mode.findData(self.database.get_setting(f'avatar_mode:{controller.character.id}','sprites'))))
         choose=QPushButton('选择 Live2D 模型'); choose.clicked.connect(self.choose_model)
         form.addRow('角色名字',self.name); form.addRow('角色设定',self.description); form.addRow('说话习惯',self.style)

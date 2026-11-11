@@ -10,13 +10,12 @@ html.desktop,html.desktop body{background:transparent}html.desktop #status{displ
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script src="vendor/live2dcubismcore.min.js"></script>
 <script src="vendor/pixi.min.js"></script><script src="vendor/cubism4.min.js"></script>
-<script src="emilia_rig.js"></script>
 <script>
 let app,model,bridge,mouth=0,mood='calm',presentation='live2d',loadEpoch=0,desktop=false,frames=0;
 window.avatarState=function(state){mouth=state.mouth||0;mood=state.mood||'calm';};
 function setSurface(value){desktop=value;document.documentElement.classList.toggle('desktop',value);layout();}
 function layout(){if(!model)return;const width=innerWidth,height=innerHeight;
- app.renderer.resize(width,height);const bounds=presentation==='illustration'?model.texture.orig:presentation==='animated-illustration'?model.sourceSize:model.internalModel;
+ app.renderer.resize(width,height);const bounds=model.internalModel;
  // 为模型类型提示保留底部空间，不让文字压在角色脚部。
  const usableHeight=Math.max(1,height-(desktop?0:44));
  const scale=Math.min(width/bounds.width*.9,usableHeight/bounds.height*.96);
@@ -25,21 +24,6 @@ async function loadModel(url){
  const epoch=++loadEpoch;
  if(model){app.stage.removeChild(model);model.destroy();model=null;}
  try {
- if(/\.animation\.json(?:\?|$)/i.test(url)){
-  const loaded=await EmiliaRig.create(url,app,()=>({mood,mouth}));
-  if(epoch!==loadEpoch){loaded.destroy();return;}
-  presentation='animated-illustration';model=loaded;app.stage.addChild(model);layout();
-  document.getElementById('status').textContent='艾米莉娅 · 2D 网格动画（非 Cubism）';
-  if(bridge)bridge.report('animation-ready');return;
- }
- // 立绘预览与 Cubism 分开加载，图片不是伪造的可动模型。
- if(/\.png(?:\?|$)/i.test(url)){
-  const texture=await PIXI.Texture.fromURL(url);
-  if(epoch!==loadEpoch)return;
-  presentation='illustration';model=new PIXI.Sprite(texture);app.stage.addChild(model);layout();
-  document.getElementById('status').textContent='艾米莉娅 · 同人立绘预览（未完成 Live2D 绑定）';
-  if(bridge)bridge.report('illustration-ready');return;
- }
  const loaded=await PIXI.live2d.Live2DModel.from(url,{autoInteract:false});
  if(epoch!==loadEpoch){loaded.destroy();return;}
  presentation='live2d';model=loaded;app.stage.addChild(model);layout();
@@ -94,6 +78,6 @@ try{app=new PIXI.Application({view:canvas,width:innerWidth,height:innerHeight,
  bridge.surfaceChanged.connect(setSurface);bridge.initialSurface(setSurface);
  bridge.initialState(raw=>window.avatarState(JSON.parse(raw)));
  bridge.motionChanged.connect(window.avatarMotion);
- bridge.modelChanged.connect(loadModel);bridge.initialModel(url=>loadModel(url));});
+ bridge.modelChanged.connect(loadModel);bridge.initialModel(url=>{if(url)loadModel(url);});});
 }catch(error){document.getElementById('status').textContent='Live2D 渲染不可用：'+error.message;}
 </script></body></html>

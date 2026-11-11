@@ -1,6 +1,6 @@
 """常驻桌面的角色窗口：应用启动即显示，聊天面板按需从角色身上打开。
 
-- 鲸娘等立绘角色使用原生 SpriteAvatar；艾米莉娅和外部 Cubism 模型沿用 WebEngine 视图。
+- 鲸娘等立绘角色使用原生 SpriteAvatar；用户导入的 Cubism 模型沿用 WebEngine 视图。
 - 状态由 pet.state 的状态机决定，本窗口只负责显示、交互、气泡和桌面集成。
 """
 from __future__ import annotations

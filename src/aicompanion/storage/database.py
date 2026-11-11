@@ -48,9 +48,9 @@ class Database:
             try:
                 if version == 0:
                     additions = {
-                        "chat_messages": [("character_id", "TEXT NOT NULL DEFAULT 'emilia'"), ("turn_id", "TEXT"), ("status", "TEXT NOT NULL DEFAULT 'complete'"), ("source", "TEXT NOT NULL DEFAULT 'text'")],
-                        "memories": [("character_id", "TEXT NOT NULL DEFAULT 'emilia'"), ("category", "TEXT NOT NULL DEFAULT 'legacy'"), ("fact_key", "TEXT NOT NULL DEFAULT ''"), ("confidence", "REAL NOT NULL DEFAULT 1"), ("source_ids", "TEXT NOT NULL DEFAULT '[]'")],
-                        "reminders": [("character_id", "TEXT NOT NULL DEFAULT 'emilia'")],
+                        "chat_messages": [("character_id", "TEXT NOT NULL DEFAULT 'deepseek-whale'"), ("turn_id", "TEXT"), ("status", "TEXT NOT NULL DEFAULT 'complete'"), ("source", "TEXT NOT NULL DEFAULT 'text'")],
+                        "memories": [("character_id", "TEXT NOT NULL DEFAULT 'deepseek-whale'"), ("category", "TEXT NOT NULL DEFAULT 'legacy'"), ("fact_key", "TEXT NOT NULL DEFAULT ''"), ("confidence", "REAL NOT NULL DEFAULT 1"), ("source_ids", "TEXT NOT NULL DEFAULT '[]'")],
+                        "reminders": [("character_id", "TEXT NOT NULL DEFAULT 'deepseek-whale'")],
                     }
                     for table, columns in additions.items():
                         if table in tables:
@@ -81,7 +81,7 @@ class Database:
                         connection.execute(statement)
                 self._insert_character(connection, DEFAULT_CHARACTER)
                 if version == 0 and "emotion_state" in tables:
-                    connection.execute("INSERT OR REPLACE INTO emotion_state(character_id,mood,affection,loneliness,energy,updated_at) SELECT 'emilia',mood,affection,loneliness,energy,updated_at FROM legacy_emotion WHERE id=1")
+                    connection.execute("INSERT OR REPLACE INTO emotion_state(character_id,mood,affection,loneliness,energy,updated_at) SELECT 'deepseek-whale',mood,affection,loneliness,energy,updated_at FROM legacy_emotion WHERE id=1")
                     connection.execute("DROP TABLE legacy_emotion")
                 for row in connection.execute("SELECT id, content FROM memories WHERE fact_key=''").fetchall():
                     key = hashlib.sha256(row['content'].strip().encode()).hexdigest()
@@ -120,7 +120,7 @@ class Database:
         with self.transaction() as connection:
             connection.execute("UPDATE characters SET name=?,description=?,speaking_style=?,model_path=?,voice=? WHERE id=?", (character.name, character.description, character.speaking_style, character.model_path, character.voice, character.id))
 
-    def add_message(self, role: str, content: str, character_id="emilia", turn_id=None, status="complete", source="text", channel="desktop", sender="") -> int:
+    def add_message(self, role: str, content: str, character_id="deepseek-whale", turn_id=None, status="complete", source="text", channel="desktop", sender="") -> int:
         with self.transaction() as connection:
             cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel,sender) VALUES (?,?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel, sender))
             return cursor.lastrowid
@@ -159,7 +159,7 @@ class Database:
             return True
         return self.locked(reserve)
 
-    def recent_messages(self, limit=30, character_id="emilia", before_id=None, channel="desktop") -> list[sqlite3.Row]:
+    def recent_messages(self, limit=30, character_id="deepseek-whale", before_id=None, channel="desktop") -> list[sqlite3.Row]:
         """只返回同一频道的记录：桌面（含已绑定主人的私聊）看不到群聊和陌生人，公开场合也看不到桌面。"""
         with self.transaction() as connection:
             rows = connection.execute("SELECT * FROM chat_messages WHERE character_id=? AND channel=? AND (? IS NULL OR id<?) ORDER BY id DESC LIMIT ?", (character_id, channel, before_id, before_id, limit)).fetchall()
@@ -200,7 +200,7 @@ class Database:
             if connection.execute('SELECT 1 FROM memory_tombstones WHERE character_id=?',(character_id,)).fetchone(): return
             connection.execute('INSERT INTO conversation_summaries(character_id,summary,through_id) VALUES (?,?,?) ON CONFLICT(character_id) DO UPDATE SET summary=excluded.summary,through_id=excluded.through_id,updated_at=CURRENT_TIMESTAMP',(character_id,summary[:3000],through_id))
 
-    def upsert_memory(self, content, character_id="emilia", fact_key="", category="preference", importance=2, confidence=1, source_ids=(), scope="pet", guard=None) -> bool:
+    def upsert_memory(self, content, character_id="deepseek-whale", fact_key="", category="preference", importance=2, confidence=1, source_ids=(), scope="pet", guard=None) -> bool:
         """guard(connection, key) → bool：在同一个写事务里、写入之前做的检查（公开来源的记忆用它按此刻的 private 状态把关，
         和设置页的 set_memory_scope 互斥，没有"检查完、写之前"的空隙）。"""
         key = fact_key or hashlib.sha256(content.strip().encode()).hexdigest()
@@ -227,7 +227,7 @@ class Database:
         with self.transaction() as connection:
             connection.executemany("UPDATE memories SET scope=? WHERE id=? AND character_id=?", [(scope, i, character_id) for i in ids])
 
-    def recent_memories(self, limit=100, character_id="emilia"):
+    def recent_memories(self, limit=100, character_id="deepseek-whale"):
         with self.transaction() as connection:
             return connection.execute("SELECT * FROM memories WHERE character_id=? ORDER BY importance DESC,updated_at DESC,id DESC LIMIT ?", (character_id, limit)).fetchall()
 
@@ -305,12 +305,12 @@ class Database:
         with self.transaction() as connection:
             return bool(connection.execute("SELECT 1 FROM memory_tombstones WHERE character_id=? LIMIT 1", (character_id,)).fetchone())
 
-    def load_emotion(self, character_id="emilia") -> EmotionState:
+    def load_emotion(self, character_id="deepseek-whale") -> EmotionState:
         with self.transaction() as connection:
             row = connection.execute("SELECT mood,affection,loneliness,energy FROM emotion_state WHERE character_id=?", (character_id,)).fetchone()
             return EmotionState(**dict(row)) if row else EmotionState()
 
-    def save_emotion(self, emotion, character_id="emilia") -> None:
+    def save_emotion(self, emotion, character_id="deepseek-whale") -> None:
         with self.transaction() as connection:
             connection.execute("UPDATE emotion_state SET mood=?,affection=?,loneliness=?,energy=?,updated_at=CURRENT_TIMESTAMP WHERE character_id=?", (emotion.mood,emotion.affection,emotion.loneliness,emotion.energy,character_id))
 

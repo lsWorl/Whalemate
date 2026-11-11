@@ -32,8 +32,6 @@ class Settings:
     qwen_tts_model: str = "qwen-audio-3.0-tts-flash"
     qwen_tts_voice: str = "longanlingxi"
     speech_language: str = "zh"
-    avatar_preview: str = ""
-    character_preset: str = ""
     qwen_original_tts_voice: str = ""
     asr_provider: str = "zhipu"  # 识别服务独立选择，保持旧版本默认行为。
     qwen_asr_model: str = "qwen-audio-3.0-asr-flash"  # 千问识别模型不复用合成模型名。
@@ -88,8 +86,6 @@ def load_settings() -> Settings:
         qwen_tts_model=os.getenv("QWEN_TTS_MODEL", "qwen-audio-3.0-tts-flash").strip(),
         qwen_tts_voice=os.getenv("QWEN_TTS_VOICE", "longanlingxi").strip(),
         speech_language=os.getenv("SPEECH_LANGUAGE", "zh").strip(),
-        avatar_preview=os.getenv("AVATAR_PREVIEW", "").strip(),
-        character_preset=os.getenv("CHARACTER_PRESET", "").strip(),
         qwen_original_tts_voice=os.getenv("QWEN_ORIGINAL_TTS_VOICE", "").strip(),
         asr_provider=os.getenv("ASR_PROVIDER", "zhipu").strip().lower(),
         qwen_asr_model=os.getenv("QWEN_ASR_MODEL", "qwen-audio-3.0-asr-flash").strip(),

@@ -14,9 +14,7 @@ and Qwen speech use separate credentials. This is an original designed voice,
 not a reproduction of an actor's voice. Audio samples are in `docs/audio`.
 
 Japanese dubbing can translate Chinese dialogue while preserving Chinese chat
-history and subtitles. An Emilia fan-persona preset and the approved generated
-illustration preview are available; the illustration has not been rigged into a
-Cubism model. The local experimental voice is separate from public release assets.
+history and subtitles. The local experimental voice is separate from public release assets.
 
 See [implementation status](docs/implementation_status.md) for verified behavior,
 known limitations, speech configuration, and Windows packaging. Speaker echo
@@ -38,7 +36,8 @@ cancellation and the Android client are not implemented; use headphones for call
 .\.venv\Scripts\python.exe main.py
 ```
 
-By default, the app uses `LLM_PROVIDER=mock`, so it can run without an API key.
+Until a chat model is configured in Settings → 模型, the app runs with the offline mock model
+(set `AICOMPANION_OFFLINE=1` to force it), so it can run without an API key.
 
 “干活”功能的可复现安装（DeepSeek Harness 与官方 MCP SDK）：
 
@@ -50,22 +49,15 @@ By default, the app uses `LLM_PROVIDER=mock`, so it can run without an API key.
 MCP 服务仅在干活或协议自检时启动，使用本机回环 HTTP 和进程级随机令牌。
 基础聊天与桌宠不要求安装 Agent 可选依赖。`tools/setup_dsh.bat` 只安装锁定依赖并运行
 `pip check`，不自动调用模型。真实验收另运行 `tools/run_agent_checks.bat`：只使用进程环境中的
-`LLM_API_KEY` / `DEEPSEEK_API_KEY` 及对应接口地址，不加载 `.env`；缺少凭据时退出 2 并记录未执行。
+`DEEPSEEK_API_KEY`（及可选的 `DEEPSEEK_BASE_URL`），不加载 `.env`；缺少凭据时退出 2 并记录未执行。
 验收的文件、假密钥、回收区及 DSH 会话均位于新建临时目录，不访问博客或真实用户文件。
 工作区在项目所在盘的 `.aicompanion-live` 下新建（Windows 例如 `D:\.aicompanion-live\fixture-*`），
 避开仓库及上层的 AGENTS.md / CLAUDE.md；DSH 会话单独放在 LocalLow 临时目录。结束后只清理本次新建的子目录。
 
-To use a real model API, copy `.env.example` to `.env` and set:
-
-```env
-LLM_PROVIDER=openai_compatible
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=your_api_key
-LLM_MODEL=gpt-4o-mini
-```
-
-Many providers support OpenAI-compatible `/chat/completions` APIs. In that case,
-replace `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` with that provider's values.
+To use a real model API, open Settings → 模型 and add an account (DeepSeek, MiniMax,
+Breeze Blue or any OpenAI-compatible service), its key, and the model for each capability
+(chat, vision, search, agent, speech). Keys are encrypted with Windows DPAPI; `.env`
+`LLM_*` values are no longer read. See [plan v4](docs/project_plan_v4.md) feature 1.
 
 ## LLM Diagnostics
 
@@ -136,8 +128,8 @@ binding, sprites). Rebuild the whale sprites after updating the art pack:
 .\.venv\Scripts\python.exe tools\build_character_pack.py output\desktop-pet\asset-pack-v3 src\aicompanion\characters\deepseek-whale\sprites
 ```
 
-Optional dedicated model key: `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL`. Without it the
-whale uses the default `LLM_*` settings. The bundled Haru sample has been removed;
+Each character can use its own model and voice: set a per-character override in
+Settings → 模型 (otherwise it follows the global choice). The bundled Haru sample has been removed;
 imported Cubism models are still supported. Status: see `docs/implementation_status.md`.
 
 ## Desktop Pet (v1 notes)
@@ -148,15 +140,8 @@ Drag the character to move it. Right-click to resize, change topmost state,
 choose an action, start/end calls, interrupt, open the control panel or quit.
 Position and size are saved locally. Calls never start the microphone automatically.
 
-The approved Emilia illustration now has an explicitly separate **2D mesh effect**:
-breathing, blinking, subtle head/hair movement, lip sync, blush and six gentle
-actions. This is a Pixi mesh renderer, **not a Cubism `.moc3` model**. Generated
-eye/mouth textures are sampled only in local face masks. Asset provenance and
-prompts are recorded in `assets/live2d/Emilia/animation-source.md`.
-
-Emilia is an optional character: switch to her from the pet's right-click menu
-(切换角色). Standard Cubism models
-remain supported separately; Haru is only a bundled test sample.
+Standard Cubism models remain supported; Haru is only a bundled test sample.
+(The former Emilia character and her illustration assets were removed on 2026-11-11.)
 
 To replace Haru, extract an obtained Cubism 3/4 runtime package and select its
 `.model3.json` from the pet menu. Keep all referenced `.moc3`, PNG, motion and
@@ -164,6 +149,5 @@ expression files together. Structural validation rejects missing resources,
 external paths and unsupported model versions; actual animation still requires
 successful Core rendering. See [model sources](docs/live2d_model_sources.md).
 
-Offline verification: `tools/smoke_pet.py --emilia`; packaged verification:
-`AICompanion.exe --emilia-smoke-test`. These use temporary data without cloud calls.
-`--pet-smoke-test` still verifies the separate genuine Cubism path.
+Offline verification: `tools/smoke_pet.py`; packaged verification:
+`AICompanion.exe --pet-smoke-test`. These use temporary data without cloud calls.

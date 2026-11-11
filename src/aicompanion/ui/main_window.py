@@ -29,8 +29,6 @@ from aicompanion.ui.chat_worker import ChatWorker,TaskWorker
 from aicompanion.ui.agent_session import AgentSession
 from aicompanion.usage import meter
 from aicompanion.ui.settings_window import SettingsWindow
-from aicompanion.domain.character import DEFAULT_CHARACTER
-from aicompanion.domain.personas import apply_emilia_preset
 
 
 class MainWindow(QMainWindow):
@@ -307,14 +305,12 @@ class MainWindow(QMainWindow):
                 self.pet.set_view(view,'sprites',pack)
             except (CharacterPackError,ValueError) as error:
                 self._status('立绘加载失败：'+str(error)); kind='placeholder'
-        if kind in ('mesh','png','cubism'):
+        if kind=='cubism':
             if self.web_avatar is None:
                 # WebEngine 只在确实需要时创建，鲸娘等立绘角色不占用浏览器内核内存。
                 self.web_avatar=AvatarView(); self.web_avatar.bridge.loaded.connect(self._avatar_loaded)
             self.pet.set_view(self.web_avatar,'webengine',pack)
-            if kind=='mesh': self.web_avatar.set_animated_emilia() if 'Emilia' in str(resource) else self.web_avatar._load_path(resource)
-            elif kind=='png': self.web_avatar.set_preview()
-            elif not self.web_avatar.set_model(resource): self._status('Live2D 模型加载失败，请在设置中重新选择。')
+            if not self.web_avatar.set_model(resource): self._status('Live2D 模型加载失败，请在设置中重新选择。')
         if kind=='placeholder':
             self.pet.set_view(PlaceholderAvatar('未设置形象\n右键 → 设置'),'placeholder',pack)
         self.renderer=(kind,str(resource))
@@ -352,8 +348,7 @@ class MainWindow(QMainWindow):
         self.pet.set_identity(character.name,label,[(c.id,c.name) for c in self.registry.characters()],character.id)
 
     def _avatar_loaded(self, value):
-        label = {'ready': '角色已就绪', 'illustration-ready': '艾米莉娅同人立绘预览已就绪 · 尚未完成 Live2D 绑定',
-            'animation-ready': '艾米莉娅 2D 网格动画已就绪（非 Cubism）'}
+        label = {'ready': '角色已就绪'}
         self._status(label.get(value, value))
 
     def _send_current_message(self):
@@ -810,10 +805,6 @@ class MainWindow(QMainWindow):
             self._status('语音识别失败，可以再说一次：'+error)
 
     def _apply_settings(self):
-        character=apply_emilia_preset(self.database,self.controller.character,self.settings.character_preset=='emilia')
-        if character is not self.controller.character:
-            self.controller.character=character
-            self._refresh_roles(); self._load_history()
         # 新配置的专属声线只启用一次；之后尊重用户在设置中选择的朗读方式。
         if self.settings.tts_provider=='qwen' and self.settings.qwen_api_key:
             setup=self.settings.qwen_tts_model+':'+self.settings.qwen_tts_voice
@@ -826,8 +817,6 @@ class MainWindow(QMainWindow):
         # 环境配置只在该角色首次启用时应用；之后尊重设置界面保存的选择。
         if self.settings.speech_language=='ja' and self.database.get_setting(f'speech_language:{character_id}') is None:
             self.database.set_setting(f'speech_language:{character_id}','ja')
-        if character_id==DEFAULT_CHARACTER.id and self.settings.avatar_preview=='emilia' and self.database.get_setting(f'avatar_mode:{character_id}') is None and not self.registry.pack(character_id):
-            self.database.set_setting(f'avatar_mode:{character_id}','illustration')
         self.speech.provider=self.database.get_setting('tts_provider',self.settings.tts_provider)
         self.speech.language=self.database.get_setting(f'speech_language:{character_id}',self.settings.speech_language)
         self.speech.role_style=self.database.get_setting(f'japanese_style:{character_id}','')

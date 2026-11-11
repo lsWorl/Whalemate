@@ -114,8 +114,11 @@ def schedule_pet_smoke_check(window, database, output):
     later(17500, scale_and_hide)
 
     def switch_role():
-        window._switch_to('emilia')
-        state['switched_to_emilia'] = window.controller.character.id == 'emilia' and window.web_avatar is not None
+        # 切到一个用户自建的角色（没有形象包），再切回鲸娘
+        from aicompanion.domain.character import CharacterProfile
+        database.add_character(CharacterProfile('自检角色', '用于自检的临时角色', '简短回答。', 'smoke-other'))
+        window._switch_to('smoke-other')
+        state['switched_to_other'] = window.controller.character.id == 'smoke-other'
         window._switch_to('deepseek-whale')
         state['switched_back'] = isinstance(pet.view, NATIVE) and window.controller.character.id == 'deepseek-whale'
     later(18500, switch_role)
@@ -321,7 +324,7 @@ def schedule_pet_smoke_check(window, database, output):
         state['remaining_workers'] = len(window.workers)+len(window.tasks)+len(window.speech.workers)
         required = ['pet_visible', 'chat_hidden', 'native_sprites', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
-                    'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_emilia', 'switched_back']
+                    'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
 

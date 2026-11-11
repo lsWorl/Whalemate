@@ -480,7 +480,7 @@ class MigrationTests(unittest.TestCase):
     def test_v6_database_upgrades_with_backup_and_keeps_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'old.sqlite3'; db = Database(path); db.initialize()
-            db.add_message('user', '合成旧消息', 'emilia'); db.set_setting('keep', 1)
+            db.add_message('user', '合成旧消息', 'deepseek-whale'); db.set_setting('keep', 1)
             with closing(sqlite3.connect(path)) as c:
                 for table in ('person_notes', 'relationship_events', 'relationship_profiles', 'platform_identities', 'people'): c.execute(f'DROP TABLE {table}')
                 c.execute('PRAGMA user_version=6'); c.commit()
@@ -489,8 +489,8 @@ class MigrationTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as c:
                 self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
                 self.assertTrue(c.execute("SELECT 1 FROM sqlite_master WHERE name='relationship_profiles'").fetchone())
-                self.assertEqual(c.execute('SELECT trust FROM relationship_state WHERE character_id=?', ('emilia',)).fetchone()[0], 50)
-            self.assertEqual(Database(path).recent_messages(1, 'emilia')[0]['content'], '合成旧消息')
+                self.assertEqual(c.execute('SELECT trust FROM relationship_state WHERE character_id=?', ('deepseek-whale',)).fetchone()[0], 50)
+            self.assertEqual(Database(path).recent_messages(1, 'deepseek-whale')[0]['content'], '合成旧消息')
 
 
 if __name__ == '__main__':

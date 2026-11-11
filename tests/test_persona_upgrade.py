@@ -18,7 +18,8 @@ class PersonaUpgradeTests(unittest.TestCase):
     def tearDown(self): self.temp.cleanup()
 
     def start_from(self, description, style, version):
-        self.db.add_character(CharacterProfile(self.pack.name, description, style, 'deepseek-whale'))
+        # 数据库初始化已写入同 ID 的占位角色，这里把它改成要模拟的旧版人设
+        self.db.update_character(CharacterProfile(self.pack.name, description, style, 'deepseek-whale'))
         self.db.set_setting('persona_version:deepseek-whale', version)
         CharacterRegistry(self.db, None, [self.pack], environ={}).sync()
         return next(c for c in self.db.characters() if c.id == 'deepseek-whale')
