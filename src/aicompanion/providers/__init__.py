@@ -13,5 +13,5 @@ def real_chat_client(character_id: str = 'deepseek-whale', purpose: str = 'compa
     settings = settings or load_settings()
     router = ModelRouter(Database(settings.database_path), settings)
     if not router.ready('chat', character_id):
-        raise SystemExit('需要真实模型：请先在桌宠设置的“模型”页配置聊天模型和 Key。')
+        raise SystemExit('需要真实模型：请先在桌宠设置的“模型与 Key”页配置聊天模型和 Key。')
     return router.client('chat', character_id, purpose)

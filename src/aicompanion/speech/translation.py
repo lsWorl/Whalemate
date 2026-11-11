@@ -33,7 +33,7 @@ class JapaneseSpeechTranslator:
             return text
         client, scope = (self.client, '') if self.client is not None else (self.source() if self.source else (None, ''))
         if client is None:
-            raise RuntimeError('日语配音需要配置真实聊天 API（设置的“模型”页）；也可以选择中文朗读。')
+            raise RuntimeError('日语配音需要配置真实聊天 API（设置的“模型与 Key”页）；也可以选择中文朗读。')
         cache_key = (scope, text, role_style)
         with self.lock:
             cached = self.cache.get(cache_key)

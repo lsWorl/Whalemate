@@ -66,7 +66,7 @@ class AgentSession(QObject):
         target = w.controller.router.agent_target(w.controller.character.id)
         if target is None:
             problem_text = getattr(w.controller.router, 'agent_problem', lambda cid: '')(w.controller.character.id) \
-                or '还没有配置办事模型，请到设置的“模型”页选择。'
+                or '还没有配置办事模型，请到设置的“模型与 Key”页选择。'
             w.pet.show_bubble(problem_text, 12); w._status(problem_text); return False
         if w.quota.check_silent('agent') == 'stop':
             w.pet.show_bubble('今天"干活"的词元额度用完了，明天再帮你做吧。', 8); return False

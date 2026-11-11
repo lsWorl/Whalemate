@@ -45,11 +45,13 @@ class LibraryPage(QWidget):
         for label,fn in [('全选',self.table.selectAll),('启用选中',lambda:self.enable_selected(True)),('停用选中',lambda:self.enable_selected(False)),
                          ('重新识别含义',self.reanalyze)]:
             button=QPushButton(label);button.clicked.connect(fn);batch.addWidget(button)
+        batch.addStretch(1);layout.addLayout(batch)
+        source=QHBoxLayout()   # 单独一行：窗口不宽时不挤出横向滚动条
         self.license=QComboBox()
         for value in LICENSES:self.license.addItem(LICENSE_LABELS.get(value,value),value)
-        batch.addWidget(QLabel('来源'));batch.addWidget(self.license)
-        apply=QPushButton('设为选中图片的来源');apply.clicked.connect(self.set_license);batch.addWidget(apply)
-        batch.addStretch(1);layout.addLayout(batch)
+        source.addWidget(QLabel('来源'));source.addWidget(self.license,1)
+        apply=QPushButton('设为选中图片的来源');apply.clicked.connect(self.set_license);source.addWidget(apply)
+        layout.addLayout(source)
         meaning=QHBoxLayout();meaning.addWidget(QLabel('含义（自动识别，一般不用改）'))
         self.semantic=QLineEdit();self.semantic.setPlaceholderText('选中一张图后可以改；留空保存 = 重新自动识别');meaning.addWidget(self.semantic,1)
         save=QPushButton('保存含义');save.clicked.connect(self.save_meaning);meaning.addWidget(save);layout.addLayout(meaning)
@@ -201,7 +203,7 @@ class LibraryPage(QWidget):
     def analysis_hint(self):
         media=self.media()
         if media is None:return '打开设置窗口时自动识别'
-        if not media.vision_ready():return '在“模型”页选好识图模型后自动识别，现在先按分类名使用'
+        if not media.vision_ready():return '在“模型与 Key”页选好识图模型后自动识别，现在先按分类名使用'
         return '后台识别中' if self.analyzer is not None else '稍后自动识别'
     def analyze_soon(self):
         """后台识别几张等识别含义的图；识完一批再接下一批，直到没有或当天额度用完。"""

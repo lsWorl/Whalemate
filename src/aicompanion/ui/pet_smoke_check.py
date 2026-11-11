@@ -175,6 +175,22 @@ def schedule_pet_smoke_check(window, database, output):
         page.deleteLater()
     later(21500, qq_media)
 
+    def ui_refresh():
+        # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与附件占位、分组设置窗口能逐页打开
+        from aicompanion.ui.settings_window import SettingsWindow
+        state['app_icon_ready'] = not window.windowIcon().isNull() and not window.tray.icon().isNull()
+        state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and not window.attach_button.isEnabled()
+                                         and window.speak_toggle.isCheckable())
+        dialog = SettingsWindow(window.controller, window.settings, window, page='models')
+        try:
+            state['settings_pages_ready'] = (dialog.nav.current() == 'models'
+                                             and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
+            if hasattr(dialog.library_page, 'analyzer') and dialog.library_page.analyzer is not None:
+                dialog.library_page.analyzer.wait(5000)
+        finally:
+            dialog.reject(); dialog.deleteLater()
+    later(21600, ui_refresh)
+
     def expression_start():
         import re
         from uuid import uuid4
@@ -329,6 +345,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.append('storage_locations_ready')
 
         required.append('qq_media_settings_ready')
+        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')

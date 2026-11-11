@@ -138,7 +138,7 @@ class BridgePage(QWidget):
         self.versions = QLabel(''); self.versions.setWordWrap(True)
         form.addRow('', self.enabled); form.addRow('接口端口', self.port); form.addRow('插件令牌', token_row)
         form.addRow('群和陌生人每天最多回复', self.daily); form.addRow('', self.autostart); form.addRow('Python 包镜像', self.index)
-        form.addRow('识图模型', QLabel('在“模型”页的“识图”一项里选择')); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
+        form.addRow('识图模型', QLabel('在“模型与 Key”页的“识图”一项里选择')); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
         form.addRow('组件目录', self.root); form.addRow('', open_logs); form.addRow('', existing); form.addRow('组件版本', self.versions)
         al = QVBoxLayout(self.advanced); al.addWidget(inner); inner.setVisible(False)
         self.advanced.toggled.connect(inner.setVisible)

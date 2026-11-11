@@ -20,7 +20,7 @@ class SpeechClient:
     def __init__(self,settings,translation_source=None,tts_source=None):
         self.settings = settings
         self.qwen = QwenSpeechClient(settings)
-        # Breeze Blue 等在“模型”页配置的语音合成：tts_source() 返回当前角色的 TtsTarget（含音色），没配置返回 None
+        # Breeze Blue 等在“模型与 Key”页配置的语音合成：tts_source() 返回当前角色的 TtsTarget（含音色），没配置返回 None
         from aicompanion.speech.breeze_client import BreezeSpeechClient
         self.breeze = BreezeSpeechClient()
         self.tts_source = tts_source
@@ -94,7 +94,7 @@ class SpeechClient:
             # 优先用入队时取好的快照；没有快照（例如直接调用）才取当前配置
             if target is None: target = self.tts_source() if self.tts_source else None
             if target is None:
-                raise ValueError('还没有在“模型”页配置 Breeze Blue 音色和 Key。')
+                raise ValueError('还没有在“模型与 Key”页配置 Breeze Blue 音色和 Key。')
             # 日语台词：先翻译；Breeze 多语言模型能直接读日文，语言代码以模型配置为准
             if language=='ja':
                 text=self.translator.translate(text,cancellation,role_style)

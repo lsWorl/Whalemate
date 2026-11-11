@@ -19,7 +19,7 @@ studio = ["Pillow>=11,<13"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-aicompanion = ["assets/live2d/**/*", "assets/live2d/*.html", "assets/live2d/*.md", "characters/**/*", "assets/rig/*", "assets/voice/*"]
+aicompanion = ["assets/live2d/**/*", "assets/live2d/*.html", "assets/live2d/*.md", "characters/**/*", "assets/rig/*", "assets/voice/*", "assets/icons/*"]
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]

@@ -162,7 +162,7 @@ class ModelRouter:
                 if provider:
                     return self._make(capability, character_id, purpose, source, provider, model, config.revision)
         name = '聊天' if capability == 'chat' else '识图'
-        raise ModelUnavailable(f'还没有配置{name}模型，请到设置的“模型”页选择。')
+        raise ModelUnavailable(f'还没有配置{name}模型，请到设置的“模型与 Key”页选择。')
 
     def search_target(self, character_id: str) -> SearchTarget:
         config = self.store.load()
@@ -225,7 +225,7 @@ class ModelRouter:
             if not binding: continue
             model = config.models.get(binding.model)
             provider = config.providers.get(model.provider) if model else None
-            where = f'设置 → 模型，把“设置范围”选成“{"全局默认" if scope == "全局默认" else "这个角色"}”，'
+            where = f'设置 → 模型与 Key，把“设置范围”选成“{"全局默认" if scope == "全局默认" else "这个角色"}”，'
             if not model or not provider:
                 return f'办事模型（{scope}）已被删除。请到{where}重新选择“办事”。'
             supported = AGENT_MODELS.get(binding.route, ())
@@ -235,9 +235,9 @@ class ModelRouter:
                 return (f'办事模型 {model.model_id}（{scope}）Harness 不支持。请到{where}“办事”改选：'
                         + '、'.join(supported) + '。')
             if not self.credentials.get(provider.credential):
-                return f'办事用的账户“{provider.label}”（{scope}）没有可用的 Key，请到设置 → 模型修改。'
+                return f'办事用的账户“{provider.label}”（{scope}）没有可用的 Key，请到设置 → 模型与 Key 修改。'
             return ''
-        return '还没有配置办事模型：请到设置 → 模型，在“办事”里选择（全局默认对所有角色生效，也可以只给某个角色设置）。'
+        return '还没有配置办事模型：请到设置 → 模型与 Key，在“办事”里选择（全局默认对所有角色生效，也可以只给某个角色设置）。'
 
     # ---- 客户端 ------------------------------------------------------------------------------
     def client(self, capability: str, character_id: str, purpose: str = 'companion'):
