@@ -15,7 +15,7 @@
   - 文字描述；
   - MiniMax 默认音色和候选音色；
   - 默认模型 `speech-2.8-hd`（HD 更有感情）。
-  
+
   换服务时按同一份描述选音色（长期约束 1、4）。
 - **MiniMax 语音客户端** `speech/minimax_client.py`：
   - 接口和请求：`POST {账户地址}/t2a_v2`，要 24 kHz 单声道 WAV（hex 返回）；中文用 `language_boost=Chinese`。

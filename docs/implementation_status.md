@@ -1451,6 +1451,16 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - **Windows Smoke（`tools\run_checks.bat`）没在真机跑**：容器没有音频设备，`tools/smoke_pet.py` 在 Qt 多媒体初始化处段错误，与本修复无关；需要在 Windows 上重跑确认 `"passed": true`。
   - 真实 MiniMax 调用、音色听感照旧未验证。
 
+## 2026-11-11 PR #41 Codex 复核 P2 修复（Claude）
+
+- 做了什么：设置页判断“用户是否选过朗读方式”改为记录下拉框在窗口初始化后有没有被操作（`tts_provider_touched`），不再只比较首尾值。切到千问又选回本地朗读，同样算明确选择，保存时写入 `tts_provider=system`。完全没动时仍不写入，新库照常可以自动接入默认声线。顺手去掉 `docs/tasks/V4-8b-whale-voice.md` 第 18 行行尾空白。
+- 怎么验证：`tests/test_whale_voice_review.py` 新增 3 项，都调用生产 `SettingsWindow.save` 和生产 `MainWindow._apply_settings`：
+  - 窗口打开期间添加 MiniMax 账户，千问 → 本地朗读 → 保存：库和运行时都是 system，没有自动接入标记；
+  - 先选回本地朗读并保存，之后才添加账户：同上；
+  - 完全没动就保存，之后添加账户：仍自动接入默认声线。
+  前两项在 `0950457` 上失败，修复后通过。容器内全量 `unittest discover`：**926 项通过、8 项跳过**；`git diff --check` 无输出。
+- 没验证：本提交没有在 Windows 上重跑 `tools\run_checks.bat`（上一提交 `0950457` 的 Windows 检查 Codex 已跑通：916 通过、7 跳过，Smoke `"passed": true`）。真实 MiniMax 调用、音色听感照旧未验证。
+
 ## 2026-11-11 V4-2b 关系设定（task/v4-2b-bond，叠在 #40 之上）
 
 - 做了什么：
@@ -1466,7 +1476,7 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 
 ## 2026-11-11 PR #42 文档冲突修复（Codex）
 
-- 以 GitHub 当前目标分支 `task/v4-8b-whale-voice` 的 `0950457` 为准接入 PR #42，保留双方提交历史；没有合并远程 PR，也没有修改目标分支。
+- 先接入 GitHub 当前目标分支 `task/v4-8b-whale-voice` 的 `0950457`，处理期间该分支更新到 `837a2f1`，已继续接入最新提交，保留双方提交历史；没有合并远程 PR，也没有修改目标分支。
 - 保留 #40、#41 的实施及审查修复记录，以及 #42 的关系设定记录；任务表采用目标分支较新的语音任务状态，并保留关系设定任务。
 - 手工冲突解决仅涉及本文件和 `docs/tasks.md`；非 Markdown 文件与 Git 自动合并树一致，没有手工修改运行代码。
 - 文本检查覆盖双方记录保留、无残留冲突标记和差异空白检查。按负责人要求，纯文档冲突不单独运行回归；本 PR 的功能审计与验证结果另行记录，不将文档处理等同于功能通过。
