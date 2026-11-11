@@ -589,7 +589,7 @@ class BridgeService:
             ANALYZING[0] = True
 
         def alive():
-            return (not self.closed and collector.enabled() and bool(self.database.get_setting('qq_vision_enabled', True))
+            return (not self.closed and collector.enabled() and self.media.vision_ready()   # R5：含“接口拒收图片”标记
                     and self.quota.check_silent('qq') != 'stop')
 
         def work():
