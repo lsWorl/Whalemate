@@ -52,10 +52,34 @@ class AdminTests(unittest.TestCase):
     def test_account_validation(self):
         with self.assertRaisesRegex(ValueError, 'Key'): self.admin.add_account('deepseek')
         with self.assertRaisesRegex(ValueError, 'https'): self.admin.add_account('', label='x', base_url='http://evil.example', key='k')
+        # Codex 审计 R5：前缀像回环地址的外部主机不能用 http
+        for bad in ('http://127.0.0.1.attacker.invalid/v1', 'http://127.0.0.1-example.invalid/v1', 'http://localhost.evil/v1'):
+            with self.subTest(url=bad), self.assertRaisesRegex(ValueError, 'https'):
+                self.admin.add_account('', label='x', base_url=bad, key='k')
+        for bad in ('https://x.example/v1?key=1', 'https://x.example/v1#a', 'https:///v1', 'http://127.0.0.1:99999/v1'):
+            with self.subTest(url=bad), self.assertRaises(ValueError): self.admin.add_account('', label='x', base_url=bad, key='k')
+        for good in ('http://127.0.0.1:8000/v1', 'http://127.8.0.2/v1', 'http://[::1]:9000/v1'):
+            self.assertEqual(self.admin.add_account('', label='本机', base_url=good, key='k').base_url, good)
         with self.assertRaisesRegex(ValueError, '用户名'): self.admin.add_account('', label='x', base_url='https://u:p@x.example', key='k')
         with self.assertRaisesRegex(ValueError, '环境变量'): self.admin.add_account('deepseek', key_env='BAD NAME')
         env_account = self.admin.add_account('deepseek', key_env='MY_DS_KEY')
         self.assertEqual(env_account.credential, 'env:MY_DS_KEY')
+
+    def test_editing_address_moves_key_and_old_snapshots_cannot_use_it(self):
+        # Codex 审计 R1：账户改地址（换或不换 Key）后，拿着旧地址快照的请求取不到 Key
+        from aicompanion.providers.router import ModelUnavailable
+        account = self.admin.add_account('', label='兼容', base_url='https://old.invalid/v1', key='OLD')
+        self.admin.add_model(account.id, 'm', ('chat',)); self.admin.choose('chat', None, f'{account.id}/m')
+        old = self.router.resolve('chat', 'deepseek-whale')
+        self.admin.update_account(account.id, base_url='https://new.invalid/v1')               # 只改地址，不换 Key
+        self.assertEqual(self.router.secret(old), '')
+        with self.assertRaises(ModelUnavailable): self.router.client_for(old)
+        middle = self.router.resolve('chat', 'deepseek-whale')
+        self.assertEqual(self.router.secret(middle), 'OLD')
+        self.admin.update_account(account.id, base_url='https://third.invalid/v1', key='NEW')  # 改地址并换 Key
+        self.assertEqual((self.router.secret(old), self.router.secret(middle)), ('', ''))
+        new = self.router.resolve('chat', 'deepseek-whale')
+        self.assertEqual((self.router.secret(new), new.base_url), ('NEW', 'https://third.invalid/v1'))
 
     def test_blank_key_on_edit_keeps_old_key_and_new_key_rotates(self):
         account = self.admin.add_account('deepseek', key='first')
@@ -72,8 +96,9 @@ class AdminTests(unittest.TestCase):
         self.admin.choose('chat', None, f'{ds.id}/deepseek-flash')
         with self.assertRaisesRegex(ValueError, '识图'): self.admin.choose('vision', None, f'{ds.id}/deepseek-v4-pro')
         self.admin.choose('vision', 'deepseek-whale', f'{mm.id}/MiniMax-M3')
-        self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3')
-        self.assertEqual(self.admin.binding('agent', None).route, 'minimax-cn')            # 国内站走 minimax-cn 路由
+        with self.assertRaisesRegex(ValueError, '暂未接通'):                                # Codex 审计 R3：MiniMax 办事尚未接通
+            self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3')
+        self.assertEqual(agent_route(next(a for a in self.admin.accounts() if a.id == mm.id)), 'minimax-cn')   # 国内站对应 minimax-cn 路由
         self.assertNotIn(f'{bz.id}/breeze-tts-2', [m.id for m in self.admin.models('agent')])
         with self.assertRaisesRegex(ValueError, '音色'): self.admin.choose('tts', None, f'{bz.id}/breeze-tts-2')
         self.admin.choose('tts', 'deepseek-whale', f'{bz.id}/breeze-tts-2', voice='voc_whale', language='zh', speed=1.2)
@@ -114,16 +139,22 @@ class AdminTests(unittest.TestCase):
         mm = self.admin.add_account('minimax-cn', key='k')
         self.admin.add_model(mm.id, 'MiniMax-M3.1-Flash', ('chat', 'tools'))
         self.assertNotIn('MiniMax-M3.1-Flash', [m.model_id for m in self.admin.models('agent')])
-        with self.assertRaisesRegex(ValueError, 'Harness 不支持'):
+        with self.assertRaisesRegex(ValueError, '暂未接通'):
             self.admin.choose('agent', None, f'{mm.id}/MiniMax-M3.1-Flash')
         self.assertIn('还没有配置办事模型', self.router.agent_problem('deepseek-whale'))
         # 旧配置里留下的不支持模型：不启用，提示说清是哪一层设置
         self.router.store.bind(Binding('agent', f'{mm.id}/MiniMax-M3.1-Flash', route='minimax-cn'))
         self.assertIsNone(self.router.agent_target('deepseek-whale'))
         self.assertIn('全局默认', self.router.agent_problem('deepseek-whale'))
-        self.admin.choose('agent', 'deepseek-whale', f'{mm.id}/MiniMax-M3')
+        # MiniMax 办事暂未接通（Codex 审计 R3）：下拉里没有，提示写明只能用 DeepSeek
+        self.assertEqual(self.admin.models('agent'), [])
+        self.router.store.bind(Binding('agent', f'{mm.id}/MiniMax-M3', route='minimax-cn'))
+        self.assertIsNone(self.router.agent_target('deepseek-whale'))
+        self.assertIn('暂未接通', self.router.agent_problem('deepseek-whale'))
+        ds = self.admin.add_account('deepseek', key='kd')
+        self.admin.choose('agent', 'deepseek-whale', f'{ds.id}/deepseek-flash')
         target = self.router.agent_target('deepseek-whale')
-        self.assertEqual((target.model_id, target.source), ('MiniMax-M3', '角色单独设置'))
+        self.assertEqual((target.model_id, target.source), ('deepseek-flash', '角色单独设置'))
         self.assertEqual(self.router.agent_problem('deepseek-whale'), '')
 
     def test_test_chat_uses_configured_client(self):
@@ -215,9 +246,12 @@ class PageTests(unittest.TestCase):
     def test_tts_test_reports_duration(self):
         bz = self.admin.add_account('breezeblue', key='k'); self.page.refresh()
         tts = self.page.pickers['tts']; tts.setCurrentIndex(tts.findData(f'{bz.id}/breeze-tts-2')); self.page.voice.setText('voc_x')
-        with mock.patch('aicompanion.providers.admin.ModelAdmin.test_tts', return_value=wav()):
+        played = []; self.page.speech_output = SimpleNamespace(play_audio=lambda text, raw: played.append(raw))
+        audio = wav()
+        with mock.patch('aicompanion.providers.admin.ModelAdmin.test_tts', return_value=audio) as synth:
             self.page.test_tts()
         self.assertIn('0.1 秒', self.page.status.text())
+        synth.assert_called_once(); self.assertEqual(played, [audio])        # Codex 审计 R6：只合成一次，播放的就是这份
 
 
 if __name__ == '__main__':

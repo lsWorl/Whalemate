@@ -26,13 +26,15 @@ AGENT_ROUTES = {
     'minimax': ('MINIMAX_API_KEY', None),
     'minimax-cn': ('MINIMAX_CN_API_KEY', None),
 }
-# 各路由在锁定的 DSH 0.2.1rc2 内置模型目录里实际有的模型（2026-11-11 从安装包读取）。
-# 不在目录里的模型（例如 MiniMax-M3.1-Flash）Harness 会拒绝，所以办事只能选这些。
+# 各路由现在能办事的模型。DeepSeek 两个模型已用锁定的 DSH 0.2.1rc2 验证。
+# MiniMax：模型虽在 Harness 目录里，但 llm-pi-ai 的 MiniMax 路由要在补丁里显式配置才会激活，现在设置 Key 也会被拒绝为
+# unknown model option（Codex 审计 R3，实测）。接入并验证前先不开放，界面和提示里写明“暂未接通”。
 AGENT_MODELS = {
     'deepseek-official': ('deepseek-flash', 'deepseek-v4-pro'),
-    'minimax': ('MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
-    'minimax-cn': ('MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'),
+    'minimax': (),
+    'minimax-cn': (),
 }
+AGENT_NOT_READY = '办事暂时只能用 DeepSeek 的模型（MiniMax 办事还在接入，暂未接通）'
 OFFLINE_LABEL = '离线模拟模型'
 
 
@@ -158,7 +160,7 @@ class ModelRouter:
             if not binding: continue
             if binding.backend == 'deepseek' and binding.provider in config.providers:
                 provider = config.providers[binding.provider]
-                return SearchTarget('deepseek', provider.base_url, self.credentials.get(provider.credential))
+                return SearchTarget('deepseek', provider.base_url, self.credentials.get(provider.credential, endpoint=provider.base_url))
             if binding.backend == 'wikipedia':
                 return SearchTarget('wikipedia')
         return SearchTarget('wikipedia')
@@ -172,7 +174,7 @@ class ModelRouter:
             model = config.models[binding.model]
             provider = config.providers.get(model.provider)
             if not provider: continue
-            key = self.credentials.get(provider.credential)
+            key = self.credentials.get(provider.credential, endpoint=provider.base_url)
             if not key: return None
             revision = self.credentials.revision(provider.credential)
             cache_id = '|'.join((provider.kind, provider.base_url, model.model_id, binding.voice, binding.language,
@@ -194,7 +196,7 @@ class ModelRouter:
                 model = config.models[binding.model]
                 provider = config.providers.get(model.provider)
                 if not provider: continue
-                key = self.credentials.get(provider.credential)
+                key = self.credentials.get(provider.credential, endpoint=provider.base_url)
                 if not key: return None
                 key_env, base_env = AGENT_ROUTES[binding.route]
                 env = [(key_env, key)]
@@ -216,6 +218,8 @@ class ModelRouter:
             if not model or not provider:
                 return f'办事模型（{scope}）已被删除。请到{where}重新选择“办事”。'
             supported = AGENT_MODELS.get(binding.route, ())
+            if not supported:
+                return f'{AGENT_NOT_READY}。现在的办事模型 {model.model_id}（{scope}）用不了，请到{where}“办事”改选 DeepSeek 的模型。'
             if model.model_id not in supported:
                 return (f'办事模型 {model.model_id}（{scope}）Harness 不支持。请到{where}“办事”改选：'
                         + '、'.join(supported) + '。')
@@ -244,8 +248,11 @@ class ModelRouter:
         with self._lock:
             client = self._clients.get(key)
             if client is None:
-                secret = self.credentials.get(resolved.credential)
+                # 只取和快照同一修订的 Key：快照之后账户换了地址和 Key，这次请求作废，不拼成“旧地址 + 新 Key”
+                secret = self.credentials.get(resolved.credential, resolved.credential_revision, resolved.base_url)
                 if not secret:
+                    if self.credentials.get(resolved.credential):
+                        raise ModelUnavailable(f'{resolved.label} 的 Key 刚刚更换，这次请求已取消，请再试一次。')
                     raise ModelUnavailable(f'{resolved.label} 的 Key 还没有设置或已失效，请到设置里填写。')
                 client = (self._factory or openai_client)(resolved, secret)
                 # 只保留每个“地址 + 模型”的最新凭据实例，旧凭据的实例随之丢弃
@@ -255,8 +262,9 @@ class ModelRouter:
             return client
 
     def secret(self, resolved: Resolved) -> str:
-        """构造请求时取 Key；不要保存或写进日志。"""
-        return self.credentials.get(resolved.credential)
+        """构造请求时取 Key；不要保存或写进日志。只给和快照同一修订、登记在快照地址上的 Key，
+        快照之后账户换了地址或 Key 时返回空串，调用方应放弃这次请求（Codex 审计 R1）。"""
+        return self.credentials.get(resolved.credential, resolved.credential_revision, resolved.base_url)
 
     def label(self, character_id: str) -> str:
         if self.offline: return OFFLINE_LABEL

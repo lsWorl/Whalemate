@@ -174,6 +174,20 @@ class SpeechQueueTests(unittest.TestCase):
         self.assertEqual(spoken_text('版本 3.5，温度 0.8，开心/难过都行。'),'版本 3.5，温度 0.8，开心/难过都行。')
         self.assertEqual(spoken_text('用 `git status` 看一下'),'用 git status 看一下')
 
+    def test_streamed_code_block_is_not_read(self):
+        # Codex 审计 R7：逐 token 输出时开围栏、代码行、闭围栏会被切成不同句子，单句认不出代码
+        reply = '我写好了：\n```python\nprint("auditcode")\nx = 1;\n```\n运行一下就行。'
+        buffer = SentenceBuffer(); spoken = []
+        for char in reply: spoken += buffer.feed(char)
+        spoken += buffer.feed('', True)
+        joined = ''.join(spoken)
+        self.assertNotIn('auditcode', joined); self.assertNotIn('x = 1', joined); self.assertNotIn('python', joined)
+        self.assertEqual(spoken, ['我写好了：', '一段代码。', '运行一下就行。'])
+        self.assertEqual(buffer.feed('接着聊。'), ['接着聊。'])                  # 代码块结束后正常朗读
+        # 同一句里开头说话、后面直接开代码块，也只读说话部分
+        buffer = SentenceBuffer()
+        self.assertEqual(buffer.feed('看这个```js\n') + buffer.feed('alert(1)\n```\n'), ['看这个一段代码。'])
+
     def test_ellipsis_and_semicolon_flush_sentences(self):
         self.assertEqual(SentenceBuffer().feed('嗯……我在听；你慢慢说'),['嗯……','我在听；'])
 

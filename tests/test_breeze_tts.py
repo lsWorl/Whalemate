@@ -166,6 +166,28 @@ class ConfigTests(unittest.TestCase):
         speech.synthesize('你好', 'ignored', CancellationToken(), provider='breeze', mood='shy')
         self.assertEqual(calls, [('voc_whale', '你好', 'shy')])
 
+    def test_queued_sentence_keeps_its_own_target(self):
+        # Codex 审计 R4：排队中的句子用入队时的音色和账户，改设置只影响新句子；缓存键跟着入队时的目标
+        from collections import deque
+        from aicompanion.speech.output import SpeechOutput
+        current = {'cid': 'deepseek-whale'}
+        speech = SpeechClient(SimpleNamespace(offline=False), tts_source=lambda: self.router.tts_target(current['cid']))
+        used = []
+        speech.breeze = SimpleNamespace(synthesize=lambda t, text, c, mood, style: used.append((t.voice, t.base_url)) or wav_bytes())
+        # 容器里没有音频设备，不创建真正的播放器：只用入队逻辑
+        output = SimpleNamespace(client=speech, provider='breeze', voice='', mood='calm', style='', language='zh', role_style='',
+                                 enabled=True, failed_generation=None, queue=deque(), _next=lambda: None, _prefetch=lambda: None)
+        output.enqueue = lambda text, gid: SpeechOutput.enqueue(output, text, gid)
+        output.enqueue('第一句', 'g')
+        current['cid'] = 'someone'                                               # 排队期间换成另一个音色
+        output.enqueue('第二句', 'g')
+        first, second = list(output.queue)
+        self.assertEqual((first.target.voice, second.target.voice), ('voc_whale', 'voc_default'))
+        self.assertEqual(first.voice, first.target.cache_id); self.assertNotEqual(first.voice, second.voice)
+        for job in (first, second):
+            speech.synthesize(job.text, job.voice, CancellationToken(), provider='breeze', target=job.target)
+        self.assertEqual([v for v, _ in used], ['voc_whale', 'voc_default'])
+
 
 if __name__ == '__main__':
     unittest.main()
