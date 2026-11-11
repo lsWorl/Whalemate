@@ -37,6 +37,7 @@ class CharacterPack:
     voice: dict = field(default_factory=dict)
     persona: dict | None = None
     lines: dict = field(default_factory=dict)
+    previous_names: tuple = ()   # 包以前用过的名字：用户没改过名时，启动时换成新名字（只换一次）
 
     @property
     def ready(self) -> bool:
@@ -90,7 +91,8 @@ def load_pack(directory: Path) -> CharacterPack:
         if not isinstance(lines, dict): raise CharacterPackError(f'{lines_path} 必须是对象。')
     return CharacterPack(id=pack_id, name=name.strip(), root=Path(directory).resolve(), status=data.get('status', 'ready'),
         order=int(data.get('order', 100)), theme=data.get('theme', ''), renderer=renderer,
-        voice=data.get('voice') or {}, persona=persona, lines=lines)
+        voice=data.get('voice') or {}, persona=persona, lines=lines,
+        previous_names=tuple(n.strip() for n in data.get('previous_names') or [] if isinstance(n, str) and n.strip()))
 
 
 def discover(root: Path = PACKS_DIR) -> tuple[list[CharacterPack], list[str]]:
