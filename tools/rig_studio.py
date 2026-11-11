@@ -1,10 +1,11 @@
-"""形象包工具：把分层源图编译成骨骼模型，并提供一个标注支点、实时预览的小窗口。规格见 docs/tasks/T6-rig-studio.md。
+"""用你自己的角色分层素材标注支点、预览动作，并编译骨骼形象包。规格见 docs/tasks/T6-rig-studio.md。
 
-  python tools/rig_studio.py compile <分层包目录> output/rig
-  python tools/rig_studio.py studio <分层包目录> --out output/rig
-  python tools/rig_studio.py compile-poses <pose-layered-v2 目录> [输出目录] [--verify] [--texture-scale 0.5]
-     十姿态分层包（原鲸娘逐姿态切片）→ AICompanionPoseRig；默认输出到 characters/deepseek-whale/rig。
-     --verify 把切片按 z 回拼，和 originals/ 逐像素比对；任何一张有差异或缺原图就失败，并且不改动输出目录。
+  python tools/rig_studio.py compile my-character/layers-pack output/rig
+  python tools/rig_studio.py studio my-character/layers-pack --out output/rig
+  python tools/rig_studio.py compile-poses my-character/pose-layered-v2 output/pose-rig --verify
+
+my-character/layers-pack 需包含 pack.json 和 layers/，十姿态输入目录需包含 model.json、poses/ 和 originals/。
+--verify 按图层 z 顺序回拼并与 originals/ 逐像素比对。校验通过后才把结果写到指定的输出目录。
 
 需要 Pillow（pip install -e .[studio]）。studio 里：拖动彩色圆点标注支点，拖动虚线框的两个角调整头部范围；
 "保存并编译"写回 pack.json 并编译；右侧预览用的是和桌宠完全相同的渲染器，可以切姿势、表情、动作。
@@ -189,11 +190,17 @@ def cmd_studio(art: Path, out: Path) -> int:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='形象包：编译与标注')
+    parser = argparse.ArgumentParser(description='用你自己的角色分层素材标注、预览和编译骨骼形象包。')
     sub = parser.add_subparsers(dest='command', required=True)
-    c = sub.add_parser('compile'); c.add_argument('art'); c.add_argument('out', nargs='?')
-    s = sub.add_parser('studio'); s.add_argument('art'); s.add_argument('--out')
-    p = sub.add_parser('compile-poses'); p.add_argument('art'); p.add_argument('out', nargs='?')
+    c = sub.add_parser('compile', help='编译自备分层素材')
+    c.add_argument('art', help='包含 pack.json 和 layers/ 的目录')
+    c.add_argument('out', nargs='?', help='骨骼包输出目录，例如 output/rig')
+    s = sub.add_parser('studio', help='打开分层素材的标注和预览窗口')
+    s.add_argument('art', help='包含 pack.json 和 layers/ 的目录')
+    s.add_argument('--out', help='骨骼包输出目录，例如 output/rig')
+    p = sub.add_parser('compile-poses', help='编译自备十姿态分层素材')
+    p.add_argument('art', help='包含 model.json、poses/ 和 originals/ 的目录')
+    p.add_argument('out', nargs='?', help='骨骼包输出目录，例如 output/pose-rig')
     p.add_argument('--verify', action='store_true'); p.add_argument('--texture-scale', type=float, default=0.5)
     args = parser.parse_args()
     art = Path(args.art).resolve()

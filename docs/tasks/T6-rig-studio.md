@@ -1,6 +1,6 @@
 # T6：自己的形象包——格式、`rig_studio` 与渲染接入
 
-> 本文记录原十姿态形象的设计与验收，保留当时的路径。现有素材位置见[原创美术归档](../../art/README.md)，当前角色形象见 [T20](T20-original-whale-animation.md)。
+> 本文记录原十姿态形象的设计与验收。下文的旧素材路径对应提交 `fa54555`，取回方法见[角色美术说明](../../art/README.md)。鲸鲸当前使用的形象见 [T20](T20-original-whale-animation.md)。 制作自定义角色时，可将自己的分层源包传给 `tools/rig_studio.py`。
 
 负责：Claude（代码）　出图：Codex（T5）　审查：互相　分支：`task/t6-rig-studio`
 
@@ -62,7 +62,7 @@ art/deepseek-whale/
 
 ### A.4 编译与接入
 
-- `tools/rig_studio.py compile-poses art/deepseek-whale [--verify]` → `src/aicompanion/characters/deepseek-whale/rig/rig.json`（`format: AICompanionPoseRig`）+ `textures/`：把十个姿态换算到统一的骨骼空间（`x = 128 + (x−anchor_x)×0.2`，`y = 256 + (y−anchor_y)×0.2`），检查每个姿态的必需图层、variants 引用、补画边缘。
+- `tools/rig_studio.py compile-poses <自己的十姿态分层源包> <输出目录> [--verify]` → `src/aicompanion/characters/deepseek-whale/rig/rig.json`（`format: AICompanionPoseRig`）+ `textures/`：把十个姿态换算到统一的骨骼空间（`x = 128 + (x−anchor_x)×0.2`，`y = 256 + (y−anchor_y)×0.2`），检查每个姿态的必需图层、variants 引用、补画边缘。
 - 渲染：在现有骨骼渲染页里新增"十姿态"模式（`posepack.js`），对外接口和现在的骨骼形象完全一样（姿态、表情、动作、拎起、命中检测、遮罩），桌宠其他代码不用改。
 - 形象来源顺序：自己的十姿态包 → 本机 Coopanion 大肥鱼 → 整张立绘。
 - 已完成的单站姿编译器（第 1–6 节、`body/rig_pack.py`）保留，供以后做新形象时用。
@@ -92,7 +92,7 @@ Codex 已确认（附兼容点：按实际 `crop_file` 路径读、鳍和呆毛�
 - 纹理所有权：两个渲染器都用 `loadOwnTexture` 自己加载纹理（不进 PIXI 的 URL 缓存），谁加载谁 `dispose`；同一模型重载、并发加载、加载中途被取消都不会销毁别的引擎在用的纹理。
 - 摆动节点：编译输出每个姿态的 `swing_nodes`（就绪的节点）；渲染器只让这些节点转，其余（包括源包里已有 `tail` 节点但未就绪的）节点矩阵就是父节点的，相对旋转严格为 0。
 - `--verify` 在发布之前做完：任一状态有差异或缺参考原图就失败且不改动输出；Alpha 通道整幅比较（alpha=1 也算），颜色只在任一边 alpha>0 的像素上比较。
-- 运行时：`characters/deepseek-whale/rig/`（约 4.4 MB）由 PR #5 的 `art/deepseek-whale` 编译提交；`character.json` 的 `renderer.rig.source` 为 `posepack`，加载失败时退回 Coopanion、再退回整张立绘。重新编译：`python tools/rig_studio.py compile-poses art/deepseek-whale --verify`。
+- 运行时：`characters/deepseek-whale/rig/`（约 4.4 MB）由 PR #5 的 `art/deepseek-whale` 编译提交；`character.json` 的 `renderer.rig.source` 为 `posepack`，加载失败时退回 Coopanion、再退回整张立绘。该版本的源图与编译结果可从提交 `fa54555` 取回。
 
 
 ## 0. 目标

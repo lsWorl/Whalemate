@@ -20,7 +20,7 @@
 
 ---
 
-Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色鲸鲸是以 DeepSeek 鲸鱼为原型的二创少女，桌面形象采用 Aboutme 大肥鱼。
+Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色鲸鲸是以 DeepSeek 鲸鱼为原型的二创少女，桌面形象优先采用本机安装的 Aboutme 大肥鱼，未安装时使用自带的自绘鲸娘。
 她在桌面上动来动去，记得你们聊过的事，用自己的声音回话，会闹点小脾气，你交代的事情她也会动手去做。
 
 和普通的聊天客户端不同，Whalemate 关心的是“她是谁”：**换了模型，她还是她**。人格、记忆、关系和渠道彼此独立，
@@ -90,7 +90,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-本机还没有 Aboutme 素材时，桌面以占位形象显示鲸鲸。安装下方 Aboutme 动画并重启后即可看到大肥鱼。右键角色或双击托盘图标可以打开聊天面板和设置。
+首次启动时，鲸鲸使用程序自带的自绘鲸娘形象。按下方说明安装 Aboutme 素材并重启后，鲸鲸会改用大肥鱼动画。只有两套素材都无法使用时才显示占位形象。右键角色或双击托盘图标可以打开聊天面板和设置。
 没配置模型时自动使用离线模拟回复；想强制离线，可以设置环境变量 `AICOMPANION_OFFLINE=1`。
 
 ### 可选组件
@@ -288,7 +288,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 ## 📄 许可与声明
 
-本项目代码、文档、归档的原创美术（`art/archive/deepseek-whale/`）、应用图标（`src/aicompanion/assets/icons/`）及六张原创表情图片（`src/aicompanion/assets/expression/`）采用 [MIT License](LICENSE)。
+本项目代码、文档、自绘鲸娘的运行素材（角色包中的立绘和骨骼纹理）、应用图标（`src/aicompanion/assets/icons/`）及六张原创表情图片（`src/aicompanion/assets/expression/`）采用 [MIT License](LICENSE)。
 
 - **Aboutme 大肥鱼**素材和据此生成的本机动画图集适用[上游素材声明](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt)。禁止商用，公开二创须署名 PC2005-cloud/dsh-pet。上游图集仅在本机安装，仓库和发布包均不附带。
 - **Live2D Cubism Core**：适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。本项目的仓库和打包版本都**不包含** Core，只有导入外部 Live2D 模型时才需要，由用户运行 `tools/fetch_avatar.py` 从 Live2D 官网自行下载，下载即表示同意该许可。因为能导入任意模型，带着 Core 分发本项目的构建版本可能属于 Live2D 定义的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免不适用。`tools/build_windows.py` 默认会把 Core 从构建结果里去掉；`--keep-cubism-core` 只供自己电脑使用，不要对外分发。

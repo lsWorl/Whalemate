@@ -139,7 +139,7 @@ def load_sprite_manifest(path: Path) -> dict:
 
 
 def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '', *, animation_enabled: bool = True) -> tuple[str, Path | str | None]:
-    """外部模型由用户显式选择。缺少选装动画时保留角色，仍可聊天和设置。"""
+    """显式选择的外部模型优先，选装动画缺失时尝试角色包自己的形象。"""
     if avatar_mode == 'live2d' and model_path:
         return 'cubism', model_path
     if pack and pack.ready:
@@ -152,6 +152,16 @@ def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '
         if pack.renderer_kind == 'sprites':
             return 'sprites', pack.sprite_manifest_path()
         if pack.renderer_kind == 'spritesheet':
+            if pack.renderer.get('path'):
+                sprites = pack.sprite_manifest_path()
+                if sprites.is_file():
+                    return 'sprites', sprites
+            # 独立骨骼包也能显示，即使整张立绘已损坏或遗失。
+            rig = pack.renderer.get('rig') or {}
+            if rig.get('path'):
+                manifest = pack.root / _safe_name(rig['path'], '骨骼清单')
+                if manifest.is_file():
+                    return 'rig', manifest
             return 'placeholder', None
     if model_path:
         return 'cubism', model_path

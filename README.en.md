@@ -24,7 +24,7 @@
 
 ---
 
-Whalemate (鲸伴, "whale companion") is an AI companion that lives on your Windows desktop. The default character, Jingjing (鲸鲸), uses the Aboutme Dafeiyu (大肥鱼) artwork, a fan interpretation of the DeepSeek whale. She moves around your desktop, remembers
+Whalemate (鲸伴, "whale companion") is an AI companion that lives on your Windows desktop. The default character, Jingjing (鲸鲸), uses the locally installed Aboutme Dafeiyu (大肥鱼) animations when available. Otherwise, she appears in the project’s own artwork inspired by the DeepSeek whale. She moves around your desktop, remembers
 what you've talked about, answers in her own voice, gets a little moody, and actually does the tasks you hand her.
 
 Unlike a typical chat client, Whalemate cares about *who she is*: **switch the model and she is still herself.**
@@ -96,7 +96,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Until the Aboutme artwork is installed locally, Jingjing appears as a placeholder. Install the Aboutme artwork below and restart to see her animations. Right-click her or double-click the tray icon to open the chat panel and settings.
+Jingjing appears in the bundled whale artwork on a fresh install. To use the Aboutme animations, follow the instructions below and restart. A placeholder appears only if both sets of artwork are unavailable. Right-click her or double-click the tray icon to open the chat panel and settings.
 Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1` to force it.
 
 ### Optional components
@@ -298,7 +298,7 @@ If you are an author of one of these projects and something here is inaccurate o
 
 ## 📄 License and notices
 
-The [MIT License](LICENSE) covers Whalemate's code, documentation, archived original artwork (`art/archive/deepseek-whale/`), application icons (`src/aicompanion/assets/icons/`) and six original sticker images (`src/aicompanion/assets/expression/`).
+The [MIT License](LICENSE) covers Whalemate's code, documentation, the bundled original whale artwork (sprites and rig textures), application icons (`src/aicompanion/assets/icons/`) and six original sticker images (`src/aicompanion/assets/expression/`).
 
 - **Aboutme Dafeiyu** artwork and locally generated animation sheets follow the [upstream asset notice](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt). Use them only for noncommercial purposes and credit PC2005-cloud/dsh-pet in public derivatives. The repository and release packages exclude these assets.
 - **Live2D Cubism Core**, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html). Neither the repository nor the packaged builds **include** Core. It is only needed to import external Live2D models; users download it themselves from Live2D with `tools/fetch_avatar.py`, which means accepting that license. Because Whalemate can import arbitrary models, distributing a build that bundles Core may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/), which requires Live2D review and a special Publication License Agreement; the exemptions for individuals and small businesses do not apply. `tools/build_windows.py` strips Core from builds by default; `--keep-cubism-core` is for your own machine only and must not be distributed.

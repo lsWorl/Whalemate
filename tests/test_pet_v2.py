@@ -30,7 +30,6 @@ class CharacterPackTests(unittest.TestCase):
         self.assertFalse(next(p for p in packs if p.id == 'claude-reader').ready)
 
     def test_custom_sprite_pack_reads_pose_variants(self):
-        # 验证通用立绘格式，不依赖鲸鲸已经归档的运行时贴图。
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root/'pose.png').touch()

@@ -13,7 +13,7 @@ from aicompanion.avatar.model_package import cubism_core_available
 from aicompanion.audio.capture import Microphone
 from aicompanion.voice.echo import EchoGate
 from aicompanion.voice.hotkey import DEFAULT_KEY, key_reader, label as key_label
-from aicompanion.characters import choose_renderer, CharacterPackError
+from aicompanion.characters import choose_renderer
 from aicompanion.pet.script import CueStream, Vocab, strip_cues
 from aicompanion.pet import interjection
 from aicompanion.speech.output import spoken_text
@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
             controller.character=registry.active()
         self.registry=registry
         self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.renderer=None; self.model_label=''
-        self.animation_avatars={}; self.animation_failures=set()
+        self.animation_avatars={}; self.failed_avatar_resources=set()
         self.tray_hint_shown=False; self.first_token=set()
         # 台词标注：每轮回复一个解析器；开语音时动作挂在句子上，等那句开始播放再执行
         self.vocab=Vocab(); self.cue_streams={}; self.pending_cues={}; self.sentence_cues={}
@@ -308,7 +308,7 @@ class MainWindow(QMainWindow):
         """根据角色包和设置选择显示方式，并放进常驻桌宠窗口。"""
         character=self.controller.character
         pack=self.registry.pack(character.id)
-        # 旧开关控制逐帧/自绘立绘切换；只提供选装逐帧形象的角色使用当前包的默认值。
+        # 历史逐帧开关不影响鲸鲸新安装的 Aboutme；其他角色继续使用自己的开关。
         animation_enabled = (pack is not None and pack.renderer_kind == 'spritesheet') or bool(
             self.database.get_setting(f'pet_animation_enabled:{character.id}', True))
         kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),
@@ -318,61 +318,85 @@ class MainWindow(QMainWindow):
                 self._cubism_core_warned=True
                 self._status('导入的 Live2D 模型需要 Live2D Cubism Core，本项目不附带，已改用角色默认形象。获取方法见 docs/live2d_model_sources.md。')
             kind,resource=choose_renderer(pack,None,'',animation_enabled=animation_enabled)
-        if kind=='spritesheet' and str(resource) in self.animation_failures:
-            kind,resource=choose_renderer(pack,None,'',animation_enabled=False)
-        if kind=='sprites' and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
-            rig_path=self._rig_path(pack)
-            if rig_path: kind,resource='rig',rig_path
-        if (kind,str(resource))==self.renderer: return
-        view=None
-        if kind=='rig':
-            try:
-                from aicompanion.body.rig_view import RigAvatar
-                view=self.rig_avatars.get(str(resource))
-                if view is None:
-                    view=RigAvatar(resource); view.bridge.loaded.connect(self._avatar_loaded)
-                self.rig_avatars[str(resource)]=view
-                self.pet.set_view(view,'rig',pack)
-            except Exception as error:
-                self._status('骨骼形象加载失败，改用立绘：'+str(error)); kind,resource=choose_renderer(pack,None,'',animation_enabled=False)
-        if kind=='spritesheet':
-            try:
-                from aicompanion.ui.animation_view import AnimationAvatar
-                view=self.animation_avatars.get(str(resource))
-                if view is None:
-                    view=AnimationAvatar(resource)
-                    view.failed.connect(lambda message,v=view,r=str(resource): self._animation_failed(v,r,message))
-                    self.animation_avatars[str(resource)]=view
-                self.pet.set_view(view,'spritesheet',pack)
-            except (CharacterPackError,ValueError,OSError) as error:
-                self._status('动画加载失败：'+str(error))
-                kind,resource=choose_renderer(pack,None,'',animation_enabled=False)
-        if kind=='sprites':
-            try:
-                view=self.sprite_avatars.get(str(resource)) or SpriteAvatar(resource)
-                self.sprite_avatars[str(resource)]=view
-                self.pet.set_view(view,'sprites',pack)
-            except (CharacterPackError,ValueError) as error:
-                self._status('立绘加载失败：'+str(error)); kind='placeholder'
-        if kind=='cubism':
+        if kind == 'spritesheet':
+            if self._show_pack_view(kind, resource, pack):
+                return
+            kind, resource = choose_renderer(pack, None, '', animation_enabled=False)
+        if kind in ('sprites', 'rig'):
+            prefer_sprites = kind == 'sprites' and not self.database.get_setting('rig_enabled', True)
+            if prefer_sprites and self._show_pack_view('sprites', resource, pack):
+                return
+            if pack.renderer.get('rig'):
+                rig = self._rig_path(pack)
+                if rig and self._show_pack_view('rig', rig, pack):
+                    return
+            if kind == 'sprites' and not prefer_sprites and self._show_pack_view('sprites', resource, pack):
+                return
+            kind, resource = 'placeholder', None
+
+        if (kind, str(resource)) == self.renderer:
+            return
+        if kind == 'cubism':
             if self.web_avatar is None:
-                # WebEngine 只在确实需要时创建，鲸娘等立绘角色不占用浏览器内核内存。
                 self.web_avatar=AvatarView(); self.web_avatar.bridge.loaded.connect(self._avatar_loaded)
             self.pet.set_view(self.web_avatar,'webengine',pack)
             if not self.web_avatar.set_model(resource): self._status('Live2D 模型加载失败，请在设置中重新选择。')
-        if kind=='placeholder':
+        else:
             hint = '未设置形象\n右键 → 设置'
             if pack and pack.id == 'deepseek-whale':
-                hint = '鲸鲸\n可安装 Aboutme 形象'
-            self.pet.set_view(PlaceholderAvatar(hint),'placeholder',pack)
-        self.renderer=(kind,str(resource))
+                hint = '鲸鲸\n请检查角色素材'
+            self.pet.set_view(PlaceholderAvatar(hint), 'placeholder', pack)
+        self.renderer = (kind, str(resource))
         self.avatar.set_state(self.mood)
 
-    def _animation_failed(self,view,resource,message):
-        self.animation_failures.add(resource)
+    def _show_pack_view(self, kind, path, pack):
+        """同一份坏素材在本次运行中只尝试一次，继续尝试角色的下一级形象。"""
+        key = str(path)
+        if key in self.failed_avatar_resources:
+            return False
+        if self.renderer == (kind, key):
+            return True
+        try:
+            if kind == 'spritesheet':
+                from aicompanion.ui.animation_view import AnimationAvatar
+                view = self.animation_avatars.get(key)
+                if view is None:
+                    view = AnimationAvatar(path)
+                    view.failed.connect(lambda message: self._view_failed(view, key, message))
+                    self.animation_avatars[key] = view
+            elif kind == 'rig':
+                from aicompanion.body.rig_view import RigAvatar
+                view = self.rig_avatars.get(key)
+                if view is None:
+                    view = RigAvatar(path)
+                    view.bridge.loaded.connect(lambda message: self._rig_loaded(view, key, message))
+                    self.rig_avatars[key] = view
+            else:
+                view = self.sprite_avatars.get(key)
+                if view is None:
+                    view = SpriteAvatar(path)
+                    self.sprite_avatars[key] = view
+            self.pet.set_view(view, kind, pack)
+        except (ImportError, OSError, ValueError, RuntimeError, KeyError, TypeError, AttributeError) as error:
+            self.failed_avatar_resources.add(key)
+            self._status('角色素材加载失败：' + str(error))
+            return False
+        self.renderer = (kind, key)
+        self.avatar.set_state(self.mood)
+        return True
+
+    def _rig_loaded(self, view, key, message):
+        if message.startswith('error:'):
+            self._view_failed(view, key, message[6:])
+        elif self.pet.view is view:
+            self._avatar_loaded(message)
+
+    def _view_failed(self, view, key, message):
+        self.failed_avatar_resources.add(key)
         if self.pet.view is view and not self.closing:
-            self._status('动画解码失败：'+message)
-            self.renderer=None; self._apply_avatar()
+            self._status('角色素材解码失败：' + message)
+            self.renderer = None
+            self._apply_avatar()
 
     def _rig_path(self,pack):
         """骨骼形象来源，依次：AICOMPANION_RIG 指定的模型（自检、rig_studio 预览）→ 角色包自带的形象包 rig/rig.json
@@ -385,9 +409,17 @@ class MainWindow(QMainWindow):
         rig=pack.renderer.get('rig') or {}
         candidates.append(pack.root/(rig.get('path') or 'rig/rig.json'))
         for path in candidates:
-            if path.is_file():
-                try: load_rig(path); return path
-                except (RigImportError,OSError,ValueError,KeyError) as error: self._status(f'形象包 {path.parent.name} 有问题：{error}')
+            key = str(path)
+            if key in self.failed_avatar_resources or not path.is_file():
+                continue
+            if key in self.rig_avatars:
+                return path
+            try:
+                load_rig(path)
+                return path
+            except (RigImportError, OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                self.failed_avatar_resources.add(key)
+                self._status(f'形象包 {path.parent.name} 有问题：{error}')
         if rig.get('source')=='pack': return None   # 只用自己的形象包的角色，不去找 Coopanion
         root=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parents[3]
         try:

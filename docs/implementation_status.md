@@ -1701,7 +1701,7 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 没验证：没有运行回归（纯文档改动）。旧的自绘鲸娘美术不在这次范围内，随 #25（Aboutme 大肥鱼）一起处理。
 - 追加（负责人 2026-11-12）：`docs/live2d_model_sources.md` 删除艾米莉娅和 Haru 示例的旧记录，只保留 Cubism Core 获取方式、导入步骤和兼容性说明；Codex 第一轮 P2 指出的 `T14-claude-handoff.md`、`P0-architecture-constraints.md` 引用已补上 `git show 7ebc39c:<原路径>`。
 
-## 2026-11-12 T20：鲸鲸改用本机 Aboutme 动画（PR #25）
+## 2026-11-12 T20：鲸鲸改用本机 Aboutme 动画（PR #25 首轮，提交 `b570e4b`）
 
 - 将协作基线 `fa54555` 合入原分支，保留基线的鲸鲸角色设定及两侧既有任务、实施记录。
 - 鲸鲸采用 Aboutme 大肥鱼的 21 个源动作。使用者按上游条款将动画安装到本机，缺包时显示占位形象。中英文 README 新增安装步骤、上游署名及许可范围。
@@ -1711,3 +1711,13 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - Windows 在临时源码目录实际构建 PyInstaller onedir，核对了程序、安装器、MIT 许可、应用图标与六张表情，发布目录中没有本地动画或 Cubism Core。用残留旧图的构建缓存重建 wheel 和 sdist，分别核查 182 个条目和 261 个文件，第三方贴图、旧角色运行纹理及参考图均未进入产物。归档中的 466 张图与基线原件逐一核对了 Git blob。
 - 许可不明的参考图已从本次文件树移除。此前任务分支的历史提交 `eee17fc` 仍可追溯该文件。
 - 待验收：负责人真机确认动作观感、长期运行、多屏及高 DPI。此次未走查打包 exe 的完整交互、真实模型、语音或 QQ 链路；PR 待独立审查。
+
+## 2026-11-12 PR #25 独立审查修订：没装 Aboutme 时显示自绘鲸娘
+
+- 将 `82eaeee` 合入原分支，合并提交为 `ed58baf`。沿用 #50 精简后的 Live2D 文档，补全“角色与形象 → 桌面形象 → 选择 Live2D 模型… → 保存”。
+- 根据负责人最新决定，鲸鲸优先加载本机 Aboutme。没装或动画解码失败时使用角色包中的自绘骨骼或立绘，二者均不可用时才显示占位。用户显式选择且能加载的外部 Live2D 模型仍优先。
+- 删除首轮的 `art/archive/` 共 486 个文件。恢复运行用的两份清单和 232 张图，234 个文件与 `fa54555` 同路径内容完全一致。分层源稿和制作预览可从历史取回，例如 `git show fa54555:art/deepseek-whale/README.md`；整包导出命令见 [art/README.md](../art/README.md)。编辑及编译工具供使用者处理自己的角色素材。六张原创表情及两个图标的内容保持一致。
+- Windows `tools\run_checks.bat` 退出 0。1019 项单测中 1012 项通过、7 项跳过，耗时 191.740 秒。装有本机素材时，桌宠窗口显示 Aboutme（`AnimationAvatar`）。
+- Windows `.venv\Scripts\python.exe tools\smoke_pet.py --without-aboutme --output-dir output\pr25-fallback-82eaeee` 退出 0。使用缺少 Aboutme 的临时角色目录，窗口显示自绘鲸娘（`RigAvatar`、`rig_loaded=ready`），切成立绘并切回骨骼都成功。两次 smoke 均为 `passed=true`、`failed_checks=[]`、`errors=[]`、`remaining_workers=0`。
+- 实建 Windows PyInstaller onedir、wheel、sdist，并从 sdist 再建 wheel。每种产物中的 234 个运行文件、六张表情、两个图标均与基线原件逐一匹配。预置的未引用旧图、模拟本机图集、缓存和 Cubism Core 均未进入产物。上游 Aboutme 贴图继续仅在本机安装。
+- 待负责人复核新提交、真机确认动作观感。此次未走查打包 exe 全部交互、长期运行、多屏高 DPI 或真实模型、语音和 QQ 服务。

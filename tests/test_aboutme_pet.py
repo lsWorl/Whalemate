@@ -67,7 +67,7 @@ class AboutmeInstallTests(unittest.TestCase):
             path=Path(directory)/'lock.json';path.write_text(json.dumps(data),encoding='utf-8')
             with self.assertRaises(ValueError):installer.read_lock(path)
 
-    def test_clean_checkout_falls_back_without_startup_download(self):
+    def test_missing_all_local_art_still_preserves_explicit_model(self):
         with tempfile.TemporaryDirectory() as directory:
             whale=replace(load_pack(PACKS_DIR/'deepseek-whale'),root=Path(directory))
             self.assertEqual(choose_renderer(whale,None),('placeholder',None))

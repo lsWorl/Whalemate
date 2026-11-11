@@ -629,15 +629,19 @@ class DesktopPetWindow(QWidget):
                 seen.add(identity)
                 label=entry.name+({'walking_left':'（向左）','walking_right':'（向右，镜像）'}.get(key,''))
                 actions.addAction(label,lambda checked=False,k=key:self.view.play_action(k))
-        if self.pack is not None and self.pack.renderer.get('rig'):
+        # 选装动画使用角色包的默认顺序；只在显示内置鲸娘时切换骨骼与立绘。
+        if (self.pack is not None and self.pack.renderer.get('rig')
+                and (self.pack.renderer_kind != 'spritesheet' or self.view_kind in ('rig', 'sprites'))):
             looks = menu.addMenu('形象'); group=QActionGroup(looks)
             choices=[('rig','原分层骨骼'),('sprites','原立绘')]
-            if self.pack.renderer.get('animation'): choices.insert(0,('spritesheet','Aboutme 大肥鱼' if self.pack.renderer.get('animation_optional') else '逐帧动画'))
+            if self.pack.renderer_kind != 'spritesheet' and self.pack.renderer.get('animation'):
+                label = 'Aboutme 大肥鱼' if self.pack.renderer.get('animation_optional') else '逐帧动画'
+                choices.insert(0, ('spritesheet', label))
             for kind,label in choices:
                 action=looks.addAction(label); action.setCheckable(True); group.addAction(action)
                 action.setChecked(self.view_kind==kind)
                 action.triggered.connect(lambda checked=False,k=kind:self.set_appearance(k))
-            if self.view_kind == 'rig':
+            if self.view_kind == 'rig' and self.pack.renderer['rig'].get('source') != 'pack':
                 schemes = looks.addMenu('配色')
                 current = self.database.get_setting('rig_scheme', 'deepseek')
                 for scheme, label in [('deepseek', 'DeepSeek 原版'), ('claude', 'Claude 赤陶'), ('chatgpt', 'ChatGPT 银白'), ('gemini', 'Gemini 四色'),

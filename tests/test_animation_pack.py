@@ -40,11 +40,24 @@ class AnimationPackTests(unittest.TestCase):
             whale = replace(load_pack(PACKS_DIR/'deepseek-whale'), root=Path(directory))
             for mode in (None, 'live2d'):
                 self.assertEqual(choose_renderer(whale, mode), ('placeholder', None))
+            rig = whale.root/whale.renderer['rig']['path']
+            rig.parent.mkdir()
+            rig.write_text('{}', encoding='utf-8')
+            self.assertEqual(choose_renderer(whale, None), ('rig', rig))
+            sprites = whale.sprite_manifest_path()
+            sprites.parent.mkdir()
+            (sprites.parent/'idle.png').touch()
+            sprites.write_text(json.dumps({'format': 'AICompanionSpritePack', 'version': 1, 'size': [64, 64],
+                                           'poses': {p: {'base': 'idle.png'} for p in ('idle', 'talking', 'thinking')}}),
+                               encoding='utf-8')
+            for mode in (None, 'live2d'):
+                self.assertEqual(choose_renderer(whale, mode), ('sprites', sprites))
             animation = whale.root/whale.renderer['animation']
             animation.parent.mkdir(parents=True)
             fixture, _ = make_pack(animation.parent)
             self.assertEqual(fixture, animation)
             self.assertEqual(choose_renderer(whale, None), ('spritesheet', fixture))
+            self.assertEqual(choose_renderer(whale, None, animation_enabled=False), ('sprites', sprites))
             self.assertEqual(choose_renderer(whale, 'live2d', ''), ('spritesheet', fixture))
             self.assertEqual(choose_renderer(whale, 'live2d', 'x.model3.json'), ('cubism', 'x.model3.json'))
             self.assertEqual(whale.id, 'deepseek-whale')

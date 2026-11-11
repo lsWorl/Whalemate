@@ -36,8 +36,14 @@ def schedule_pet_smoke_check(window, database, output):
     if pack and pack.renderer_kind == 'spritesheet':
         installed = (pack.root/pack.renderer['animation']).is_file()
         state['aboutme_installed'] = installed
-        state['expected_renderer'] = 'AnimationAvatar' if installed else 'PlaceholderAvatar'
-        state['expected_renderer_shown'] = (animation and pet.view.using_aboutme) if installed else placeholder
+        if installed:
+            state['expected_renderer'] = 'AnimationAvatar'
+            state['expected_renderer_shown'] = animation and pet.view.using_aboutme
+        else:
+            # 出厂自绘形象在没有 Aboutme 的新安装中也应正常显示。
+            expected = RigAvatar if database.get_setting('rig_enabled', True) else SpriteAvatar
+            state['expected_renderer'] = expected.__name__
+            state['expected_renderer_shown'] = isinstance(pet.view, expected)
     else:
         state['expected_renderer_shown'] = not placeholder
     animation_frames=[]
@@ -140,6 +146,15 @@ def schedule_pet_smoke_check(window, database, output):
         pet.save_geometry(); state['geometry_saved'] = bool(database.get_setting('desktop_pet_geometry'))
     later(17500, scale_and_hide)
     def appearance():
+        if rig and state.get('aboutme_installed') is False:
+            # 同一份无 Aboutme 的发行包，关闭骨骼后仍应显示自绘整图。
+            database.set_setting('rig_enabled', False)
+            window._apply_avatar()
+            state['fallback_sprite_shown'] = isinstance(pet.view, SpriteAvatar)
+            pet.grab().save(str(output/'pet-fallback-sprites.png'))
+            database.set_setting('rig_enabled', True)
+            window._apply_avatar()
+            state['fallback_rig_restored'] = isinstance(pet.view, RigAvatar)
         if not animation: return
         # 历史版本的关闭动画开关不能让已经安装的鲸鲸再次显示旧美术。
         cid = window.controller.character.id
@@ -513,6 +528,8 @@ def schedule_pet_smoke_check(window, database, output):
             required.append('animation_advances')
             state['animation_advances']=not state.get('failed_animation_frames',False)
 
+        if rig and state.get('aboutme_installed') is False:
+            required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
         required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])

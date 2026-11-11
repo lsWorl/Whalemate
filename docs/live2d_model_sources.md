@@ -1,6 +1,6 @@
 # 导入外部 Live2D 模型
 
-鲸鲸默认播放本机安装的 [Aboutme 大肥鱼帧动画](aboutme-pet.md)，缺少素材时显示占位形象。导入自己的 Cubism 模型时才需要 Live2D Cubism Core。
+鲸鲸默认播放本机安装的 [Aboutme 大肥鱼帧动画](aboutme-pet.md)，未安装 Aboutme 时，鲸鲸使用自带的自绘骨骼或立绘。导入自己的 Cubism 模型时才需要 Live2D Cubism Core。
 2026-11-12 起删除了艾米莉娅和 Haru 示例的旧记录，需要时可在提交 `7ebc39c` 及之前的历史中查看。
 
 ## 先准备 Live2D Cubism Core

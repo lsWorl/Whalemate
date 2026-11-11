@@ -7,3 +7,4 @@ prune src/aicompanion/characters/deepseek-whale/animation-*
 prune src/aicompanion/characters/deepseek-whale/rig
 prune src/aicompanion/characters/deepseek-whale/sprites
 exclude src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js
+include tools/whale_art_files.py

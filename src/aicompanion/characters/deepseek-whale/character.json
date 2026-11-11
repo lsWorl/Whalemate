@@ -11,6 +11,11 @@
   "theme": "DeepSeek 二创萌化角色",
   "renderer": {
     "kind": "spritesheet",
+    "path": "sprites/sprites.json",
+    "rig": {
+      "source": "pack",
+      "path": "rig/rig.json"
+    },
     "display_height": 300,
     "vocab": {
       "expressions": {

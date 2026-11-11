@@ -25,10 +25,14 @@ def configure_test_pack(registry, args, temp):
     whale = registry.pack('deepseek-whale')
     if args.without_aboutme:
         from aicompanion.characters import load_pack
+        # 本项验证随程序提供的自绘形象，忽略可能指向其他本机模型的开发者覆盖值。
+        os.environ.pop('AICOMPANION_RIG', None)
         clean = temp/whale.id
         clean.mkdir()
         for name in ('character.json', 'lines.json', 'interjections.json', 'qq-chat-card.json'):
             shutil.copy2(whale.root/name, clean/name)
+        for name in ('rig', 'sprites'):
+            shutil.copytree(whale.root/name, clean/name)
         registry.packs[whale.id] = load_pack(clean)
         return
     if args.posepack:
@@ -58,9 +62,9 @@ def main():
     parser = argparse.ArgumentParser(description='Offline desktop pet verification.')
     parser.add_argument('--preview', action='store_true', help='Show a temporary pet for up to 90 seconds.')
     parser.add_argument('--rig', choices=('auto', 'placeholder', 'coopanion'), default='auto',
-                        help='auto 按本机安装情况显示 Aboutme 或占位；其余选项用于骨骼专项自检')
+                        help='auto 按本机安装情况显示 Aboutme 或随附的自绘鲸娘；其余选项用于骨骼专项自检')
     parser.add_argument('--posepack', metavar='DIR', help='用十姿态分层包（pose-layered-v2 目录）自检，优先于 --rig')
-    parser.add_argument('--without-aboutme', action='store_true', help='用只含角色元数据的临时角色包验证未安装状态')
+    parser.add_argument('--without-aboutme', action='store_true', help='用包含自绘骨骼和立绘的临时角色包验证未安装 Aboutme 的状态')
     parser.add_argument('--output-dir', type=Path, default=ROOT/'docs/pet-v2/smoke', help='自检截图和报告目录')
     args = parser.parse_args()
     if args.without_aboutme and (args.posepack or args.rig != 'auto'):

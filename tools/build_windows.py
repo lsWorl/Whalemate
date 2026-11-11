@@ -6,6 +6,11 @@ import subprocess
 import sys
 import tempfile
 
+if __package__:
+    from .whale_art_files import whale_art_files
+else:
+    from whale_art_files import whale_art_files
+
 ROOT=Path(__file__).resolve().parents[1]
 
 
@@ -15,8 +20,8 @@ CUBISM_CORE='_internal/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js'
 CHARACTER_FILES = ('character.json', 'lines.json', 'interjections.json', 'qq-chat-card.json')
 
 
-def character_data_args(root):
-    """只把项目角色的定义和台词交给 PyInstaller；本机安装的图集由用户单独管理。"""
+def character_data_args(root, art_staging):
+    """收集角色定义及内置自绘回退形象。逐文件暂存，避免打包本机图集。"""
     args = []
     for manifest in sorted((root/'src/aicompanion/characters').glob('*/character.json')):
         directory = manifest.parent
@@ -24,6 +29,14 @@ def character_data_args(root):
             source = directory/filename
             if source.is_file():
                 args.extend(['--add-data', f'{source}:aicompanion/characters/{directory.name}'])
+    whale = root/'src/aicompanion/characters/deepseek-whale'
+    for relative in whale_art_files(whale):
+        target = art_staging/relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(whale/relative, target)
+    # 以目录参数交给 PyInstaller，避免两百多条贴图路径超出 Windows 命令行长度。
+    for folder in sorted(art_staging.iterdir()):
+        args.extend(['--add-data', f'{folder}:aicompanion/characters/deepseek-whale/{folder.name}'])
     return args
 
 
@@ -57,13 +70,14 @@ def main():
     parser.add_argument('--keep-cubism-core',action='store_true',help='保留本机下载的 Live2D Cubism Core，仅限自用，不要对外分发')
     args=parser.parse_args()
     staging=ROOT/'build/release-staging'
-    subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--windowed','--name','AICompanion',
-                    '--icon',str(ROOT/'src/aicompanion/assets/icons/aicompanion.ico'),
-                    '--paths',str(ROOT/'src'),'--add-data',str(ROOT/'src/aicompanion/assets')+':aicompanion/assets',
-                    *character_data_args(ROOT),
-                    '--additional-hooks-dir',str(ROOT/'tools/hooks'),
-                    '--collect-submodules','webrtcvad','--hidden-import','_webrtcvad',
-                    '--distpath',str(staging),'--workpath',str(ROOT/'build'),'--specpath',str(ROOT/'build'),str(ROOT/'main.py')],check=True,cwd=ROOT)
+    with tempfile.TemporaryDirectory(prefix='whalemate-bundled-art-') as art_staging:
+        subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--windowed','--name','AICompanion',
+                        '--icon',str(ROOT/'src/aicompanion/assets/icons/aicompanion.ico'),
+                        '--paths',str(ROOT/'src'),'--add-data',str(ROOT/'src/aicompanion/assets')+':aicompanion/assets',
+                        *character_data_args(ROOT, Path(art_staging)),
+                        '--additional-hooks-dir',str(ROOT/'tools/hooks'),
+                        '--collect-submodules','webrtcvad','--hidden-import','_webrtcvad',
+                        '--distpath',str(staging),'--workpath',str(ROOT/'build'),'--specpath',str(ROOT/'build'),str(ROOT/'main.py')],check=True,cwd=ROOT)
     output=ROOT/'dist/AICompanion'
     # 运行配置可能含私人密钥，不能让 PyInstaller 清空本机发布目录。
     if not args.keep_cubism_core:
