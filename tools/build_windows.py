@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def main():
     staging=ROOT/'build/release-staging'
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--windowed','--name','AICompanion',
+                    '--icon',str(ROOT/'src/aicompanion/assets/icons/aicompanion.ico'),
                     '--paths',str(ROOT/'src'),'--add-data',str(ROOT/'src/aicompanion/assets')+':aicompanion/assets',
                     '--add-data',str(ROOT/'src/aicompanion/characters')+':aicompanion/characters',
                     '--additional-hooks-dir',str(ROOT/'tools/hooks'),

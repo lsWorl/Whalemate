@@ -140,31 +140,50 @@ class MainWindow(QMainWindow):
         from aicompanion.ui.chat_view import Backdrop, ChatView
         self.setWindowTitle(self.settings.app_name+' · 聊天面板'); self.resize(600,760); self.setMinimumSize(420,520)
         root=Backdrop(); self.backdrop=root; layout=QVBoxLayout(root); layout.setContentsMargins(0,0,0,0); layout.setSpacing(0)
-        # 顶栏：头像、名字、模型、状态、角色切换、语音开关、设置
-        header=QWidget(); header.setObjectName('Header'); top=QHBoxLayout(header); top.setContentsMargins(16,10,12,10); top.setSpacing(10)
+        # 顶栏：头像、名字和模型、状态；右边只留三个常用开关：切换角色、朗读、设置（其余都在设置里）
+        header=QWidget(); header.setObjectName('Header'); top=QHBoxLayout(header); top.setContentsMargins(16,10,12,10); top.setSpacing(8)
         self.avatar_label=QLabel(); self.avatar_label.setFixedSize(44,44); top.addWidget(self.avatar_label)
         names=QVBoxLayout(); names.setSpacing(0)
         self.name_label=QLabel(self.controller.character.name); self.name_label.setObjectName('Name')
         self.model_info=QLabel(''); self.model_info.setObjectName('Model')
         names.addWidget(self.name_label); names.addWidget(self.model_info); top.addLayout(names); top.addStretch()
         self.status_pill=QLabel('就绪'); self.status_pill.setObjectName('StatusPill'); top.addWidget(self.status_pill)
-        self.roles=QComboBox(); self._refresh_roles(); self.roles.currentIndexChanged.connect(self._switch_role); top.addWidget(self.roles)
-        self.speak_toggle=QCheckBox('语音'); self.speak_toggle.toggled.connect(self._toggle_speech); top.addWidget(self.speak_toggle)
-        settings=QPushButton('设置'); settings.setObjectName('Flat'); settings.clicked.connect(self._settings); top.addWidget(settings)
+        self.roles=QComboBox(); self.roles.setObjectName('Roles'); self.roles.setToolTip('切换角色（每个角色有自己的记忆）')
+        self._refresh_roles(); self.roles.currentIndexChanged.connect(self._switch_role); top.addWidget(self.roles)
+        self.speak_toggle=QPushButton('朗读'); self.speak_toggle.setObjectName('Toggle'); self.speak_toggle.setCheckable(True)
+        self.speak_toggle.setToolTip('打开后她会把回复念出来（说多少、用什么声音在 设置 → 声音与通话）')
+        self.speak_toggle.toggled.connect(self._toggle_speech); top.addWidget(self.speak_toggle)
+        settings=QPushButton('设置'); settings.setObjectName('Toggle'); settings.setToolTip('打开设置'); settings.clicked.connect(lambda:self._settings())
+        top.addWidget(settings)
         layout.addWidget(header)
+        # 引导条：聊天模型还没配置时告诉用户现在是离线模拟、去哪里配置（配置好后自动隐藏）
+        self.setup_banner=QWidget(); self.setup_banner.setObjectName('Banner'); banner=QHBoxLayout(self.setup_banner)
+        banner.setContentsMargins(14,8,10,8)
+        self.setup_text=QLabel(''); self.setup_text.setWordWrap(True); banner.addWidget(self.setup_text,1)
+        go=QPushButton('去配置'); go.setObjectName('Send'); go.clicked.connect(lambda:self._settings('models')); banner.addWidget(go)
+        self.setup_banner.hide()
+        wrap_banner=QVBoxLayout(); wrap_banner.setContentsMargins(14,10,14,0); wrap_banner.addWidget(self.setup_banner); layout.addLayout(wrap_banner)
         older=QPushButton('加载更早记录'); older.setObjectName('Flat'); older.clicked.connect(lambda:self._load_history(older=True))
         layout.addWidget(older,0,Qt.AlignmentFlag.AlignHCenter)
         self.chat_list=ChatView('你'); layout.addWidget(self.chat_list,1)
         self.subtitle=QLabel(''); self.subtitle.setObjectName('Subtitle'); self.subtitle.setWordWrap(True); self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle.hide()
         layout.addWidget(self.subtitle)
-        # 输入栏：胶囊输入框 + 打断 + 通话 + 发送
-        bar=QWidget(); bar.setObjectName('InputBar'); row=QHBoxLayout(bar); row.setContentsMargins(14,5,6,5); row.setSpacing(6)
-        self.input_box=QLineEdit(); self.input_box.setObjectName('Input'); self.input_box.setPlaceholderText('说说今天的心情…　（/做 让她动手干活）')
+        # 输入栏：[办事] [附件] 输入框 [打断] [通话] [发送]
+        # “办事”打开时这句话交给她动手做（等同于以 /做 开头）；附件按钮先占位，计划书 v4 功能七“把文件交给她办事”接入后启用
+        bar=QWidget(); bar.setObjectName('InputBar'); row=QHBoxLayout(bar); row.setContentsMargins(6,5,6,5); row.setSpacing(6)
+        self.agent_toggle=QPushButton('办事'); self.agent_toggle.setObjectName('Mode'); self.agent_toggle.setCheckable(True)
+        self.agent_toggle.setToolTip('打开后，这句话会交给她动手去做（读写文件、整理资料等）；改动文件前会先问你')
+        self.agent_toggle.toggled.connect(self._agent_mode_changed); row.addWidget(self.agent_toggle)
+        self.attach_button=QPushButton('＋'); self.attach_button.setObjectName('Round'); self.attach_button.setEnabled(False)
+        self.attach_button.setToolTip('即将支持：把文件交给她办事'); row.addWidget(self.attach_button)
+        self.input_box=QLineEdit(); self.input_box.setObjectName('Input')
         self.input_box.returnPressed.connect(self._send_current_message); row.addWidget(self.input_box,1)
-        stop=QPushButton('■'); stop.setObjectName('Round'); stop.setToolTip('打断她'); stop.clicked.connect(self.interrupt); row.addWidget(stop)
-        self.call_button=QPushButton('开启通话'); self.call_button.setObjectName('Round'); self.call_button.clicked.connect(self._toggle_call); row.addWidget(self.call_button)
+        stop=QPushButton('■'); stop.setObjectName('Round'); stop.setToolTip('打断她（正在说的话、正在做的事都会停下）'); stop.clicked.connect(self.interrupt); row.addWidget(stop)
+        self.call_button=QPushButton('通话'); self.call_button.setObjectName('Round'); self.call_button.setToolTip('开启语音通话：按住收音键（默认右 Ctrl）说话')
+        self.call_button.clicked.connect(self._toggle_call); row.addWidget(self.call_button)
         send=QPushButton('发送'); send.setObjectName('Send'); send.clicked.connect(self._send_current_message); row.addWidget(send)
+        self._agent_mode_changed(False)
         wrap=QVBoxLayout(); wrap.setContentsMargins(14,6,14,4); wrap.setSpacing(4); wrap.addWidget(bar)
         self.level=QProgressBar(); self.level.setObjectName('Level'); self.level.setRange(0,100); self.level.setValue(0); self.level.setTextVisible(False); self.level.setFixedHeight(4)
         wrap.addWidget(self.level); layout.addLayout(wrap)
@@ -188,8 +207,10 @@ class MainWindow(QMainWindow):
             self.avatar_label.setStyleSheet('background:#4D6BFE;color:white;border-radius:22px;font-size:18px;font-weight:600;')
 
     def _build_tray(self):
-        icon=self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
-        self.setWindowIcon(icon); self.tray=QSystemTrayIcon(icon,self)
+        from aicompanion.ui.icons import app_icon
+        icon=app_icon()
+        if icon.isNull(): icon=self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+        self.setWindowIcon(icon); self.tray=QSystemTrayIcon(icon,self); self.tray.setToolTip(self.settings.app_name)
         menu=QMenu(self)
         self.pet_action=QAction('隐藏角色',self); self.pet_action.triggered.connect(self._toggle_pet)
         show=QAction('打开聊天面板',self); show.triggered.connect(self._show_chat)
@@ -207,7 +228,7 @@ class MainWindow(QMainWindow):
         pet=self.pet
         pet.chat_requested.connect(self._show_chat); pet.call_requested.connect(self._toggle_call)
         pet.interrupt_requested.connect(self.interrupt); pet.quit_requested.connect(self.request_exit)
-        pet.settings_requested.connect(self._settings); pet.message_submitted.connect(self.submit)
+        pet.settings_requested.connect(lambda:self._settings()); pet.message_submitted.connect(self.submit)
         pet.character_requested.connect(self._switch_to)
         pet.visibility_changed.connect(lambda visible:self.pet_action.setText('隐藏角色' if visible else '召回角色'))
         pet.appearance_changed.connect(self._apply_avatar)
@@ -346,6 +367,7 @@ class MainWindow(QMainWindow):
         self.model_label=label; self.model_info.setText(label)
         self.name_label.setText(character.name)
         self.vocab=Vocab.from_pack(self.registry.pack(character.id)); self.controller.vocabs[character.id]=self.vocab
+        self._refresh_setup_banner()
         pack=self.registry.pack(character.id); self.interjections=interjection.load(pack.root if pack else None)
         self.pet.set_identity(character.name,label,[(c.id,c.name) for c in self.registry.characters()],character.id)
 
@@ -355,7 +377,25 @@ class MainWindow(QMainWindow):
 
     def _send_current_message(self):
         text=self.input_box.text().strip()
-        if text: self.input_box.clear(); self.submit(text)
+        if not text: return
+        self.input_box.clear()
+        if self.agent_toggle.isChecked():
+            # 一次一件事：发出任何一句后都回到聊天（Codex PR #33 P2：手写了 /做 前缀时也要关，否则下一句“谢谢”会变成任务）。
+            # 停止词不补前缀，任务忙时打开“办事”说“停”也照样停下。
+            self.agent_toggle.setChecked(False)
+            if not text.startswith(self.AGENT_PREFIXES) and text.rstrip('！!。.') not in self.STOP_WORDS: text='/做 '+text
+        self.submit(text)
+
+    def _agent_mode_changed(self,on):
+        self.input_box.setPlaceholderText('要她做什么？' if on else '和她聊聊…')
+        self.input_box.setToolTip('例如：把桌面上的截图整理到一个文件夹（改动文件前会先问你）' if on else '点左边的“办事”，这句话就交给她动手做')
+
+    def _refresh_setup_banner(self):
+        """聊天模型没配置时显示引导条。"""
+        try: ready=self.controller.router.offline or self.controller.router.configured('chat',self.controller.character.id)
+        except Exception: ready=True
+        self.setup_text.setText('还没有配置聊天模型，现在她只会用离线模拟回复。添加一个 DeepSeek 或 MiniMax 账户就能正常聊天。')
+        self.setup_banner.setVisible(not ready)
 
     AGENT_PREFIXES=('/做','／做','/do ','做件事：')
     STOP_WORDS={'停','停下','停一下','别做了','不用做了','停止'}
@@ -735,7 +775,7 @@ class MainWindow(QMainWindow):
             if self.call_active: self._end_call()
             self._status(str(error)); return
         if not self.call_active: return
-        self.call_button.setText('结束通话')
+        self.call_button.setText('挂断')
         self.speak_toggle.setChecked(True); hint=self._call_hint(); self._status(hint)
         self.pet.set_call_active(True)
         if self.pet.isVisible(): self.pet.show_bubble(hint,4)
@@ -747,7 +787,7 @@ class MainWindow(QMainWindow):
         self.speech.set_sink(None)
         self.asr_queue.clear()
         if self.asr_worker: self.asr_worker.cancellation.cancel()
-        self.interrupt(); self.call_button.setText('开启通话'); self.level.setValue(0)
+        self.interrupt(); self.call_button.setText('通话'); self.level.setValue(0)
         self.pet.set_call_active(False)
 
     def _microphone_error(self,message): self._end_call(); self._status(message)
@@ -823,7 +863,7 @@ class MainWindow(QMainWindow):
         self.speech.language=self.database.get_setting(f'speech_language:{character_id}',self.settings.speech_language)
         self.speech.role_style=self.database.get_setting(f'japanese_style:{character_id}','')
         if self.speech.provider=='breeze':
-            # 音色来自“模型”页（可按角色设置）；cache_id 含音色、模型、参数和 Key 修订，换任何一项都不会命中旧缓存
+            # 音色来自“模型与 Key”页（可按角色设置）；cache_id 含音色、模型、参数和 Key 修订，换任何一项都不会命中旧缓存
             target=self.controller.router.tts_target(character_id)
             self.speech.voice=target.cache_id if target else ''
         else:
@@ -839,11 +879,11 @@ class MainWindow(QMainWindow):
         self._apply_backdrop()
         # 通话中改了收音设置由 _settings 只重启收音；这里不再挂断重开，否则会打断正在进行的回复
 
-    def _settings(self):
+    def _settings(self,page=None):
         # 打开设置不打断正在进行的回复、办事或通话（负责人 2026-11-11 实机反馈）：
         # 生成线程拿的是开始时的角色和模型快照，设置改动只影响下一轮。
         voice=(self.database.get_setting('input_device',''),self.database.get_setting('echo_backend','qt'),self._voice_mode())
-        dialog=SettingsWindow(self.controller,self.settings,self,speech_output=self.speech); dialog.exec()
+        dialog=SettingsWindow(self.controller,self.settings,self,speech_output=self.speech,page=page); dialog.exec()
         self._refresh_roles(); self._apply_settings()
         if self.call_active and voice!=(self.database.get_setting('input_device',''),self.database.get_setting('echo_backend','qt'),self._voice_mode()):
             # 通话中换了麦克风或收音方式：只重启收音，不挂断、不打断她正在说的话

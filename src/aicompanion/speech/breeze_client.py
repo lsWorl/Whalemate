@@ -55,7 +55,7 @@ class BreezeSpeechClient:
         text = str(text or '').strip()
         if not text: raise ValueError('没有要朗读的内容。')
         if len(text) > MAX_TEXT: raise ValueError('这句太长了，Breeze Blue 单次最多朗读 1000 字。')
-        if not target.voice: raise ValueError('还没有在“模型”页填写 Breeze Blue 的音色 ID。')
+        if not target.voice: raise ValueError('还没有在“模型与 Key”页填写 Breeze Blue 的音色 ID。')
         url = f"{target.base_url.rstrip('/')}/text-to-speech/{quote(target.voice, safe='')}?output_format={OUTPUT_FORMAT}"
         request = Request(url, data=json.dumps(payload_for(target, text, mood, style), ensure_ascii=False).encode('utf-8'),
                           method='POST', headers={'xi-api-key': target.api_key, 'Content-Type': 'application/json',

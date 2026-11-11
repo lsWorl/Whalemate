@@ -60,7 +60,10 @@ def main() -> int:
     #QApplication用于创建 GUI 应用程序
     from aicompanion.body.webengine_flags import apply_webengine_flags
     apply_webengine_flags()
+    from aicompanion.ui.icons import app_icon, use_own_taskbar_identity
+    use_own_taskbar_identity()
     app = QApplication(sys.argv)
+    app.setWindowIcon(app_icon())   # 所有窗口和对话框默认用鲸娘图标
     # 发布包自检只使用临时数据库和离线模型，不读取或上传用户聊天。
     smoke_directory = tempfile.TemporaryDirectory() if any(flag in sys.argv for flag in ('--smoke-test','--pet-smoke-test')) else None
     try:

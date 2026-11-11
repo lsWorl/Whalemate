@@ -45,11 +45,13 @@ class LibraryPage(QWidget):
         for label,fn in [('全选',self.table.selectAll),('启用选中',lambda:self.enable_selected(True)),('停用选中',lambda:self.enable_selected(False)),
                          ('重新识别含义',self.reanalyze)]:
             button=QPushButton(label);button.clicked.connect(fn);batch.addWidget(button)
+        batch.addStretch(1);layout.addLayout(batch)
+        source=QHBoxLayout()   # 单独一行：窗口不宽时不挤出横向滚动条
         self.license=QComboBox()
         for value in LICENSES:self.license.addItem(LICENSE_LABELS.get(value,value),value)
-        batch.addWidget(QLabel('来源'));batch.addWidget(self.license)
-        apply=QPushButton('设为选中图片的来源');apply.clicked.connect(self.set_license);batch.addWidget(apply)
-        batch.addStretch(1);layout.addLayout(batch)
+        source.addWidget(QLabel('来源'));source.addWidget(self.license,1)
+        apply=QPushButton('设为选中图片的来源');apply.clicked.connect(self.set_license);source.addWidget(apply)
+        layout.addLayout(source)
         meaning=QHBoxLayout();meaning.addWidget(QLabel('含义（自动识别，一般不用改）'))
         self.semantic=QLineEdit();self.semantic.setPlaceholderText('选中一张图后可以改；留空保存 = 重新自动识别');meaning.addWidget(self.semantic,1)
         save=QPushButton('保存含义');save.clicked.connect(self.save_meaning);meaning.addWidget(save);layout.addLayout(meaning)
@@ -215,7 +217,7 @@ class LibraryPage(QWidget):
         实机反馈（2026-11-11）：点“重新识别含义”后一直显示“识别含义中”，原来额度用完、识图出错都没有任何提示。"""
         media=self.media()
         if media is None:return '打开设置窗口时自动识别'
-        if not media.vision_ready():return '在“模型”页选好识图模型（并打开识图）后自动识别，现在先按分类名使用'
+        if not media.vision_ready():return '在“模型与 Key”页选好识图模型（并打开识图）后自动识别，现在先按分类名使用'
         if self.quota_stopped(self.catalog.db):return '今天的金额额度已用完，明天或在“用量”页调高额度后继续识别'
         from aicompanion.expression.collect import StickerCollector
         collector=StickerCollector(self.catalog.db,self.catalog)

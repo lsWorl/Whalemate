@@ -34,7 +34,7 @@ class AgentPage(QWidget):
         pick = QPushButton('选择…'); pick.clicked.connect(lambda: self._pick(self.workspace))
         row = QHBoxLayout(); row.addWidget(self.workspace, 1); row.addWidget(pick)
         form.addRow('默认工作区', row)
-        form.addRow('干活用的模型', QLabel('在“模型”页的“办事”一项里选择'))
+        form.addRow('干活用的模型', QLabel('在“模型与 Key”页的“办事”一项里选择'))
         self.blog = QLineEdit(database.get_setting('blog_root', '')); self.blog.setPlaceholderText(r'例如 D:\MyBlog（写博客时告诉她在哪）')
         pick_blog = QPushButton('选择…'); pick_blog.clicked.connect(lambda: self._pick(self.blog))
         blog_row = QHBoxLayout(); blog_row.addWidget(self.blog, 1); blog_row.addWidget(pick_blog)
