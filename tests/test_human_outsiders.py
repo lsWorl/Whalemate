@@ -82,6 +82,23 @@ class FavorBehaviourTests(BridgeFixture):
 
 
 class PunctuationTests(BridgeFixture):
+    def test_listing_lines_are_not_split_on_spaces(self):
+        from aicompanion.expression.segments import fit_cap, is_listing
+        for line in ('上半：玛薇卡 茜特拉莉 希诺宁 班尼特', '上半 雷神 八重 久岐忍 瑶瑶', '下半: 克洛琳德 芙宁娜'):
+            self.assertTrue(is_listing(line), line)
+            self.assertEqual(qq_segments(line, chance=ALWAYS, casual=True), [line])
+        for line in ('行 这次给完整一套 而且八个角色不重复', '哟 逆天'):
+            self.assertFalse(is_listing(line), line)
+        self.assertEqual(qq_segments('哟 逆天', chance=ALWAYS, casual=True), ['哟', '逆天'])               # 聊天里的空格照旧当断点
+        self.assertEqual(fit_cap('a', ['在', '咋了', '说', '嗯', '哈哈～'], 3), (['在', '咋了', '说'], True))        # 只截语气碎片
+        self.assertEqual(fit_cap('a', ['可以', '雷神', '八重神子', '九条裟罗'], 3), (['可以', '雷神', '八重神子', '九条裟罗'], False))   # 短名字是正文
+        self.assertEqual(fit_cap('a', ['在', '咋了', '说', '快点'], 3), (['在', '咋了', '说', '快点'], False))        # 拿不准就全发
+        text = '行\n第一步先这样做\n第二步然后那样做\n第三步最后再检查一遍'
+        self.assertEqual(fit_cap(text, text.split('\n'), 3), (text.split('\n'), False))                  # 有内容：全发，不截不并
+        many = [f'第{i}条' for i in range(10)]
+        self.assertEqual(qq_segments('\n'.join(many), casual=True), many)                                   # 不按条数合并（慢慢发不会刷屏）
+        self.assertEqual(fit_cap('x', ['a', 'b'], None), (['a', 'b'], False))
+
     def test_casual_segments_use_no_commas_or_full_stops(self):
         """负责人 2026-11-10 18:44：留着逗号仍然显得标点多。和外人聊不用逗号、句号：要么另起一条，要么短的直接连着写。"""
         self.assertEqual(qq_segments('嗯，知道了。', chance=NEVER, casual=True), ['嗯知道了'])               # 短的直接连着写

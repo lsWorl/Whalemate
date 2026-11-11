@@ -14,7 +14,8 @@
 QQ 另有一套（负责人 2026-11-09 18:05："不要一次性生成这么多回复，不像人在手敲；不要用空格作间断，
 如'哟 逆天这次都用上了'，可以搞成两次回复，每次间隔一段时间"；18:27 补充："不是限制最多几条，要有不固定的频率，
 根据情况和上下文而定"）。参考 MaiBot 的分句合并和真实聊天记录（约六成消息一句，其余两三句）：
-- 发几条首先由她自己决定：换行就是另一条，这里不砍、不并（只有超过 QQ_FLOOD_LIMIT 条的刷屏才并）；
+- 发几条首先由她自己决定：换行就是另一条，这里不砍、不并（负责人 2026-11-11 15:46：不用防刷屏，按打字速度慢慢发就不会刷屏；
+  QQ_SEGMENTS_MAX 只是插件收消息时的格式上限，正常回复到不了）；
 - "，"照常保留，不换成空格；
 - 一行里夹在中文之间的空格、"。"：当作"这里可能想分两条发"。拆不拆按此刻的聊天节奏（chat_burst）：
   情绪激动、关系亲近、内容长 → 更容易拆开（对方连发不算：连发的几条会先合并成一次回复）；随口应一句、关系一般 → 多半合成一条（用"，"连）；
@@ -26,7 +27,7 @@ import re
 
 
 MAX_SEGMENTS = 6
-QQ_FLOOD_LIMIT = 8      # 只防刷屏，不是"最多几条"的设计
+QQ_SEGMENTS_MAX = 64    # 和插件 MAX_SEGMENTS 一致：插件只接受这么多段（防异常输入），不是"最多几条"的设计
 CJK = '\u4e00-\u9fff\u3400-\u4dbf'
 LONG_FORM = 600
 FENCE = re.compile(r'^\s*(```|~~~)', re.M)
@@ -64,10 +65,25 @@ def split_segments(text: str, limit: int = MAX_SEGMENTS) -> list[str]:
     return parts
 
 
+# 列举一行（"上半：玛薇卡 茜特拉莉 希诺宁 班尼特"、"雷神 八重 久岐忍 瑶瑶"）里的空格是分隔符，不是"想分两条发"。
+# 2026-11-11 群聊真机记录：配队这类回答按空格拆成一个名字一条，再被"不熟最多三条"截掉，对方只看到"行""换一套…""上半：玛薇卡"。
+LABELED = re.compile(r'^[^\s：:]{1,8}[：:]\s*\S')
+LIST_WORD_MAX = 6
+
+
+def is_listing(line: str) -> bool:
+    words = line.split()
+    return bool(LABELED.match(line)) or (len(words) >= 4 and all(len(w) <= LIST_WORD_MAX for w in words))
+
+
 def _qq_pieces(line: str, casual: bool = False) -> list[tuple[str, str]]:
     """QQ 的一行：引号外的"。"和夹在中文之间的空格处断开，"，"保留，去掉句末句号和逗号。
-    返回（碎句，它前面的断点）。casual（和外人聊）时"，"也算一个可能的断点，句尾的顿号、分号、单个英文句点也去掉。"""
+    返回（碎句，它前面的断点）。casual（和外人聊）时"，"也算一个可能的断点，句尾的顿号、分号、单个英文句点也去掉。
+    列举的一行（is_listing）整行一条，不拆。"""
     line = re.sub(r'。{2,}', '…', line.strip())
+    if is_listing(line):
+        tail = r'[，,、；;。\s]+$' if casual else r'[，,\s]+$'
+        return [(re.sub(tail, '', line), '')] if re.sub(tail, '', line) else []
     parts, current, depth, mark = [], '', 0, ''
     def cut(ch):
         nonlocal current, mark
@@ -100,13 +116,13 @@ def _qq_pieces(line: str, casual: bool = False) -> list[tuple[str, str]]:
 CASUAL_GLUE = 10    # 和外人聊：合在一条里的两小段加起来不超过这么多字，就直接连着写、不加逗号（"嗯知道了"）
 
 
-def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_FLOOD_LIMIT, casual: bool = False) -> list[str]:
+def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_SEGMENTS_MAX, casual: bool = False) -> list[str]:
     """QQ 上分几条发。换行处一定分开（她自己想分开发）；一行里拆出来的碎句按聊天节奏决定拆还是合。
 
     casual（负责人 2026-11-10 13:51 / 18:44："尽量不要用标点符号，切成多次对话回复"，实测留着逗号仍然显得标点多）：
     和外人聊完全不用逗号、句号、分号——这些地方要么另起一条，要么两小段很短时直接连着写（"嗯知道了"）。
     问号、感叹号、省略号、"？？？"这类带情绪的照留；顿号留着（"苹果、香蕉"拆开没法读）。
-    条数由调用方按她对这个人的态度截（冷淡一句、不熟最多三条），这里只在超过 limit 时把多出来的并进最后一条。
+    条数由调用方按她对这个人的态度截（只截零碎话，见 fit_cap）；这里不限条数，只在超过插件的格式上限时把多出来的并进最后一条。
     像文档的长回复（讲解、代码、列表）不动，标点照常。"""
     text = str(text or '').replace('\r\n', '\n')
     if is_long_form(text): return [text.strip()] if text.strip() else []
@@ -125,7 +141,8 @@ def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int 
             elif merged and chance() >= keep_apart: merged[-1] = merged[-1]+'，'+piece
             else: merged.append(piece)
         segments.extend(merged)
-    if len(segments) > limit: segments = segments[:limit-1]+[('' if casual else '，').join(segments[limit-1:])]
+    # 超过插件的格式上限（正常回复到不了）：多出来的并进最后一条，用换行隔开，不用逗号硬连
+    if len(segments) > limit: segments = segments[:limit-1]+['\n'.join(segments[limit-1:])]
     return segments
 
 
@@ -154,3 +171,19 @@ def typing_delays(segments: list[str], chance=random.random, burst: float = 0.5)
         if chance() < 0.15: value += 2+3*chance()
         delays.append(round(min(12.0, max(0.6, value)), 2))
     return delays
+
+
+# 能明确认定“没有实质内容”的语气碎片：叹词、标点，以及几句固定的敷衍话。只有超出条数的部分全是这种碎片才截掉
+FILLER = re.compile(r'^(?:[哦噢喔嗯唔啊呀哈呵嘿嘻诶欸哎唉呃哼额嘛吧呢啦咯么～~…。.!！?？\s]|行吧|好吧|随便|随你|算了|无所谓|就这样|没了|懒得说)+$')
+
+
+def fit_cap(text: str, segments: list[str], cap: int | None) -> tuple[list[str], bool]:
+    """按态度限制条数（冷淡一句、不熟最多三条）。返回（要发的几条，有没有丢掉内容）。
+
+    态度主要靠提示词影响她写多少；这里只做保守的收尾：超出条数的部分全是能明确认定没有实质内容的语气碎片（FILLER）才截掉，
+    拿不准就全发。名单（"雷神""八重神子"）、短步骤（"再断电""最后清洁"）字数再短也是正文，不能按字数删
+    （Codex PR #40 第二轮第 1 项；原问题见 2026-11-11 群聊："没说完呢""怎么不说话了"）。
+    text 暂不使用，保留参数便于以后按整段内容判断。"""
+    if not cap or len(segments) <= cap: return segments, False
+    if all(FILLER.match(piece.strip()) for piece in segments[cap:]): return segments[:cap], True
+    return segments, False

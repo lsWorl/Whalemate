@@ -65,6 +65,13 @@ class ContextService:
         recent = ' '.join(r['content'] for r in history[-6:])
         extras = prompt_extras(persona, (query or '')+' '+recent) if persona and persona.description == character.description else ''
         if extras: prompt = prompt.replace('\n当前心情：', '\n'+extras+'\n当前心情：', 1)
+        if private and channel == 'desktop':
+            # 桌面知道群里在聊什么（单向：群聊、陌生人的提示词看不到桌面）。出错不影响聊天
+            try:
+                from aicompanion.services.group_glance import prompt as group_prompt
+                prompt += group_prompt(self.database, character.id)
+            except Exception:
+                pass
         if situation: prompt += '\n'+situation
         turns=[]
         from aicompanion.expression.stream import clean_expression_history
