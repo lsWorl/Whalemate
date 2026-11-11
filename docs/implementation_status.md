@@ -1548,6 +1548,26 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 仅追加记录和两张不含私人数据的设置截图，业务代码未改；沿用已通过的 963 项单测和 Windows Smoke，不重复全量。临时验收进程已关闭，合成数据与完整证据留在本机忽略目录。
 - 未验证：真实模型话术、真实 QQ 发送、连续多日真实使用及整个阶段的负责人长期体验；不写成这些项目均已通过。
 
+## 2026-11-11 开源准备：取名、双语 README 与 MIT 许可（task/oss-readme，Claude）
+
+- 做了什么：项目对外名称定为 **Whalemate · 鲸伴**（包名 `aicompanion` 和仓库名不变）；`README.md` 重写为中文主版本，新增英文版 `README.en.md`，两边互相链接；致谢一节按“运行时依赖 / 设计参考 / AstrBot 社区插件 / 大肥鱼社区”列出计划书和任务说明里参考过的项目，并写明 GPL / AGPL 项目只借鉴思路；新增 `LICENSE`（MIT），README 写明 Live2D Cubism Core、第三方组件和各公司商标不在 MIT 范围内，并加上同人与声音声明。
+- 依据：`docs/project_plan_v4.md`、`docs/tasks.md`、`docs/tasks/*.md` 中出现的参考仓库；`src/aicompanion/assets/live2d/LICENSE.md`。
+- 怎么验证：只改 Markdown 和新增 LICENSE，不涉及代码，未运行回归；人工核对 README 中引用的本地路径都存在于仓库中。
+- 没验证：GitHub 页面上的实际渲染效果；README 里的功能状态按 `docs/tasks.md` 当日状态写，之后需要随任务进展更新。
+- 审查修复（Codex PR #44 第一轮，1 项 P1、2 项 P2）：
+  - P1：MIT 只覆盖代码和文档。美术素材（`art/`、角色 `sprites/`、`rig/textures/`、`assets/icons/`）的对外许可**尚未由负责人决定**，在中英文 README 里明确排除，并注明保留所有权利；`art/README.md` 补了同样的说明。
+  - P2：可选依赖的安装命令改为 `.\.venv\Scripts\python.exe -m pip install ...`，和快速开始用同一个虚拟环境。
+  - P2：许可说明补上 Live2D“可扩展应用”的情况：本项目支持导入任意模型，可能属于这一类，发行前需要 Live2D 审核并签订专门协议，小规模豁免不适用。依据是 Live2D 官方说明页；**分类和授权都还没有向 Live2D 确认**。
+- 负责人决定（2026-11-11）：美术素材也按 MIT 许可发布。中英文 README 的许可范围改成“代码、文档和美术素材”，`art/README.md` 记录了这项决定；同时写明素材里的公司徽标仍是商标，MIT 不授予商标权。
+
+## 2026-11-12 Live2D Cubism Core 不再随项目分发（task/oss-live2d-core，Claude）
+
+- 做了什么：按负责人要求，把 `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`（Live2D 专有许可）从仓库删除并加入 `.gitignore`；`pyproject.toml` 用 `exclude-package-data` 把它排除在 wheel 之外；`tools/build_windows.py` 默认从构建结果和覆盖更新的发布目录里删掉 Core，新增 `--keep-cubism-core` 只供自用；`tools/fetch_avatar.py` 下载前先打印许可链接。
+- 运行时：`avatar/model_package.py` 新增 `cubism_core_available()` / `require_cubism_core()`；设置里选择或手动填写外部模型时，缺少 Core 会弹出获取方法；`AvatarView.set_model` 同样检查；`main_window._apply_avatar` 在缺少 Core 时退回角色包自带的骨骼形象或立绘，状态栏只提示一次。默认角色从来不加载 Core（骨骼形象只用 PixiJS），不受影响。
+- 文档：中英文 README 的可选组件和许可说明、`docs/live2d_model_sources.md` 已更新。
+- 怎么验证：`PYTHONPATH=src:tests QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests`（容器，Python 3.13）→ 967 项，新增 4 项全部通过；失败 1、错误 2 均为 `test_companion_dates.LunarTests`，原因是容器缺少 `lunar_python`，不改本分支代码时同样失败。
+- 没验证：Windows 真机 `tools\run_checks.bat`；真机上缺少 Core 时的提示和退回效果；`build_windows.py` 实际打包；`fetch_avatar.py` 里 Live2D SDK 下载地址（`CubismSdkForWeb-4-r.7.zip`）是否仍然有效。
+
 ## 2026-11-12 清理过时文档（task/oss-docs-cleanup，Claude）
 
 - 做了什么：按负责人要求删除 `docs/project_plan.md`、`docs/project_plan_v2.md`、`docs/project_plan_v3.md`、`docs/tasks/T14-smart-expression-original-2026-11-08.md` 和 `docs/tasks/evidence/`（T14 评测证据 11 个文件）。`project_plan_v4.md`、`AGENTS.md`、`T14-smart-expression-design.md` 里的引用改为指向 git 历史（提交 `7ebc39c` 及之前）。本文件中较早的记录保留原样，其中提到的旧计划书同样可在该提交之前的历史中查看。

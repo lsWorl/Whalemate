@@ -23,6 +23,10 @@ where = ["src"]
 [tool.setuptools.package-data]
 aicompanion = ["assets/live2d/**/*", "assets/live2d/*.html", "assets/live2d/*.md", "characters/**/*", "assets/rig/*", "assets/voice/*", "assets/icons/*"]
 
+# Live2D Cubism Core 适用 Live2D 专有许可，本机下载后也不打进 wheel。
+[tool.setuptools.exclude-package-data]
+aicompanion = ["assets/live2d/vendor/live2dcubismcore.min.js"]
+
 [build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"

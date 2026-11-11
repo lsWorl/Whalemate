@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction,QIcon,QPixmap
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,
     QListWidget,QListWidgetItem,QSplitter,QComboBox,QCheckBox,QSystemTrayIcon,QMenu,QStyle,QProgressBar,QFileDialog,QMessageBox)
 from aicompanion.avatar.view import AvatarView
+from aicompanion.avatar.model_package import cubism_core_available
 from aicompanion.audio.capture import Microphone
 from aicompanion.voice.echo import EchoGate
 from aicompanion.voice.hotkey import DEFAULT_KEY, key_reader, label as key_label
@@ -307,6 +308,12 @@ class MainWindow(QMainWindow):
         character=self.controller.character
         pack=self.registry.pack(character.id)
         kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),character.model_path)
+        if kind=='cubism' and not cubism_core_available():
+            # Core 适用 Live2D 专有许可，不随项目分发；缺少时退回角色包自带的形象，提示只说一次。
+            if not getattr(self,'_cubism_core_warned',False):
+                self._cubism_core_warned=True
+                self._status('导入的 Live2D 模型需要 Live2D Cubism Core，本项目不附带，已改用角色自带的形象。获取方法见 docs/live2d_model_sources.md。')
+            kind,resource=choose_renderer(pack,None,'')
         if kind=='sprites' and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
             rig_path=self._rig_path(pack)
             if rig_path: kind,resource='rig',rig_path
