@@ -126,6 +126,57 @@
     const layer=new PIXI.Container(), sprite=new PIXI.Sprite(PIXI.Texture.EMPTY);
     layer.addChild(sprite);layer.visible=false;app.stage.addChild(layer);
     const errors=[],failed=new Set();let disposed=false, displayed='idle', displayMirror=false, displayedIndex=0, switches=0;
+    const resources={requests:0,loaded:0,released:0,bitmap_decodes:0,bitmaps_closed:0,cancelled:0,alpha_readbacks:0,loads_by_atlas:{}};
+    let idleAge=0;
+    function closeBitmap(bitmap){bitmap.close();resources.bitmaps_closed++;}
+    function release(item){
+      item.frames.forEach(t=>t.destroy(false));item.frames.length=0;
+      // 显式传入的 Resource 不归 BaseTexture 管；它和 Bitmap 都由本播放器释放。
+      // Pixi 6.5 的 ImageBitmapResource.dispose 只清 source 引用，必须由持有者显式 close。
+      // destroy(true) 同时触发 TextureSystem 的 gl.deleteTexture 并移出 managedTextures。
+      item.texture.destroy(true);item.resource.destroy();closeBitmap(item.bitmap);item.mask=null;resources.released++;
+    }
+    function cancelObsolete(keep) {
+      for(const [key,ticket] of pending)if(key!==keep){
+        pending.delete(key);ticket.cancelled=true;resources.cancelled++;
+        for(const request of ticket.requests)request.abort();ticket.requests.clear();
+      }
+    }
+    function readBytes(url,ticket) {
+      return new Promise((resolve,reject)=>{
+        const request=new XMLHttpRequest();ticket.requests.add(request);
+        const finish=(error)=>{
+          ticket.requests.delete(request);request.onload=request.onerror=request.onabort=null;
+          if(error)reject(error);else resolve(request.response);
+        };
+        request.open('GET',url);request.responseType='arraybuffer';
+        request.onload=()=>finish(request.status>=400||!request.response?new Error('整帧资源读取失败：'+url):null);
+        request.onerror=()=>finish(new Error('整帧资源读取失败：'+url));
+        request.onabort=()=>finish(new Error('整帧资源读取已取消'));
+        request.send();
+      });
+    }
+    async function loadItem(action,key,ticket) {
+      const spec=config.actions[action],cell=config.atlas_cell,width=config.atlas_columns*cell,height=Math.ceil(spec.count/config.atlas_columns)*cell;
+      if(config.hit_mask_format!=='alpha>24-msb-bitset' || !spec.hit_mask)throw new Error('整帧命中图格式错误：'+key);
+      const [encoded,mask]=await Promise.all([readBytes(built.frameBase+key,ticket),readBytes(built.frameBase+spec.hit_mask,ticket)]);
+      if(disposed||ticket.cancelled)return null;
+      if(mask.byteLength!==width*height/8)throw new Error('整帧命中图尺寸错误：'+key);
+      // 从压缩字节解码到自有 Bitmap，避免 HTMLImageElement 的 URL 解码缓存另留一份像素。
+      // 位掩码由编译工具生成，不再调用 alphaOf 的大 Canvas / getImageData 读回。
+      const bitmap=await createImageBitmap(new Blob([encoded],{type:'image/webp'}),{premultiplyAlpha:'premultiply'});
+      resources.bitmap_decodes++;
+      if(disposed||ticket.cancelled){closeBitmap(bitmap);return null;}
+      if(bitmap.width!==width || bitmap.height!==height){closeBitmap(bitmap);throw new Error('整帧图集尺寸错误：'+key);}
+      let texture,resource;
+      const frames=[];
+      try {
+        resource=new PIXI.ImageBitmapResource(bitmap);
+        texture=new PIXI.Texture(new PIXI.BaseTexture(resource,{alphaMode:PIXI.ALPHA_MODES.PMA,mipmap:PIXI.MIPMAP_MODES.OFF}));
+        for(let i=0;i<spec.count;i++)frames.push(new PIXI.Texture(texture.baseTexture,new PIXI.Rectangle((i%config.atlas_columns)*cell,Math.floor(i/config.atlas_columns)*cell,cell,cell)));
+        return {texture,resource,bitmap,mask:new Uint8Array(mask),frames,width};
+      }catch(error){frames.forEach(t=>t.destroy(false));if(texture)texture.destroy(true);if(resource)resource.destroy();closeBitmap(bitmap);throw error;}
+    }
     const dimensions=()=>[app.renderer.width/app.renderer.resolution,app.renderer.height/app.renderer.resolution];
     function atlasKey(action) {return config.actions[action]?.atlas || null;}
     function trim() {
@@ -134,24 +185,29 @@
         const candidate=[...cache.keys()].find(k=>k!==keep && k!==atlasKey(controller.state));
         if (!candidate) break;
         const item=cache.get(candidate);cache.delete(candidate);
-        item.frames.forEach(t=>t.destroy(false));item.texture.destroy(true);
+        release(item);
       }
     }
     function ensure(action) {
       const key=atlasKey(action);if(!key || failed.has(key))return Promise.resolve(null);
       if(cache.has(key)) {const item=cache.get(key);cache.delete(key);cache.set(key,item);return Promise.resolve(item);}
-      if(pending.has(key))return pending.get(key);
-      const promise=window.RigRenderer.loadOwnTexture(built.frameBase+key).then(texture=>{
-        if(disposed){pending.delete(key);texture.destroy(true);return null;}
-        const spec=config.actions[action], cell=config.atlas_cell;
-        if(texture.width!==config.atlas_columns*cell || texture.height!==Math.ceil(spec.count/config.atlas_columns)*cell){
-          texture.destroy(true);throw new Error('整帧图集尺寸错误：'+key);
-        }
-        const alpha=window.RigRenderer.alphaOf(texture), frames=[];
-        for(let i=0;i<spec.count;i++)frames.push(new PIXI.Texture(texture.baseTexture,new PIXI.Rectangle((i%config.atlas_columns)*cell,Math.floor(i/config.atlas_columns)*cell,cell,cell)));
-        const item={texture,alpha,frames,width:texture.width};cache.set(key,item);pending.delete(key);trim();return item;
-      }).catch(error=>{pending.delete(key);if(!disposed){failed.add(key);errors.push(String(error));}return null;});
-      pending.set(key,promise);return promise;
+      if(pending.has(key))return pending.get(key).promise;
+      cancelObsolete(key);
+      resources.requests++;resources.loads_by_atlas[key]=(resources.loads_by_atlas[key]||0)+1;
+      const ticket={cancelled:false,requests:new Set(),promise:null};pending.set(key,ticket);
+      const promise=loadItem(action,key,ticket).then(item=>{
+        if(!item)return null;
+        resources.loaded++;
+        if(disposed||ticket.cancelled){release(item);return null;}
+        cache.set(key,item);trim();return item;
+      }).catch(error=>{
+        if(!disposed&&!ticket.cancelled){failed.add(key);errors.push(String(error));}
+        return null;
+      }).finally(()=>{
+        for(const request of ticket.requests)request.abort();ticket.requests.clear();
+        if(pending.get(key)===ticket)pending.delete(key);
+      });
+      ticket.promise=promise;return promise;
     }
     function switchTo(action) {
       // pickup/release/land/start/brake 自身就是绘制的过渡，不能再把两张整帧透明叠放。
@@ -159,8 +215,9 @@
       displayed=action;switches++;
       built.figure.visible=action==='idle';built.figure.alpha=1;
       layer.visible=action!=='idle';layer.alpha=1;
-      const next={pickup:'drag_left',release:'fall',fall:'land',land:'dizzy',dizzy:'recover',recover:'start',start:'walk',walk:'run',run:'brake',brake:'turn'}[action];
-      if(next)ensure(next);trim();
+      if(action==='idle')sprite.texture=PIXI.Texture.EMPTY;
+      // 只加载当前真正要播的动作。小缓存配合猜测式预取会在连续活动时反复解码尚未播放的图集。
+      trim();
     }
     function layout() {
       const [w,h]=dimensions(), view=built.rig.space.view;
@@ -181,6 +238,7 @@
       try{base.tick(ms);}finally{base.state.walking=walking;}
       controller.update(base.state);
       const desired=controller.state,key=atlasKey(desired);
+      cancelObsolete(key);
       if(desired==='idle' || cache.has(key)) {
         if(desired!==displayed)switchTo(desired);
         displayMirror=controller.mirrored();
@@ -189,6 +247,11 @@
         // 先画本帧，再推进时钟；即使打断发生在加载中也不会跳过动作首帧。
         controller.tick(dt);
       } else ensure(desired);
+      idleAge=desired==='idle'&&displayed==='idle'?idleAge+dt:0;
+      if(idleAge>=(config.cache_idle_seconds||3) && cache.size){
+        sprite.texture=PIXI.Texture.EMPTY;
+        for(const item of cache.values())release(item);cache.clear();
+      }
       if(displayed!=='idle')layout();
     }
     function anchors() {
@@ -204,11 +267,13 @@
         const p=sprite.toLocal(new PIXI.Point(x,y)),cell=config.atlas_cell;
         const index=Math.max(0,item.frames.indexOf(sprite.texture));
         const px=Math.floor(p.x),py=Math.floor(p.y);
-        if(px>=0&&py>=0&&px<cell&&py<cell)hit=!item.alpha||item.alpha.alpha[(Math.floor(index/config.atlas_columns)*cell+py)*item.width+(index%config.atlas_columns)*cell+px]>24;
+        if(px>=0&&py>=0&&px<cell&&py<cell){
+          const pixel=(Math.floor(index/config.atlas_columns)*cell+py)*item.width+(index%config.atlas_columns)*cell+px;
+          hit=!!(item.mask[pixel>>3]&(128>>(pixel&7)));
+        }
       }
       return {hit,...anchors()};
     }
-    ensure('pickup');ensure('start');
     return {...base,tick,probe,
       hitmap(){const result=base.hitmap();return displayed==='idle'?result:{...result,...anchors()};},
       busy:()=>displayed!=='idle'||pending.size>0||base.busy(),
@@ -221,8 +286,14 @@
       diagnostics:()=>({...base.diagnostics(),motion:{...controller.diagnostics(),displayed,ready:displayed==='idle'||cache.has(atlasKey(displayed)),
         displayed_index:displayedIndex,displayed_mirrored:displayMirror,transition_mode:'opaque-keyframes',crossfade_ms:0,fading:false,
         visible_character_layers:Number(layer.visible && layer.alpha>0)+Number(built.figure.visible && built.figure.alpha>0),
-        layer_alpha:layer.visible?layer.alpha:built.figure.alpha,switches,atlases:cache.size,pending:pending.size,errors:errors.slice()}}),
-      dispose(){disposed=true;layer.destroy({children:true});for(const item of cache.values()){item.frames.forEach(t=>t.destroy(false));item.texture.destroy(true);}cache.clear();pending.clear();base.dispose();},
+        layer_alpha:layer.visible?layer.alpha:built.figure.alpha,switches,atlases:cache.size,pending:pending.size,errors:errors.slice(),
+        resources:{...resources,loads_by_atlas:{...resources.loads_by_atlas},cache_keys:[...cache.keys()],
+          cached_texture_bytes:[...cache.values()].reduce((n,item)=>n+item.texture.width*item.texture.height*4,0),
+          mask_bytes:[...cache.values()].reduce((n,item)=>n+item.mask.byteLength,0),
+          renderer_managed_textures:app.renderer.texture?.managedTextures?.length ?? null,
+          renderer_owned_textures:app.renderer.texture?.managedTextures?.filter(t=>[...cache.values()].some(item=>item.texture.baseTexture===t)).length ?? null,
+          renderer_destroyed_textures:app.renderer.texture?.managedTextures?.filter(t=>t.destroyed).length ?? null}}}),
+      dispose(){disposed=true;cancelObsolete(null);sprite.texture=PIXI.Texture.EMPTY;layer.destroy({children:true});for(const item of cache.values())release(item);cache.clear();base.dispose();},
     };
   }
   root.FullFrameActions={Controller,wrap};

@@ -24,7 +24,7 @@
 | walk / run | 各8 | 8 / 12 | 实际位移相位；经过位抬脚、跑步腾空及两侧腿交替 |
 | brake / turn | 2 / 3 | 10 | 刹车站稳；侧 → 正 → 另一侧，转身完成才更新朝向 |
 
-`rig/frame-actions/actions.json` 配置 `full-frame-sequence`；1254px 审帧 PNG 保留在忽略的 output 目录；包外 `art/deepseek-whale/motion-t24/frames/` 的完整画帧缩到512px无损 WebP，运行图集每格512px，最多4列，避免8张1254px图同时解码成超大纹理。按需载入、缓存最多3张图集，换角色时释放纹理。
+`rig/frame-actions/actions.json` 配置 `full-frame-sequence`；1254px 审帧 PNG 保留在忽略的 output 目录；包外 `art/deepseek-whale/motion-t24/frames/` 的完整画帧缩到512px无损 WebP，运行图集每格512px，最多4列，避免8张1254px图同时解码成超大纹理。只载入当前实际动作，缓存最多3张图集；回idle3秒或换角色时显式释放分帧、GPU基纹理、Resource和自有Bitmap。命中图为编译期alpha>24位掩码，不在运行时建立大Canvas读回。
 
 整帧层与基线 figure 同级，挂点 `[627,80]` 在头饰上方，额外整体旋转为0，不叠加基线 `S.swing`。隐藏分层引擎不再响应 walking 自动小跳，避免回 idle 时脚底悬空。整帧层采用 `opaque-keyframes`：同动作循环帧直接切换；动作之间用已画好的 pickup/release/land/start/brake 首帧衔接，不透明叠放两张角色。悬挂换向先显示原方向的回中帧70ms，再显示新方向回中帧70ms，然后接回钟摆相位。被打断而目标图集尚未就绪时，保持当前不透明画帧及距离相位；载入完成从目标过渡首帧接上。普通十姿态表情继续使用原有渲染。
 
@@ -42,7 +42,7 @@ tools\run_checks.bat
 .venv\Scripts\python.exe tools\compile_motion_frames.py --rebuild src\aicompanion\characters\deepseek-whale\rig\frame-actions
 ```
 
-整帧专项18项测试已通过，覆盖异步图集载入与异常尺寸、镜像缓存、载入中打断与首帧续接、距离相位、走跑阈值、换向回中、单角色层不透明显示、资源释放和画帧规格。完整 `tools\run_checks.bat` 退出码0：unittest 952项，OK（跳过7项）；smoke `passed: true`、`failed_checks: []`、`errors: []`，单角色层不透明检查通过。完整结果在审查包 `validation.json` 和原始日志中记录。
+整帧专项29项及生产走跑5项测试已通过，覆盖异步图集载入与异常尺寸、镜像缓存、载入中打断与首帧续接、距离相位、走跑阈值、换向回中、单角色层不透明显示、资源释放和画帧规格。完整 `tools\run_checks.bat` 退出码0：unittest 960项，OK（跳过7项）；smoke `passed: true`、`failed_checks: []`、`errors: []`，单角色层不透明检查通过。完整结果在审查包 `validation.json` 和原始日志中记录。
 
 两个真实 Qt 窗口回放各163帧，全部可见；每次诊断都是一个角色层、alpha=1、fading=false。另有拎起、悬挂换向、停下三段特写 GIF 与逐帧 PNG；已人工查看这三处，没有半透明双影。首轮旧录像与日志保留在 `output/t24-motion-review/review-history/309f0de/` 及 `checks/attempt-1/`。
 
@@ -60,3 +60,29 @@ tools\run_checks.bat
 - 性能：`tools\measure_pet.ps1` 与 `tools\measure_pet.ps1 -Motion` 分别测量空闲与连续活动60秒后10秒采样，限定本次启动的Python/QtWebEngine进程树。工作集求和为 **479.2MiB / 905.6MiB**；私有内存为 **347.2MiB / 432.8MiB**。活动记录73秒内经过run、缓存最多3张图集、无隐藏/渲染错误。**350MB目标未达，不能把性能记为通过。** 此口径未对共享页去重，长期变化未验证。
 - 专项共26项已通过；完整run_checks退出0，unittest 952项OK（跳过7），smoke passed=true、failed_checks=[]。
 - 未验证：用户本人鼠标手感与观感、多屏/高DPI、长期内存，P2待机小动作等行为。PR仍为草稿，等待Claude在新提交复核。
+
+
+## PR #47 活动内存排查（2026-11-11，待Claude复核）
+
+- 移除启动时和动作链的猜测式预加载，仅按实际动作加载；保留最多3张缓存。旧版软落地也预取dizzy，短走也预取run，触发反复解码。
+- 用可显式关闭的自有ImageBitmap替换HTMLImageElement图集加载；淘汰时销毁分帧Texture、BaseTexture/GPU纹理、显式传入的Resource并close Bitmap。回idle清空Sprite引用，冷却3秒后释放所有T24图集及掩码。
+- 编译时生成alpha>24、MSB位序的逐像素命中位掩码（12份合计1.750MiB）；不再为每次图集加载建立大Canvas/getImageData缓冲，阈值和命中结果完全一致。图集像素、画布、锚点及动作逻辑未改。
+- 中断时取消过期XHR；解码晚到时close，过期请求不能清掉新请求或重新填回idle缓存。新增按图集的载入/释放、Bitmap关闭、CPU掩码和GPU归属计数。
+
+| 阶段 | 修复前 工作集 / 私有提交 MiB | 修复后 工作集 / 私有提交 MiB |
+| --- | ---: | ---: |
+| 空闲 | 471.0 / 348.4 | 435.4 / 292.7 |
+| 连续活动60秒后采样10秒 | 918.2 / 409.0 | 467.0 / 390.5 |
+| 停止活动，等20秒后采样10秒 | 898.7 / 404.9 | 435.8 / 361.6 |
+
+活动工作集减少 **451.2MiB**；回待机工作集较本轮初始空闲增加0.4MiB，但私有提交仍增加68.9MiB，不能称为全部回收。
+
+另一进程内连续做两轮相同活动/恢复：起点443.8 / 347.6，两轮恢复依次412.5 / 290.2 → 423.2 / 348.4（工作集 / 私有提交MiB）。该短时复测只检验两轮是否继续累积，不代表长期无泄漏。
+
+最终三阶段记录中载入100、释放100，Bitmap解码/关闭100/100，alpha读回0；恢复后cache/pending/掩码字节/T24 GPU纹理均为0。两轮复测Bitmap解码/关闭196/196，末尾T24 GPU纹理0。所有采样角色可见、单层不透明、无渲染错误。
+
+所有性能端点来自同一临时MainWindow/DesktopPetWindow及其Python/QtWebEngine进程树；空闲预热15秒，活动60秒后采样10秒（总回放75秒），恢复等待20秒再采样10秒。工作集逐进程求和未去重共享页；PrivateMemorySize64为私有提交量。没有强制GC、工作集裁剪、重建窗口或降低图集分辨率。
+
+整帧专项29项 + 生产走跑5项，共34项通过；`tools\run_checks.bat` 退出0，unittest **960项OK（跳过7）**，smoke **passed=true、failed_checks=[]、errors=[]、full_frame_idle_release=true**。 首次完整运行unittest也通过，smoke唯一失败为expression_single_request；调用栈确认后台analyze混入延长后的临时模型窗口，现将资源冷却验收放在恢复原router之后，保持单次请求断言。失败日志保留于checks/attempt-memory-1。 新纹理路径实窗复测：1x idle→start头顶+1px/鞋底-1px，brake→idle头顶+0px/鞋底+1px；1.5x idle→start头顶+1px/鞋底-1px，brake→idle头顶+1px/鞋底+1px，最大1px（alignment-memory/）。
+
+原始JSON、逐进程数据与可见性/资源计数：`output/t24-motion-review/memory-before/`、`memory-after/`、`memory-repeat/` 和 `memory-analysis.json`。350MiB目标仍未达；私有提交量仍有驻留。未验证长期内存、用户本人鼠标手感/观感、多屏/高DPI及P2行为。PR保持草稿，等待Claude复核，未标可合并。

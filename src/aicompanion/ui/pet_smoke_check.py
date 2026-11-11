@@ -364,8 +364,27 @@ def schedule_pet_smoke_check(window, database, output):
         # 表达检查结束后再做额度检查和退出（原来固定在 25.0s / 26.5s，表达检查变成"等到完成"后改成串联）
         if state.get('after_expression_ran'): return
         state['after_expression_ran'] = True
-        try: offer_and_quota()
-        finally: QTimer.singleShot(1500, window.request_exit)
+        def complete():
+            try: offer_and_quota()
+            finally: QTimer.singleShot(1500, window.request_exit)
+        if not rig or not state.get('full_frame_drag_diagnostics'):complete();return
+        # 表达模型恢复原router后再等缓存冷却；延长临时模型窗口会把后台分析调用混入它的请求计数。
+        # 仍真实等待idle，核对CPU掩码、Bitmap和GPU纹理归零，不缩短生产缓存冷却时间。
+        deadline=time.monotonic()+5.0
+        def poll_release():
+            def received(raw):
+                motion=json.loads(raw).get('motion') or {};resources=motion.get('resources',{})
+                released=(motion.get('displayed')=='idle' and motion.get('atlases')==0 and motion.get('pending')==0
+                          and resources.get('cached_texture_bytes')==0 and resources.get('mask_bytes')==0
+                          and resources.get('loaded')==resources.get('released')
+                          and resources.get('bitmap_decodes')==resources.get('bitmaps_closed'))
+                if released or time.monotonic()>=deadline:
+                    state['full_frame_idle_release']=released;state['full_frame_idle_resources']=motion
+                    if not released:state['errors'].append('整帧动作回待机后资源未清空')
+                    complete();return
+                QTimer.singleShot(100,poll_release)
+            pet.view.page().runJavaScript('JSON.stringify(rigApi.diagnostics())',received)
+        poll_release()
     def safety_exit():
         # 兜底：表达检查本身出异常、串联没走到时，也要退出并留下报告，而不是一直挂着
         if not state.get('after_expression_ran'):
@@ -406,6 +425,7 @@ def schedule_pet_smoke_check(window, database, output):
             state['full_frame_transitions']=all(samples.get(name) and samples[name]['displayed']==name and not samples[name]['errors']
                                                  for name in ('walk','run','brake','turn'))
             required.append('full_frame_transitions')
+            required.append('full_frame_idle_release')
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')

@@ -53,6 +53,9 @@ def main():
     parser.add_argument('--preview-seconds', type=int, default=90)
     parser.add_argument('--motion-preview', action='store_true', help='性能用真实拖动和走跑回放')
     parser.add_argument('--motion-start', type=int, default=15)
+    parser.add_argument('--motion-seconds', type=int, default=0, help='非零时停止活动并回待机，供同进程三阶段测量')
+    parser.add_argument('--motion-rounds', type=int, default=1)
+    parser.add_argument('--motion-rest', type=int, default=35)
     parser.add_argument('--performance-log', type=Path)
     parser.add_argument('--rig', choices=('auto', 'placeholder', 'coopanion'), default='auto',
                         help='骨骼形象来源：auto = 仓库自带的十姿态鲸娘 → 本机 Coopanion 大肥鱼 → 合成的占位形象包')
@@ -75,11 +78,23 @@ def main():
         window.agent.housekeep = Report
         window.pet.show()
         if args.preview:
+            motion=None
             if args.performance_log:
                 import json,time
                 database.set_setting('pet_hide_fullscreen',False);window.pet.input_locked=True
                 presence=[];presence_started=time.monotonic();monitor=QTimer(window);monitor.setInterval(1000)
-                monitor.timeout.connect(lambda:presence.append({'seconds':round(time.monotonic()-presence_started,3),'visible':window.pet.isVisible()}));monitor.start()
+                def sample_presence():
+                    record={'seconds':round(time.monotonic()-presence_started,3),'visible':window.pet.isVisible(),
+                            'phase':'recovered' if motion and motion.stopped else 'active' if motion and motion.started else 'idle',
+                            'round':motion.round if motion else 0}
+                    presence.append(record)
+                    if hasattr(window.pet.view,'page'):
+                        def received(raw):
+                            try:record['motion']=json.loads(raw).get('motion')
+                            except (TypeError,ValueError):record['diagnostic_unavailable']=True
+                            args.performance_log.with_suffix('.state.json').write_text(json.dumps(record),encoding='utf-8')
+                        window.pet.view.page().runJavaScript('JSON.stringify(rigApi.diagnostics())',received)
+                monitor.timeout.connect(sample_presence);monitor.start()
                 app.aboutToQuit.connect(lambda:args.performance_log.write_text(json.dumps(presence,indent=2),encoding='utf-8'))
             # 预览：默认90秒；测量使用独立时长和内存设置，不影响用户数据库。
             QTimer.singleShot(1200, window.pet.drop_in); QTimer.singleShot(args.preview_seconds*1000, window.request_exit)
@@ -87,7 +102,11 @@ def main():
                 from motion_performance import MotionPerformance
                 window.speech.enabled=False;window.speak_toggle.setChecked(False);window.hide()
                 motion=MotionPerformance(window.pet,ROOT/'output/v2-check/perf-motion-behavior.json',window)
-                QTimer.singleShot(args.motion_start*1000,motion.start);app.aboutToQuit.connect(motion.save)
+                app.aboutToQuit.connect(motion.save)
+                for index in range(args.motion_rounds):
+                    start=args.motion_start+index*(args.motion_seconds+args.motion_rest)
+                    QTimer.singleShot(start*1000,motion.start)
+                    if args.motion_seconds:QTimer.singleShot((start+args.motion_seconds)*1000,motion.rest)
             # 预览里自动说一句话，展示用户气泡、思考图标、回复气泡和台词里的表情动作
             if not args.motion_preview: QTimer.singleShot(30000, lambda: window.submit('你好呀，今天过得怎么样？'))
             state = None

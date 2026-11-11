@@ -89,7 +89,8 @@
         "key-01.png",
         "key-02.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "pickup.mask"
     },
     "drag_left": {
       "type": "full-frame-sequence",
@@ -210,7 +211,8 @@
         "小幅反摆",
         "回中"
       ],
-      "center_index": 1
+      "center_index": 1,
+      "hit_mask": "drag_left.mask"
     },
     "drag_right": {
       "type": "full-frame-sequence",
@@ -332,7 +334,8 @@
         "回中"
       ],
       "center_index": 1,
-      "mirror_of": "drag_left"
+      "mirror_of": "drag_left",
+      "hit_mask": "drag_left.mask"
     },
     "release": {
       "type": "full-frame-sequence",
@@ -396,7 +399,8 @@
         "key-01.png",
         "key-02.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "release.mask"
     },
     "fall": {
       "type": "full-frame-sequence",
@@ -460,7 +464,8 @@
         "key-01.png",
         "key-02.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "fall.mask"
     },
     "land": {
       "type": "full-frame-sequence",
@@ -549,7 +554,8 @@
         "key-02.png",
         "key-03.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "land.mask"
     },
     "dizzy": {
       "type": "full-frame-sequence",
@@ -664,7 +670,8 @@
         "key-04.png"
       ],
       "phase_driver": "time",
-      "hold_seconds": 2.1
+      "hold_seconds": 2.1,
+      "hit_mask": "dizzy.mask"
     },
     "recover": {
       "type": "full-frame-sequence",
@@ -728,7 +735,8 @@
         "key-01.png",
         "key-02.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "recover.mask"
     },
     "start": {
       "type": "full-frame-sequence",
@@ -792,7 +800,8 @@
         "key-01.png",
         "key-02.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "start.mask"
     },
     "walk": {
       "type": "full-frame-sequence",
@@ -1007,7 +1016,8 @@
         "key-08.png"
       ],
       "phase_driver": "distance",
-      "stride_source": 400
+      "stride_source": 400,
+      "hit_mask": "walk.mask"
     },
     "run": {
       "type": "full-frame-sequence",
@@ -1222,7 +1232,8 @@
         "key-08.png"
       ],
       "phase_driver": "distance",
-      "stride_source": 600
+      "stride_source": 600,
+      "hit_mask": "run.mask"
     },
     "brake": {
       "type": "full-frame-sequence",
@@ -1286,7 +1297,8 @@
         "key-01.png",
         "idle-bridge.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "brake.mask"
     },
     "turn": {
       "type": "full-frame-sequence",
@@ -1375,7 +1387,10 @@
         "key-02.png",
         "key-03.png"
       ],
-      "phase_driver": "time"
+      "phase_driver": "time",
+      "hit_mask": "turn.mask"
     }
-  }
+  },
+  "hit_mask_format": "alpha>24-msb-bitset",
+  "cache_idle_seconds": 3
 }

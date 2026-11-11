@@ -1468,3 +1468,11 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 怎么验证：专项26项通过，包含生产_walk_step到JS Controller的长短距离链路、加减速边界、唯一drag转发、源帧不入src、idle桥接像素一致性。完整Windows `tools\run_checks.bat` 退出0：unittest 952项OK（跳过7）；smoke passed=true、failed_checks=[]、errors=[]。原始日志见本轮PR评论及 `output/t24-motion-review/validation.json`。
 - 实测：按形象包默认300px高度测量，真实Qt窗口1x/1.5x切层头顶、脚底均最大1px（窗口315/472px）。`measure_pet.ps1` 空闲进程树工作集479.2MiB，连续拖动/走跑60秒后再采样10秒为905.6MiB，私有内存分别347.2 / 432.8MiB；图集缓存最多3张，**350MB目标未达**。测量口径是进程工作集求和，未去重共享页。
 - 没验证：用户本人真机观感和鼠标手感、多屏/高DPI、长期内存趋势、P2待机小动作等；Claude尚需复核新提交，当前仍是草稿PR，未标可合并。
+
+
+## 2026-11-11 T24 PR #47 活动内存排查（Codex，草稿待复核）
+
+- 做了什么：T24整帧改用可close的自有Bitmap；不再预加载未进入的动作；淘汰时显式释放分帧/基纹理/GPU/Resource/Bitmap，回idle3秒清空缓存及Sprite引用；过期加载可取消且晚到解码不会回填。逐像素命中改编译期位掩码，保留alpha>24原阈值，避免每次运行建立大Canvas读回。没有改变图集像素、依赖、character.json或Aboutme路径。
+- 怎么验证：整帧专项29项 + 生产走跑5项，共34项通过；`tools\run_checks.bat` 退出0，unittest **960项OK（跳过7）**，smoke **passed=true、failed_checks=[]、errors=[]、full_frame_idle_release=true**。 首次完整运行unittest也通过，smoke唯一失败为expression_single_request；调用栈确认后台analyze混入延长后的临时模型窗口，现将资源冷却验收放在恢复原router之后，保持单次请求断言。失败日志保留于checks/attempt-memory-1。 新纹理路径实窗复测：1x idle→start头顶+1px/鞋底-1px，brake→idle头顶+0px/鞋底+1px；1.5x idle→start头顶+1px/鞋底-1px，brake→idle头顶+1px/鞋底+1px，最大1px（alignment-memory/）。 新增真实回idle资源归零检查；资源测试覆盖逐位命中一致、取消/晚到/同名重请求、重复8轮释放与有限缓存。
+- 实测：修复前同进程空闲→活动→恢复工作集471.0→918.2→898.7MiB，私有提交348.4→409.0→404.9MiB；修复后工作集435.4→467.0→435.8MiB，私有提交292.7→390.5→361.6MiB。另一进程两轮恢复为412.5 / 290.2 → 423.2 / 348.4MiB（工作集/私有提交）。所有性能端点来自同一临时MainWindow/DesktopPetWindow及其Python/QtWebEngine进程树；空闲预热15秒，活动60秒后采样10秒（总回放75秒），恢复等待20秒再采样10秒。工作集逐进程求和未去重共享页；PrivateMemorySize64为私有提交量。没有强制GC、工作集裁剪、重建窗口或降低图集分辨率。
+- 限制与未验证：350MiB目标仍未达；私有提交量仍有驻留。未验证长期内存、用户本人鼠标手感/观感、多屏/高DPI及P2行为。PR保持草稿，等待Claude复核，未标可合并。 原始记录放在用户可读的output/t24-motion-review，PR评论同步结果。

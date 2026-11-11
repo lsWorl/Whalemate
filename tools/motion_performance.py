@@ -5,12 +5,21 @@ from PySide6.QtCore import QObject,QTimer
 
 class MotionPerformance(QObject):
     def __init__(self,pet,output:Path,parent=None):
-        super().__init__(parent);self.pet=pet;self.output=output;self.started=0.;self.phase=None;self.records=[];self.ticks=0
+        super().__init__(parent);self.pet=pet;self.output=output;self.started=0.;self.stopped=0.;self.round=0;self.phase=None;self.records=[];self.ticks=0;self.segments=[]
         self.timer=QTimer(self);self.timer.setInterval(40);self.timer.timeout.connect(self.tick)
 
     def start(self):
-        self.started=time.monotonic();self.pet._life_timer.stop();self.pet.input_locked=True;self.pet.database.set_setting('pet_hide_fullscreen',False)
+        self.started=time.monotonic();self.stopped=0.;self.round+=1;self.phase=None
+        self.pet._life_timer.stop();self.pet.input_locked=True;self.pet.database.set_setting('pet_hide_fullscreen',False)
         self.timer.start()
+
+    def rest(self):
+        """同一进程回到待机；走完刹车/落地，不通过重建窗口掩盖资源驻留。"""
+        self.stopped=time.monotonic();self.timer.stop();pet=self.pet
+        self.segments.append({'round':self.round,'active_seconds':round(self.stopped-self.started,3)})
+        pet.view.set_drag(False);pet.dispatch('grab',active=False)
+        pet.stop_walking()
+        if pet.y()<pet._ground_y():pet.start_fall(0,0)
 
     def route(self,distance):
         pet=self.pet;screen=pet.screen().availableGeometry();left=screen.left();right=screen.right()-pet.width()+1
@@ -37,10 +46,11 @@ class MotionPerformance(QObject):
                 lambda raw,t=elapsed:self.record(t,raw))
 
     def record(self,elapsed,raw):
-        try:self.records.append({'seconds':round(elapsed,3),'visible':self.pet.isVisible(),'motion':json.loads(raw).get('motion')})
+        try:self.records.append({'round':self.round,'seconds':round(elapsed,3),'visible':self.pet.isVisible(),'motion':json.loads(raw).get('motion')})
         except (TypeError,ValueError):pass
 
     def save(self):
         self.timer.stop();self.output.parent.mkdir(parents=True,exist_ok=True)
         states=list(dict.fromkeys(r['motion']['displayed'] for r in self.records if r['motion']))
-        self.output.write_text(json.dumps({'active_seconds':round(time.monotonic()-self.started,3),'states_seen':states,'records':self.records},ensure_ascii=False,indent=2),encoding='utf-8')
+        seconds=sum(s['active_seconds'] for s in self.segments)+(0 if self.stopped or not self.started else time.monotonic()-self.started)
+        self.output.write_text(json.dumps({'active_seconds':round(seconds,3),'segments':self.segments,'states_seen':states,'records':self.records},ensure_ascii=False,indent=2),encoding='utf-8')

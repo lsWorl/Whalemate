@@ -116,6 +116,17 @@ class FullFrameResourceTest(unittest.TestCase):
         self.assertEqual(left['atlas'],right['atlas']);self.assertEqual(right['mirror_of'],'drag_left')
         self.assertEqual(left['phase_labels'],['最大甩开','回中','小幅反摆','回中'])
 
+    def test_bit_masks_exactly_match_original_alpha_threshold(self):
+        self.assertEqual(self.config['hit_mask_format'],'alpha>24-msb-bitset')
+        self.assertEqual(self.config['actions']['drag_left']['hit_mask'],self.config['actions']['drag_right']['hit_mask'])
+        for name,spec in self.config['actions'].items():
+            with self.subTest(action=name),self.Image.open(PACK/spec['atlas']) as atlas:
+                bits=(PACK/spec['hit_mask']).read_bytes()
+                self.assertEqual(len(bits),atlas.width*atlas.height//8)
+                restored=self.Image.frombytes('1',atlas.size,bits).convert('L')
+                expected=atlas.getchannel('A').point([0]*25+[255]*231)
+                self.assertEqual(restored.tobytes(),expected.tobytes())
+
     def test_rebuild_sources_are_outside_the_runtime_package(self):
         self.assertFalse(self.sources.is_relative_to(ROOT/'src'))
         self.assertFalse((PACK/'source').exists());self.assertEqual(len(list(self.sources.glob('*/*.webp'))),42)

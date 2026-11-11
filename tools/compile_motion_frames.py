@@ -9,13 +9,19 @@ FPS={'pickup':12,'drag_left':8,'drag_right':8,'release':12,'fall':8,'land':10,'d
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE_ROOT='art/deepseek-whale/motion-t24/frames'
 
+def save_hit_mask(atlas:Image.Image,path:Path):
+    """沿用运行时 alpha>24 的逐像素命中阈值；每像素一位，避免活动时建大画布读回 RGBA。"""
+    path.write_bytes(atlas.getchannel('A').point([0]*25+[255]*231,mode='1').tobytes())
+
 def compile_frames(review:Path,destination:Path):
     manifest=json.loads((review/'manifest.json').read_text(encoding='utf-8'))
     if manifest['layout_issues']:raise ValueError('先解决越界帧：'+str(manifest['layout_issues']))
     destination.mkdir(parents=True,exist_ok=True);actions={}
     config={'type':'full-frame-sequence','version':1,'canvas':[1254,1254],'anchor':[627,1156],'grab_pivot':[627,80],
             'source_scale':.2,'transition_mode':'opaque-keyframes','crossfade_ms':0,'direction_change_ms':70,
-            'source_root':SOURCE_ROOT,'source_frame_size':[512,512],'atlas_cell':512,'atlas_columns':4,'run_enter_speed':110,'run_exit_speed':85,'actions':actions}
+            'source_root':SOURCE_ROOT,'source_frame_size':[512,512],'atlas_cell':512,'atlas_columns':4,
+            'hit_mask_format':'alpha>24-msb-bitset','cache_idle_seconds':3,
+            'run_enter_speed':110,'run_exit_speed':85,'actions':actions}
     for name,count in COUNTS.items():
         frames=sorted((f for f in manifest['frames'] if f['action']==name),key=lambda f:f['sequence_index'])
         if len(frames)!=count:raise ValueError(f'{name} 应为 {count} 帧，实际 {len(frames)}')
@@ -27,6 +33,7 @@ def compile_frames(review:Path,destination:Path):
         if name=='dizzy':item['hold_seconds']=2.1
         if name.startswith('drag_'):item.update(phase_labels=['最大甩开','回中','小幅反摆','回中'],center_index=1)
         if name=='drag_right':item['mirror_of']='drag_left'
+        item['hit_mask']=Path(item['atlas']).with_suffix('.mask').name
         actions[name]=item
         atlas=Image.new('RGBA',(4*512,((count+3)//4)*512),(0,0,0,0));gif=[]
         folder=ROOT/SOURCE_ROOT/name
@@ -45,7 +52,9 @@ def compile_frames(review:Path,destination:Path):
             atlas.paste(runtime_frame,((i%4)*512,(i//4)*512))
             bg=Image.new('RGBA',(1254,1254),'#edf1f6');bg.alpha_composite(image)
             thumb=bg.convert('RGB').resize((418,418),Image.Resampling.LANCZOS);gif.append(thumb)
-        if name!='drag_right':atlas.save(destination/item['atlas'],lossless=True,exact=True,method=6)
+        if name!='drag_right':
+            atlas.save(destination/item['atlas'],lossless=True,exact=True,method=6)
+            save_hit_mask(atlas,destination/item['hit_mask'])
         # 累积舍入避免 12fps GIF 因每帧 80ms 而持续加速。
         durations=[round((i+1)*100/FPS[name])*10-round(i*100/FPS[name])*10 for i in range(count)]
         gif[0].save(review/name/'preview.gif',save_all=True,append_images=gif[1:],duration=durations,loop=0,disposal=2)
@@ -58,13 +67,17 @@ def compile_frames(review:Path,destination:Path):
 def rebuild_atlases(pack:Path):
     """仓库内已带等比归一后的完整源画帧，不需要生成服务即可重建运行图集。"""
     config=json.loads((pack/'actions.json').read_text(encoding='utf-8'));seen=set();cell=config['atlas_cell'];cols=config['atlas_columns']
+    config.update(hit_mask_format='alpha>24-msb-bitset',cache_idle_seconds=3)
     for spec in config['actions'].values():
+        spec['hit_mask']=Path(spec['atlas']).with_suffix('.mask').name
         if spec['atlas'] in seen:continue
         seen.add(spec['atlas']);atlas=Image.new('RGBA',(cols*cell,((spec['count']+cols-1)//cols)*cell),(0,0,0,0))
         for i,frame in enumerate(spec['source_frames']):
             with Image.open(ROOT/config['source_root']/frame['file']) as opened:image=opened.convert('RGBA').resize((cell,cell),Image.Resampling.LANCZOS)
             atlas.paste(image,((i%cols)*cell,(i//cols)*cell))
         atlas.save(pack/spec['atlas'],lossless=True,exact=True,method=6)
+        save_hit_mask(atlas,pack/spec['hit_mask'])
+    (pack/'actions.json').write_text(json.dumps(config,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('review',type=Path,nargs='?');parser.add_argument('destination',type=Path,nargs='?')
