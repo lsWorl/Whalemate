@@ -1480,3 +1480,12 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 保留 #40、#41 的实施及审查修复记录，以及 #42 的关系设定记录；任务表采用目标分支较新的语音任务状态，并保留关系设定任务。
 - 手工冲突解决仅涉及本文件和 `docs/tasks.md`；非 Markdown 文件与 Git 自动合并树一致，没有手工修改运行代码。
 - 文本检查覆盖双方记录保留、无残留冲突标记和差异空白检查。按负责人要求，纯文档冲突不单独运行回归；本 PR 的功能审计与验证结果另行记录，不将文档处理等同于功能通过。
+
+## 2026-11-11 PR #42 Codex 审查 P2 修复（Claude）
+
+- 做了什么：
+  - **SillyTavern 导出再导入保留关系**：`export_sillytavern` 在 `extensions.aicompanion` 里写入完整 bond，`_from_sillytavern` 读回。别处的卡片没有这项时不写 bond，导入后仍按默认关系。
+  - **回退旧快照不再留下新关系**：`PersonaService.revert` 恢复的是整份历史快照，快照里没有 bond（升级前的旧库）时按默认关系（父女）恢复。普通编辑 `with_content` 缺字段不改的语义不变。
+  - 同类问题顺手修：`restore_builtin`（恢复内置原文）也是整份覆盖，角色包没写 bond 时回到默认关系，不再保留用户后来改的关系。
+- 怎么验证：`tests/test_persona.py` 新增 3 项：自定义 bond（女朋友 / 宝 / 自定义标记和相处方式）的 SillyTavern 往返；无 bond 旧快照回退（含落库读回、局部编辑仍保留关系）；无 bond 角色包恢复内置原文。3 项在 `609e7be` 上失败，修复后通过。容器内（Linux、Python 3.13、Qt offscreen）全量 `unittest discover`：**935 项，927 通过、8 跳过**。
+- 没验证：本提交没有在 Windows 上重跑 `tools\run_checks.bat` 和桌宠 Smoke；不同关系在真实模型下的说话效果仍未验证。
