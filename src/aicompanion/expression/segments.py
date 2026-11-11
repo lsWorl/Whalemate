@@ -14,7 +14,8 @@
 QQ 另有一套（负责人 2026-11-09 18:05："不要一次性生成这么多回复，不像人在手敲；不要用空格作间断，
 如'哟 逆天这次都用上了'，可以搞成两次回复，每次间隔一段时间"；18:27 补充："不是限制最多几条，要有不固定的频率，
 根据情况和上下文而定"）。参考 MaiBot 的分句合并和真实聊天记录（约六成消息一句，其余两三句）：
-- 发几条首先由她自己决定：换行就是另一条，这里不砍、不并（只有超过 QQ_FLOOD_LIMIT 条的刷屏才并）；
+- 发几条首先由她自己决定：换行就是另一条，这里不砍、不并（负责人 2026-11-11 15:46：不用防刷屏，按打字速度慢慢发就不会刷屏；
+  QQ_SEGMENTS_MAX 只是插件收消息时的格式上限，正常回复到不了）；
 - "，"照常保留，不换成空格；
 - 一行里夹在中文之间的空格、"。"：当作"这里可能想分两条发"。拆不拆按此刻的聊天节奏（chat_burst）：
   情绪激动、关系亲近、内容长 → 更容易拆开（对方连发不算：连发的几条会先合并成一次回复）；随口应一句、关系一般 → 多半合成一条（用"，"连）；
@@ -26,7 +27,7 @@ import re
 
 
 MAX_SEGMENTS = 6
-QQ_FLOOD_LIMIT = 8      # 只防刷屏，不是"最多几条"的设计
+QQ_SEGMENTS_MAX = 64    # 和插件 MAX_SEGMENTS 一致：插件只接受这么多段（防异常输入），不是"最多几条"的设计
 CJK = '\u4e00-\u9fff\u3400-\u4dbf'
 LONG_FORM = 600
 FENCE = re.compile(r'^\s*(```|~~~)', re.M)
@@ -115,13 +116,13 @@ def _qq_pieces(line: str, casual: bool = False) -> list[tuple[str, str]]:
 CASUAL_GLUE = 10    # 和外人聊：合在一条里的两小段加起来不超过这么多字，就直接连着写、不加逗号（"嗯知道了"）
 
 
-def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_FLOOD_LIMIT, casual: bool = False) -> list[str]:
+def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int = QQ_SEGMENTS_MAX, casual: bool = False) -> list[str]:
     """QQ 上分几条发。换行处一定分开（她自己想分开发）；一行里拆出来的碎句按聊天节奏决定拆还是合。
 
     casual（负责人 2026-11-10 13:51 / 18:44："尽量不要用标点符号，切成多次对话回复"，实测留着逗号仍然显得标点多）：
     和外人聊完全不用逗号、句号、分号——这些地方要么另起一条，要么两小段很短时直接连着写（"嗯知道了"）。
     问号、感叹号、省略号、"？？？"这类带情绪的照留；顿号留着（"苹果、香蕉"拆开没法读）。
-    条数由调用方按她对这个人的态度截（冷淡一句、不熟最多三条），这里只在超过 limit 时把多出来的并进最后一条。
+    条数由调用方按她对这个人的态度截（只截零碎话，见 fit_cap）；这里不限条数，只在超过插件的格式上限时把多出来的并进最后一条。
     像文档的长回复（讲解、代码、列表）不动，标点照常。"""
     text = str(text or '').replace('\r\n', '\n')
     if is_long_form(text): return [text.strip()] if text.strip() else []
@@ -140,7 +141,7 @@ def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int 
             elif merged and chance() >= keep_apart: merged[-1] = merged[-1]+'，'+piece
             else: merged.append(piece)
         segments.extend(merged)
-    # 超过防刷屏条数：多出来的并进最后一条，用换行隔开（不用逗号硬连，QQ 里现在一般不加标点；负责人 2026-11-11）
+    # 超过插件的格式上限（正常回复到不了）：多出来的并进最后一条，用换行隔开，不用逗号硬连
     if len(segments) > limit: segments = segments[:limit-1]+['\n'.join(segments[limit-1:])]
     return segments
 
@@ -182,7 +183,7 @@ def fit_cap(text: str, segments: list[str], cap: int | None) -> tuple[list[str],
     只丢零碎的口头话：丢掉的每条不超过 DROP_PIECE 字、加起来不超过 DROP_MAX 字。超过的说明后面是有内容的回答（配队、步骤、答案），
     丢了对方就只看到开头（2026-11-11 群聊："没说完呢""怎么不说话了"），而她以为自己全说了，接下来就对不上。
     这时照她拆好的条数全发（负责人 2026-11-11 15:39："特殊情况可以多发几条会话消息，不用通过逗号这种方式分隔"），
-    只受 QQ_FLOOD_LIMIT 防刷屏约束；text 留着给以后按内容判断用。"""
+    text 留着给以后按内容判断用。"""
     if not cap or len(segments) <= cap: return segments, False
     rest = segments[cap:]
     if len(''.join(rest)) <= DROP_MAX and all(len(piece) <= DROP_PIECE for piece in rest): return segments[:cap], True

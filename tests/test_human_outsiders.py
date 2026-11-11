@@ -94,7 +94,7 @@ class PunctuationTests(BridgeFixture):
         text = '行\n第一步先这样做\n第二步然后那样做\n第三步最后再检查一遍'
         self.assertEqual(fit_cap(text, text.split('\n'), 3), (text.split('\n'), False))                  # 有内容：全发，不截不并
         many = [f'第{i}条' for i in range(10)]
-        self.assertEqual(qq_segments('\n'.join(many), casual=True)[-1], '\n'.join(many[7:]))           # 防刷屏并条用换行，不用逗号
+        self.assertEqual(qq_segments('\n'.join(many), casual=True), many)                                   # 不按条数合并（慢慢发不会刷屏）
         self.assertEqual(fit_cap('x', ['a', 'b'], None), (['a', 'b'], False))
 
     def test_casual_segments_use_no_commas_or_full_stops(self):
