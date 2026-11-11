@@ -50,6 +50,10 @@ def use_posepack(source: str, temp: Path) -> None:
 def main():
     parser = argparse.ArgumentParser(description='Offline desktop pet verification.')
     parser.add_argument('--preview', action='store_true', help='Show a temporary pet for up to 90 seconds.')
+    parser.add_argument('--preview-seconds', type=int, default=90)
+    parser.add_argument('--motion-preview', action='store_true', help='性能用真实拖动和走跑回放')
+    parser.add_argument('--motion-start', type=int, default=15)
+    parser.add_argument('--performance-log', type=Path)
     parser.add_argument('--rig', choices=('auto', 'placeholder', 'coopanion'), default='auto',
                         help='骨骼形象来源：auto = 仓库自带的十姿态鲸娘 → 本机 Coopanion 大肥鱼 → 合成的占位形象包')
     parser.add_argument('--posepack', metavar='DIR', help='用十姿态分层包（pose-layered-v2 目录）自检，优先于 --rig')
@@ -71,10 +75,21 @@ def main():
         window.agent.housekeep = Report
         window.pet.show()
         if args.preview:
-            # 预览：角色常驻 90 秒，可以亲手戳、拖、双击输入、右键菜单。
-            QTimer.singleShot(1200, window.pet.drop_in); QTimer.singleShot(90000, window.request_exit)
+            if args.performance_log:
+                import json,time
+                database.set_setting('pet_hide_fullscreen',False);window.pet.input_locked=True
+                presence=[];presence_started=time.monotonic();monitor=QTimer(window);monitor.setInterval(1000)
+                monitor.timeout.connect(lambda:presence.append({'seconds':round(time.monotonic()-presence_started,3),'visible':window.pet.isVisible()}));monitor.start()
+                app.aboutToQuit.connect(lambda:args.performance_log.write_text(json.dumps(presence,indent=2),encoding='utf-8'))
+            # 预览：默认90秒；测量使用独立时长和内存设置，不影响用户数据库。
+            QTimer.singleShot(1200, window.pet.drop_in); QTimer.singleShot(args.preview_seconds*1000, window.request_exit)
+            if args.motion_preview:
+                from motion_performance import MotionPerformance
+                window.speech.enabled=False;window.speak_toggle.setChecked(False);window.hide()
+                motion=MotionPerformance(window.pet,ROOT/'output/v2-check/perf-motion-behavior.json',window)
+                QTimer.singleShot(args.motion_start*1000,motion.start);app.aboutToQuit.connect(motion.save)
             # 预览里自动说一句话，展示用户气泡、思考图标、回复气泡和台词里的表情动作
-            QTimer.singleShot(30000, lambda: window.submit('你好呀，今天过得怎么样？'))
+            if not args.motion_preview: QTimer.singleShot(30000, lambda: window.submit('你好呀，今天过得怎么样？'))
             state = None
         else: state = schedule_pet_smoke_check(window, database, ROOT/'docs/pet-v2/smoke')
         code = app.exec()

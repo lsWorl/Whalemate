@@ -79,7 +79,7 @@ class FullFrameResourceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from PIL import Image
-        cls.Image=Image;cls.config=json.loads((PACK/'actions.json').read_text(encoding='utf-8'))
+        cls.Image=Image;cls.config=json.loads((PACK/'actions.json').read_text(encoding='utf-8'));cls.sources=ROOT/cls.config['source_root']
 
     def test_canvas_anchor_counts_and_timing(self):
         c=self.config;self.assertEqual(c['type'],'full-frame-sequence');self.assertEqual(c['canvas'],[1254,1254]);self.assertEqual(c['anchor'],[627,1156])
@@ -95,7 +95,7 @@ class FullFrameResourceTest(unittest.TestCase):
             self.assertEqual(len(spec['source_frames']),spec['count'])
             for frame in spec['source_frames']:
                 with self.subTest(action=name,path=frame['file']):
-                    with self.Image.open(PACK/frame['file']) as im:
+                    with self.Image.open(self.sources/frame['file']) as im:
                         self.assertEqual(list(im.size),self.config['source_frame_size']);self.assertEqual(im.mode,'RGBA');self.assertEqual(im.getchannel('A').getextrema(),(0,255))
                     self.assertLessEqual(abs(frame['head_width_qa']['error_percent']),2)
                     if frame['grounded']:self.assertEqual(frame['feet_y'],1156)
@@ -106,7 +106,7 @@ class FullFrameResourceTest(unittest.TestCase):
             with self.Image.open(PACK/spec['atlas']) as atlas:
                 self.assertEqual(atlas.size,(2048,((spec['count']+3)//4)*512))
                 for i in range(spec['count']):
-                    with self.Image.open(PACK/spec['source_frames'][i]['file']) as original:
+                    with self.Image.open(self.sources/spec['source_frames'][i]['file']) as original:
                         expected=original.convert('RGBA').resize((512,512),self.Image.Resampling.LANCZOS)
                     cell=atlas.crop(((i%4)*512,(i//4)*512,(i%4+1)*512,(i//4+1)*512)).convert('RGBA')
                     self.assertEqual(cell.tobytes(),expected.tobytes(),name)
@@ -115,5 +115,17 @@ class FullFrameResourceTest(unittest.TestCase):
         left=self.config['actions']['drag_left'];right=self.config['actions']['drag_right']
         self.assertEqual(left['atlas'],right['atlas']);self.assertEqual(right['mirror_of'],'drag_left')
         self.assertEqual(left['phase_labels'],['最大甩开','回中','小幅反摆','回中'])
+
+    def test_rebuild_sources_are_outside_the_runtime_package(self):
+        self.assertFalse(self.sources.is_relative_to(ROOT/'src'))
+        self.assertFalse((PACK/'source').exists());self.assertEqual(len(list(self.sources.glob('*/*.webp'))),42)
+
+    def test_brake_bridge_is_the_approved_idle_complete_image(self):
+        original=self.Image.open(ROOT/'art/deepseek-whale/originals/idle.png').convert('RGBA')
+        translated=self.Image.new('RGBA',original.size,(0,0,0,0));translated.alpha_composite(original,(0,1))
+        expected=translated.resize((512,512),self.Image.Resampling.LANCZOS)
+        spec=self.config['actions']['brake'];frame=spec['source_frames'][-1]
+        self.assertTrue(frame['baseline_bridge'])
+        with self.Image.open(self.sources/frame['file']) as actual:self.assertEqual(actual.convert('RGBA').tobytes(),expected.tobytes())
 
 if __name__=='__main__':unittest.main()

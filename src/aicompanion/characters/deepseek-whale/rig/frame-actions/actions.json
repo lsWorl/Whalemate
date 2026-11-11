@@ -17,6 +17,7 @@
   "transition_mode": "opaque-keyframes",
   "crossfade_ms": 0,
   "direction_change_ms": 70,
+  "source_root": "art/deepseek-whale/motion-t24/frames",
   "source_frame_size": [
     512,
     512
@@ -34,7 +35,7 @@
       "atlas": "pickup.webp",
       "source_frames": [
         {
-          "file": "source/pickup/frame-01.webp",
+          "file": "pickup/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "56732275a336f6ac279a8c83442c2a48ef263e45d203bd19c200713075d42cd4",
           "feet_y": 1120,
@@ -50,10 +51,11 @@
               706,
               505
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/pickup/frame-02.webp",
+          "file": "pickup/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "bee7e23220504dce757636f445b6baf2b51aa637b0edcbe1ac8dfcc5b35e08ab",
           "feet_y": 1010,
@@ -69,8 +71,19 @@
               715,
               535
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -86,7 +99,7 @@
       "atlas": "drag_left.webp",
       "source_frames": [
         {
-          "file": "source/drag_left/frame-01.webp",
+          "file": "drag_left/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "581c05beac2269a46232ca7b66b05a6fe4f0de659db109c71d39af74679faef8",
           "feet_y": 1020,
@@ -102,10 +115,11 @@
               633,
               540
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/drag_left/frame-02.webp",
+          "file": "drag_left/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "924dd9172d8052d4d13073f3cc2d82d9be04e2293d43faf9afe0b1e2279e9794",
           "feet_y": 1040,
@@ -121,10 +135,11 @@
               668,
               543
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/drag_left/frame-03.webp",
+          "file": "drag_left/frame-03.webp",
           "review_key": "key-03.png",
           "sha256_png": "3b5fe519cf85f985c683166249c8da724cf7c7d3bf3f0c96a1c0ecdfb02c7f90",
           "feet_y": 1060,
@@ -140,10 +155,11 @@
               708,
               557
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/drag_left/frame-04.webp",
+          "file": "drag_left/frame-04.webp",
           "review_key": "key-04.png",
           "sha256_png": "0dbf82d81e41c5c2d3b6c27a904fe5484aabbb10f543ccf0421a6ea35ef3a776",
           "feet_y": 1040,
@@ -159,8 +175,27 @@
               675,
               509
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -185,7 +220,7 @@
       "atlas": "drag_left.webp",
       "source_frames": [
         {
-          "file": "source/drag_left/frame-01.webp",
+          "file": "drag_left/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "9ec54e7a639351c31c704defdc498a6222b0dfa979581c0dc07a56d6b9581875",
           "feet_y": 1020,
@@ -201,10 +236,11 @@
               633,
               540
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/drag_left/frame-02.webp",
+          "file": "drag_left/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "1732125beca01452fd0a80214fef81c91abc83d7286bbcbae6953e94747051aa",
           "feet_y": 1040,
@@ -220,10 +256,11 @@
               668,
               543
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/drag_left/frame-03.webp",
+          "file": "drag_left/frame-03.webp",
           "review_key": "key-03.png",
           "sha256_png": "e4b90ea488d80d9a62ab05707229ce36e22f21ac1840547ba6ef645d448dfaa2",
           "feet_y": 1060,
@@ -239,10 +276,11 @@
               708,
               557
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/drag_left/frame-04.webp",
+          "file": "drag_left/frame-04.webp",
           "review_key": "key-04.png",
           "sha256_png": "3d697f91ed415ab8fffd7fdd896e3034f2c8621278685c1553de9d5ac5e1cfd7",
           "feet_y": 1040,
@@ -258,8 +296,27 @@
               675,
               509
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -285,7 +342,7 @@
       "atlas": "release.webp",
       "source_frames": [
         {
-          "file": "source/release/frame-01.webp",
+          "file": "release/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "6f3f4a653d49c14c3b0dd562ede7cbb46be7b7df69e773c6bd38ec7994d96a39",
           "feet_y": 1040,
@@ -301,10 +358,11 @@
               697,
               570
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/release/frame-02.webp",
+          "file": "release/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "13d4fd7be7cb3c6c3cf52b0ce3cf1e1495caa6c0fc33c91dd91f8014197a9e2f",
           "feet_y": 1091,
@@ -320,8 +378,19 @@
               730,
               527
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -337,7 +406,7 @@
       "atlas": "fall.webp",
       "source_frames": [
         {
-          "file": "source/fall/frame-01.webp",
+          "file": "fall/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "3835fd83c6f502be701d9973f8b7584398b6bff3a42d7d5c8c02e0b103f54d2a",
           "feet_y": 1080,
@@ -353,10 +422,11 @@
               728,
               538
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/fall/frame-02.webp",
+          "file": "fall/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "319ba66b0dbb4bd029d2e924b3eeb003f2292e871ac244c40e43ba35de2a3005",
           "feet_y": 1135,
@@ -372,8 +442,19 @@
               687,
               559
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -389,7 +470,7 @@
       "atlas": "land.webp",
       "source_frames": [
         {
-          "file": "source/land/frame-01.webp",
+          "file": "land/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "a872a63eddfc1990e5e1b4004f810fa63221decf64803d2829574f2745ff9613",
           "feet_y": 1156,
@@ -405,10 +486,11 @@
               687,
               668
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/land/frame-02.webp",
+          "file": "land/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "2b6146caa62656199d1a3591a5de4d522ea35fa547d3bb00d66749e7dabf6471",
           "feet_y": 1156,
@@ -424,10 +506,11 @@
               719,
               712
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/land/frame-03.webp",
+          "file": "land/frame-03.webp",
           "review_key": "key-03.png",
           "sha256_png": "bd5d3ed87497ca6666840e9d0f9522dbbea6cb806a1aa8c9422c242b65a9e726",
           "feet_y": 1156,
@@ -443,8 +526,23 @@
               716,
               570
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -461,7 +559,7 @@
       "atlas": "dizzy.webp",
       "source_frames": [
         {
-          "file": "source/dizzy/frame-01.webp",
+          "file": "dizzy/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "4db5776268accbda921db66bf723174d8c0cdd249c6b2dcccf7962cc3fb5aeee",
           "feet_y": 1156,
@@ -477,10 +575,11 @@
               713,
               568
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/dizzy/frame-02.webp",
+          "file": "dizzy/frame-02.webp",
           "review_key": "key-03.png",
           "sha256_png": "97d0fb53e798b26ebabdd6d2273d2a835674612802868e1d7de87485fa7cf37c",
           "feet_y": 1156,
@@ -496,10 +595,11 @@
               719,
               566
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/dizzy/frame-03.webp",
+          "file": "dizzy/frame-03.webp",
           "review_key": "key-02.png",
           "sha256_png": "c2178cc1d678f2078f7fd5236eb51bfede447bd427bc8659f37d873cc7f5a89e",
           "feet_y": 1156,
@@ -515,10 +615,11 @@
               674,
               551
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/dizzy/frame-04.webp",
+          "file": "dizzy/frame-04.webp",
           "review_key": "key-04.png",
           "sha256_png": "8575f0272f5fe34e8794255cbe528d605b6c6b9a6cfd548824b1cbe428657b66",
           "feet_y": 1156,
@@ -534,8 +635,27 @@
               714,
               569
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -554,7 +674,7 @@
       "atlas": "recover.webp",
       "source_frames": [
         {
-          "file": "source/recover/frame-01.webp",
+          "file": "recover/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "52d1956929ced1c31e263492a12918a35faff1fa3eeeb6c36bf242ff1600af26",
           "feet_y": 1156,
@@ -570,10 +690,11 @@
               661,
               695
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/recover/frame-02.webp",
+          "file": "recover/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "3a4a7e66c2952ae78e80579d443cb007da6182fffc09146c360dce97c826340b",
           "feet_y": 1156,
@@ -589,8 +710,19 @@
               782,
               584
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -606,7 +738,7 @@
       "atlas": "start.webp",
       "source_frames": [
         {
-          "file": "source/start/frame-01.webp",
+          "file": "start/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "b73011376901b71e7b1ebc1c8b98f2b3514c277cd09fcb698b8e8d82bf688eb2",
           "feet_y": 1156,
@@ -622,10 +754,11 @@
               871,
               607
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/start/frame-02.webp",
+          "file": "start/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "cecea2c59061e19b3f397ba650b9ed12cbd94ff3fda80fe9441bd7a49296eb5a",
           "feet_y": 1156,
@@ -641,8 +774,19 @@
               817,
               562
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          -5
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -658,7 +802,7 @@
       "atlas": "walk.webp",
       "source_frames": [
         {
-          "file": "source/walk/frame-01.webp",
+          "file": "walk/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "09466fe57d0a393362712b9ad6f9016922bb6ce884ec7c3a672cc43ddfb553aa",
           "feet_y": 1156,
@@ -674,10 +818,11 @@
               846,
               586
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-02.webp",
+          "file": "walk/frame-02.webp",
           "review_key": "key-05.png",
           "sha256_png": "53bf8a380c757a20d1c66633b344a769bd33dc6c98350c089b1d8ddbce5147f9",
           "feet_y": 1156,
@@ -693,10 +838,11 @@
               830,
               575
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-03.webp",
+          "file": "walk/frame-03.webp",
           "review_key": "key-02.png",
           "sha256_png": "dda26c8092ae72810fa51055eb68d00507d82ae51c2236b97771b3cc72362031",
           "feet_y": 1156,
@@ -712,10 +858,11 @@
               791,
               556
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-04.webp",
+          "file": "walk/frame-04.webp",
           "review_key": "key-06.png",
           "sha256_png": "83dee43b8bcc41f6eda8fa85a5162baf023d5cf1be78b6cd1caa57df5abbbf06",
           "feet_y": 1156,
@@ -731,10 +878,11 @@
               798,
               551
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-05.webp",
+          "file": "walk/frame-05.webp",
           "review_key": "key-03.png",
           "sha256_png": "f1e09f2804f27e6052bf5519243c35b500450afa10cc106a6ed42fee63c2be53",
           "feet_y": 1156,
@@ -750,10 +898,11 @@
               837,
               578
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-06.webp",
+          "file": "walk/frame-06.webp",
           "review_key": "key-07.png",
           "sha256_png": "1f1549e8137e381148670fd87975639498eb24a2b9919d058b44f8daca78565b",
           "feet_y": 1156,
@@ -769,10 +918,11 @@
               847,
               585
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-07.webp",
+          "file": "walk/frame-07.webp",
           "review_key": "key-04.png",
           "sha256_png": "c0bd65f27e7fd47f6ac30abedb7c6864148fc3dff28ee48af97381185fc3f433",
           "feet_y": 1156,
@@ -788,10 +938,11 @@
               785,
               553
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/walk/frame-08.webp",
+          "file": "walk/frame-08.webp",
           "review_key": "key-08.png",
           "sha256_png": "2c72660c8dae2dd8f90fab81e9fa9657f14dad740e9321cf421f22430155f262",
           "feet_y": 1156,
@@ -807,8 +958,43 @@
               785,
               546
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -831,7 +1017,7 @@
       "atlas": "run.webp",
       "source_frames": [
         {
-          "file": "source/run/frame-01.webp",
+          "file": "run/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "b910e5b471813a412d99f8af5756622ae5d801b037d830b818d3c0e135acdc6d",
           "feet_y": 1156,
@@ -847,10 +1033,11 @@
               884,
               575
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-02.webp",
+          "file": "run/frame-02.webp",
           "review_key": "key-05.png",
           "sha256_png": "b50f7da2fa0537676ef6095882b4e991acc257b4c7d213add11c8f3f869d8ac4",
           "feet_y": 1156,
@@ -866,10 +1053,11 @@
               892,
               581
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-03.webp",
+          "file": "run/frame-03.webp",
           "review_key": "key-02.png",
           "sha256_png": "e07d622593e58f53c26ccf4c701520ff64cbcdb7232e6deeb96193e008b960b5",
           "feet_y": 1075,
@@ -885,10 +1073,11 @@
               963,
               589
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-04.webp",
+          "file": "run/frame-04.webp",
           "review_key": "key-06.png",
           "sha256_png": "ab9765395d7eb480d031b291fe2e998808c44f142613270d1cfe14bbb1fdcfcb",
           "feet_y": 1110,
@@ -904,10 +1093,11 @@
               936,
               574
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-05.webp",
+          "file": "run/frame-05.webp",
           "review_key": "key-03.png",
           "sha256_png": "f3bfa7b8eb1e7f0ea3721b9deb996ae0ee02d88b3723c1c3c2c5dc5fe0f71ea5",
           "feet_y": 1156,
@@ -923,10 +1113,11 @@
               885,
               577
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-06.webp",
+          "file": "run/frame-06.webp",
           "review_key": "key-07.png",
           "sha256_png": "feb6b58b8b0f28ab09ee0f9a486f93c6ca4cef9c3fc13d56c1b1fd8da2cbc111",
           "feet_y": 1156,
@@ -942,10 +1133,11 @@
               888,
               579
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-07.webp",
+          "file": "run/frame-07.webp",
           "review_key": "key-04.png",
           "sha256_png": "d85ed0245ab1748b43a11943b30b3fa182b02929614e7e9b400be8bb57ef7d36",
           "feet_y": 1075,
@@ -961,10 +1153,11 @@
               953,
               583
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/run/frame-08.webp",
+          "file": "run/frame-08.webp",
           "review_key": "key-08.png",
           "sha256_png": "2035f2780b66e0f58f11ac32f44f2b9d6524826db3855eb596108795b35bc7a1",
           "feet_y": 1110,
@@ -980,8 +1173,43 @@
               922,
               563
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",
@@ -1004,7 +1232,7 @@
       "atlas": "brake.webp",
       "source_frames": [
         {
-          "file": "source/brake/frame-01.webp",
+          "file": "brake/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "3f0eb0e231930513ee0aaf284f4fdc2dfabd4a077c7ea5e00914dee9fcb8bbb4",
           "feet_y": 1156,
@@ -1020,31 +1248,43 @@
               793,
               571
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/brake/frame-02.webp",
-          "review_key": "key-02.png",
-          "sha256_png": "541252618631a27b23ff226856532edd2fb2efa6e233f7dab0c75ca0b4a27b67",
+          "file": "brake/frame-02.webp",
+          "review_key": "idle-bridge.png",
+          "sha256_png": "3251ce0d596524bdf25ff38f544884ed6cb058a3d7524ea6077d87f54fd08f1d",
           "feet_y": 1156,
           "grounded": true,
           "head_width_qa": {
-            "basis": "脸颊左右轮廓；不含头饰、鳍耳、发尾、肢体",
-            "reference_px": 249,
-            "measured_px": 247,
-            "error_percent": -0.803,
+            "basis": "原定稿idle整帧桥接，与基线自身匹配；不重新缩放头身",
+            "reference_px": 256,
+            "measured_px": 256,
+            "error_percent": 0,
             "landmarks": [
-              572,
-              422,
-              819,
-              571
+              474,
+              449,
+              730,
+              590
             ]
-          }
+          },
+          "baseline_bridge": true
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          -5
+        ]
       ],
       "playback_order": [
         "key-01.png",
-        "key-02.png"
+        "idle-bridge.png"
       ],
       "phase_driver": "time"
     },
@@ -1056,7 +1296,7 @@
       "atlas": "turn.webp",
       "source_frames": [
         {
-          "file": "source/turn/frame-01.webp",
+          "file": "turn/frame-01.webp",
           "review_key": "key-01.png",
           "sha256_png": "2589045a8c5c90a84b402c1276040f1663c52485234465abf0044c2e3af22d62",
           "feet_y": 1156,
@@ -1072,10 +1312,11 @@
               866,
               591
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/turn/frame-02.webp",
+          "file": "turn/frame-02.webp",
           "review_key": "key-02.png",
           "sha256_png": "5bfbefc13f2db64204f5b4035b5779f2bd8906ce9a17ca422511eae962b951c7",
           "feet_y": 1156,
@@ -1091,10 +1332,11 @@
               711,
               535
             ]
-          }
+          },
+          "baseline_bridge": false
         },
         {
-          "file": "source/turn/frame-03.webp",
+          "file": "turn/frame-03.webp",
           "review_key": "key-03.png",
           "sha256_png": "3b015ff262f1f5b9bcc31c056ff36f34011263fff0c61e1733dcc2882f7ca6aa",
           "feet_y": 1156,
@@ -1110,8 +1352,23 @@
               866,
               591
             ]
-          }
+          },
+          "baseline_bridge": false
         }
+      ],
+      "frame_offsets": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
       ],
       "playback_order": [
         "key-01.png",

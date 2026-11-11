@@ -183,10 +183,8 @@ class RigAvatar(QWebEngineView):
         self._set(facing=1 if direction >= 0 else -1)
 
     def set_drag(self, active, velocity_x=0.0):
-        changed = self.dragging != bool(active)
         self.dragging = bool(active)
         self._set(dragging=self.dragging, dragVx=round(velocity_x if active else 0.0))
-        if changed: self.motion_event("drag", active=self.dragging)
 
     def motion_event(self, name, **data):
         """只转发物理事件；动作时序与整帧淡入由 posepack 播放器管理。"""

@@ -170,10 +170,16 @@
       layer.pivot.set(pivot[0],pivot[1]);layer.position.set(w/2+(pivot[0]-config.anchor[0])*scale*flip,h-2+(pivot[1]-config.anchor[1])*scale);
       layer.scale.set(scale*flip,scale);layer.rotation=0;
       sprite.scale.set(config.canvas[0]/config.atlas_cell,config.canvas[1]/config.atlas_cell);
+      const offset=config.actions[displayed]?.frame_offsets?.[displayedIndex] || [0,0];
+      sprite.position.set(offset[0],offset[1]);
     }
     function tick(ms) {
       if(disposed)return;
-      const dt=clamp(ms/1000,0,.05);base.tick(ms);controller.update(base.state);
+      const dt=clamp(ms/1000,0,.05),walking=base.state.walking;
+      // 整帧已经画了脚步；隐藏的分层引擎不能继续触发旧的自动小跳，否则回 idle 时脚底会腾空。
+      base.state.walking=0;
+      try{base.tick(ms);}finally{base.state.walking=walking;}
+      controller.update(base.state);
       const desired=controller.state,key=atlasKey(desired);
       if(desired==='idle' || cache.has(key)) {
         if(desired!==displayed)switchTo(desired);
@@ -186,8 +192,10 @@
       if(displayed!=='idle')layout();
     }
     function anchors() {
-      const [w,h]=dimensions();const p=layer.toGlobal(new PIXI.Point(config.anchor[0],130));
-      return {head:[p.x,p.y],feet:[w/2,h-2]};
+      const offset=config.actions[displayed]?.frame_offsets?.[displayedIndex] || [0,0];
+      const p=layer.toGlobal(new PIXI.Point(config.anchor[0]+offset[0],130+offset[1]));
+      const feet=layer.toGlobal(new PIXI.Point(config.anchor[0]+offset[0],config.anchor[1]+offset[1]));
+      return {head:[p.x,p.y],feet:[feet.x,feet.y]};
     }
     function probe(x,y) {
       if(displayed==='idle')return base.probe(x,y);

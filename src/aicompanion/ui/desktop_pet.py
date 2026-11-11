@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QVBoxLayout, QWidget
 from aicompanion.brain.focus import focus_until, in_quiet_hours, is_focused, set_focus
 from aicompanion.pet.behavior import LinePacer, greeting_key
 from aicompanion.pet.state import PetStateMachine
+from aicompanion.pet.walk_motion import WalkMotion
 from aicompanion.ui import desktop_integration as desktop
 from aicompanion.ui.pet_bubble import ACTIVITY, BubbleStack, QuickInput
 from aicompanion.ui.pet_geometry import fit_pet_geometry
@@ -60,7 +61,7 @@ class DesktopPetWindow(QWidget):
         self._walk_timer = QTimer(self); self._walk_timer.setInterval(16); self._walk_timer.timeout.connect(self._walk_step)
         self._fall_timer = QTimer(self); self._fall_timer.setInterval(16); self._fall_timer.timeout.connect(self._fall_step)
         self._velocity = [0.0, 0.0]; self._fall_last = 0.0; self._thrown = False; self._greet_on_land = False
-        self._walk_target = None; self._walk_last = 0.0; self._next_wander = time.monotonic()+self.rng.uniform(60, 150)
+        self._walk_target = None; self._walk_motion = None; self._walk_last = 0.0; self._next_wander = time.monotonic()+self.rng.uniform(60, 150)
         # 骨骼形象：不裁剪窗口，按光标是否在角色身上切换"是否接收鼠标"（与 Coopanion 相同思路）
         self._input_transparent = None
         self._input_timer = QTimer(self); self._input_timer.setInterval(30); self._input_timer.timeout.connect(self._update_input)
@@ -267,11 +268,12 @@ class DesktopPetWindow(QWidget):
 
     def walk_to(self, x):
         self._walk_target = int(x); self._walk_last = time.monotonic()
+        self._walk_motion = WalkMotion(float(self.x()), float(self._walk_target), self.scale)
         self.view.set_walking(1 if x > self.x() else -1); self._walk_timer.start()
 
     def stop_walking(self):
         if self._walk_target is None: return
-        self._walk_target = None; self._walk_timer.stop()
+        self._walk_target = None; self._walk_motion = None; self._walk_timer.stop()
         if hasattr(self.view, 'set_walking'): self.view.set_walking(0)
         self.save_geometry()
 
@@ -279,15 +281,12 @@ class DesktopPetWindow(QWidget):
         if self._walk_target is None or self._press_pos is not None or self._fall_timer.isActive() or self.machine.shown not in ('idle', 'talking'):
             self.stop_walking(); return
         now = time.monotonic(); dt = min(0.05, now-self._walk_last); self._walk_last = now
-        step = 70*dt*self.scale   # 每秒约 70 像素
-        remaining = self._walk_target-self.x()
         previous_x = self.x()
-        if abs(remaining) <= step:
-            self.move(self._walk_target, self.y())
-            if hasattr(self.view, "advance_motion"): self.view.advance_motion(self.x()-previous_x, dt)
-            self.stop_walking(); return
-        self.move(self.x()+round(step if remaining > 0 else -step), self.y())
+        # 只调整窗口速度：短距离走、长距离加速跑，临近目标按刹车距离减速。
+        self.move(round(self._walk_motion.advance(dt)), self.y())
         if hasattr(self.view, "advance_motion"): self.view.advance_motion(self.x()-previous_x, dt)
+        if self._walk_motion.done:
+            self.stop_walking(); return
         self.bubble.move_anchor(self._head_point())
 
     def set_focus(self, minutes):

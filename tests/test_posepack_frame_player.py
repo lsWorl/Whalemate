@@ -89,4 +89,9 @@ for(let i=0;i<60;i++){player.motionEvent('travel',{distance:1,seconds:.02});awai
 assert.ok(indices.size>4);player.set({walking:0});for(let i=0;i<40;i++){await step(.01);opaque();}
 assert.equal(diag().displayed,'idle');assert.deepEqual(diag().errors,[]);''')
 
+    def test_hidden_baseline_does_not_start_legacy_walk_hops(self):
+        self.run_js('''const walking=[];base.tick=()=>walking.push(base.state.walking);
+player=wrap(app,built,base);await flush();player.set({walking:1});await step(.4);
+assert.equal(diag().displayed,'walk');assert.equal(base.state.walking,1);assert.ok(walking.every(v=>v===0));''')
+
 if __name__=='__main__':unittest.main()

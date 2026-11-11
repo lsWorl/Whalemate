@@ -1460,3 +1460,11 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - 完全没动就保存，之后添加账户：仍自动接入默认声线。
   前两项在 `0950457` 上失败，修复后通过。容器内全量 `unittest discover`：**926 项通过、8 项跳过**；`git diff --check` 无输出。
 - 没验证：本提交没有在 Windows 上重跑 `tools\run_checks.bat`（上一提交 `0950457` 的 Windows 检查 Codex 已跑通：916 通过、7 跳过，Smoke `"passed": true`）。真实 MiniMax 调用、音色听感照旧未验证。
+
+
+## 2026-11-11 T24 整帧动作与 PR #47 审查修复（Codex，待复核、未合入）
+
+- 做了什么：在基线posepack增加完整角色序列，走跑各8帧；不透明过渡帧与回中换向消除双影。真实walk_to按距离选择70/160px/s×scale，>240px可跑，带360/480px/s²×scale加减速和离散刹车距离约束；不改漫游触发频率或选点范围。关闭隐藏分层自动小跳，校准start首帧及brake末帧；42张重建源帧移到art包外，drag只保留桌宠事件转发。未改character.json或Aboutme渲染。
+- 怎么验证：专项26项通过，包含生产_walk_step到JS Controller的长短距离链路、加减速边界、唯一drag转发、源帧不入src、idle桥接像素一致性。完整Windows `tools\run_checks.bat` 退出0：unittest 952项OK（跳过7）；smoke passed=true、failed_checks=[]、errors=[]。原始日志见本轮PR评论及 `output/t24-motion-review/validation.json`。
+- 实测：按形象包默认300px高度测量，真实Qt窗口1x/1.5x切层头顶、脚底均最大1px（窗口315/472px）。`measure_pet.ps1` 空闲进程树工作集479.2MiB，连续拖动/走跑60秒后再采样10秒为905.6MiB，私有内存分别347.2 / 432.8MiB；图集缓存最多3张，**350MB目标未达**。测量口径是进程工作集求和，未去重共享页。
+- 没验证：用户本人真机观感和鼠标手感、多屏/高DPI、长期内存趋势、P2待机小动作等；Claude尚需复核新提交，当前仍是草稿PR，未标可合并。
