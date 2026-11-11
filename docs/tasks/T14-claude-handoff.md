@@ -27,7 +27,7 @@
 2. src/aicompanion/expression/{domain,catalog,service,stream}.py。
 3. controllers/chat_controller.py、services/context_service.py、ui/chat_worker.py / main_window.py。
 4. bridge/service.py / server.py 与 integrations/astrbot_plugin_aicompanion/main.py。
-5. tests/test_expression_*.py；docs/tasks/evidence/T14-expression-validation-2026-11-08.json。
+5. tests/test_expression_*.py；docs/tasks/evidence/T14-expression-validation-2026-11-08.json（已于 2026-11-12 删除，用 `git show 7ebc39c:docs/tasks/evidence/T14-expression-validation-2026-11-08.json` 查看）。
 
 ## 3. 已确认的问题和本次修复
 

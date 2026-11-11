@@ -1694,6 +1694,13 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 怎么验证：`PYTHONPATH=src:tests QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests`（容器，Python 3.13）→ 967 项，新增 4 项全部通过；失败 1、错误 2 均为 `test_companion_dates.LunarTests`，原因是容器缺少 `lunar_python`，不改本分支代码时同样失败。
 - 没验证：Windows 真机 `tools\run_checks.bat`；真机上缺少 Core 时的提示和退回效果；`build_windows.py` 实际打包；`fetch_avatar.py` 里 Live2D SDK 下载地址（`CubismSdkForWeb-4-r.7.zip`）是否仍然有效。
 
+## 2026-11-12 清理过时文档（task/oss-docs-cleanup，Claude）
+
+- 做了什么：按负责人要求删除 `docs/project_plan.md`、`docs/project_plan_v2.md`、`docs/project_plan_v3.md`、`docs/tasks/T14-smart-expression-original-2026-11-08.md` 和 `docs/tasks/evidence/`（T14 评测证据 11 个文件）。`project_plan_v4.md`、`AGENTS.md`、`T14-smart-expression-design.md` 里的引用改为指向 git 历史（提交 `7ebc39c` 及之前）。本文件中较早的记录保留原样，其中提到的旧计划书同样可在该提交之前的历史中查看。
+- 怎么验证：只删文档、改引用，不涉及代码；检查仓库里的 Markdown、Python、JSON 和 bat 文件，除本文件的历史记录和已完成任务的说明外，没有其他地方引用被删的文件。
+- 没验证：没有运行回归（纯文档改动）。旧的自绘鲸娘美术不在这次范围内，随 #25（Aboutme 大肥鱼）一起处理。
+- 追加（负责人 2026-11-12）：`docs/live2d_model_sources.md` 删除艾米莉娅和 Haru 示例的旧记录，只保留 Cubism Core 获取方式、导入步骤和兼容性说明；Codex 第一轮 P2 指出的 `T14-claude-handoff.md`、`P0-architecture-constraints.md` 引用已补上 `git show 7ebc39c:<原路径>`。
+
 ## 2026-11-12 T20：鲸鲸改用本机 Aboutme 动画（PR #25）
 
 - 将协作基线 `fa54555` 合入原分支，保留基线的鲸鲸角色设定及两侧既有任务、实施记录。
