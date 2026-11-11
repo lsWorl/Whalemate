@@ -10,7 +10,7 @@ class ContextService:
         turns, prompt, _ = self.build_with_sections(character, query, channel, scene, situation, through_id)
         return turns, prompt
 
-    def build_with_sections(self, character, query="", channel="desktop", scene="pet", situation="", through_id=None):
+    def build_with_sections(self, character, query="", channel="desktop", scene="pet", situation="", through_id=None, turn_id=None):
         """channel：读哪一段聊天记录；scene：pet = 私下（桌面或已绑定的爹），其他 = 公开场合（群、陌生人）。
         公开场合只用公开范围的记忆，不带桌面上的摘要和信任度，也看不到桌面的聊天记录。situation：这次在哪、和谁说话。
         through_id：只看到这条消息为止（聊天平台的请求绑定自己那条消息，之后别人插进来的消息不算进这一轮）。"""
@@ -70,6 +70,16 @@ class ContextService:
             try:
                 from aicompanion.services.group_glance import prompt as group_prompt
                 prompt += group_prompt(self.database, character.id)
+            except Exception:
+                pass
+            # 计划书 v4 功能九：认识第几天；今天有特别的日子、还没提过时提醒她一句。
+            # 提醒按这一轮占住（turn_id），说完由 ChatController 确认成“今天提过了”、失败 / 取消就放掉；
+            # 不在 ContextService 上存共用状态：桌面和主人 QQ 私聊会同时生成（Codex PR #43 R4）。
+            # 没有轮次 id 的调用（只看提示词）只带背景，不带提醒，免得提了没人记
+            try:
+                from aicompanion.services.companion_dates import CompanionDates
+                dates = CompanionDates(self.database)
+                prompt += dates.prompt(character.id, claim=turn_id)[0] if turn_id else dates.background(character.id)
             except Exception:
                 pass
         if situation: prompt += '\n'+situation

@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 11  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪
+SCHEMA_VERSION = 12  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -193,4 +193,15 @@ CREATE TABLE IF NOT EXISTS mood_events (
  scale REAL NOT NULL DEFAULT 1, channel TEXT NOT NULL DEFAULT 'desktop', at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_mood_events ON mood_events(character_id, id);
+-- v12 计划书 v4 功能九 陪伴日期：用户添加 / 修改的日子（认识那天、生日、自定义）；程序算出来的纪念日不落表，现算
+CREATE TABLE IF NOT EXISTS companion_dates (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, person_id INTEGER, kind TEXT NOT NULL, title TEXT NOT NULL,
+ calendar TEXT NOT NULL DEFAULT 'solar', year INTEGER, month INTEGER NOT NULL, day INTEGER NOT NULL, yearly INTEGER NOT NULL DEFAULT 1,
+ source TEXT NOT NULL DEFAULT 'user', scope TEXT NOT NULL DEFAULT 'private', enabled INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_companion_dates ON companion_dates(character_id, kind);
+-- 哪个日子哪天已经提起过（同一个日子一天只提一次；她退出再启动也不会再庆祝一遍）
+CREATE TABLE IF NOT EXISTS companion_date_mentions (
+ character_id TEXT NOT NULL, key TEXT NOT NULL, day TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(character_id, key, day)
+);
 """

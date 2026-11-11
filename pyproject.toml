@@ -7,6 +7,8 @@ dependencies = [
     "PySide6>=6.7",
     "python-dotenv>=1.0",
     "webrtcvad-wheels==2.0.14.post1",
+    # 农历生日和春节、中秋等节日的换算（陪伴日期，计划书 v4 功能九；MIT 许可，纯 Python，负责人 2026-11-11 同意引入）
+    "lunar_python==1.4.9",
 ]
 
 [project.optional-dependencies]
