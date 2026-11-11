@@ -123,7 +123,9 @@ class QQMedia:
     def _vision_call(self, profile, content, max_tokens, purpose):
         """按快照建识图客户端并调用一次。必须思考的模型按快照给足输出额度，避免推理吃光正文。"""
         from aicompanion.providers.router import thaw
-        vision = self.vision_factory(base_url=profile.base_url, api_key=self.controller.router.secret(profile), model=profile.model_id,
+        key = self.controller.router.secret(profile)
+        if not key: raise MediaError('识图账户刚刚更换，这次不看图')   # 快照之后换了地址或 Key：不拼成旧地址 + 新 Key
+        vision = self.vision_factory(base_url=profile.base_url, api_key=key, model=profile.model_id,
                                      temperature=0.0, timeout_seconds=min(profile.timeout_seconds, 40),
                                      **({"extra": thaw(profile.extra)} if profile.extra else {}))
         with meter.using(purpose, self.controller.character.id):
