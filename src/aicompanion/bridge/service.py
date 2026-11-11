@@ -901,12 +901,21 @@ class BridgeService:
             sender=str(request.get('sender_name') or '')
             if sender:reply=re.sub(re.escape(sender)+r'#\d{1,3}(?!\d)',sender,reply)
             result['reply']=reply
-        from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
+        from aicompanion.expression.segments import chat_burst, fit_cap, qq_segments, typing_delays
         burst=chat_burst(reply,peer_burst=peer,closeness=0.8 if private else self.closeness_of(person))
         # 和外人（群里、非爹的私聊）尽量不用标点；和爹私聊照旧
         segments=qq_segments(reply,chance=self.chance,burst=burst,casual=not private)
-        cap=st.CAPS.get(tier)
-        if cap and len(segments)>cap and not looked:segments=segments[:cap]   # 冷淡只发一句、不熟最多三条：说多了就不像这个态度（查梗后的回答不截）
+        # 冷淡只发一句、不熟最多三条：说多了就不像这个态度。只丢零碎话，有内容的回答照常发完（见 fit_cap）。
+        # 不截的情况（负责人 2026-11-11 15:39）：查梗后的回答；正在吵架（她判断对方冲她来、或她还在气头上）——还嘴说一半像认输
+        mind=(getattr(controller,'last_mind',('',{}))[1] or {}) if getattr(controller,'last_mind',('',))[0]==turn else {}
+        arguing=bool(person) and (controller.relationships.upset(character.id,person)
+                                  or (mind.get('at') in (None,'','me') and mind.get('tone') in ('attack','sarcasm')))
+        segments,trimmed=fit_cap(reply,segments,None if looked or arguing else st.CAPS.get(tier))
+        if trimmed and (reply or '').strip():
+            # 记录里只留真正发出去的话：不然她以为自己说了后面那些，下一轮接着往下说，群里看着就对不上
+            sent='\n'.join(segments)
+            with self.database.transaction() as c:
+                c.execute("UPDATE chat_messages SET content=? WHERE turn_id=? AND character_id=? AND role='assistant'",(sent,turn,character.id))
         if tier and person and st.LEAVE.search(reply):
             # 说到做到：她说了不理他，这句发出去以后真的不理一阵
             result['ignore_minutes']=self.stance.walk_away(character.id,person,st.SAID)

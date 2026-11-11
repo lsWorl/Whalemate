@@ -321,7 +321,7 @@ class PluginTests(unittest.TestCase):
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
             event=Event('聊');self.run_handler(plugin,event,{'reply':'x','silent':False,'segments':parts,'segment_delays':[0]+[1.0]*10})
         sent=[m[1][0][1] for m in event.sent_messages]
-        self.assertEqual(len(sent),8);self.assertEqual(sent[-1],'第7条，第8条，第9条，第10条');self.assertEqual(delays,[None]*7)
+        self.assertEqual(len(sent),8);self.assertEqual(sent[-1],'第7条\n第8条\n第9条\n第10条');self.assertEqual(delays,[None]*7)
 
     def test_eight_segments_with_sticker_after_text(self):
         import hashlib

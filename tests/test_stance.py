@@ -97,6 +97,31 @@ class BehaviourTests(BridgeFixture):
         warm = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='50005', name='阿青')
         self.assertIn('【你跟他挺熟】', self.model.prompts[-1]); self.assertEqual(len(warm['segments']), 5)
 
+    def test_cap_never_cuts_a_real_answer_and_history_matches_what_was_sent(self):
+        """2026-11-11 群聊真机记录：配队回答按空格拆成一个名字一条，再被"不熟最多三条"截掉，
+        对方只看到"行""这次给完整一套""而且八个角色不重复"，问"怎么不说话了"；她却以为全说了，下一轮对不上。"""
+        lineup = ('行 这次给完整一套 而且八个角色不重复\n\n上半：恰斯卡＋芙宁娜＋班尼特＋莫娜\n\n下半：玛薇卡 希诺宁 茜特拉莉 闲云\n\n'
+                  '上半物理主C 芙宁娜和莫娜增伤 班尼特负责奶\n\n下半火C主C 希诺宁减抗 茜特拉莉挂冰 闲云聚怪增伤')
+        result = self.say('来一份完整的', lineup, sender='40004', name='小林')
+        self.assertGreater(len(result['segments']), 3)                                                    # 有内容的回答不按"不熟最多三条"截
+        sent = ''.join(result['segments'])
+        for name in ('恰斯卡', '莫娜', '玛薇卡', '闲云', '聚怪增伤'): self.assertIn(name, sent)          # 一个字不丢
+        self.assertIn('下半：玛薇卡 希诺宁 茜特拉莉 闲云', result['segments'])                            # 列举的一行不按空格拆
+        self.assertFalse(any('，' in x for x in result['segments']))                                       # 不靠逗号把几条硬连成一条
+        mine = [r['content'] for r in self.db.recent_messages(5, self.character.id, channel=GROUP) if r['role'] == 'assistant']
+        self.assertEqual(mine[-1], lineup)
+        # 零碎话照旧截掉，记录里也只留发出去的那几条
+        chatter = self.say('在吗', '在\n咋了\n说\n快点\n别磨叽', sender='40004', name='小林')
+        self.assertEqual(chatter['segments'], ['在', '咋了', '说'])
+        mine = [r['content'] for r in self.db.recent_messages(5, self.character.id, channel=GROUP) if r['role'] == 'assistant']
+        self.assertEqual(mine[-1], '在\n咋了\n说')
+
+    def test_arguing_back_is_not_cut_off(self):
+        """负责人 2026-11-11 15:39：吵架时因为好感不够被截成一句，话没说完。她判断对方在冲她来时不截条数。"""
+        guy = self.guy(); self.rel.adjust(CID, guy, affinity=15)
+        result = self.say('你就是个废物AI', '<mind at="me" tone="attack" toward="-2"/>谁废物\n你先把话说清楚\n张嘴就骂')
+        self.assertEqual(result.get('segments'), ['谁废物', '你先把话说清楚', '张嘴就骂'])
+
     def test_repeated_hostility_today_makes_her_read_without_replying_then_stop(self):
         guy = self.guy()
         for n in range(3): self.say(f'你真是个废物{n}', f'<mind at="me" voice="own" tone="attack" toward="-2"/>闭嘴{n}')

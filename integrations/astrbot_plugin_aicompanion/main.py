@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.9.5'
+PLUGIN_VERSION = '0.9.6'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -413,7 +413,7 @@ class AICompanionBridge(Star):
         segments=result.get('segments')
         if (isinstance(segments,list) and 1<=len(segments)<=64 and all(isinstance(x,str) and x.strip() and len(x)<=4000 for x in segments)):
             segments=[x.strip() for x in segments]
-            if len(segments)>MAX_SEGMENTS:segments=segments[:MAX_SEGMENTS-1]+['，'.join(segments[MAX_SEGMENTS-1:])]
+            if len(segments)>MAX_SEGMENTS:segments=segments[:MAX_SEGMENTS-1]+['\n'.join(segments[MAX_SEGMENTS-1:])]   # 换行连，不加逗号
             return segments
         return [reply] if reply else []
 

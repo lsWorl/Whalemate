@@ -64,10 +64,25 @@ def split_segments(text: str, limit: int = MAX_SEGMENTS) -> list[str]:
     return parts
 
 
+# 列举一行（"上半：玛薇卡 茜特拉莉 希诺宁 班尼特"、"雷神 八重 久岐忍 瑶瑶"）里的空格是分隔符，不是"想分两条发"。
+# 2026-11-11 群聊真机记录：配队这类回答按空格拆成一个名字一条，再被"不熟最多三条"截掉，对方只看到"行""换一套…""上半：玛薇卡"。
+LABELED = re.compile(r'^[^\s：:]{1,8}[：:]\s*\S')
+LIST_WORD_MAX = 6
+
+
+def is_listing(line: str) -> bool:
+    words = line.split()
+    return bool(LABELED.match(line)) or (len(words) >= 4 and all(len(w) <= LIST_WORD_MAX for w in words))
+
+
 def _qq_pieces(line: str, casual: bool = False) -> list[tuple[str, str]]:
     """QQ 的一行：引号外的"。"和夹在中文之间的空格处断开，"，"保留，去掉句末句号和逗号。
-    返回（碎句，它前面的断点）。casual（和外人聊）时"，"也算一个可能的断点，句尾的顿号、分号、单个英文句点也去掉。"""
+    返回（碎句，它前面的断点）。casual（和外人聊）时"，"也算一个可能的断点，句尾的顿号、分号、单个英文句点也去掉。
+    列举的一行（is_listing）整行一条，不拆。"""
     line = re.sub(r'。{2,}', '…', line.strip())
+    if is_listing(line):
+        tail = r'[，,、；;。\s]+$' if casual else r'[，,\s]+$'
+        return [(re.sub(tail, '', line), '')] if re.sub(tail, '', line) else []
     parts, current, depth, mark = [], '', 0, ''
     def cut(ch):
         nonlocal current, mark
@@ -125,7 +140,8 @@ def qq_segments(text: str, chance=random.random, burst: float = 0.5, limit: int 
             elif merged and chance() >= keep_apart: merged[-1] = merged[-1]+'，'+piece
             else: merged.append(piece)
         segments.extend(merged)
-    if len(segments) > limit: segments = segments[:limit-1]+[('' if casual else '，').join(segments[limit-1:])]
+    # 超过防刷屏条数：多出来的并进最后一条，用换行隔开（不用逗号硬连，QQ 里现在一般不加标点；负责人 2026-11-11）
+    if len(segments) > limit: segments = segments[:limit-1]+['\n'.join(segments[limit-1:])]
     return segments
 
 
@@ -154,3 +170,20 @@ def typing_delays(segments: list[str], chance=random.random, burst: float = 0.5)
         if chance() < 0.15: value += 2+3*chance()
         delays.append(round(min(12.0, max(0.6, value)), 2))
     return delays
+
+
+DROP_MAX = 16   # 按态度截条数时，最多丢掉这么多字的零碎话（"快点""别磨叽"）；再多就是有内容的话，不能丢
+DROP_PIECE = 6  # 每条零碎话不超过这么多字；更长的一条多半是在说事（"第三步最后再检查一遍"）
+
+
+def fit_cap(text: str, segments: list[str], cap: int | None) -> tuple[list[str], bool]:
+    """按态度限制条数（冷淡一句、不熟最多三条）。返回（要发的几条，有没有丢掉内容）。
+
+    只丢零碎的口头话：丢掉的每条不超过 DROP_PIECE 字、加起来不超过 DROP_MAX 字。超过的说明后面是有内容的回答（配队、步骤、答案），
+    丢了对方就只看到开头（2026-11-11 群聊："没说完呢""怎么不说话了"），而她以为自己全说了，接下来就对不上。
+    这时照她拆好的条数全发（负责人 2026-11-11 15:39："特殊情况可以多发几条会话消息，不用通过逗号这种方式分隔"），
+    只受 QQ_FLOOD_LIMIT 防刷屏约束；text 留着给以后按内容判断用。"""
+    if not cap or len(segments) <= cap: return segments, False
+    rest = segments[cap:]
+    if len(''.join(rest)) <= DROP_MAX and all(len(piece) <= DROP_PIECE for piece in rest): return segments[:cap], True
+    return segments, False
