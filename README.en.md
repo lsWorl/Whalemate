@@ -46,7 +46,7 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 ### 🐋 Desktop character
 - A transparent, frameless desktop pet. Only her own pixels catch the mouse: click to poke, drag to pick her up, double-click for quick input.
 - Layered mesh-and-bone animation with ten states (idle, talking, thinking, working, sleepy, celebrating, …). She steps aside when a fullscreen app is in front.
-- Characters are organised as *character packs* (persona, lines, model binding, art). Standard Live2D Cubism 3/4 models can also be imported.
+- Characters are organised as *character packs* (persona, lines, model binding, art). Standard Live2D Cubism 3/4 models can also be imported (you need to download Live2D Cubism Core yourself; see "Optional components").
 
 ### 💬 Chat and expression
 - Streaming replies. Several quick messages are merged into one turn, and you can interrupt at any time.
@@ -110,9 +110,10 @@ Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1`
 | --- | --- | --- |
 | Agent | DeepSeek Harness and the official MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt`, then `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`, or run `tools\setup_dsh.bat` |
 | Local speech recognition | Offline SenseVoice (sherpa-onnx) | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`, or run `tools\setup_local_asr.bat` |
+| Importing external Live2D models | Live2D Cubism Core (Live2D proprietary license, not included) | `.\.venv\Scripts\python.exe tools\fetch_avatar.py` downloads it from Live2D to your machine |
 | Art pack tools | Build and annotate character art packs | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
-Basic chat and the desktop pet don't need any of these.
+Basic chat and the desktop pet don't need any of these. The default character uses Whalemate's own bone animation and sprites and does **not** need Live2D Cubism Core.
 
 ## ⚙️ Configuring models and keys
 
@@ -303,7 +304,7 @@ If you are an author of one of these projects and something here is inaccurate o
 Whalemate's code, documentation and artwork are released under the [MIT License](LICENSE). Artwork means the illustrations, textures and icons under `art/`, `src/aicompanion/characters/*/sprites/`, `src/aicompanion/characters/*/rig/textures/` and `src/aicompanion/assets/icons/`. The following are **not** covered by MIT:
 
 
-- `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`: Live2D Cubism Core, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html); see [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md). Normally, businesses with annual revenue of JPY 10 million or more need a separate Cubism SDK Release License to distribute it. **However, because Whalemate can import arbitrary external Live2D models, it may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/).** Such applications must be reviewed by Live2D and sign a special Publication License Agreement before release, and the exemptions for individuals and small businesses **do not apply**. This project has not yet confirmed its classification with Live2D or obtained that license. Please check with Live2D yourself before distributing a build that includes Cubism Core.
+- **Live2D Cubism Core**, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html). Neither the repository nor the packaged builds **include** Core. It is only needed to import external Live2D models; users download it themselves from Live2D with `tools/fetch_avatar.py`, which means accepting that license. Because Whalemate can import arbitrary models, distributing a build that bundles Core may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/), which requires Live2D review and a special Publication License Agreement; the exemptions for individuals and small businesses do not apply. `tools/build_windows.py` strips Core from builds by default; `--keep-cubism-core` is for your own machine only and must not be distributed.
 - Other third-party libraries and components, under their respective licenses.
 - "DeepSeek", "Claude", "ChatGPT" and related names and logos are trademarks of their respective owners, including logos that appear in the character artwork. The MIT License grants no trademark rights.
 

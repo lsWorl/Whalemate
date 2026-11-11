@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from PySide6.QtCore import QPoint
 
-from aicompanion.avatar.model_package import validate_model_package, ModelPackageError
+from aicompanion.avatar import model_package
+from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, cubism_core_available, ModelPackageError
 from aicompanion.ui.pet_geometry import fit_pet_geometry
 from aicompanion.ui.desktop_pet import DesktopPetWindow
 from aicompanion.ui.settings_window import SettingsWindow
@@ -113,11 +114,45 @@ class PetInteractionTests(unittest.TestCase):
             self.assertFalse(SettingsWindow._validate_model_input(dialog))
         warning.assert_called_once()
 
+    def test_live2d_model_needs_cubism_core(self):
+        # Core 不随项目分发：模型包本身没问题，但本机没有 Core 时也要拦下并说明怎么获取。
+        dialog = SimpleNamespace(avatar_mode=Mock(), model=Mock())
+        dialog.avatar_mode.currentData.return_value='live2d'; dialog.model.text.return_value='ok.model3.json'
+        with tempfile.TemporaryDirectory() as temp, \
+                patch('aicompanion.ui.settings_window.validate_model_package'), \
+                patch.object(model_package, 'CUBISM_CORE', Path(temp)/'missing.js'), \
+                patch('aicompanion.ui.settings_window.QMessageBox.warning') as warning:
+            self.assertFalse(SettingsWindow._validate_model_input(dialog))
+        self.assertIn('fetch_avatar.py', warning.call_args.args[2])
+
     def test_empty_model_path_is_allowed(self):
         dialog = SimpleNamespace(avatar_mode=Mock(), model=Mock())
         dialog.avatar_mode.currentData.return_value='live2d'; dialog.model.text.return_value=''
         self.assertTrue(SettingsWindow._validate_model_input(dialog))
 
+
+
+class CubismCoreTests(unittest.TestCase):
+    def test_missing_core_explains_how_to_get_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp)/'live2dcubismcore.min.js'
+            self.assertFalse(cubism_core_available(missing))
+            with self.assertRaises(ModelPackageError) as caught: require_cubism_core(missing)
+        message = str(caught.exception)
+        self.assertIn('fetch_avatar.py', message); self.assertIn('Proprietary Software License', message)
+        self.assertIn(str(missing), message)
+
+    def test_present_core_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            core = Path(temp)/'live2dcubismcore.min.js'; core.write_text('// stub', encoding='utf-8')
+            self.assertTrue(cubism_core_available(core))
+            self.assertEqual(require_cubism_core(core), core)
+
+    def test_core_is_not_shipped_with_the_repository(self):
+        # 防止有人把本机下载的 Core 又提交回仓库或打进 wheel。
+        root = Path(__file__).resolve().parents[1]
+        self.assertIn('/src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js', (root/'.gitignore').read_text(encoding='utf-8'))
+        self.assertIn('assets/live2d/vendor/live2dcubismcore.min.js', (root/'pyproject.toml').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__': unittest.main()

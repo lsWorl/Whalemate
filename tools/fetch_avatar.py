@@ -1,5 +1,7 @@
 """下载 Live2D 渲染运行库（用于导入外部 Cubism 模型）并记录来源。
 
+Live2D Cubism Core 适用 Live2D Proprietary Software License，不随本项目的仓库和打包版本分发；
+需要导入外部 Live2D 模型的用户运行本脚本，从 Live2D 官网直接下载到本机。默认角色不需要它。
 v2 起不再下载或自带 Haru 示例模型；不下载或伪造定制动漫角色模型。
 """
 from pathlib import Path
@@ -20,6 +22,9 @@ def download(url,path):
 
 
 def main():
+    print('Live2D Cubism Core 适用 Live2D Proprietary Software License：')
+    print('https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html')
+    print('继续下载即表示你已阅读并同意该许可；下载的文件只留在本机，不会被提交或打包。')
     vendor = {
         'pixi.min.js':'https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js',
         'cubism4.min.js':'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js',
