@@ -1405,3 +1405,58 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 手工修改仅涉及 Markdown；运行代码、测试和插件文件按 Git 的自动合并结果保留，没有手工改动。
 - 验证：检查双方原始记录完整保留、无冲突标记、差异无空白错误，非文档文件与自动合并树一致。
 - 按负责人要求，本次纯文档冲突修复不运行回归或真实模型／QQ 测试；不改变 PR #40 功能补丁的审查与验收状态。
+
+## 2026-11-11 V4-8b 鲸鲸默认声线（task/v4-8b-whale-voice，叠在 #39 之上）
+
+- 做了什么：
+  - 角色声线设定 `domain/voice_profile.py`；
+  - MiniMax 语音客户端；
+  - 模型页没配语音时，鲸鲸用 MiniMax 的少女音色作默认声线，和聊天共用 MiniMax 账户；
+  - 心情明显时指定情绪，其余交给模型按台词自动选；
+  - 第一次自动把朗读方式切到云端声线，之后尊重用户选择；
+  - 设置里可以从 6 个候选音色里换、试听。
+
+  说明见 `docs/tasks/V4-8b-whale-voice.md`。
+- 怎么验证：`PYTHONPATH=src:tests QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests` 全部通过（跳过 41）。新增 `tests/test_whale_voice.py` 覆盖以下内容：
+  - 请求体；
+  - hex 解码；
+  - 错误不泄露 Key；
+  - 按服务种类分流；
+  - 默认声线路由、候选切换、模型页显式配置优先、离线不套用。
+- 没验证：
+  - 真实 MiniMax 语音接口；
+  - 音色听感和情绪效果（需负责人试听拍板）；
+  - Windows 真机。
+
+## 2026-11-11 PR #41 文档冲突修复（Codex）
+
+- 将最新协作基线 `151b4d2` 接入 PR #41，保留已有提交历史；唯一冲突为本文件末尾的追加记录。
+- 完整保留基线的群聊修复记录与本 PR 的 MiniMax 默认声线记录，未覆盖双方已有功能、测试或未验证说明。
+- 手工冲突修复仅涉及 Markdown，运行代码、插件和测试按 Git 自动合并结果保留。
+- 冲突修复检查双方原记录完整、无冲突标记、差异无空白错误；纯文档处理不单独运行回归。功能审计及其测试结果在 PR 评论另行记录。
+
+## 2026-11-11 PR #41 Codex 审查三项 P2 修复（Claude）
+
+- 做了什么：
+  - **审查 1（FixedRouter 缺接口，离线 Smoke 起不来）**：`FixedRouter` 补上 `tts_target` / `default_voice`，返回 None（固定解析器不管语音合成，界面退回本地朗读）；首次接入的判断挪到 `domain/voice_profile.adopt_default_voice`，router 没有默认声线能力时安全跳过。
+  - **审查 2（首次接入覆盖明确的本地朗读）**：只有库里从没存过 `tts_provider` 且环境 `TTS_PROVIDER` 是默认 system 时才切到云端声线。旧库里存着的 system 无法区分是默认还是用户选的，一律按用户选择保留，要用新声线由用户自己在设置里切。另外设置页保存时，如果库里没存过、用户也没动朗读方式，就不再把默认值写进去，避免“没选过”被存成“明确选了本地朗读”。
+  - **审查 3（试听提前保存音色，取消撤销不了）**：试听不再写 `voice_choice:<角色>`；`router.tts_target(角色, voice_choice=候选)` 临时取一份合成配置，经 `SpeechOutput.enqueue(..., target=)` 只交给这一句试听。只在点“保存”时写库。
+- 怎么验证：容器内 `QT_QPA_PLATFORM=offscreen python -m unittest discover`（tests 目录）**923 项通过、8 项跳过**。新增 `tests/test_whale_voice_review.py`（9 项）：
+  - FixedRouter 接口对齐；用 FixedRouter 调生产 `MainWindow._apply_settings` 不报错；
+  - 库里明确存 system（及 qwen / cloud）+ 配了 MiniMax 账户 → 生产 `_apply_settings` 后仍是原选择；新库 + MiniMax → 用上默认声线，只切一次；环境指定别的朗读方式时不切；
+  - 设置窗口：A → 选 B → 试听（入队的确是 B）→ 取消 → 库和路由仍是 A；再选 B → 保存 → 才是 B；
+  - 没动朗读方式时保存其他设置不写入 `tts_provider`，改过的照常保存。
+  - 把 `src/` 改动撤回后，这些用例 7 项失败 / 报错（含 `AttributeError: 'FixedRouter' object has no attribute 'default_voice'`），确认能复现审查问题。
+- 没验证：
+  - **Windows Smoke（`tools\run_checks.bat`）没在真机跑**：容器没有音频设备，`tools/smoke_pet.py` 在 Qt 多媒体初始化处段错误，与本修复无关；需要在 Windows 上重跑确认 `"passed": true`。
+  - 真实 MiniMax 调用、音色听感照旧未验证。
+
+## 2026-11-11 PR #41 Codex 复核 P2 修复（Claude）
+
+- 做了什么：设置页判断“用户是否选过朗读方式”改为记录下拉框在窗口初始化后有没有被操作（`tts_provider_touched`），不再只比较首尾值。切到千问又选回本地朗读，同样算明确选择，保存时写入 `tts_provider=system`。完全没动时仍不写入，新库照常可以自动接入默认声线。顺手去掉 `docs/tasks/V4-8b-whale-voice.md` 第 18 行行尾空白。
+- 怎么验证：`tests/test_whale_voice_review.py` 新增 3 项，都调用生产 `SettingsWindow.save` 和生产 `MainWindow._apply_settings`：
+  - 窗口打开期间添加 MiniMax 账户，千问 → 本地朗读 → 保存：库和运行时都是 system，没有自动接入标记；
+  - 先选回本地朗读并保存，之后才添加账户：同上；
+  - 完全没动就保存，之后添加账户：仍自动接入默认声线。
+  前两项在 `0950457` 上失败，修复后通过。容器内全量 `unittest discover`：**926 项通过、8 项跳过**；`git diff --check` 无输出。
+- 没验证：本提交没有在 Windows 上重跑 `tools\run_checks.bat`（上一提交 `0950457` 的 Windows 检查 Codex 已跑通：916 通过、7 跳过，Smoke `"passed": true`）。真实 MiniMax 调用、音色听感照旧未验证。

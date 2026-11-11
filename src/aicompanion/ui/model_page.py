@@ -116,7 +116,7 @@ class ModelPage(QWidget):
                 hint = QLabel('办事只列出 Harness 能用的模型（DeepSeek、MiniMax）。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
                               '只想给某个角色换，请先把上面的“设置范围”切到那个角色再选。')
                 hint.setWordWrap(True); hint.setStyleSheet('color: gray'); c.addRow('', hint)
-        self.voice = QLineEdit(); self.voice.setPlaceholderText('Breeze Blue 音色 ID，例如 voc_8rsb3nhb7645')
+        self.voice = QLineEdit(); self.voice.setPlaceholderText('音色 ID：Breeze Blue 如 voc_8rsb3nhb7645；MiniMax 如 Chinese (Mandarin)_Soft_Girl。不填用角色默认声线')
         self.language = QComboBox()
         for value, label in TTS_LANGUAGES: self.language.addItem(label, value)
         self.speed = QDoubleSpinBox(); self.speed.setRange(0.5, 2.0); self.speed.setSingleStep(0.05); self.speed.setValue(1.0)

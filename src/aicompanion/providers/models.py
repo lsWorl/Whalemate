@@ -140,6 +140,9 @@ MODEL_PRESETS = {
                                        ('chat', 'vision', 'tools'), can_disable_thinking=False, context_window=1_000_000),
     'minimax-m3': ModelProfile('minimax-m3', 'minimax-global', 'MiniMax-M3', 'MiniMax M3',
                                ('chat', 'vision', 'tools'), context_window=1_000_000),
+    # MiniMax 语音（资料核对 2026-11-11）：音色 ID 填系统音色，例如 Chinese (Mandarin)_Soft_Girl；HD 更有感情，Turbo 更快
+    'minimax-speech-2.8-hd': ModelProfile('minimax-speech-2.8-hd', 'minimax-global', 'speech-2.8-hd', 'MiniMax Speech 2.8 HD', ('tts',)),
+    'minimax-speech-2.8-turbo': ModelProfile('minimax-speech-2.8-turbo', 'minimax-global', 'speech-2.8-turbo', 'MiniMax Speech 2.8 Turbo', ('tts',)),
     # 中文、英文用 breeze-tts-2；其他语言（含日语）用多语言版
     'breeze-tts-2': ModelProfile('breeze-tts-2', 'breezeblue', 'breeze-tts-2', 'Breeze TTS 2', ('tts',)),
     'breeze-tts-2-multilingual': ModelProfile('breeze-tts-2-multilingual', 'breezeblue', 'breeze-tts-2-multilingual',
