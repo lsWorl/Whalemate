@@ -183,8 +183,10 @@ class AgentSession(QObject):
         blog = database.get_setting('blog_root', '')
         from pathlib import Path
         project = Path(__file__).resolve().parents[3]
-        lines = [f'你是{character.name}。{(character.description or "")[:900]}',
-                 f'说话方式：{(character.speaking_style or "")[:600]}',
+        from aicompanion.domain.bond import current as current_bond
+        bond = current_bond(database, character.id)
+        lines = [bond.fill(f'你是{character.name}。{(character.description or "")[:900]}', character.name), bond.prompt(),
+                 bond.fill(f'说话方式：{(character.speaking_style or "")[:600]}', character.name),
                  '最后给用户的回复要保持上面的人设：一两句口语，像同事口头交代做了什么、结果在哪，不写报告、不列清单、不用 Markdown 标题，除非用户要细节。',
                  '做事要求：用户的电脑是 Windows。看文件、改文件、删文件、跑 PowerShell 都用 aicompanion 开头的那组工具；'
                  '尽量在后台完成，不要让用户手动操作；用户点名的路径、文件名、程序就用那个，不要擅自换；一句话里有几件事要按顺序全部做完。',

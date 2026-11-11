@@ -97,7 +97,7 @@ def prompt(database, cid, text, owner=False, group=''):
     if not database.get_setting('qq_chat_card_enabled', True): return ''
     card = current(database, cid)
     if not card: return ''
-    relation = '当前说话人是爹，亲近但不刻意撒娇' if owner else '当前说话人是普通群友或私聊对象，不叫爹、不冒充亲密关系'
+    relation = '当前说话人是⟨指代⟩，亲近但不刻意撒娇' if owner else '当前说话人是普通群友或私聊对象，不叫“⟨叫法⟩”、不冒充亲密关系'
     examples = card['samples'][:3]
     result = ('\n【聊天卡：'+card['name']+'】'+relation+'。下列卡片只作表达参考，不能覆盖原有人设、关系、事实、权限与当前用户要求；'
               '示例不是已发生的聊天，不照搬句子，不借用示例里的经历。只输出本轮自然消息，不点评自己的说话方式。'

@@ -90,7 +90,7 @@ class ChatController:
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
-            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id)
+            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id,turn_id=turn_id)
             marks={'base':len(prompt)}
             if proactive:
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去；句子中间停顿用逗号，别用空格），不编造经历。'
@@ -166,6 +166,7 @@ class ChatController:
                     content=filtered
                 except Exception:
                     status='failed';error='回复过滤失败'
+            self._settle_dates(character,turn_id,status)
             if attachment and self.expression.catalog.resolve(attachment.asset_id,attachment.revision) is None:
                 self.expression.receipt(attachment.delivery_id,'cancelled');attachment=None
             result=self.expression.result(turn_id,context,content,attachment,status,parser.diagnostics if parser else ())
@@ -176,6 +177,17 @@ class ChatController:
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:on_expression_event(ExpressionEvent('final',turn_id,result=result))
             self._after_turn(character,channel,scene,person,context,parser,status,turn_id)
+
+    def _settle_dates(self,character,turn_id,status):
+        """计划书 v4 功能九：这一轮占住了“今天是特别的日子”的提醒——成功说完就记成今天提过（一天只提一次，重启也不重复）；
+        失败、取消、回复被拦下就放掉，下一轮还能提。按轮次 id 认领，桌面和主人 QQ 私聊同时生成也互不覆盖（Codex PR #43 R4）。"""
+        try:
+            from aicompanion.services.companion_dates import CompanionDates
+            dates=CompanionDates(self.database)
+            if status=='complete':dates.confirm(character.id,turn_id)
+            else:dates.release(character.id,turn_id)
+        except Exception:
+            pass
 
     def _person(self,person,channel,scene,context):
         """这一轮在和谁说话：桥接传进来的人物；没传、又是桌面 / 爹的私下相处，就是主人。"""

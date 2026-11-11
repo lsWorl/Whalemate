@@ -58,7 +58,7 @@ class PersonaService:
         if pack_persona:
             pack = {'title': '默认（内置）', 'description': pack_persona.get('description', ''),
                     'speaking_style': pack_persona.get('speaking_style', ''), **{k: pack_persona[k] for k in
-                    ('background', 'examples', 'interests', 'temper', 'lore') if k in pack_persona}}
+                    ('background', 'examples', 'interests', 'temper', 'lore', 'bond') if k in pack_persona}}
             version = int(pack_persona.get('version') or 1)
             built = next((p for p in existing if p.builtin), None)
             if built is None:
@@ -89,7 +89,9 @@ class PersonaService:
         built = self.get(builtin_id(character_id))
         if built is None: raise PersonaError('这个角色没有内置人格')
         data = {'description': pack_persona.get('description', ''), 'speaking_style': pack_persona.get('speaking_style', ''),
-                'background': '', 'examples': [], 'lore': [], 'interests': [], 'title': '默认（内置）'}
+                'background': '', 'examples': [], 'lore': [], 'interests': [], 'title': '默认（内置）',
+                # 恢复原文同样是整份覆盖：角色包没写 bond 就回到默认关系，不保留用户后来改的关系
+                'bond': pack_persona.get('bond')}
         restored = self.save(replace(built, user_modified=False, pack_version=int(pack_persona.get('version') or 1)).with_content(data),
                              note='恢复内置原文', by_user=False)
         self.db.set_setting(f'persona_pack_update:{character_id}', 0)
@@ -135,7 +137,12 @@ class PersonaService:
         persona = self.get(persona_id)
         version = next((v for v in self.versions(persona_id) if v['id'] == version_id), None)
         if persona is None or version is None: raise PersonaError('版本不存在')
-        return self.save(persona.with_content(version['content']), note=f'回退到版本 {version_id}')
+        # 回退是恢复整份历史快照：升级前的旧快照没有 bond，代表当时用的是默认关系（父女）。
+        # 不能沿用当前的新关系，否则会出现文字是“闺女 / 爹”、关系却是女朋友的混合人格（Codex PR #42）。
+        # 普通编辑（with_content 缺字段不改）的语义不变，只在这里补上。
+        content = dict(version['content'])
+        content.setdefault('bond', None)
+        return self.save(persona.with_content(content), note=f'回退到版本 {version_id}')
 
     def import_content(self, character_id: str, content: dict) -> Persona:
         """导入的内容新建为一个人格（不会覆盖已有人格，也不会自动切换）。"""

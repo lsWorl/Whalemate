@@ -224,7 +224,9 @@ class SettingsWindow(QDialog):
         relation_page.add(Section('她现在的心情','心情会延续一段时间、慢慢回落：被冷落会委屈、被欺负会生气、被哄会消气。'
                                   '容不容易生气、消气快慢在“角色与形象 → 人格 → 情绪倾向”里调。心情不改好感，也不影响办事。',self.mood_card))
         relation_page.add(self.relationship_page)
-        relation_page.add(ComingSoon('陪伴日期','记得你们认识了多少天、哪些日子值得纪念；到了那天她会自己提起。'))
+        from aicompanion.ui.dates_card import DatesCard
+        self.dates_card=DatesCard(self.database,cid,self)
+        relation_page.add(Section('我们的日子','她记得你们认识了多少天、哪些日子值得纪念；到了那天她会在和你聊天时自然提一句，一天只提一次。',self.dates_card))
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
         platforms_page=Page('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')
