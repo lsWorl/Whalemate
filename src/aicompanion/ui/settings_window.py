@@ -6,7 +6,7 @@ from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
     QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
-from aicompanion.avatar.model_package import validate_model_package, ModelPackageError
+from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
 
 class SettingsWindow(QDialog):
@@ -398,7 +398,7 @@ class SettingsWindow(QDialog):
     def choose_model(self):
         path,_=QFileDialog.getOpenFileName(self,'选择模型','','Live2D model (*.model3.json)')
         if path:
-            try: validate_model_package(path)
+            try: validate_model_package(path); require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 QMessageBox.warning(self,'模型包无效',str(error)); return
             self.model.setText(path)
@@ -489,7 +489,7 @@ class SettingsWindow(QDialog):
     def _validate_model_input(self):
         # 手动输入路径也要检查，不能只在文件选择器里拦截损坏的模型包。
         if self.avatar_mode.currentData()=='live2d' and self.model.text().strip():
-            try: validate_model_package(self.model.text().strip())
+            try: validate_model_package(self.model.text().strip()); require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 QMessageBox.warning(self,'模型包无效',str(error)); return False
         return True

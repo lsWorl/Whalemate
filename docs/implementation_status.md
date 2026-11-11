@@ -1559,3 +1559,11 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - P2：可选依赖的安装命令改为 `.\.venv\Scripts\python.exe -m pip install ...`，和快速开始用同一个虚拟环境。
   - P2：许可说明补上 Live2D“可扩展应用”的情况：本项目支持导入任意模型，可能属于这一类，发行前需要 Live2D 审核并签订专门协议，小规模豁免不适用。依据是 Live2D 官方说明页；**分类和授权都还没有向 Live2D 确认**。
 - 负责人决定（2026-11-11）：美术素材也按 MIT 许可发布。中英文 README 的许可范围改成“代码、文档和美术素材”，`art/README.md` 记录了这项决定；同时写明素材里的公司徽标仍是商标，MIT 不授予商标权。
+
+## 2026-11-12 Live2D Cubism Core 不再随项目分发（task/oss-live2d-core，Claude）
+
+- 做了什么：按负责人要求，把 `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`（Live2D 专有许可）从仓库删除并加入 `.gitignore`；`pyproject.toml` 用 `exclude-package-data` 把它排除在 wheel 之外；`tools/build_windows.py` 默认从构建结果和覆盖更新的发布目录里删掉 Core，新增 `--keep-cubism-core` 只供自用；`tools/fetch_avatar.py` 下载前先打印许可链接。
+- 运行时：`avatar/model_package.py` 新增 `cubism_core_available()` / `require_cubism_core()`；设置里选择或手动填写外部模型时，缺少 Core 会弹出获取方法；`AvatarView.set_model` 同样检查；`main_window._apply_avatar` 在缺少 Core 时退回角色包自带的骨骼形象或立绘，状态栏只提示一次。默认角色从来不加载 Core（骨骼形象只用 PixiJS），不受影响。
+- 文档：中英文 README 的可选组件和许可说明、`docs/live2d_model_sources.md` 已更新。
+- 怎么验证：`PYTHONPATH=src:tests QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests`（容器，Python 3.13）→ 967 项，新增 4 项全部通过；失败 1、错误 2 均为 `test_companion_dates.LunarTests`，原因是容器缺少 `lunar_python`，不改本分支代码时同样失败。
+- 没验证：Windows 真机 `tools\run_checks.bat`；真机上缺少 Core 时的提示和退回效果；`build_windows.py` 实际打包；`fetch_avatar.py` 里 Live2D SDK 下载地址（`CubismSdkForWeb-4-r.7.zip`）是否仍然有效。

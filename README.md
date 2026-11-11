@@ -39,7 +39,7 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 ### 🐋 桌面角色
 - 透明无边框的桌宠，只有角色本身响应鼠标：单击戳她、拖动拎起、双击快速输入。
 - 分层网格骨骼动画，有待机、说话、思考、干活、犯困、庆祝等十种状态；全屏应用在前台时自动让开。
-- 角色以“角色包”的形式组织（人设、台词、模型绑定、形象），也支持导入标准 Live2D Cubism 3/4 模型。
+- 角色以“角色包”的形式组织（人设、台词、模型绑定、形象），也支持导入标准 Live2D Cubism 3/4 模型（需要自己下载 Live2D Cubism Core，见下方“可选组件”）。
 
 ### 💬 聊天与表达
 - 流式回复，连发几条消息会合并成一轮，可以随时打断。
@@ -103,9 +103,10 @@ python -m venv .venv
 | --- | --- | --- |
 | 干活（Agent） | DeepSeek Harness 与官方 MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt` 然后 `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`，或运行 `tools\setup_dsh.bat` |
 | 本地语音识别 | 离线 SenseVoice（sherpa-onnx） | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`，或运行 `tools\setup_local_asr.bat` |
+| 导入外部 Live2D 模型 | Live2D Cubism Core（适用 Live2D 专有许可，本项目不附带） | `.\.venv\Scripts\python.exe tools\fetch_avatar.py`，从 Live2D 官网下载到本机 |
 | 形象包工具 | 编译、标注角色形象包 | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
-基础聊天和桌宠不需要安装这些可选依赖。
+基础聊天和桌宠不需要安装这些可选依赖。默认角色用项目自己的骨骼动画和立绘，**不需要** Live2D Cubism Core。
 
 ## ⚙️ 配置模型与 Key
 
@@ -292,7 +293,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 本项目的代码、文档和美术素材以 [MIT License](LICENSE) 开源。美术素材指 `art/`、`src/aicompanion/characters/*/sprites/`、`src/aicompanion/characters/*/rig/textures/` 和 `src/aicompanion/assets/icons/` 里的立绘、贴图和图标。以下内容**不在** MIT 许可范围内：
 
 
-- `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`：Live2D Cubism Core，适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)，详见 [assets/live2d/LICENSE.md](src/aicompanion/assets/live2d/LICENSE.md)。一般情况下，年营业额 1000 万日元以上的企业分发时需要另外取得 Cubism SDK 发行许可。**但本项目支持导入任意外部 Live2D 模型，可能属于 Live2D 定义的[可扩展应用（Expandable Application）](https://www.live2d.com/en/sdk/license/expandable/)。** 这类应用发行前必须经过 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免**不适用**。本项目还没有向 Live2D 确认分类，也没有取得这项授权。分发包含 Cubism Core 的构建版本之前，请先自行向 Live2D 确认。
+- **Live2D Cubism Core**：适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。本项目的仓库和打包版本都**不包含** Core，只有导入外部 Live2D 模型时才需要，由用户运行 `tools/fetch_avatar.py` 从 Live2D 官网自行下载，下载即表示同意该许可。因为能导入任意模型，带着 Core 分发本项目的构建版本可能属于 Live2D 定义的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免不适用。`tools/build_windows.py` 默认会把 Core 从构建结果里去掉；`--keep-cubism-core` 只供自己电脑使用，不要对外分发。
 - 其他第三方库和组件，以各自的许可证为准。
 - “DeepSeek”“Claude”“ChatGPT”等名称和徽标是各自权利人的商标，其中也包括出现在角色立绘里的徽标。MIT 许可不授予任何商标权。
 
