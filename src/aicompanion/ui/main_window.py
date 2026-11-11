@@ -727,13 +727,19 @@ class MainWindow(QMainWindow):
         from aicompanion.ui.desktop_integration import system_idle_seconds
         # 计划书 v4 统一主动调度：纪念日、心事、问候、追问都由调度器决定要不要开口、说哪件（brain/scheduler.py）
         outreach=self.outreach_scheduler.next(character_id,system_idle_seconds(),monotonic()-self.last_interaction)
-        if not outreach: return
+        if outreach: self._deliver_outreach(character_id,outreach)
+
+    def _deliver_outreach(self,character_id,outreach):
+        """把调度器选中的这一件说出去：先占位，桌面说完 / QQ 回执成功再确认，没说成就撤掉、心事放回、问候和纪念日的占位放回。"""
         purpose=outreach.payload.get('purpose')
         if purpose: self.database.update_purpose(purpose['id'],'delivering')
         claimed=outreach.source in ('date','greeting')   # 这两类在 proactive_events 里占了位，没说成要放回去
+        # 选中就先占位（pending）：走 QQ 要等插件回执，期间不会再选中同一句（Codex PR #46 第 1 项）
+        reserved=self.outreach_scheduler.reserve(character_id,outreach)
 
-        def done(ok,channel,o=outreach,cid=character_id):
-            if ok: self.outreach_scheduler.record(cid,o,channel)
+        def done(ok,channel,o=outreach,cid=character_id,rid=reserved):
+            if ok: self.outreach_scheduler.confirm(cid,rid,o,channel)
+            else: self.outreach_scheduler.release(rid)
             if purpose: self.purposes.delivered(purpose['id']) if ok else self.purposes.release(purpose['id'])
             if not ok and claimed: self.database.release_proactive(cid,o.key)
         if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq')):return

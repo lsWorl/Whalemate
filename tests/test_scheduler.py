@@ -117,5 +117,53 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(self.s.next(CID, 0, 9999).source, 'greeting')                    # 他今天来过：聊天时自然会提
 
 
+class CodexRoundOneTests(SchedulerTests):
+    """Codex PR #46 第一轮三项 P2 的回归。"""
+
+    def test_pending_qq_send_blocks_duplicate_follow_up(self):
+        """走 QQ 要等插件回执：真实 MainWindow._proactive 选中后先占位，回执到之前下一次 tick 不会再选中同一句追问。"""
+        from aicompanion.ui.main_window import MainWindow
+        self.send(self.s.next(CID, 0, 9999))
+        self.later(FOLLOW_AFTER[1]+60)
+        receipts = []
+        window = SimpleNamespace(
+            controller=SimpleNamespace(character=SimpleNamespace(id=CID)), database=self.db, outreach_scheduler=self.s,
+            purposes=SimpleNamespace(delivered=lambda i: None, release=lambda i: None),
+            _proactive_on_qq=lambda intent, done: receipts.append(done) or True)
+        MainWindow._deliver_outreach(window, CID, self.s.next(CID, 30, 9999))
+        self.later(60)
+        self.assertIsNone(self.s.next(CID, 30, 9999))                                     # 回执没到：占着，不再追第二遍
+        self.assertEqual(len(receipts), 1)
+        receipts[0](True)                                                                 # 回执到了：确认
+        with self.db.transaction() as c:
+            rows = c.execute("SELECT source, status, channel FROM outreach_log ORDER BY id").fetchall()
+        self.assertEqual([tuple(r) for r in rows], [('greeting', 'followed', 'desktop'), ('follow', 'sent', 'qq')])
+
+    def test_failed_send_releases_and_stale_pending_expires(self):
+        outreach = self.s.next(CID, 0, 9999)
+        rid = self.s.reserve(CID, outreach)
+        self.assertIsNone(self.s.next(CID, 0, 9999)); self.assertEqual(self.s.today_count(CID), 1)   # 发送中也算今天一次
+        self.s.release(rid); self.assertEqual(self.s.today_count(CID), 0)
+        self.assertIsNotNone(self.s.next(CID, 0, 9999))
+        self.s.reserve(CID, outreach); self.later(31*60)
+        self.assertIsNotNone(self.s.next(CID, 0, 9999))                                   # 半小时没确认：当作没发出去
+
+    def test_recent_owner_qq_message_counts_as_talking(self):
+        self.later(-30)
+        stamp = datetime.fromtimestamp(self.now[0], timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO chat_messages(role, content, created_at, character_id, status, source, channel) "
+                      "VALUES ('user','在干嘛',?,?,'complete','qq','desktop')", (stamp, CID))
+        self.later(30)
+        self.assertIsNone(self.s.next(CID, 9999, 9999))                                   # 桌面闲置很久，但他 30 秒前在 QQ 私聊说过话
+
+    def test_gap_setting_applies_to_follow_ups(self):
+        self.db.set_setting('proactive_gap_minutes', 720)
+        self.send(self.s.next(CID, 0, 9999))
+        self.later(91*60); self.assertIsNone(self.s.next(CID, 30, 9999))                  # 设成 12 小时：91 分钟后不追问
+        self.db.set_setting('proactive_gap_minutes', 30)
+        self.assertEqual(self.s.next(CID, 30, 9999).source, 'follow')
+
+
 if __name__ == '__main__':
     unittest.main()
