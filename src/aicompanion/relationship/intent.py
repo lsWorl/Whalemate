@@ -31,7 +31,7 @@ REPORT = re.compile(r'(?:他|她|他们|她们|有人|别人|网上|群里|楼�
 QUOTED = re.compile(r'[“"「『](.{2,}?)[”"」』]')
 SECOND = re.compile(r'你(?!们)|尔等|汝')
 GROUP_ADDR = re.compile(r'你们|大家|各位|群友|所有人|全体')
-HER = re.compile(r'她|这\s*(?:个)?\s*(?:AI|ai|机器人|bot|Bot)|本鲸|鲸娘')
+HER = re.compile(r'她|这\s*(?:个)?\s*(?:AI|ai|机器人|bot|Bot)|本鲸|鲸鲸|鲸娘')
 
 
 @dataclass

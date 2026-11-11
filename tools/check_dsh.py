@@ -38,7 +38,7 @@ def main() -> int:
                 server = McpToolServer(box); stack.callback(server.close)
                 agent = DshAgent(); stack.callback(agent.close); agent.mcp_servers = [server.acp_entry()]
                 start = time.monotonic()
-                result = agent.run(f'你是鲸娘，回复用一两句中文。只用 aicompanion 工具做事。当前工作区 {workspace} 只有两个合成文件。'
+                result = agent.run(f'你是鲸鲸，回复用一两句中文。只用 aicompanion 工具做事。当前工作区 {workspace} 只有两个合成文件。'
                                    '统计文件按扩展名各有几个，用 write_file 写到 stats.txt，不使用命令、不访问其他路径。', workspace,
                                    api_key=key, base_url=base)
                 stats = workspace/'stats.txt'

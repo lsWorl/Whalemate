@@ -32,6 +32,7 @@ class CharacterRegistry:
                 # 人格包启用之前的老库：先按原来的规则替换占位 / 升级人设，下面再从结果建人格
                 self._replace_placeholder(pack); self._upgrade_persona(pack)
             if pack.id not in existing and pack.id not in {c.id for c in self.database.characters()}: continue
+            self._rename(pack)
             language = pack.voice.get('language')
             if language and self.database.get_setting(f'speech_language:{pack.id}') is None:
                 self.database.set_setting(f'speech_language:{pack.id}', language)
@@ -44,11 +45,21 @@ class CharacterRegistry:
             pack = self.pack(character.id)
             try: personas.ensure(character, pack.persona if pack else None)
             except Exception: pass   # 人格表异常不影响启动；角色表里的设定照常可用
-        # v2 首次启动默认切到鲸娘，只做一次；之后尊重用户的选择。
+        # v2 首次启动默认切到鲸鲸（原名鲸娘），只做一次；之后尊重用户的选择。
         if self.database.get_setting(DEFAULT_KEY) is None:
             if self.pack(DEFAULT_CHARACTER_ID) and any(c.id == DEFAULT_CHARACTER_ID for c in self.database.characters()):
                 self.database.set_setting(ACTIVE_KEY, DEFAULT_CHARACTER_ID)
             self.database.set_setting(DEFAULT_KEY, True)
+
+    def _rename(self, pack) -> None:
+        """角色包改了名字（例如鲸娘 → 鲸鲸，负责人 2026-11-11）：数据库里还是包的旧名字时换成新名字。
+        每个新名字只换一次，之后用户在设置里改回旧名字也不会再被换掉；用户自己起的名字不在旧名单里，不动。"""
+        from dataclasses import replace
+        key = f'pack_name:{pack.id}'
+        if not getattr(pack, 'previous_names', ()) or self.database.get_setting(key) == pack.name: return
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current and current.name in pack.previous_names: self.database.update_character(replace(current, name=pack.name))
+        self.database.set_setting(key, pack.name)
 
     def _replace_placeholder(self, pack) -> None:
         """数据库初始化写入的占位角色与角色包同 ID：还是占位文字时换成包里的名字和人设（用户改过的不动）。"""

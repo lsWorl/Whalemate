@@ -83,7 +83,7 @@ class BridgePage(QWidget):
         self.memes_enabled = QCheckBox('聊天时可以发表情包')
         self.memes_enabled.setChecked(bool(database.get_setting('qq_memes_enabled', True)))
         self.meme_root = QLineEdit(str(database.get_setting('qq_meme_root', '') or ''))
-        self.meme_root.setPlaceholderText('留空使用自带鲸娘表情；也可选本地表情包目录')
+        self.meme_root.setPlaceholderText('留空使用自带鲸鲸表情；也可选本地表情包目录')
         choose_memes = QPushButton('选择图库…'); choose_memes.clicked.connect(self._choose_memes)
         meme_row = QHBoxLayout(); meme_row.addWidget(self.meme_root, 1); meme_row.addWidget(choose_memes)
         pl.addRow('', self.vision_enabled); pl.addRow('', self.memes_enabled); pl.addRow('表情图库', meme_row)
