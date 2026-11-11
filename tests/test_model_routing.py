@@ -1,4 +1,5 @@
 """计划书 v4 功能一：模型配置、凭据与按能力解析。纯 Python，不联网（重定向测试只用本机端口）。"""
+from dataclasses import replace
 import base64
 import http.server
 import io
@@ -125,6 +126,44 @@ class CacheTests(RoutingBase):
         self.assertIsNot(second, first); self.assertEqual(second.secret, 'second')
         self.assertEqual(resolved.credential_revision, 'stored:2')
         self.assertNotIn(first, self.router._clients.values())               # 旧凭据的实例已丢弃
+
+    def test_snapshot_never_pairs_old_endpoint_with_new_key(self):
+        # Codex 审计 R1：取得快照后把同一账户改成新地址 + 新 Key，旧快照不能拼成“旧地址 + 新 Key”
+        from aicompanion.providers.router import ModelUnavailable
+        ref = self.creds.save('deepseek-main', 'OLD_KEY', endpoint='https://old-provider.invalid/v1')
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://old-provider.invalid/v1', credential=ref))
+        self.store.put_model(MODEL_PRESETS['deepseek-flash']); self.store.bind(Binding('chat', 'deepseek-flash'))
+        old = self.router.resolve('chat', 'emilia')
+        self.creds.save('deepseek-main', 'FAKE_NEW_KEY', endpoint='https://new-provider.invalid/v1')
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://new-provider.invalid/v1', credential=ref))
+        with self.assertRaisesRegex(ModelUnavailable, '刚刚更换'): self.router.client_for(old)
+        self.assertEqual(self.factory.made, [])                                # 没有用新 Key 建过任何客户端
+        new = self.router.resolve('chat', 'emilia')
+        self.assertEqual((self.router.client_for(new).secret, new.base_url), ('FAKE_NEW_KEY', 'https://new-provider.invalid/v1'))
+        # 交错情况：Key 记录已经登记到新地址，但快照读到的还是旧地址、且修订号恰好是新的——地址核对仍然拒绝
+        stale = replace(old, credential_revision=new.credential_revision)
+        self.router._clients.clear()
+        with self.assertRaises(ModelUnavailable): self.router.client_for(stale)
+        # 只改地址不换 Key：bind 之后旧地址的快照取不到 Key
+        self.creds.bind('deepseek-main', 'https://third.invalid/v1')
+        self.assertEqual(self.creds.get(ref, endpoint='https://new-provider.invalid/v1'), '')
+        self.assertEqual(self.creds.get(ref, endpoint='https://third.invalid/v1/'), 'FAKE_NEW_KEY')
+
+    def test_qq_vision_snapshot_refuses_key_changed_before_request(self):
+        # Codex 审计 R1：QQ 识图先取快照、处理完图片才取 Key；中间换了地址和 Key 时放弃这次识图
+        from types import SimpleNamespace
+        from aicompanion.bridge.media import MediaError, QQMedia
+        ref = self.creds.save('deepseek-main', 'OLD_KEY', endpoint='https://old-provider.invalid/v1')
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://old-provider.invalid/v1', credential=ref))
+        self.store.put_model(MODEL_PRESETS['deepseek-flash']); self.store.bind(Binding('vision', 'deepseek-flash'))
+        made = []
+        media = QQMedia(self.db, SimpleNamespace(router=self.router, character=SimpleNamespace(id='deepseek-whale')),
+                        vision_factory=lambda **kw: made.append(kw))
+        profile = media.profile()
+        self.creds.save('deepseek-main', 'FAKE_NEW_KEY', endpoint='https://new-provider.invalid/v1')
+        self.store.put_provider(ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://new-provider.invalid/v1', credential=ref))
+        with self.assertRaises(MediaError): media._vision_call(profile, [], 10, 'qq')
+        self.assertEqual(made, [])
 
     def test_env_reference_change_rebuilds_client(self):
         # 用户也可以选择让 Key 来自某个环境变量
