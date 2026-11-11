@@ -30,6 +30,7 @@ PRESENT_SECONDS = 600            # 电脑闲置不到 10 分钟：他在电脑�
 FOLLOW_AFTER = (45*60, 90*60)    # 没回多久以后考虑追一句
 FOLLOW_CHANCE = 0.6              # 到时候追问的概率；其余就“算了”
 GIVE_UP_SECONDS = 3*3600
+PENDING_STALE = 30*60            # 发送中超过半小时还没确认：当作没发出去
 DATE_FROM_HOUR = 9
 
 
@@ -61,16 +62,38 @@ class ProactiveScheduler:
         return minutes*60*max(0.3, pace)
 
     # ---- 记录 --------------------------------------------------------------------------------
-    def record(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
-        """主动消息成功发出后记一条；追问还会把它追的那条标成 followed。"""
+    def reserve(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
+        """选中要说的那一刻先占一条 pending：发送中（尤其是走 QQ、要等插件回执的）也算“今天说过一次”、也挡住下一次开口，
+        不会在回执到之前又选中同一句追问（Codex PR #46 第 1 项）。说成了 confirm，没说成 release。"""
+        now = self.clock()
+        def work(c):
+            return c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
+                             (character_id, outreach.source, outreach.key, channel, 'pending', outreach.payload.get('parent_id'), now)).lastrowid
+        return self.db.locked(work)
+
+    def confirm(self, character_id: str, outreach_id: int, outreach: Outreach, channel: str = 'desktop') -> None:
+        """真说出来了：pending → sent（时间按说出来的时候算）；追问还会把它追的那条标成 followed；分享的活动标成 shared。"""
         now = self.clock()
         def work(c):
             parent = outreach.payload.get('parent_id')
             if parent: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
-            return c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
-                             (character_id, outreach.source, outreach.key, channel, 'sent', parent, now)).lastrowid
-        outreach_id = self.db.locked(work)
+            updated = c.execute("UPDATE outreach_log SET status='sent', channel=?, sent_at=? WHERE id=? AND status='pending'",
+                                (channel, now, outreach_id)).rowcount
+            if not updated:   # 回执来得太晚，占位已经当作没发出去撤掉了：照实补记一条
+                c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
+                          (character_id, outreach.source, outreach.key, channel, 'sent', parent, now))
+        self.db.locked(work)
         if outreach.source == 'share' and self.life is not None: self.life.shared(outreach.payload['activity']['id'])
+
+    def release(self, outreach_id: int) -> None:
+        """没说成（生成失败、被打断、QQ 没发出去）：撤掉占位，不算说过。"""
+        with self.db.transaction() as c:
+            c.execute("DELETE FROM outreach_log WHERE id=? AND status='pending'", (outreach_id,))
+
+    def record(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
+        """占位并立刻确认（已经说出来时用）。"""
+        outreach_id = self.reserve(character_id, outreach, channel)
+        self.confirm(character_id, outreach_id, outreach, channel)
         return outreach_id
 
     def today_count(self, character_id: str) -> int:
@@ -79,8 +102,26 @@ class ProactiveScheduler:
             return c.execute('SELECT COUNT(*) FROM outreach_log WHERE character_id=? AND sent_at>=?', (character_id, start)).fetchone()[0]
 
     def last(self, character_id: str):
+        """最近一条已经说出来的（pending 另算）。"""
         with self.db.transaction() as c:
-            return c.execute('SELECT * FROM outreach_log WHERE character_id=? ORDER BY id DESC LIMIT 1', (character_id,)).fetchone()
+            return c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status!='pending' ORDER BY id DESC LIMIT 1", (character_id,)).fetchone()
+
+    def pending(self, character_id: str) -> bool:
+        """有还在发送中的主动消息。超过 PENDING_STALE 还没确认的当作没发出去（程序中途退出之类），撤掉。"""
+        now = self.clock()
+        with self.db.transaction() as c:
+            c.execute("DELETE FROM outreach_log WHERE character_id=? AND status='pending' AND sent_at<?", (character_id, now-PENDING_STALE))
+            return c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND status='pending' LIMIT 1", (character_id,)).fetchone() is not None
+
+    def seconds_since_user(self, character_id: str) -> float:
+        """他最近一次说话距今多久：桌面和主人的 QQ 私聊都算（两边都记在 desktop 频道；Codex PR #46 第 2 项）。"""
+        with self.db.transaction() as c:
+            row = c.execute("SELECT MAX(created_at) FROM chat_messages WHERE character_id=? AND channel='desktop' AND role='user'",
+                            (character_id,)).fetchone()
+        if not row or not row[0]: return float('inf')
+        try: when = datetime.fromisoformat(str(row[0])).replace(tzinfo=timezone.utc).timestamp()
+        except ValueError: return float('inf')
+        return max(0.0, self.clock()-when)
 
     def _user_spoke_since(self, character_id: str, since: float) -> bool:
         stamp = datetime.fromtimestamp(since, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')   # chat_messages.created_at 是 UTC 文本
@@ -128,9 +169,11 @@ class ProactiveScheduler:
         if not self.db.get_setting('proactive_enabled', True): return None
         now_ts = self.clock(); now = datetime.fromtimestamp(now_ts)
         if is_focused(self.db, now) or in_quiet_hours(self.db, now.hour): return None
+        seconds_since_user = min(seconds_since_user, self.seconds_since_user(character_id))
         if seconds_since_user < RECENT_TALK_SECONDS: return None
+        if self.pending(character_id): return None                              # 上一条还在发送中
         self.settle(character_id)
-        if self.today_count(character_id) >= self.limit(): return None
+        if self.today_count(character_id) >= self.limit(): return None          # pending 也计入今天的次数
         last = self.last(character_id)
         if last is not None and last['status'] == 'sent':
             return self._follow_up(character_id, last, now_ts, system_idle)    # 上一句还没回：不开新话题
@@ -145,7 +188,9 @@ class ProactiveScheduler:
         if last['source'] == 'follow' or last['parent_id']: return None             # 追问过了就不再追
         if system_idle >= PRESENT_SECONDS: return None                               # 他不在电脑前，不算没理她
         rng = random.Random(f"{character_id}:{last['id']}")                           # 每条消息的“多久后追”固定，重启也一样
-        if now_ts-last['sent_at'] < rng.uniform(*FOLLOW_AFTER): return None
+        # 追问也是一次主动开口，设置里的“两次之间至少隔 N 分钟”同样适用（Codex PR #46 第 3 项）；
+        # 间隔设得比“没回就放下”的 3 小时还长时，就不会追问
+        if now_ts-last['sent_at'] < max(rng.uniform(*FOLLOW_AFTER), self.gap_seconds(character_id)): return None
         if self.rng() >= FOLLOW_CHANCE:
             self._set(last['id'], 'let_go', now_ts); return None                       # 自己算了
         said = self._said_after(character_id, last['sent_at'])
