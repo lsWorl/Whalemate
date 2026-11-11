@@ -89,6 +89,7 @@ class SpeechSegment:
     style: str
     language: str = 'zh'
     role_style: str = ''
+    target: object = None      # Breeze 等模型页配置的语音：入队时取好的完整 TtsTarget，合成和缓存都用它（Codex 审计 R4）
     requested: bool = False
     audio: bytes | None = None
 
@@ -181,7 +182,14 @@ class SpeechOutput(QObject):
         if len(self.queue) >= 12:
             self._error('语音队列已满，本轮后续内容仅显示文字。')
             return
-        self.queue.append(SpeechSegment(text, generation_id, self.provider, self.voice, self.mood, self.style, self.language, self.role_style))
+        voice, target = self.voice, None
+        if self.provider == 'breeze':
+            # 入队时就定下这句用哪个账户和音色；之后改了设置只影响新句子，排队中的句子不会换成新音色、也不会把新音色存进旧缓存
+            source = getattr(self.client, 'tts_source', None)
+            target = source() if source else None
+            voice = target.cache_id if target else ''
+        self.queue.append(SpeechSegment(text, generation_id, self.provider, voice, self.mood, self.style, self.language,
+                                        self.role_style, target))
         self._next()
         self._prefetch()
 
@@ -223,7 +231,8 @@ class SpeechOutput(QObject):
                     continue
             epoch = self.epoch
             worker = TaskWorker(lambda token, j=job: self.client.synthesize(j.text, j.voice, token,
-                provider=j.provider, mood=j.mood, style=j.style, language=j.language, role_style=j.role_style), self)
+                provider=j.provider, mood=j.mood, style=j.style, language=j.language, role_style=j.role_style,
+                **({'target': j.target} if j.target is not None else {})), self)
             self.workers.add(worker)
             worker.succeeded.connect(lambda raw, j=job, e=epoch: self._ready(j, raw, e))
             worker.failed.connect(lambda error, e=epoch: self._error(error) if e == self.epoch else None)

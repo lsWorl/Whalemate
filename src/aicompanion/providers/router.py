@@ -158,7 +158,7 @@ class ModelRouter:
             if not binding: continue
             if binding.backend == 'deepseek' and binding.provider in config.providers:
                 provider = config.providers[binding.provider]
-                return SearchTarget('deepseek', provider.base_url, self.credentials.get(provider.credential))
+                return SearchTarget('deepseek', provider.base_url, self.credentials.get(provider.credential, endpoint=provider.base_url))
             if binding.backend == 'wikipedia':
                 return SearchTarget('wikipedia')
         return SearchTarget('wikipedia')
@@ -172,7 +172,7 @@ class ModelRouter:
             model = config.models[binding.model]
             provider = config.providers.get(model.provider)
             if not provider: continue
-            key = self.credentials.get(provider.credential)
+            key = self.credentials.get(provider.credential, endpoint=provider.base_url)
             if not key: return None
             revision = self.credentials.revision(provider.credential)
             cache_id = '|'.join((provider.kind, provider.base_url, model.model_id, binding.voice, binding.language,
@@ -194,7 +194,7 @@ class ModelRouter:
                 model = config.models[binding.model]
                 provider = config.providers.get(model.provider)
                 if not provider: continue
-                key = self.credentials.get(provider.credential)
+                key = self.credentials.get(provider.credential, endpoint=provider.base_url)
                 if not key: return None
                 key_env, base_env = AGENT_ROUTES[binding.route]
                 env = [(key_env, key)]
@@ -244,8 +244,11 @@ class ModelRouter:
         with self._lock:
             client = self._clients.get(key)
             if client is None:
-                secret = self.credentials.get(resolved.credential)
+                # 只取和快照同一修订的 Key：快照之后账户换了地址和 Key，这次请求作废，不拼成“旧地址 + 新 Key”
+                secret = self.credentials.get(resolved.credential, resolved.credential_revision, resolved.base_url)
                 if not secret:
+                    if self.credentials.get(resolved.credential):
+                        raise ModelUnavailable(f'{resolved.label} 的 Key 刚刚更换，这次请求已取消，请再试一次。')
                     raise ModelUnavailable(f'{resolved.label} 的 Key 还没有设置或已失效，请到设置里填写。')
                 client = (self._factory or openai_client)(resolved, secret)
                 # 只保留每个“地址 + 模型”的最新凭据实例，旧凭据的实例随之丢弃
@@ -255,8 +258,9 @@ class ModelRouter:
             return client
 
     def secret(self, resolved: Resolved) -> str:
-        """构造请求时取 Key；不要保存或写进日志。"""
-        return self.credentials.get(resolved.credential)
+        """构造请求时取 Key；不要保存或写进日志。只给和快照同一修订、登记在快照地址上的 Key，
+        快照之后账户换了地址或 Key 时返回空串，调用方应放弃这次请求（Codex 审计 R1）。"""
+        return self.credentials.get(resolved.credential, resolved.credential_revision, resolved.base_url)
 
     def label(self, character_id: str) -> str:
         if self.offline: return OFFLINE_LABEL

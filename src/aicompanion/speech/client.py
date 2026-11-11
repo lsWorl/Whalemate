@@ -87,11 +87,12 @@ class SpeechClient:
             raise RuntimeError('语音识别返回格式无效。')
         return text.strip()
 
-    def synthesize(self,text,voice,cancellation,provider='cloud',mood='calm',style='',language='zh',role_style=''):
+    def synthesize(self,text,voice,cancellation,provider='cloud',mood='calm',style='',language='zh',role_style='',target=None):
         if language not in ('zh','ja'):
             raise ValueError('不支持的朗读语言。')
         if provider == 'breeze':
-            target = self.tts_source() if self.tts_source else None
+            # 优先用入队时取好的快照；没有快照（例如直接调用）才取当前配置
+            if target is None: target = self.tts_source() if self.tts_source else None
             if target is None:
                 raise ValueError('还没有在“模型”页配置 Breeze Blue 音色和 Key。')
             # 日语台词：先翻译；Breeze 多语言模型能直接读日文，语言代码以模型配置为准
