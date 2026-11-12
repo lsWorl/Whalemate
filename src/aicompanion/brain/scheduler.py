@@ -171,7 +171,7 @@ class ProactiveScheduler:
             if status == 'failed': self.purposes.release(pid, connection=c)
             else: self.purposes.delivered(pid, connection=c)
         if status == 'failed':
-            if row['source'] in ('date', 'greeting'): self.db.release_proactive(cid, row['key'], connection=c)
+            if row['source'] in ('date', 'date_eve', 'greeting'): self.db.release_proactive(cid, row['key'], connection=c)
             c.execute('DELETE FROM outreach_log WHERE id=?', (rid,))
             if parent:
                 c.execute("UPDATE outreach_log SET status='sent', settled_at=NULL WHERE id=? AND status='followed' "
@@ -399,19 +399,22 @@ class ProactiveScheduler:
     def _date(self, character_id, now: datetime) -> Outreach | None:
         """今天是特别的日子、还没提过、他今天也还没来找她：主动去说（具体提哪几个日子由聊天上下文带上，说完记为已提）。"""
         if now.hour < DATE_FROM_HOUR: return None
-        try:
-            from aicompanion.services.companion_dates import CompanionDates
-            dates = CompanionDates(self.db, clock=self.clock)
-            fresh = [d for d in dates.events_on(character_id) if not dates.mentioned(character_id, d.key)]
-        except Exception:
-            return None
-        if not fresh: return None
+        from aicompanion.services.companion_dates import DATE_EVE_INTENT, CompanionDates
+        dates = CompanionDates(self.db, clock=self.clock)
+        day = now.date()
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-        if self._user_spoke_since(character_id, midnight): return None             # 他今天来过了，聊天时自然会提
-        key = f'date:{now.date().isoformat()}'
-        if not self.db.claim_proactive(character_id, key): return None
-        titles = '、'.join(d.title for d in fresh)
-        return Outreach('date', key, f'今天是{titles}，他今天还没来找你。主动发消息找他，自然地提一句今天这个日子，像真人那样，一两句就好。')
+        if not self._user_spoke_since(character_id, midnight):
+            fresh = [d for d in dates.reminders(character_id, day) if not dates.mentioned(character_id, d.key, day)]
+            key = f'date:{day}'
+            if fresh and self.db.claim_proactive(character_id, key):
+                titles = '、'.join(d.title for d in fresh)
+                return Outreach('date', key, f'今天是{titles}，他今天还没来找你。主动发消息找他，自然地提一句今天这个日子，像真人那样，一两句就好。')
+        # 提前提醒只走调度器，即使今天聊过也照常判断；名称在私聊轮次占位成功后才进提示词。
+        key = f'date_eve:{day}'
+        due = [d.key for d in dates.reminders(character_id, day, eve=True) if not dates.mentioned(character_id, d.key, day)]
+        if due and self.db.claim_proactive(character_id, key):
+            return Outreach('date_eve', key, DATE_EVE_INTENT, {'character_id': character_id, 'date_keys': due})
+        return None
 
     def _purpose(self, character_id, system_idle, seconds_since_user) -> Outreach | None:
         if self.purposes is None: return None
@@ -425,6 +428,13 @@ class ProactiveScheduler:
     def still_valid(self, outreach: Outreach) -> bool:
         """选中以后、真正说出来（桌面第一个字显示出来、QQ 交给插件 / 插件领取）之前还该不该说。这段时间里关掉过“自己的生活”
         （哪怕又打开了），分享和追问分享的那句就撤回（Codex PR #48 第二、三轮）；已经说出来 / 交给插件的不追回。"""
+        if outreach.source == 'date_eve':
+            from aicompanion.services.companion_dates import CompanionDates
+            dates = CompanionDates(self.db, self.clock)
+            day = dates.today()
+            if outreach.key != f'date_eve:{day}': return False
+            active = {d.key for d in dates.reminders(outreach.payload['character_id'], day, eve=True)}
+            return active.issuperset(outreach.payload['date_keys'])
         if outreach.source == 'share' or outreach.payload.get('origin') == 'share':
             return self._life_on() and not self.life.switched_off_since(outreach.payload.get('chosen_at'))
         return True

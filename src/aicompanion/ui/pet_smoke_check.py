@@ -256,6 +256,15 @@ def schedule_pet_smoke_check(window, database, output):
         try:
             state['settings_pages_ready'] = (dialog.nav.current() == 'models'
                                              and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
+            card = dialog.dates_card
+            card.kind.setCurrentIndex(card.kind.findData('custom'))
+            card.title.setText('自检纪念日')
+            card.add()
+            timing = card.table.cellWidget(0, 4)
+            timing.setCurrentIndex(timing.findData('eve'))
+            state['date_reminder_editable'] = (timing.count() == 4 and card.reminder.currentData() == 'day'
+                                                and card.dates.user_dates(card.cid)[0]['reminder'] == 'eve')
+            card.table.selectRow(0); card.remove()
             # 计划书 v4 功能二：人格编辑器能载入当前人格
             state['persona_ready'] = bool(dialog.persona_editor.current_id) and bool(dialog.persona_editor.description.toPlainText())
             # 计划书 v4 功能三：心情卡能读出当前心情
@@ -569,7 +578,7 @@ def schedule_pet_smoke_check(window, database, output):
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
-        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
+        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'date_reminder_editable', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')

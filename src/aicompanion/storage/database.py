@@ -76,6 +76,11 @@ class Database:
                     for name, definition in (("clarity", "REAL NOT NULL DEFAULT 1"), ("recalled_at", "TEXT"), ("scope", "TEXT NOT NULL DEFAULT 'pet'")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE memories ADD COLUMN {name} {definition}")
+                if version < 15 and "companion_dates" in tables:
+                    columns = {r[1] for r in connection.execute("PRAGMA table_info(companion_dates)")}
+                    if "reminder" not in columns:
+                        connection.execute("ALTER TABLE companion_dates ADD COLUMN reminder TEXT NOT NULL DEFAULT 'day'")
+                        connection.execute("UPDATE companion_dates SET reminder='both' WHERE kind IN ('birthday','her_birthday')")
                 if "outreach_log" in tables:
                     # 早期 v13/v14 缺取件时间、对应轮次，或这次分享已结算的回执类型；按缺哪列补哪列。
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(outreach_log)")}
