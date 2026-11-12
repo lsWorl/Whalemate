@@ -143,6 +143,13 @@ class BridgePage(QWidget):
         self.meme_cooldown.setSuffix(' 秒')
         self.autostart = QCheckBox('打开桌宠时自动启动 QQ 服务，退出时停止'); self.autostart.setChecked(bool(database.get_setting('qq_autostart', True)))
         self.index = QLineEdit(database.get_setting('qq_index_url', '') or ''); self.index.setPlaceholderText('留空 = PyPI 官方源；下载慢时可填镜像地址')
+        self.napcat_source = QLineEdit(database.get_setting('qq_napcat_source', '') or '')
+        self.napcat_source.setPlaceholderText('原版 ZIP 路径，或存放该 ZIP 的文件夹')
+        select_zip = QPushButton('选择 ZIP…')
+        select_zip.clicked.connect(self._choose_napcat_zip)
+        napcat_row = QHBoxLayout()
+        napcat_row.addWidget(self.napcat_source, 1)
+        napcat_row.addWidget(select_zip)
         self.root = QLineEdit(str(self.qq.layout.root)); self.root.setReadOnly(True)
         open_logs = QPushButton('打开组件文件夹'); open_logs.clicked.connect(self._open_root)
         existing = QPushButton('改为接入已有的 AstrBot…'); existing.clicked.connect(self._attach_existing)
@@ -160,9 +167,10 @@ class BridgePage(QWidget):
         self.token.textChanged.connect(self._update_apply_button)
         form.addRow('群和陌生人每天最多回复', self.daily); form.addRow('', self.autostart); form.addRow('Python 包镜像', self.index)
         form.addRow('识图模型', QLabel('在“模型与 Key”页的“识图”一项里选择')); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
+        form.addRow('本地 NapCat 包', napcat_row)
         form.addRow('组件目录', self.root); form.addRow('', open_logs); form.addRow('', existing); form.addRow('组件版本', self.versions)
         layout.addWidget(advanced_card)
-        note = QLabel('桌宠会从 NapCat 和 AstrBot 的官方发布地址下载原版组件，放在上面的组件目录里，不改你电脑上的 QQ。'
+        note = QLabel('桌宠优先使用随包或指定的 NapCat ZIP，缺少可用原包时尝试官方来源。组件安装在独立目录。'
                       '扫码登录和账号验证需要你自己完成。你的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
                       '不想在群里被提到的记忆，到"记忆"页标成"只在私下用"。聊天平台上她不会动手干活。')
         note.setWordWrap(True); note.setStyleSheet('color:#666'); layout.addWidget(note); layout.addStretch(1)
@@ -268,14 +276,20 @@ class BridgePage(QWidget):
     def _apply_bridge(self):
         self.qq.ensure_bridge()
 
+    def _choose_napcat_zip(self):
+        filename, _ = QFileDialog.getOpenFileName(self, '选择 NapCat 原版 ZIP', '', 'ZIP 压缩包 (*.zip)')
+        if filename:
+            self.napcat_source.setText(filename)
+
     def _prepare(self):
         from aicompanion.qq import specs
-        text = ('桌宠将从官方地址下载并安装以下组件，放在自己的组件目录里（约 300 MB，视网络需要几分钟）：\n\n'
+        text = ('桌宠将优先使用本地 NapCat 包，按需下载其余组件并安装到独立目录：\n\n'
                 f'• NapCat {specs.NAPCAT.version}（QQ 登录和收发消息）\n  {specs.NAPCAT.license_note}\n'
                 f'• uv {specs.UV.version} 和 Python {specs.ASTRBOT.python}\n'
                 f'• AstrBot {specs.ASTRBOT.version}（AGPL-3.0，消息路由）\n\n'
                 '不会改你电脑上已安装的 QQ。机器人账号建议用小号。继续吗？')
         if QMessageBox.question(self, '接入 QQ', text) != QMessageBox.StandardButton.Yes: return
+        self.database.set_setting('qq_napcat_source', self.napcat_source.text().strip())
         def work():
             self.qq.prepare(progress=lambda step, detail, fraction=0.0: self.signals.progress.emit(step, detail, fraction))
             self.qq.start()
@@ -467,6 +481,7 @@ class BridgePage(QWidget):
             raise ValueError(self.owner_error.text())
         db.set_setting('bridge_public_daily', self.daily.value())
         db.set_setting('qq_autostart', self.autostart.isChecked())
+        db.set_setting('qq_napcat_source', self.napcat_source.text().strip())
         db.set_setting('qq_index_url', self.index.text().strip())
 
     def save(self):

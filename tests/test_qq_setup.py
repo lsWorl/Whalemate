@@ -1,5 +1,6 @@
 """一键接入 QQ（T9 第二步）：下载校验、安装、配置生成、端口、进程保护、已有实例保护、诊断。
 全部离线：下载用本机临时 HTTP 服务或假的下载函数，uv / 进程用假的，不登录 QQ、不连网、不调用模型。"""
+from dataclasses import replace
 import hashlib
 import http.server
 import json
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import Mock, patch
 import zipfile
 
 from aicompanion.qq import configure, specs
@@ -243,6 +245,53 @@ class ManagerBase(Base):
 
 
 class PrepareTests(ManagerBase):
+    def local_sources(self):
+        bundled = self.root/specs.NAPCAT_BUNDLE_DIR/specs.NAPCAT_ZIP
+        bundled.parent.mkdir(parents=True)
+        original = self.zips[specs.NAPCAT.url].read_bytes()
+        self.enterContext(patch('aicompanion.qq.manager.project_root', return_value=self.root))
+        self.enterContext(patch.object(specs, 'NAPCAT', replace(specs.NAPCAT, sha256=hashlib.sha256(original).hexdigest())))
+        return bundled, original
+
+    def test_bundled_napcat_wins_without_network_or_user_archive(self):
+        bundled, original = self.local_sources()
+        bundled.write_bytes(original)
+        self.db.set_setting('qq_napcat_source', str(self.root/'missing.zip'))
+        self.qq.prepare()
+        self.assertNotIn(specs.NAPCAT.url, self.downloads)
+        self.assertEqual(self.qq.layout.manifest()['components']['napcat']['source'], '随包 ZIP')
+        self.assertEqual(bundled.read_bytes(), original)
+
+    def test_invalid_bundle_falls_back_to_configured_directory_or_zip(self):
+        bundled, original = self.local_sources()
+        bundled.write_bytes(b'invalid')
+        user_zip = self.root/specs.NAPCAT_ZIP
+        user_zip.write_bytes(original)
+        for source in (user_zip.parent, user_zip):
+            with self.subTest(source=source):
+                self.db.set_setting('qq_napcat_source', str(source))
+                self.qq.prepare()
+                self.assertNotIn(specs.NAPCAT.url, self.downloads)
+                self.assertEqual(self.qq.layout.manifest()['components']['napcat']['source'], '设置中的 ZIP')
+
+    def test_invalid_local_sources_fall_back_to_official_url_once(self):
+        bundled, _ = self.local_sources()
+        bundled.write_bytes(b'corrupt')
+        self.qq.prepare()
+        self.assertEqual(self.downloads.count(specs.NAPCAT.url), 1)
+
+    def test_failed_sources_explain_hash_http_failure_and_recovery(self):
+        bundled, _ = self.local_sources()
+        bundled.write_bytes(b'corrupt')
+        self.db.set_setting('qq_napcat_source', str(self.root/'missing.zip'))
+        self.qq.fetcher = Mock(side_effect=FetchError('HTTP 404'))
+        with self.assertRaises(SetupError) as error:
+            self.qq.prepare()
+        for detail in ('随包 ZIP的 SHA-256', '设置中的 ZIP未找到', '404', '高级设置', specs.NAPCAT_ZIP):
+            self.assertIn(detail, str(error.exception))
+        self.qq.fetcher.assert_called_once()
+        self.assertIsNone(self.qq.layout.current('napcat'))
+
     def test_prepare_writes_everything_and_is_repeatable(self):
         self.qq.prepare()
         manifest = self.qq.layout.manifest()['components']
@@ -388,6 +437,15 @@ class ProcessTests(ManagerBase):
         self.assertIn('Windows 应用控制',status.title)
         self.assertIn('4551',status.detail)
         self.assertNotIn('old chat',status.detail)
+
+    def test_blocked_runtime_dll_is_reported_even_without_numeric_winerror(self):
+        self.qq.prepare()
+        def popen(args, **kwargs):
+            kwargs['stdout'].write('ImportError: DLL load failed while importing _sqlite3: 应用程序控制策略已阻止此文件。\n'.encode())
+            return FakeProcess(code=1)
+        self.qq.supervisor = Supervisor(self.qq.layout, identity_of=lambda pid: None, popen=popen)
+        self.qq.start()
+        self.assertIn('Windows 应用控制', self.qq.diagnose().title)
 
     def recorded(self):
         layout = Layout(self.root/'qq'); exe = str(layout.root/'napcat'/'1.0'/'node.exe')

@@ -4,7 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| V4-QQ-本地 | 恢复新装 QQ 的 NapCat 来源，验证自包含和扫码前链路 | Codex 实现，Claude 审查 | 进行中 | [任务说明](tasks/V4-qq-local-napcat.md) |
+| V4-QQ-本地 | 恢复新装 QQ 的 NapCat 来源，验证自包含和扫码前链路 | Codex 实现，Claude 审查 | 待审查，最终包已验至二维码 | [任务说明](tasks/V4-qq-local-napcat.md) |
 | V4-发布 | 解压即用的 Windows 压缩包（AICompanion.exe + UninstallWhalemate.exe，卸载清除程序、数据库和全部本机数据）、上传私有仓库 Releases、README 增加下载安装与卸载说明 | Codex 实现与打包；Claude 审计、上传、README | PR #52 P1/P2 已修复，待 Claude 复审；最终 ZIP 的主程序被本机应用控制拦截，两个打包 smoke 和运行中卸载待验 | docs/tasks/V4-release.md |
 | V4-UI | 界面重构：鲸鲸主题、聊天面板、桌宠右键菜单分组、首次启动向导、设置换装并改为自动保存（让非技术用户也能用） | Codex 实现；Claude 审计 | 已处理第二轮审计，待 Claude 复审（#51，`task/v4-ui-redesign`） | docs/tasks/V4-UI-redesign.md；设计稿 docs/design/v4-ui/ |
 | T20-动画 | 鲸鲸默认播放本机安装的 Aboutme 大肥鱼，缺包时使用内置自绘鲸娘；分层源稿可从 `fa54555` 找回 | Codex | 独立审查后修订，待复核（PR #25） | [任务说明](tasks/T20-original-whale-animation.md) · [安装与署名](aboutme-pet.md) |
