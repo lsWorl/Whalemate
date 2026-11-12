@@ -204,7 +204,7 @@ $p = $env:WHALEMATE_TEMP_LAUNCHER
 $d = [System.IO.Path]::GetDirectoryName($p)
 if ([System.IO.Path]::GetDirectoryName($d) -ne [System.IO.Path]::GetTempPath().TrimEnd('\') -or
     [System.IO.Path]::GetFileName($d) -notlike 'whalemate-uninstall-*' -or
-    [System.IO.Path]::GetFileName($p) -ne '卸载鲸伴.exe') { exit 1 }
+    [System.IO.Path]::GetFileName($p) -ne 'UninstallWhalemate.exe') { exit 1 }
 for ($i = 0; $i -lt 120; $i++) {
     try { [IO.File]::Delete($p); [IO.Directory]::Delete($d); exit 0 }
     catch { Start-Sleep -Milliseconds 500 }

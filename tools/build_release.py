@@ -18,7 +18,7 @@ else:
     from build_windows import character_data_args
 
 ROOT = Path(__file__).resolve().parents[1]
-UNINSTALLER = '卸载鲸伴'
+UNINSTALLER = 'UninstallWhalemate'
 PUBLIC = ('LICENSE', 'README.md', 'README.en.md', '.env.example',
           'docs/aboutme-pet.md', 'docs/live2d_model_sources.md', 'docs/storage-locations.md',
           'tools/install_aboutme_pet.py', 'tools/aboutme-pet.lock.json', 'tools/aboutme-requirements.txt')
@@ -26,6 +26,8 @@ PUBLIC = ('LICENSE', 'README.md', 'README.en.md', '.env.example',
 
 def check_member(relative):
     """同时检查文件和所有祖先。Aboutme 安装器和来源说明是允许分发的文本。"""
+    if not str(relative).isascii():
+        raise ValueError(f'发布目录和文件须使用英文命名：{relative}')
     path = PurePosixPath(str(relative).replace('\\', '/').lower())
     for part in path.parts:
         if (part in {'data', 'logs', 'log', '__pycache__', 'coopanion', 'aboutme-cache', '.aicompanion-paths.json'}
@@ -58,7 +60,8 @@ def stage_assets(work):
 def version_info(path, version, name):
     numbers = tuple(map(int, version.split('.')))
     quad = (numbers + (0, 0, 0, 0))[:4]
-    fields = {'FileDescription': '鲸伴 Whalemate', 'ProductName': '鲸伴 Whalemate',
+    description = 'Whalemate Uninstaller' if name == UNINSTALLER else 'Whalemate'
+    fields = {'FileDescription': description, 'ProductName': 'Whalemate',
               'InternalName': name, 'OriginalFilename': name+'.exe', 'FileVersion': version, 'ProductVersion': version}
     entries = ','.join(f'StringStruct({key!r},{value!r})' for key, value in fields.items())
     path.write_text(f"VSVersionInfo(ffi=FixedFileInfo(filevers={quad},prodvers={quad},mask=63,flags=0,"
@@ -101,7 +104,7 @@ def package(work, bundle, release, version):
     archive = work/name
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
         for item in members:
-            output.write(item, (Path('鲸伴')/item.relative_to(bundle)).as_posix())
+            output.write(item, (Path('Whalemate')/item.relative_to(bundle)).as_posix())
     with archive.open('rb') as handle:
         digest = hashlib.file_digest(handle, 'sha256').hexdigest()
     sums = work/'SHA256SUMS.txt'

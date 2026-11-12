@@ -28,11 +28,17 @@ class ReleaseTests(unittest.TestCase):
                        '_internal/aicompanion/characters/deepseek-whale/rig/idle.png'):
             check_member(member)
 
+    def test_release_rejects_non_english_file_and_directory_names(self):
+        for path in ('卸载鲸伴.exe', '_internal/角色/idle.png'):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, '英文命名'):
+                check_member(path)
+        check_member('UninstallWhalemate.exe')
+
     def test_packaging_rejects_contaminated_staging_before_writing_zip(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             bundle = work/'stage'
-            for name in (*PUBLIC, 'AICompanion.exe', '卸载鲸伴.exe', '_internal/fixture.bin'):
+            for name in (*PUBLIC, 'AICompanion.exe', 'UninstallWhalemate.exe', '_internal/fixture.bin'):
                 file = bundle/name
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.touch()
@@ -55,10 +61,10 @@ class ReleaseTests(unittest.TestCase):
 class UninstallTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
-        self.install = self.root/'鲸伴'
-        self.file('鲸伴/_internal/rig/texture.png')
-        self.file('鲸伴/AICompanion.exe')
-        self.file('鲸伴/'+u.EXE)
+        self.install = self.root/'Whalemate'
+        self.file('Whalemate/_internal/rig/texture.png')
+        self.file('Whalemate/AICompanion.exe')
+        self.file('Whalemate/'+u.EXE)
         self.record = self.root/'paths.json'
         self.memory = self.root/'work/memory'
         self.gallery = self.root/'我的图库'
@@ -168,10 +174,10 @@ class UninstallTests(unittest.TestCase):
             self.assertTrue(self.db.exists())
 
     def test_late_files_and_locked_file_reported_individually(self):
-        locked = self.file('鲸伴/locked.txt')
-        sibling = self.file('鲸伴/other.txt')
+        locked = self.file('Whalemate/locked.txt')
+        sibling = self.file('Whalemate/other.txt')
         plan = u.scan(self.loc)
-        new = self.file('鲸伴/new.txt')
+        new = self.file('Whalemate/new.txt')
         with locked.open('rb'):
             ok, failed = u.execute(plan, confirmed=True)
         self.assertIn(str(sibling), ok)
@@ -187,7 +193,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_nested_external_memory_keeps_unrelated_files(self):
         memory = self.install/'旧存储'
-        mine = self.file('鲸伴/旧存储/本人文件.txt')
+        mine = self.file('Whalemate/旧存储/本人文件.txt')
         self.db.rename(memory/self.db.name)
         self.record.write_text(json.dumps({'memory_root': str(memory)}), 'utf-8')
         plan = u.scan(self.loc)

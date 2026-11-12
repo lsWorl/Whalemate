@@ -14,7 +14,7 @@ import zipfile
 
 from build_release import check_member
 
-UNINSTALLER = '卸载鲸伴.exe'
+UNINSTALLER = 'UninstallWhalemate.exe'
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -27,11 +27,11 @@ def extract(archive, target):
     with zipfile.ZipFile(archive) as bundle:
         for member in bundle.infolist():
             parts = Path(member.filename).parts
-            if not parts or parts[0] != '鲸伴' or '..' in parts or not (target/member.filename).resolve().is_relative_to(target):
+            if not parts or parts[0] != 'Whalemate' or '..' in parts or not (target/member.filename).resolve().is_relative_to(target):
                 raise ValueError(f'非法成员路径：{member.filename}')
             check_member(Path(*parts[1:]))
         bundle.extractall(target)
-    install = target/'鲸伴'
+    install = target/'Whalemate'
     for exe in ('AICompanion.exe', UNINSTALLER):
         expect((install/exe).is_file(), '缺少 '+exe)
     # pefile 为 Windows PyInstaller 的现有依赖。读 PE 资源核对实际 exe 的子系统、图标和版本。
@@ -43,7 +43,10 @@ def extract(archive, target):
             expect({3, 14, 16}.issubset(ids), '缺少图标或版本资源')
             metadata = next(info.StringTable[0].entries for block in pe.FileInfo for info in block
                             if info.Key == b'StringFileInfo')
-            expect(metadata[b'FileDescription'].decode() == '鲸伴 Whalemate', '文件说明不符')
+            description = 'Whalemate Uninstaller' if executable.name == UNINSTALLER else 'Whalemate'
+            expect(metadata[b'FileDescription'].decode() == description, '文件说明不符')
+            expect(metadata[b'ProductName'] == b'Whalemate' and
+                   metadata[b'OriginalFilename'].decode() == executable.name, '产品名或原始文件名不符')
             version = metadata[b'ProductVersion'].decode()
             expect(archive.name == f'Whalemate-v{version}-windows-x64.zip', '版本与包名不符')
     return install

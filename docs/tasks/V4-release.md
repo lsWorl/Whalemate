@@ -5,12 +5,12 @@
 
 ## 负责人已确认
 
-- **形式**：压缩包，解压即用。zip 里只有一个 `鲸伴` 文件夹，里面有 `AICompanion.exe`（双击运行）和 `卸载鲸伴.exe`。不写安装程序，不需要管理员权限。
+- **形式**：压缩包，解压即用。发布包内的文件和目录均采用英文命名。zip 里只有一个 `Whalemate` 文件夹，里面有 `AICompanion.exe`（双击运行）和 `UninstallWhalemate.exe`。不写安装程序，不需要管理员权限。
 - **发布**：仓库目前是私有的，先发布到私有仓库的 Releases，负责人自己下载试用；仓库是否公开由负责人之后在 GitHub 上自行决定。
 
-## A. 卸载程序 `卸载鲸伴.exe`
+## A. 卸载程序 `UninstallWhalemate.exe`
 
-新建 `src/aicompanion/uninstall.py`（入口 `tools/uninstall_entry.py` 或 `python -m aicompanion.uninstall`），用 PyInstaller 单独打成 `卸载鲸伴.exe`，放在 `AICompanion.exe` 旁边，图标沿用应用图标。界面用 V4-UI 的鲸鲸主题和控件规范。
+新建 `src/aicompanion/uninstall.py`（入口 `tools/uninstall_entry.py` 或 `python -m aicompanion.uninstall`），用 PyInstaller 单独打成 `UninstallWhalemate.exe`，放在 `AICompanion.exe` 旁边，图标沿用应用图标。界面用 V4-UI 的鲸鲸主题和控件规范。
 
 ### 1. 先列清单，确认后才删
 打开后先扫描，列出**将要删除的每一项**：路径、大小、说明。清单至少覆盖：
@@ -38,7 +38,7 @@
 - 鲸伴正在运行时，先提示退出（或者代为正常退出），等它退出后再删；QQ 子进程同样处理。
 - 确认步骤：最后一步要求勾选“我知道删除后无法恢复”，再点“卸载”。
 - 删除时显示进度；某一项失败（被占用、没有权限）不能中断其他项，结束时列出成功和失败的项，并告诉用户失败项怎么手动删。
-- 程序文件夹最后删：卸载程序退出后，由一个临时的延迟删除脚本或进程把整个文件夹删掉，其中也包括 `卸载鲸伴.exe` 本身。
+- 程序文件夹最后删：卸载程序退出后，由一个临时的延迟删除脚本或进程把整个文件夹删掉，其中也包括 `UninstallWhalemate.exe` 本身。
 - 提供 `--dry-run`：只输出清单，不删除，供测试和用户预览。
 
 ## B. 打包脚本
@@ -46,16 +46,16 @@
 改 `tools/build_windows.py`，或者新增 `tools/build_release.py`：
 
 - 在**全新的临时目录**里构建，绝不复用本机 `dist\AICompanion`，确保不会带进 `.env`、`data\`、数据库、日志、Aboutme 贴图、Cubism Core、`__pycache__`。打包结束后扫描产物，发现这类文件就直接失败。
-- 产物：`dist/release/Whalemate-v<版本>-windows-x64.zip`，版本号取 `pyproject.toml`（当前是 0.1.0）。zip 里只有顶层的 `鲸伴/` 文件夹，内含 `AICompanion.exe`、`卸载鲸伴.exe`、`_internal/`、`LICENSE`、`README.md`、`README.en.md`、`docs/`（aboutme-pet、live2d_model_sources、storage-locations）、`tools/`（Aboutme 安装器）、`.env.example`。
+- 产物：`dist/release/Whalemate-v<version>-windows-x64.zip`，版本号取 `pyproject.toml`（当前是 0.1.0）。zip 里只有顶层的 `Whalemate/` 文件夹，内含 `AICompanion.exe`、`UninstallWhalemate.exe`、`_internal/`、`LICENSE`、`README.md`、`README.en.md`、`docs/`（aboutme-pet、live2d_model_sources、storage-locations）、`tools/`（Aboutme 安装器）、`.env.example`。
 - 同时生成 `SHA256SUMS.txt`。
-- 两个 exe 都在 `--windowed` 模式下设置图标和版本信息（文件说明写“鲸伴 Whalemate”）。
+- 两个 exe 都在 `--windowed` 模式下设置图标和版本信息（产品名为 `Whalemate`，文件说明分别为 `Whalemate`、`Whalemate Uninstaller`）。
 
 ## C. 验证（Windows）
 
 1. 照常运行 `tools\run_checks.bat`。
 2. 在一个全新的临时目录里解压 zip，依次运行 `AICompanion.exe --smoke-test` 和 `--pet-smoke-test`。
 3. 用临时的 `LOCALAPPDATA`、`USERPROFILE` 和路径记录模拟一台“用过一段时间”的电脑：有数据库、备份、默认图库和外部图库、QQ 组件目录、LocalLow、开机启动项，然后：
-   - `卸载鲸伴.exe --dry-run`：清单完整、一致；
+   - `UninstallWhalemate.exe --dry-run`：清单完整、一致；
    - 真正卸载：清单里的内容全部删除，外部图库默认保留，其他无关文件和目录毫发无损；
    - 再分别测：鲸伴正在运行时卸载、某个文件被占用时卸载。
    **不要在负责人真实的数据上测试。**
@@ -63,7 +63,7 @@
 
 ## D. README（Claude 负责）
 
-中英文 README 新增“下载安装”和“卸载”两节：去 Releases 下载 zip → 解压到非系统盘（例如 `D:\鲸伴`）→ 双击 `AICompanion.exe` → 跟着向导走；卸载就运行 `卸载鲸伴.exe`，并说明它会删除哪些内容、外部图库默认保留。原来的“快速开始”改为“从源码运行（开发者）”。
+中英文 README 新增“下载安装”和“卸载”两节：去 Releases 下载 zip → 解压到非系统盘（例如解压到 `D:\Apps` 后打开 `D:\Apps\Whalemate`）→ 双击 `AICompanion.exe` → 跟着向导走；卸载就运行 `UninstallWhalemate.exe`，并说明它会删除哪些内容、外部图库默认保留。原来的“快速开始”改为“从源码运行（开发者）”。
 
 ## 不做
 

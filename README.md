@@ -73,9 +73,9 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 
 不用装 Python，也不用敲命令：
 
-1. 打开 [Releases 页面](https://github.com/lsWorl/AICompanion/releases/latest)，下载 `Whalemate-v<版本>-windows-x64.zip`。可以用同一页的 `SHA256SUMS.txt` 核对文件是否完整。
-2. 把压缩包解压到**非系统盘**的文件夹，例如 `D:\鲸伴`。程序会把聊天和记忆存在非系统盘上，尽量不占 C 盘。
-3. 打开解压出来的 `鲸伴` 文件夹，双击 `AICompanion.exe`。
+1. 打开 [Releases 页面](https://github.com/lsWorl/AICompanion/releases/latest)，下载 `Whalemate-v<version>-windows-x64.zip`。可以用同一页的 `SHA256SUMS.txt` 核对文件是否完整。
+2. 把压缩包解压到**非系统盘**的文件夹，例如 `D:\Apps`。程序会把聊天和记忆存在非系统盘上，尽量不占 C 盘。
+3. 打开解压出来的 `Whalemate` 文件夹（本例为 `D:\Apps\Whalemate`），双击 `AICompanion.exe`。
 4. 第一次打开会出现新手向导，大约 3 分钟。向导会带你连接聊天模型（需要一个 DeepSeek 等服务的密钥，里面有申请步骤）、选择声音和形象。每一步都可以跳过，跳过模型这一步时用离线模拟回复先体验。
 
 运行环境：Windows 10 / 11（x64）。语音通话时建议戴耳机，外放回声消除还没做。
@@ -87,7 +87,7 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 
 ## 🗑️ 卸载
 
-运行 `鲸伴` 文件夹里的 `卸载鲸伴.exe`。它会先列出要删除的每一项，你确认后才会删：
+运行 `Whalemate` 文件夹里的 `UninstallWhalemate.exe`。它会先列出要删除的每一项，你确认后才会删：
 
 - 程序文件夹本身，包括本机装的大肥鱼动画；
 - 聊天记录、记忆、心事和设置（数据库及其备份），里面也有加密保存的模型密钥；

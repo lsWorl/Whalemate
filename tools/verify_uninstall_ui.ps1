@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $base = [IO.Path]::GetFullPath($env:WHALEMATE_UNINSTALL_TEST_ROOT)
 if ((Split-Path $base -Leaf) -notmatch '^whalemate-test-[0-9a-f]{32}$' -or
     (Split-Path $base -Parent) -ne [IO.Path]::GetTempPath().TrimEnd('\') -or
-    [IO.Path]::GetFullPath($Install) -ne (Join-Path $base '鲸伴')) { throw '缺少隔离目录' }
+    [IO.Path]::GetFullPath($Install) -ne (Join-Path $base 'Whalemate')) { throw '缺少隔离目录' }
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 $ae = [Windows.Automation.AutomationElement]
 $subtree = [Windows.Automation.TreeScope]::Descendants
@@ -36,10 +36,10 @@ function Status-Matches([string]$pattern) {
     }
 }
 
-$starter = Start-Process -FilePath (Join-Path $Install '卸载鲸伴.exe') -WorkingDirectory $base -PassThru
+$starter = Start-Process -FilePath (Join-Path $Install 'UninstallWhalemate.exe') -WorkingDirectory $base -PassThru
 if (-not $starter.WaitForExit(60000) -or $starter.ExitCode -ne 0) { throw '卸载程序启动失败' }
 $window = Wait-Until {
-    foreach ($p in Get-CimInstance Win32_Process -Filter "Name='卸载鲸伴.exe'") {
+    foreach ($p in Get-CimInstance Win32_Process -Filter "Name='UninstallWhalemate.exe'") {
         if ($p.CommandLine -and $p.CommandLine.Contains('--origin') -and $p.CommandLine.Contains($Install)) {
             $handle = (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue).MainWindowHandle
             if ($handle -and $handle -ne [IntPtr]::Zero) { return $ae::FromHandle($handle) }

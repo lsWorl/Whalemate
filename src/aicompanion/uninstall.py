@@ -17,7 +17,7 @@ from aicompanion.qq.supervisor import Supervisor, process_identity
 from aicompanion.storage.locations import DATABASE_NAME, default_data_root, read_record
 from aicompanion.ui.desktop_integration import RUN_KEY, RUN_NAME
 
-EXE = '卸载鲸伴.exe'
+EXE = 'UninstallWhalemate.exe'
 # 存储文档使用同一组名称；每项的实际路径、文件大小另外列出。
 PROGRAM = '程序、运行配置与本机安装的角色资源'
 MEMORY = '记忆数据库、备份、迁移记录和数据库内的 DPAPI 凭据'
