@@ -35,6 +35,13 @@ class RedesignTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        # 离屏验收只用 Qt 控件，避免无音频后端机器加载麦克风、播放器或 TTS。
+        self.enterContext(patch('PySide6.QtMultimedia.QMediaDevices.audioInputs', return_value=[]))
+        speech = self.enterContext(patch('aicompanion.ui.main_window.SpeechOutput')).return_value
+        speech.busy = False
+        speech.workers = ()
+        # QQ 后台轮询由 test_bridge_page 覆盖，不能让它在临时库释放后再回调。
+        self.enterContext(patch('aicompanion.ui.bridge_page.BridgePage.refresh', lambda page: None))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
@@ -111,6 +118,62 @@ class RedesignTests(unittest.TestCase):
         self.assertFalse(dialog.model_error.isHidden())
         dialog.reject()
 
+    def test_connection_drafts_are_only_applied_together(self):
+        from aicompanion.bridge.server import runtime
+        from aicompanion.bridge.service import setting
+        dialog = SettingsWindow(self.controller, self.settings)
+        self.addCleanup(dialog.deleteLater)
+        page = dialog.bridge_page
+        page.advanced.setChecked(True)
+        original_port = setting(self.db, 'bridge_port')
+        original_token = setting(self.db, 'bridge_token')
+        self.db.set_setting('qq_mode', 'existing')
+        sync = self.enterContext(patch('aicompanion.qq.configure.plugin_config'))
+        with patch.object(runtime, 'apply', return_value='') as apply:
+            page.enabled.setChecked(True)
+            page.port.setValue(8089)
+            page.token.setText('draft')
+            page.owner.setText('123456')
+            QTest.qWait(650)
+            self.assertEqual(self.db.get_setting('bridge_owner:qq'), '123456')
+            self.assertEqual(setting(self.db, 'bridge_port'), original_port)
+            self.assertEqual(setting(self.db, 'bridge_token'), original_token)
+            self.assertFalse(setting(self.db, 'bridge_enabled'))
+            page.enabled.setChecked(False)
+            page.port.setValue(8090)
+            page.token.setText('final-test-token')
+            page.enabled.setChecked(True)
+            QTest.qWait(650)
+            self.assertTrue(dialog.save())
+            page._sync_from_db(preserve_drafts=True)
+            self.assertTrue(page.apply_button.isEnabled())
+            apply.assert_not_called()
+            sync.assert_not_called()
+            page.apply_button.click()
+            apply.assert_called_once_with(self.db)
+            self.assertEqual(setting(self.db, 'bridge_port'), 8090)
+            self.assertEqual(setting(self.db, 'bridge_token'), 'final-test-token')
+            page.apply_button.click()
+            apply.assert_called_once()
+            sync.assert_called_once_with('', 'http://127.0.0.1:8090', 'final-test-token')
+            page.port.setValue(9123)
+            dialog.reject()
+            self.assertEqual(setting(self.db, 'bridge_port'), 8090)
+
+    def test_overview_counts_required_steps_with_aligned_statuses(self):
+        dialog = SettingsWindow(self.controller, self.settings)
+        self.addCleanup(dialog.deleteLater)
+        self.assertEqual(dialog.overview_title.text(), '还差 1 步就全部准备好')
+        self.assertEqual((dialog.readiness.value(), dialog.readiness.maximum()), (2, 3))
+        self.db.set_setting('speech_enabled', False)
+        with patch.object(self.router, 'configured', return_value=True):
+            dialog._refresh_overview()
+        self.assertEqual(dialog.overview_title.text(), '可以开始了')
+        self.assertEqual(dialog.readiness.value(), 3)
+        self.assertEqual([mark.width() for mark, _, _ in dialog.checklist], [28] * 5)
+        self.assertEqual(sum(w.text() == '可选' for w in dialog.findChildren(QLabel)), 2)
+        dialog.reject()
+
     def test_header_and_conditional_actions(self):
         win = MainWindow(self.controller, self.settings, self.registry)
         try:
@@ -121,6 +184,9 @@ class RedesignTests(unittest.TestCase):
             self.assertIsNone(win.name_label.menu())
             pet = win.pet
             menu = pet.build_menu()
+            header_action = menu.actions()[0]
+            self.assertFalse(header_action.isEnabled())
+            self.assertTrue(header_action.defaultWidget().isEnabled())
             actions = [a.text() for a in menu.actions()]
             self.assertEqual([a.text() for a in menu.actions() if a.text() and not a.isEnabled()],
                              ['和她说话', '让她帮忙', '她的样子'])

@@ -324,6 +324,7 @@ class SettingsWindow(QDialog):
         row = QHBoxLayout(banner)
         row.setContentsMargins(22, 12, 18, 12)
         words = QVBoxLayout()
+        words.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.overview_title = QLabel()
         self.overview_title.setObjectName('PageTitle')
         words.addWidget(self.overview_title)
@@ -332,11 +333,12 @@ class SettingsWindow(QDialog):
         words.addWidget(note)
         self.readiness = QProgressBar()
         self.readiness.setMaximumWidth(360)
-        self.readiness.setRange(0, 5)
+        self.readiness.setRange(0, 3)
         self.readiness.setFixedHeight(8)
         self.readiness.setTextVisible(False)
         words.addWidget(self.readiness)
-        row.addLayout(words, 1)
+        row.addLayout(words)
+        row.addStretch(1)
         picture = QLabel()
         picture.setPixmap(portrait('idle', 90, 108))
         picture.setFixedWidth(90)
@@ -355,11 +357,21 @@ class SettingsWindow(QDialog):
             card = QFrame()
             row = QHBoxLayout(card)
             mark = QLabel()
+            mark.setFixedSize(28, 28)
+            mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
             row.addWidget(mark)
+            row.setSpacing(14)
             words = QVBoxLayout()
             heading = QLabel(title)
             heading.setObjectName('CardTitle')
-            words.addWidget(heading)
+            titles = QHBoxLayout()
+            titles.addWidget(heading)
+            if key in ('agent', 'platforms'):
+                badge = QLabel('可选')
+                badge.setObjectName('Optional')
+                titles.addWidget(badge)
+            titles.addStretch()
+            words.addLayout(titles)
             summary = QLabel()
             summary.setObjectName('Hint')
             summary.setWordWrap(True)
@@ -396,21 +408,24 @@ class SettingsWindow(QDialog):
                      router.agent_target(cid) and not problem() and not dependency_problem())
         qq = bool(setting(self.database, 'bridge_enabled') and self.database.get_setting('bridge_owner:qq', ''))
         values = ((chat, '已连上，可以开始聊天。' if chat else '还没有配置，可以先离线试用。'),
-                  (speech, '回复时会念出来。' if speech else '只打字聊天。'),
+                  (True, '回复时会念出来。' if speech else '只打字聊天。'),
                   (True, '自带的鲸鲸，也可以安装大肥鱼动画版。'),
                   (agent, '整理文件、查资料。'), (qq, '需要一个 QQ 小号当她的号。'))
         for i, ((mark, summary, go), (ready, text)) in enumerate(zip(self.checklist, values)):
-            if ready: mark.setPixmap(line_icon('check', '#16683F').pixmap(18, 18))
-            else: mark.setText('可选' if i in (1, 3, 4) else '待连接')
-            mark.setObjectName('Good' if ready else 'Hint')
+            if ready:
+                mark.setPixmap(line_icon('check', '#16683F').pixmap(18, 18))
+            else:
+                mark.setText(str(i + 1))
+            mark.setObjectName('StepReady' if ready else 'StepPending')
             mark.style().unpolish(mark)
             mark.style().polish(mark)
             summary.setText(text)
             if i == 0:
                 go.setText('修改' if ready else '连接模型')
-        count = sum(bool(v[0]) for v in values)
-        self.readiness.setValue(count)
-        self.overview_title.setText(f'还差 {5-count} 步就全部准备好' if count < 5 else '全部准备好了')
+        # 声音（含静音）和自带形象都有可用默认值，办事和 QQ 由用户按需接入。
+        remaining = int(not chat)
+        self.readiness.setValue(self.readiness.maximum() - remaining)
+        self.overview_title.setText(f'还差 {remaining} 步就全部准备好' if remaining else '可以开始了')
 
     def _pick_background(self):
         path,_=QFileDialog.getOpenFileName(self,'选择背景图','', '图片 (*.png *.jpg *.jpeg *.webp)')

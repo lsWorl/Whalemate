@@ -60,11 +60,12 @@ class SettingsAutosave(QObject):
         persona = d.persona_editor
         persona.edited.connect(lambda: self.schedule('persona', persona.autosave))
         bridge = d.bridge_page
-        self.watch('platforms', bridge.save, bridge.owner, bridge.groups, bridge.chime, bridge.strangers,
+        bridge.connection_saved.connect(lambda: d.saved.emit('platforms'))
+        self.watch('platforms', bridge.save_preferences, bridge.owner, bridge.groups, bridge.chime, bridge.strangers,
                    bridge.vision_enabled, bridge.proactive_qq, bridge.memes_enabled, bridge.meme_root,
                    bridge.meme_cooldown, bridge.avatar_enabled, bridge.learning, bridge.chat_card_enabled,
                    bridge.community_auto, bridge.community_groups, bridge.community_source,
-                   bridge.enabled, bridge.port, bridge.token, bridge.daily, bridge.autostart, bridge.index)
+                   bridge.daily, bridge.autostart, bridge.index)
         if d.model_page:
             d.model_page.persisted.connect(lambda: d.saved.emit('models'))
             d.model_page.save_failed.connect(self.failed)

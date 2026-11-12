@@ -1,5 +1,7 @@
 """鲸鲸主题。尺寸使用 Qt 逻辑像素，由系统缩放。"""
 
+from aicompanion.ui.icons import ICON_DIR
+
 PRIMARY = '#2F5BEA'
 PRIMARY_DARK = '#1E3FB8'
 INK = '#13234A'
@@ -41,6 +43,14 @@ QPushButton:disabled {{ color: {MUTED}; }}
 QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {{
     background: white; border: 1px solid {INPUT_LINE}; border-radius: 10px; padding: 6px 8px; }}
 QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{ border-color: {PRIMARY}; }}
+QComboBox {{ padding-right: 30px; }}
+QComboBox::drop-down {{ subcontrol-origin: border; subcontrol-position: right center;
+    width: 26px; border: none; background: transparent; }}
+QComboBox::down-arrow {{ image: url("{(ICON_DIR / 'chevron-down.svg').as_posix()}"); width: 14px; height: 14px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: #B9C8E2; min-height: 24px; border-radius: 4px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 QScrollArea, QStackedWidget#Stack {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QProgressBar {{ background: {BUBBLE}; border: none; border-radius: 4px; }}
@@ -86,6 +96,9 @@ QHeaderView::section {{ background: {BUBBLE}; border: none; padding: 4px; }}
 QFrame#Soon {{ border: 1px dashed {INPUT_LINE}; border-radius: 16px; }}
 QWidget#Footer {{ background: white; border-top: 1px solid {LINE}; }}
 QFrame#Illustration {{ background: {BUBBLE}; }}
+QLabel#Optional {{ color: {PRIMARY_DARK}; background: {BUBBLE}; padding: 2px 8px; border-radius: 10px; font-size: 12px; }}
+QLabel#StepReady {{ color: {SUCCESS}; background: #E3F6EC; border-radius: 14px; }}
+QLabel#StepPending {{ color: {MUTED}; background: #F1ECE3; border-radius: 14px; }}
 QFrame#OverviewBanner {{ background: {BUBBLE}; border-radius: 20px; }}
 QFrame#Brand {{ background: white; }}
 """

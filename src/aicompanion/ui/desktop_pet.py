@@ -599,6 +599,8 @@ class DesktopPetWindow(QWidget):
         row.addLayout(names, 1)
         header.setDefaultWidget(card)
         header.setEnabled(False)
+        # 菜单项不可触发；单独启用展示控件，让 Qt 按原色绘制头像。
+        card.setEnabled(True)
         menu.addAction(header)
         menu.addAction('和她说话').setEnabled(False)
         menu.addAction(line_icon('platforms'), '说点什么…\t双击她', self.open_quick_input)

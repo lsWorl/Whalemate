@@ -41,7 +41,9 @@ class UiRefreshTests(unittest.TestCase):
 
     def window(self, **kwargs):
         import aicompanion.ui.settings_window as module
-        with mock.patch.object(module, 'QMediaDevices', SimpleNamespace(audioInputs=lambda: [])):   # 容器里没有音频设备
+        # 这些导航用例不会等待 QQ 轮询，避免工作线程在临时数据库回收后才交付结果。
+        with (mock.patch.object(module, 'QMediaDevices', SimpleNamespace(audioInputs=lambda: [])),
+              mock.patch('aicompanion.ui.bridge_page.BridgePage.refresh', lambda page: None)):
             return module.SettingsWindow(self.controller, self.settings, **kwargs)
 
     def test_icon_files_ship_with_package(self):

@@ -31,6 +31,8 @@ class _Signals(QObject):
 
 
 class BridgePage(QWidget):
+    connection_saved = Signal()
+
     def __init__(self, database, parent=None):
         super().__init__(parent)
         from aicompanion.qq import runtime
@@ -139,6 +141,16 @@ class BridgePage(QWidget):
         existing = QPushButton('改为接入已有的 AstrBot…'); existing.clicked.connect(self._attach_existing)
         self.versions = QLabel(''); self.versions.setWordWrap(True)
         form.addRow('', self.enabled); form.addRow('接口端口', self.port); form.addRow('插件令牌', token_row)
+        self.apply_button = QPushButton('应用连接设置')
+        self.apply_button.clicked.connect(self.apply_connection)
+        connection_hint = QLabel('接口开关、端口和令牌在点“应用连接设置”后一起生效。关闭设置会放弃未应用的连接改动。')
+        connection_hint.setObjectName('Hint')
+        connection_hint.setWordWrap(True)
+        form.addRow('', connection_hint)
+        form.addRow('', self.apply_button)
+        self.enabled.toggled.connect(self._update_apply_button)
+        self.port.valueChanged.connect(self._update_apply_button)
+        self.token.textChanged.connect(self._update_apply_button)
         form.addRow('群和陌生人每天最多回复', self.daily); form.addRow('', self.autostart); form.addRow('Python 包镜像', self.index)
         form.addRow('识图模型', QLabel('在“模型与 Key”页的“识图”一项里选择')); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
         form.addRow('组件目录', self.root); form.addRow('', open_logs); form.addRow('', existing); form.addRow('组件版本', self.versions)
@@ -153,15 +165,27 @@ class BridgePage(QWidget):
         self.timer = QTimer(self); self.timer.timeout.connect(self.refresh); self.timer.start(2500)
         self._sync_from_db(); self._show_versions(); self.refresh()
 
-    def _sync_from_db(self):
-        """后台流程（接入、重试）会改接口开关和令牌：把数据库里的当前值放回页面，并记下来——保存时只写用户真正改过的项，
-        不会用页面打开时的旧值把后台刚开的接口又关掉。"""
+    def _connection_values(self):
+        return {'enabled': self.enabled.isChecked(), 'port': self.port.value(), 'token': self.token.text()}
+
+    def _update_apply_button(self):
+        self.apply_button.setEnabled(not self.busy and self._connection_values() != self.loaded)
+
+    def _sync_from_db(self, preserve_drafts=False):
+        # 接入流程也会写接口配置。刷新未编辑的字段，并保留后台操作期间输入的草稿。
+        current = self._connection_values()
         db = self.database
-        for field in (self.enabled, self.port, self.token): field.blockSignals(True)
-        self.enabled.setChecked(bool(setting(db, 'bridge_enabled'))); self.port.setValue(int(setting(db, 'bridge_port')))
-        self.token.setText(setting(db, 'bridge_token') or '')
-        for field in (self.enabled, self.port, self.token): field.blockSignals(False)
-        self.loaded = {'enabled': self.enabled.isChecked(), 'port': self.port.value(), 'token': self.token.text()}
+        saved = {'enabled': bool(setting(db, 'bridge_enabled')), 'port': int(setting(db, 'bridge_port')),
+                 'token': setting(db, 'bridge_token') or ''}
+        for key, widget, setter in (('enabled', self.enabled, self.enabled.setChecked),
+                                    ('port', self.port, self.port.setValue),
+                                    ('token', self.token, self.token.setText)):
+            if not preserve_drafts or current[key] == self.loaded[key]:
+                widget.blockSignals(True)
+                setter(saved[key])
+                widget.blockSignals(False)
+        self.loaded = saved
+        self._update_apply_button()
 
     # ---- 状态 -----------------------------------------------------------------------------
     def refresh(self):
@@ -259,7 +283,7 @@ class BridgePage(QWidget):
 
     def _run(self, fn, text, progress=False):
         if self.busy: return
-        self.busy = True; self.title.setText(text); self.detail.hide(); self.action.setEnabled(False)
+        self.busy = True; self._update_apply_button(); self.title.setText(text); self.detail.hide(); self.action.setEnabled(False)
         self.bar.setVisible(progress); self.bar.setValue(0)
         def work():
             try:
@@ -276,7 +300,7 @@ class BridgePage(QWidget):
         if fraction: self.bar.setValue(int(fraction*1000))
 
     def _finished(self, error):
-        self.busy = False; self.action.setEnabled(True); self.bar.hide(); self._show_versions(); self._sync_from_db()
+        self.busy = False; self.action.setEnabled(True); self.bar.hide(); self._show_versions(); self._sync_from_db(preserve_drafts=True)
         if error:
             self.title.setText('没有成功'); self.detail.setText(error[-1200:]); self.detail.show()
             self.action.setText('重试'); self.action.show()
@@ -430,18 +454,36 @@ class BridgePage(QWidget):
         else: db.set_setting('qq_community', self.community_source.currentData())
         self.refresh()
 
-    def save(self):
-        """设置窗口的"保存"：QQ 号、群和高级设置一起保存；接口端口 / 令牌变了就重启接口并同步插件配置。"""
+    def save_preferences(self):
         db = self.database
         if self.save_people() is False:
             raise ValueError(self.owner_error.text())
-        old = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))
-        # 只写用户在页面上改过的项（和上次同步的值比较）；没动的保持数据库里的当前值
-        if self.enabled.isChecked() != self.loaded['enabled']: db.set_setting('bridge_enabled', self.enabled.isChecked())
-        if self.port.value() != self.loaded['port']: db.set_setting('bridge_port', self.port.value())
-        if self.token.text() and self.token.text() != self.loaded['token']: db.set_setting('bridge_token', self.token.text())
-        db.set_setting('bridge_public_daily', self.daily.value()); db.set_setting('qq_autostart', self.autostart.isChecked())
+        db.set_setting('bridge_public_daily', self.daily.value())
+        db.set_setting('qq_autostart', self.autostart.isChecked())
         db.set_setting('qq_index_url', self.index.text().strip())
+
+    def save(self):
+        """保留原有的显式整页保存入口。"""
+        self.save_preferences()
+        self.apply_connection()
+
+    def apply_connection(self):
+        if self.busy:
+            return
+        db = self.database
+        values = self._connection_values()
+        changes = {key: value for key, value in values.items() if value != self.loaded[key]}
+        if not changes:
+            return
+        old = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))
+        try:
+            with db.transaction() as connection:
+                for key, value in changes.items():
+                    db.set_setting_in(connection, 'bridge_' + key, value)
+        except Exception as error:
+            self.detail.setText('连接设置未保存：' + str(error))
+            self.detail.show()
+            return
         new = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))
         if new != old:
             from aicompanion.bridge.server import runtime
@@ -459,3 +501,4 @@ class BridgePage(QWidget):
             except Exception as error:
                 self.detail.setText('⚠ 插件配置没能同步：'+str(error)); self.detail.show()
         self._sync_from_db()
+        self.connection_saved.emit()
