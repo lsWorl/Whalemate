@@ -2001,3 +2001,12 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 打包版 `--dry-run` 逐项核对 3728 项。Windows UI Automation 操作真实窗口，正常卸载 3728/3728；锁定备份时 3727 项成功，唯一失败项显示实际路径和 WinError 32；鲸伴运行时先拒绝，正常退出后重新扫描到 3730 项，3730/3730 删除成功。三个场景均保留外部图库、无关 SQLite 文件、其他文件和无关注册表值，并验证临时卸载助手清理。
 - 最终 zip 为 `dist/release/Whalemate-v0.1.0-windows-x64.zip`，421262482 字节，SHA256 为 `1b686b5a4e6d2ad8b7f1e1a69528e65152e9b2e28cb4d3c4898f990bc20ba446`。校验值也写入同目录的 SHA256SUMS.txt。
 - Windows 应用控制曾对一个中间候选包的主 exe 返回 4551（Code Integrity 3077）。该候选包保持原字节重试可运行，最终包也完成上述验证。exe 未作 Authenticode 签名，其他电脑的签名策略、负责人真实使用体验、真实 QQ 登录和模型服务未验收。审计、合并和上传私有 Release 交由 Claude。
+
+### 2026-11-12 · V4-发布 · 英文发布名称与 README 核对（待 Claude 审计）
+
+- 发布包内使用 `Whalemate/`、`AICompanion.exe` 和 `UninstallWhalemate.exe`。打包会拒绝路径中有非 ASCII 字符的条目，专项测试覆盖目录和文件两种情况。Windows 版本信息、卸载自清理和验收工具均使用新的英文名称。
+- 合入 Claude 的 README 提交 `d9aadca`。将干净构建的两个 exe 与更新后的随包文档在新临时目录中重新封装。逐项检查最终 zip 的 3691 个路径（含 3406 个文件），检查两个 exe 的 PE 版本资源并比对 5 个冻结模块的字节码。压缩包内两份 README 和存储文档与当前分支逐字节相同。
+- 独立 worktree 中运行 `tools\run_checks.bat` 返回 0，1241 项单测中 1234 项通过、7 项跳过，用时 236.621 秒。源码桌宠 smoke 通过，剩余工作线程为 0。最终 zip 的 `tools/verify_release.py --case all` 返回 0。两个打包版 smoke 均通过。临时模拟机正常卸载 3728/3728，备份被占用时 3727 项成功、1 项报告 WinError 32，程序运行中先拒绝，正常退出并重新确认后 3730/3730。所有卸载验证均使用临时数据。
+- 当前交付物为 `dist/release/Whalemate-v0.1.0-windows-x64.zip`，421282347 字节，SHA256 为 `87f2d38ee4ddee70f81f1f092549d0db89d85da6ae0120a6a2a6e1021c2d2fb5`，与同目录的 `SHA256SUMS.txt` 一致。
+- README 的下载、解压及程序名称均已核对。另用最终 exe 的 `--dry-run` 模拟安装目录中的 `personal-note.txt`、办事回收区文件和外部图库图片。前两者列为删除，图片列为保留。Claude 新增的中英文说明承诺默认保留前两者，与当前实现有差异，已列入 PR 审计项。
+- 待 Claude 核对上述删除范围。其他电脑的运行策略、负责人从 Releases 下载后的真实体验、真实 QQ 登录和模型服务仍待验收。
