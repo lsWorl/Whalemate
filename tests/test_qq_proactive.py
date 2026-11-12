@@ -31,7 +31,7 @@ class Base(unittest.TestCase):
         self.service = BridgeService(self.db, self.controller)
         self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.saved = runtime.last_heartbeat
-        runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.9.0', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
+        runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.10.0', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
     def tearDown(self):
         runtime.last_heartbeat = self.saved; self.service.close(); self.temp.cleanup()
 
@@ -40,7 +40,8 @@ class ProactiveQQTests(Base):
     def test_ready_needs_bound_owner_connected_new_plugin(self):
         self.assertTrue(self.service.qq_ready())
         runtime.last_heartbeat['astrbot'] = 'plugin-0.8.0'; self.assertFalse(self.service.qq_ready())   # 旧插件不会发发件箱
-        runtime.last_heartbeat['astrbot'] = 'plugin-0.9.0'; runtime.last_heartbeat['onebot']['connected'] = False
+        runtime.last_heartbeat['astrbot'] = 'plugin-0.9.6'; self.assertFalse(self.service.qq_ready())   # 不会先领取、回执不带实际发送时间
+        runtime.last_heartbeat['astrbot'] = 'plugin-0.10.0'; runtime.last_heartbeat['onebot']['connected'] = False
         self.assertFalse(self.service.qq_ready())
         runtime.last_heartbeat['onebot']['connected'] = True; runtime.last_heartbeat['at'] = time.time()-120
         self.assertFalse(self.service.qq_ready())
@@ -60,19 +61,111 @@ class ProactiveQQTests(Base):
         self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹，吃饭了没'])])
         self.assertEqual(items[0]['segment_delays'], [0.0])
         self.assertEqual(self.service.take_outbox(), [])                # 只取一次
-        self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
-        self.assertEqual(results, [True]); self.assertFalse(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])
+        self.assertTrue(self.service.outbox_claim({'id': turn})['allowed'])
+        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])   # 只能领取一次
+        self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 1.5, 'sent': 1})['ok'])
+        self.assertEqual([r.status for r in results], ['sent'])
+        self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])   # 回执重发：认可但不重复处理
+        self.assertEqual(len(results), 1)
 
     def test_failed_or_expired_delivery_is_not_counted_as_said(self):
         results = []
-        turn = self.service.proactive_qq('闲聊', on_done=results.append); self.service.take_outbox()
+        turn = self.service.proactive_qq('闲聊', on_done=results.append); self.service.take_outbox(); self.service.outbox_claim({'id': turn})
         self.service.outbox_ack({'id': turn, 'status': 'failed'})
-        self.assertEqual(results, [False]); self.assertEqual(self.db.recent_messages(5, self.character.id), [])
+        self.assertEqual([r.status for r in results], ['failed']); self.assertEqual(self.db.recent_messages(5, self.character.id), [])
         now = [1000.0]; self.service.clock = lambda: now[0]
         turn = self.service.proactive_qq('闲聊', on_done=results.append); now[0] += self.service.OUTBOX_TTL+1
-        self.assertEqual(self.service.take_outbox(), []); self.assertEqual(results, [False, False])
+        self.assertEqual(self.service.take_outbox(), []); self.assertEqual([r.status for r in results], ['failed', 'failed'])
         self.assertEqual(self.db.recent_messages(5, self.character.id), [])
         self.assertFalse(self.service.outbox_ack({'id': 'x'*32, 'status': 'whatever'})['ok'])
+
+    def _hundredth_day(self):
+        from datetime import date, timedelta
+        from aicompanion.services.companion_dates import CompanionDates
+        dates = CompanionDates(self.db); dates.set_met_on(self.character.id, date.today()-timedelta(days=99))   # 今天第 100 天
+        return dates, 'milestone:100'
+
+    def deliver(self, status, **extra):
+        # 生成一条主动消息、插件取走并领取，再按 status 回执。返回（轮次, 收到的结果）
+        results = []
+        turn = self.service.proactive_qq('闲聊', on_done=results.append)
+        self.service.take_outbox(); self.assertTrue(self.service.outbox_claim({'id': turn})['allowed'])
+        if status: self.service.outbox_ack(dict({'id': turn, 'status': status}, **extra))
+        return turn, results
+
+    def replies(self, turn):
+        with self.db.transaction() as c:
+            return c.execute("SELECT COUNT(*) FROM chat_messages WHERE turn_id=? AND role='assistant'", (turn,)).fetchone()[0]
+
+    def test_special_day_on_qq_counts_only_when_fully_delivered(self):
+        # 第二轮：失败不算提过、下一轮还会提；第三轮 P2：只发出一部分（祝福那段没发出去）也不算提过；全部发出才算
+        dates, key = self._hundredth_day()
+        self.deliver('failed')
+        self.assertFalse(dates.mentioned(self.character.id, key))
+        _, results = self.deliver('partial', first_delay=3, sent=1)
+        self.assertIn('特别的日子', self.model.prompts[-1])
+        self.assertEqual(results[0].status, 'partial'); self.assertTrue(results[0].reached)
+        self.assertFalse(dates.mentioned(self.character.id, key))
+        turn = self.service.proactive_qq('闲聊')
+        self.assertIn('特别的日子', self.model.prompts[-1])
+        self.assertEqual(dates.prompt(self.character.id, claim='other')[1], ())                 # 在路上：别的轮次不再提
+        self.service.take_outbox(); self.service.outbox_claim({'id': turn})
+        self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 2, 'sent': 2})
+        self.assertTrue(dates.mentioned(self.character.id, key))
+
+    def test_unread_heartbeat_response_is_not_delivered(self):
+        # 第三轮 P2：服务端在心跳响应里交出去了，插件没读到（没来领取）：确定没发，不算提过、记录拿掉，结果是失败
+        dates, key = self._hundredth_day()
+        now = [time.time()]; self.service.clock = lambda: now[0]
+        results = []
+        turn = self.service.proactive_qq('闲聊', on_done=results.append)
+        self.assertEqual(len(self.service.take_outbox()), 1)                                   # 响应写出去了，插件没收到
+        now[0] += self.service.CLAIM_TTL+1; self.service.take_outbox()                          # 下一次正常心跳
+        self.assertEqual([r.status for r in results], ['failed'])
+        self.assertFalse(dates.mentioned(self.character.id, key))
+        self.assertEqual(self.replies(turn), 0)
+        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])                   # 插件迟到的领取被拒绝，不会再发
+
+    def test_claimed_without_receipt_is_unknown_and_late_receipt_still_counts(self):
+        # 领取了却一直没回执：结果未知（不算提过、不确认送达）；之后迟到的回执照样补记
+        dates, key = self._hundredth_day()
+        now = [time.time()]; self.service.clock = lambda: now[0]
+        turn, results = self.deliver(None)
+        now[0] += self.service.ACK_TTL+1; self.service.take_outbox()
+        self.assertEqual([r.status for r in results], ['unknown']); self.assertFalse(results[0])
+        self.assertFalse(dates.mentioned(self.character.id, key)); self.assertEqual(self.replies(turn), 1)
+        self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 700, 'sent': 1})['ok'])
+        self.assertTrue(dates.mentioned(self.character.id, key))
+        from aicompanion.bridge.outbox import OutboxStore
+        row = OutboxStore(self.db).get(turn)
+        self.assertEqual(row['status'], 'sent'); self.assertAlmostEqual(row['first_sent_at'], now[0]-700, delta=1)
+
+    def test_receipt_uses_the_character_that_sent_it(self):
+        # 第三轮 P2：回执到之前切了角色：仍按发件时的角色记生日提过、清理没发出去的回复
+        from types import SimpleNamespace
+        dates, key = self._hundredth_day()
+        cid = self.character.id; other = SimpleNamespace(id='someone-else', name='乙')
+        turn, _ = self.deliver(None)
+        self.controller.character = other
+        self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 1, 'sent': 1})
+        self.assertTrue(dates.mentioned(cid, key))
+        self.controller.character = self.character
+        turn, _ = self.deliver(None); self.assertEqual(self.replies(turn), 1)
+        self.controller.character = other
+        self.service.outbox_ack({'id': turn, 'status': 'failed'})
+        self.assertEqual(self.replies(turn), 0)
+        self.controller.character = self.character
+
+    def test_restart_drops_reply_that_was_never_taken(self):
+        # 第三轮 P3：生成好了、插件还没取件就退出：重启后这条回复不在聊天记录里，投递记为失败
+        turn = self.service.proactive_qq('闲聊')
+        self.assertEqual(self.replies(turn), 1)
+        from aicompanion.storage.database import Database
+        Database(self.db.database_path).initialize()                                           # 重启
+        self.assertEqual(self.replies(turn), 0)
+        from aicompanion.bridge.outbox import OutboxStore
+        self.assertEqual(OutboxStore(self.db).get(turn)['status'], 'failed')
+        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])
 
     def test_not_ready_generates_nothing(self):
         runtime.last_heartbeat = None
@@ -137,7 +230,9 @@ class PluginTests(unittest.TestCase):
         command = plugin_fixture.Event('/help', group='99999', called=True)
         asyncio.run(run(command)); self.assertFalse(command.stopped)
 
-    def run_outbox(self, plugin, item, fail_text=False):
+    claim_allowed = True
+
+    def run_outbox(self, plugin, item, fail_text=False, fail_second=False):
         sent, posts = [], []
         class Chain:
             def __init__(self, chain): self.chain = chain
@@ -147,10 +242,12 @@ class PluginTests(unittest.TestCase):
         components.Plain = lambda value: ('text', value)
         async def send_message(origin, chain):
             if fail_text and chain.chain[0][0] == 'text': raise RuntimeError('boom')
+            if fail_second and sent: raise RuntimeError('boom')
             sent.append((origin, chain.chain[0])); return True
         plugin.context = types.SimpleNamespace(send_message=send_message)
         async def control(path, payload): posts.append((path, payload)); return {'allowed': True}
-        async def post_json(path, payload): posts.append((path, payload)); return {'ok': True}
+        async def post_json(path, payload):
+            posts.append((path, payload)); return {'ok': True, 'allowed': self.claim_allowed}
         self.delays = []
         async def pause(text, delay=None): self.delays.append(delay)
         plugin.expression_control = control; plugin.post_json = post_json; plugin.pause = pause
@@ -166,7 +263,9 @@ class PluginTests(unittest.TestCase):
             sent, posts = self.run_outbox(plugin, {'id': key*32, 'user_id': '10001', 'segments': parts, 'segment_delays': given})
             self.assertEqual([s[1] for s in sent], [('text', p) for p in parts])
             self.assertEqual(self.delays, given[1:])
-            self.assertEqual(posts[-1], ('/v1/outbox/ack', {'id': key*32, 'status': 'sent'}))
+            self.assertEqual(posts[0], ('/v1/outbox/claim', {'id': key*32}))
+            self.assertEqual((posts[-1][0], posts[-1][1]['status'], posts[-1][1]['sent']), ('/v1/outbox/ack', 'sent', count))
+            self.assertGreaterEqual(posts[-1][1]['first_delay'], 0)
 
     def test_outbox_is_sent_to_owner_private_once_with_sticker_and_acked(self):
         plugin = self.plugin(); plugin.private_origins['10001'] = 'aicompanion_qq:FriendMessage:10001'
@@ -176,17 +275,29 @@ class PluginTests(unittest.TestCase):
         self.assertEqual([s[1] for s in sent], [('text', '爹'), ('text', '吃饭了没'), ('image', 'YWJj')])
         self.assertEqual({s[0] for s in sent}, {'aicompanion_qq:FriendMessage:10001'})
         self.assertIn(('ack', {'delivery_id': 'b'*32, 'status': 'accepted'}), posts)
-        self.assertEqual(posts[-1], ('/v1/outbox/ack', {'id': 'a'*32, 'status': 'sent'}))
+        self.assertEqual((posts[-1][0], posts[-1][1]['id'], posts[-1][1]['status'], posts[-1][1]['sent']), ('/v1/outbox/ack', 'a'*32, 'sent', 3))
         again, _ = self.run_outbox(plugin, item); self.assertEqual(again, [])          # 同一条不重发
 
     def test_outbox_failure_reports_failed_and_unknown_origin_is_built_from_platform(self):
         plugin = self.plugin()
         sent, posts = self.run_outbox(plugin, {'id': 'c'*32, 'user_id': '10001', 'segments': ['在吗']}, fail_text=True)
-        self.assertEqual(sent, []); self.assertEqual(posts[-1], ('/v1/outbox/ack', {'id': 'c'*32, 'status': 'failed'}))
+        self.assertEqual(sent, []); self.assertEqual(posts[-1], ('/v1/outbox/ack', {'id': 'c'*32, 'status': 'failed', 'sent': 0}))
         sent, _ = self.run_outbox(plugin, {'id': 'd'*32, 'user_id': '10001', 'segments': ['在吗']})
         self.assertEqual(sent[0][0], 'aicompanion_qq:FriendMessage:10001')
         for bad in ({'id': 'x', 'user_id': '10001'}, {'id': 'e'*32, 'user_id': 'abc'}):
             self.assertEqual(self.run_outbox(plugin, bad)[0], [])
+
+    def test_outbox_not_sent_when_claim_refused_and_partial_reports_count(self):
+        # 0.10.0：领不到（已经作废）就不发也不回执；第二段失败时回报 partial、发出了 1 段、第一段发出后过了几秒
+        plugin = self.plugin()
+        self.claim_allowed = False
+        sent, posts = self.run_outbox(plugin, {'id': 'e'*32, 'user_id': '10001', 'segments': ['在吗']})
+        self.assertEqual(sent, []); self.assertEqual(posts, [('/v1/outbox/claim', {'id': 'e'*32})])
+        self.claim_allowed = True
+        sent, posts = self.run_outbox(plugin, {'id': 'f'*32, 'user_id': '10001', 'segments': ['在吗', '今天是第一百天']}, fail_second=True)
+        self.assertEqual([x[1] for x in sent], [('text', '在吗')])
+        ack = posts[-1][1]
+        self.assertEqual((ack['status'], ack['sent']), ('partial', 1)); self.assertGreaterEqual(ack['first_delay'], 0)
 
 
 if __name__ == '__main__':

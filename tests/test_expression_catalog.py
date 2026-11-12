@@ -22,6 +22,18 @@ class CatalogTests(unittest.TestCase):
         self.path=self.library/'happy'/'a.png';self.path.write_bytes(png())
         self.meta=dict(author='合成作者',source='synthetic:test',license='user-owned',semantic='庆祝',character_id='deepseek-whale')
     def tearDown(self):self.temp.cleanup()
+    def test_old_builtin_attachment_opens_before_first_rescan(self):
+        self.db.set_setting('qq_meme_root', '')
+        self.cat.scan()
+        with self.db.transaction() as connection:
+            aid = connection.execute("SELECT asset_id FROM expression_assets WHERE relative_path='celebrate.png'").fetchone()[0]
+            legacy = self.cat.builtin_root.parents[1]/'characters/deepseek-whale/sprites'
+            connection.execute("UPDATE expression_assets SET root=? WHERE asset_id=?", (str(legacy), aid))
+        self.assertEqual(self.cat.resolve(aid)[0], (self.cat.builtin_root/'celebrate.png').read_bytes())
+        with self.db.transaction() as connection:
+            connection.execute("UPDATE expression_assets SET sha256='changed' WHERE asset_id=?", (aid,))
+        self.assertIsNone(self.cat.resolve(aid))
+
     def test_unknown_license_quarantined_and_approval_explicit(self):
         aid,_=self.cat.register(self.path,self.library)
         self.assertEqual(self.cat.get(aid)['review_status'],'pending_review')

@@ -82,6 +82,36 @@ class InjectionTests(ScheduledShareTests):
         self.assertEqual(fake.pending_tasks, {'user-turn': 'PR48_SYNTHETIC_ONLY'})
 
 
+    def test_only_user_started_turns_may_carry_tasks(self):
+        """把闸门往前接一段：真实 MainWindow._start。调度器派来的主动轮次（_deliver_outreach 以 proactive=说明 调用）
+        不登记为可办事，用户自己发起的才登记；_result 结束时清掉，不留到别的轮次。"""
+        from unittest import mock
+        from aicompanion.ui import main_window
+        from aicompanion.ui.main_window import MainWindow
+
+        class Signal:
+            def connect(self, slot): pass
+        class Worker:
+            def __init__(self, *args): self.expression_event = self.result = self.finished = Signal()
+            def start(self): pass
+        noop = lambda *a, **k: None
+        fake = SimpleNamespace(texts={}, delivered={}, reply_characters={}, reply_voice={}, reply_status={}, readers={}, reply_expressions={},
+                               items={}, workers=set(), proactive_keys={}, cue_streams={}, pending_cues={}, vocab=Vocab(),
+                               controller=SimpleNamespace(character=SimpleNamespace(id=CID, name='鲸鲸')),
+                               chat_list=SimpleNamespace(reply=lambda *a: None), pet=SimpleNamespace(dispatch=noop, show_activity=noop),
+                               _full_voice=lambda: False, _speech_style=lambda: 'plain', _status=noop, _expression_event=noop,
+                               _result=noop, _worker_finished=noop)
+        with mock.patch.object(main_window, 'ChatWorker', Worker):
+            MainWindow._start(fake, 'share-turn', proactive=LifeService.intent({'site': '科普网', 'title': INJECTED.title,
+                                                                                  'excerpt': INJECTED.summary, 'thought': '', 'opener': '', 'url': INJECTED.url}))
+            MainWindow._start(fake, 'user-turn', '帮我整理一下下载文件夹')
+        self.assertEqual(fake.task_turns, {'user-turn'})
+        text, cues = CueStream(Vocab()).feed('<task>PR48_SYNTHETIC_ONLY</task>', final=True)
+        fake.reply_expressions = {}; fake.pending_tasks = {}; fake.speech = SimpleNamespace(enabled=False); fake.pet.perform = noop
+        MainWindow._handle_cues(fake, 'share-turn', cues)
+        self.assertNotIn('share-turn', fake.pending_tasks)
+
+
 class SwitchOffDeliveryTests(ScheduledShareTests):
     """第 2 项：关掉开关后，没交出去的分享撤回，由分享引出的追问不再说。"""
 
@@ -114,6 +144,44 @@ class SwitchOffDeliveryTests(ScheduledShareTests):
         self.db.set_setting('life_enabled', False); self.assertFalse(scheduler.still_valid(follow))
 
 
+class MergedOutboxTests(ScheduledShareTests):
+    """合入 #46 第三轮（qq_outbox 对账）后的分享：回调丢了、程序重启后，迟到的回执也要把那件事记成分享过；
+    结果未知的分享不再重发同一件事；结果未知的那条三小时后悄悄放下，不记委屈。"""
+
+    def qq_share(self, scheduler, turn):
+        from aicompanion.bridge.outbox import OutboxStore
+        self.life.run(CID, FakeSearch([HIT]), FakeClient('{"thought":"好可爱","worth":0.9}'))
+        share = scheduler.next(CID, 30, 9999); self.assertEqual(share.source, 'share')
+        rid = scheduler.reserve(CID, share); store = OutboxStore(self.db, clock=lambda: self.now[0])
+        store.add(turn, CID); scheduler.attach(rid, turn, 'qq'); store.dequeued(turn); store.claim(turn); scheduler.handed(rid, turn)
+        return share, rid, store
+
+    def test_late_receipt_after_restart_marks_activity_shared(self):
+        share, _, store = self.qq_share(self.scheduler(), '1'*32)
+        db = Database(self.db.database_path); db.initialize()                             # 重启：回调没了，payload 也没了
+        life = LifeService(db, clock=lambda: self.now[0])
+        again = ProactiveScheduler(db, clock=lambda: self.now[0], rng=lambda: 0.0, life=life)
+        self.now[0] += 20; store.settle('1'*32, 'sent', self.now[0]-5)
+        self.now[0] += 60; again.next(CID, 30, 9999)                                          # 对账
+        self.assertEqual(self.row(share.payload['activity']['id'])['status'], 'shared')
+
+    def test_unknown_share_is_not_repeated_and_fades_without_hurt(self):
+        from aicompanion.bridge.outbox import ACK_TTL
+        scheduler = self.scheduler()
+        share, rid, _ = self.qq_share(scheduler, '2'*32)
+        self.now[0] += ACK_TTL+60; self.assertIsNone(scheduler.next(CID, 30, 9999))         # 领取后一直没回执：未知
+        self.assertEqual(self.status(rid)['status'], 'unknown')
+        self.assertEqual(self.row(share.payload['activity']['id'])['status'], 'shared')       # 不再拿同一件事重发
+        self.now[0] += GIVE_UP_SECONDS
+        self.assertIsNone(scheduler.next(CID, 30, 9999))
+        self.assertEqual(self.status(rid)['status'], 'dropped')
+        with self.db.transaction() as c:
+            hurt = c.execute("SELECT COUNT(*) FROM mood_events WHERE kind='ignored'").fetchone()[0]
+        self.assertEqual(hurt, 0)
+        self.now[0] += 10*60
+        self.assertEqual(self.status(rid)['status'], 'dropped')                               # 之后不会再被结算成 ignored
+
+
 class BridgeOutboxTests(unittest.TestCase):
     """第 2 项在 QQ 发件箱一侧：插件来取之前问一次还该不该发，不该发就撤回、回调 False。"""
 
@@ -125,11 +193,34 @@ class BridgeOutboxTests(unittest.TestCase):
         turn = case.service.proactive_qq('分享一件事', on_done=results.append, still_valid=lambda: wanted[0])
         self.assertTrue(turn)
         wanted[0] = False
-        self.assertEqual(case.service.take_outbox(), []); self.assertEqual(results, [False])
+        self.assertEqual(case.service.take_outbox(), []); self.assertEqual([r.status for r in results], ['failed'])
         self.assertEqual(case.db.recent_messages(5, case.character.id), [])                  # 没发出去：不算她说过
         other = case.service.proactive_qq('闲聊', on_done=results.append)                     # 不带检查的照常交出
         items = case.service.take_outbox()
         self.assertEqual([i['id'] for i in items], [other]); self.assertNotIn('valid', items[0])
+
+    def test_claim_refused_after_switch_off_between_handover_and_claim(self):
+        """合入 #46 第三轮后多了一步“插件领取”：心跳响应已经交出去、插件还没来领取时关掉开关，领取被拒绝，记为没发、回复拿掉；
+        已经领取的不追回。"""
+        from test_qq_proactive import Base
+        from aicompanion.bridge.outbox import OutboxStore
+        case = type('Case', (Base,), {'runTest': lambda self: None})()
+        case.setUp(); self.addCleanup(case.tearDown)
+        wanted = [True]; results = []
+        turn = case.service.proactive_qq('分享一件事', on_done=results.append, still_valid=lambda: wanted[0])
+        self.assertEqual([i['id'] for i in case.service.take_outbox()], [turn])           # 交出去了
+        wanted[0] = False
+        self.assertEqual(case.service.outbox_claim({'id': turn}), {'allowed': False})
+        self.assertEqual([r.status for r in results], ['failed'])
+        self.assertEqual(OutboxStore(case.db).get(turn)['status'], 'failed')
+        self.assertEqual(case.db.recent_messages(5, case.character.id), [])
+        wanted[0] = True; results.clear()                                                 # 已领取的：之后再关掉也不追回
+        second = case.service.proactive_qq('再分享一件', on_done=results.append, still_valid=lambda: wanted[0])
+        case.service.take_outbox()
+        self.assertEqual(case.service.outbox_claim({'id': second}), {'allowed': True})
+        wanted[0] = False
+        self.assertEqual(case.service.outbox_ack({'id': second, 'status': 'sent', 'first_delay': 1}), {'ok': True})
+        self.assertEqual([r.status for r in results], ['sent'])
 
 
 class DailyAndQuotaTests(ScheduledShareTests):
@@ -213,3 +304,26 @@ class RecoveryTests(ScheduledShareTests):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MigrationTests(unittest.TestCase):
+    def test_v13_database_from_pr46_upgrades_to_v14(self):
+        """#46 合入后的 v13 库（有 outreach_log、qq_outbox，没有 activities）升级到 v14：备份一次、调度记录和投递记录保留。"""
+        import sqlite3
+        from contextlib import closing
+        from aicompanion.storage.schema import SCHEMA_VERSION
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'v13.sqlite3'
+            db = Database(path); db.initialize()
+            with closing(sqlite3.connect(path)) as conn:
+                conn.execute("INSERT INTO outreach_log(character_id, source, key, channel, status, sent_at, turn_id) VALUES (?, 'greeting', 'g', 'qq', 'sent', 1, 't')", (CID,))
+                conn.execute("INSERT INTO qq_outbox(turn_id, character_id, status, created_at) VALUES ('t', ?, 'sent', 1)", (CID,))
+                conn.execute('DROP TABLE activities'); conn.execute('PRAGMA user_version=13'); conn.commit()
+            for backup in Path(tmp).glob('v13.backup-*'): backup.unlink()
+            Database(path).initialize(); Database(path).initialize()
+            self.assertEqual(len(list(Path(tmp).glob('v13.backup-*.sqlite3'))), 1)
+            with closing(sqlite3.connect(path)) as conn:
+                self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM activities').fetchone()[0], 0)
+                self.assertEqual(conn.execute('SELECT status FROM outreach_log').fetchone()[0], 'sent')
+                self.assertEqual(conn.execute('SELECT status FROM qq_outbox').fetchone()[0], 'sent')

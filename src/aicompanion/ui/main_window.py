@@ -9,10 +9,11 @@ from PySide6.QtGui import QAction,QIcon,QPixmap
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,
     QListWidget,QListWidgetItem,QSplitter,QComboBox,QCheckBox,QSystemTrayIcon,QMenu,QStyle,QProgressBar,QFileDialog,QMessageBox)
 from aicompanion.avatar.view import AvatarView
+from aicompanion.avatar.model_package import cubism_core_available
 from aicompanion.audio.capture import Microphone
 from aicompanion.voice.echo import EchoGate
 from aicompanion.voice.hotkey import DEFAULT_KEY, key_reader, label as key_label
-from aicompanion.characters import choose_renderer, CharacterPackError
+from aicompanion.characters import choose_renderer
 from aicompanion.pet.script import CueStream, Vocab, strip_cues
 from aicompanion.pet import interjection
 from aicompanion.speech.output import spoken_text
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
             controller.character=registry.active()
         self.registry=registry
         self.web_avatar=None; self.sprite_avatars={}; self.rig_avatars={}; self.renderer=None; self.model_label=''
+        self.animation_avatars={}; self.failed_avatar_resources=set()
         self.tray_hint_shown=False; self.first_token=set()
         # 台词标注：每轮回复一个解析器；开语音时动作挂在句子上，等那句开始播放再执行
         self.vocab=Vocab(); self.cue_streams={}; self.pending_cues={}; self.sentence_cues={}
@@ -310,39 +312,95 @@ class MainWindow(QMainWindow):
         """根据角色包和设置选择显示方式，并放进常驻桌宠窗口。"""
         character=self.controller.character
         pack=self.registry.pack(character.id)
-        kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),character.model_path)
-        if kind=='sprites' and pack is not None and pack.renderer.get('rig') and self.database.get_setting('rig_enabled',True):
-            rig_path=self._rig_path(pack)
-            if rig_path: kind,resource='rig',rig_path
-        if (kind,str(resource))==self.renderer: return
-        view=None
-        if kind=='rig':
-            try:
-                from aicompanion.body.rig_view import RigAvatar
-                view=self.rig_avatars.get(str(resource))
-                if view is None:
-                    view=RigAvatar(resource); view.bridge.loaded.connect(self._avatar_loaded)
-                self.rig_avatars[str(resource)]=view
-                self.pet.set_view(view,'rig',pack)
-            except Exception as error:
-                self._status('骨骼形象加载失败，改用立绘：'+str(error)); kind,resource=choose_renderer(pack,None,'')
-        if kind=='sprites':
-            try:
-                view=self.sprite_avatars.get(str(resource)) or SpriteAvatar(resource)
-                self.sprite_avatars[str(resource)]=view
-                self.pet.set_view(view,'sprites',pack)
-            except (CharacterPackError,ValueError) as error:
-                self._status('立绘加载失败：'+str(error)); kind='placeholder'
-        if kind=='cubism':
+        # 历史逐帧开关不影响鲸鲸新安装的 Aboutme；其他角色继续使用自己的开关。
+        animation_enabled = (pack is not None and pack.renderer_kind == 'spritesheet') or bool(
+            self.database.get_setting(f'pet_animation_enabled:{character.id}', True))
+        kind,resource=choose_renderer(pack,self.database.get_setting(f'avatar_mode:{character.id}'),
+                                      character.model_path,animation_enabled=animation_enabled)
+        if kind=='cubism' and not cubism_core_available():
+            if not getattr(self,'_cubism_core_warned',False):
+                self._cubism_core_warned=True
+                self._status('导入的 Live2D 模型需要 Live2D Cubism Core，本项目不附带，已改用角色默认形象。获取方法见 docs/live2d_model_sources.md。')
+            kind,resource=choose_renderer(pack,None,'',animation_enabled=animation_enabled)
+        if kind == 'spritesheet':
+            if self._show_pack_view(kind, resource, pack):
+                return
+            kind, resource = choose_renderer(pack, None, '', animation_enabled=False)
+        if kind in ('sprites', 'rig'):
+            prefer_sprites = kind == 'sprites' and not self.database.get_setting('rig_enabled', True)
+            if prefer_sprites and self._show_pack_view('sprites', resource, pack):
+                return
+            if pack.renderer.get('rig'):
+                rig = self._rig_path(pack)
+                if rig and self._show_pack_view('rig', rig, pack):
+                    return
+            if kind == 'sprites' and not prefer_sprites and self._show_pack_view('sprites', resource, pack):
+                return
+            kind, resource = 'placeholder', None
+
+        if (kind, str(resource)) == self.renderer:
+            return
+        if kind == 'cubism':
             if self.web_avatar is None:
-                # WebEngine 只在确实需要时创建，鲸娘等立绘角色不占用浏览器内核内存。
                 self.web_avatar=AvatarView(); self.web_avatar.bridge.loaded.connect(self._avatar_loaded)
             self.pet.set_view(self.web_avatar,'webengine',pack)
             if not self.web_avatar.set_model(resource): self._status('Live2D 模型加载失败，请在设置中重新选择。')
-        if kind=='placeholder':
-            self.pet.set_view(PlaceholderAvatar('未设置形象\n右键 → 设置'),'placeholder',pack)
-        self.renderer=(kind,str(resource))
+        else:
+            hint = '未设置形象\n右键 → 设置'
+            if pack and pack.id == 'deepseek-whale':
+                hint = '鲸鲸\n请检查角色素材'
+            self.pet.set_view(PlaceholderAvatar(hint), 'placeholder', pack)
+        self.renderer = (kind, str(resource))
         self.avatar.set_state(self.mood)
+
+    def _show_pack_view(self, kind, path, pack):
+        """同一份坏素材在本次运行中只尝试一次，继续尝试角色的下一级形象。"""
+        key = str(path)
+        if key in self.failed_avatar_resources:
+            return False
+        if self.renderer == (kind, key):
+            return True
+        try:
+            if kind == 'spritesheet':
+                from aicompanion.ui.animation_view import AnimationAvatar
+                view = self.animation_avatars.get(key)
+                if view is None:
+                    view = AnimationAvatar(path)
+                    view.failed.connect(lambda message: self._view_failed(view, key, message))
+                    self.animation_avatars[key] = view
+            elif kind == 'rig':
+                from aicompanion.body.rig_view import RigAvatar
+                view = self.rig_avatars.get(key)
+                if view is None:
+                    view = RigAvatar(path)
+                    view.bridge.loaded.connect(lambda message: self._rig_loaded(view, key, message))
+                    self.rig_avatars[key] = view
+            else:
+                view = self.sprite_avatars.get(key)
+                if view is None:
+                    view = SpriteAvatar(path)
+                    self.sprite_avatars[key] = view
+            self.pet.set_view(view, kind, pack)
+        except (ImportError, OSError, ValueError, RuntimeError, KeyError, TypeError, AttributeError) as error:
+            self.failed_avatar_resources.add(key)
+            self._status('角色素材加载失败：' + str(error))
+            return False
+        self.renderer = (kind, key)
+        self.avatar.set_state(self.mood)
+        return True
+
+    def _rig_loaded(self, view, key, message):
+        if message.startswith('error:'):
+            self._view_failed(view, key, message[6:])
+        elif self.pet.view is view:
+            self._avatar_loaded(message)
+
+    def _view_failed(self, view, key, message):
+        self.failed_avatar_resources.add(key)
+        if self.pet.view is view and not self.closing:
+            self._status('角色素材解码失败：' + message)
+            self.renderer = None
+            self._apply_avatar()
 
     def _rig_path(self,pack):
         """骨骼形象来源，依次：AICOMPANION_RIG 指定的模型（自检、rig_studio 预览）→ 角色包自带的形象包 rig/rig.json
@@ -355,9 +413,17 @@ class MainWindow(QMainWindow):
         rig=pack.renderer.get('rig') or {}
         candidates.append(pack.root/(rig.get('path') or 'rig/rig.json'))
         for path in candidates:
-            if path.is_file():
-                try: load_rig(path); return path
-                except (RigImportError,OSError,ValueError,KeyError) as error: self._status(f'形象包 {path.parent.name} 有问题：{error}')
+            key = str(path)
+            if key in self.failed_avatar_resources or not path.is_file():
+                continue
+            if key in self.rig_avatars:
+                return path
+            try:
+                load_rig(path)
+                return path
+            except (RigImportError, OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                self.failed_avatar_resources.add(key)
+                self._status(f'形象包 {path.parent.name} 有问题：{error}')
         if rig.get('source')=='pack': return None   # 只用自己的形象包的角色，不去找 Coopanion
         root=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parents[3]
         try:
@@ -743,31 +809,33 @@ class MainWindow(QMainWindow):
         """把调度器选中的这一件说出去：先占位，桌面说完 / QQ 回执成功再确认，没说成就撤掉、心事放回、问候和纪念日的占位放回。"""
         purpose=outreach.payload.get('purpose')
         if purpose: self.database.update_purpose(purpose['id'],'delivering')
-        claimed=outreach.source in ('date','greeting')   # 这两类在 proactive_events 里占了位，没说成要放回去
         # 选中就先占位（pending）：走 QQ 要等插件回执，期间不会再选中同一句（Codex PR #46 第 1 项）
         reserved=self.outreach_scheduler.reserve(character_id,outreach)
 
-        def done(ok,channel,o=outreach,cid=character_id,rid=reserved):
-            if ok: self.outreach_scheduler.confirm(cid,rid,o,channel)
-            else: self.outreach_scheduler.release(rid)
-            if purpose: self.purposes.delivered(purpose['id']) if ok else self.purposes.release(purpose['id'])
-            if not ok and claimed: self.database.release_proactive(cid,o.key)
+        def done(result,channel,o=outreach,cid=character_id,rid=reserved):
+            # 桌面传 True / False；QQ 传投递结果（发出 / 部分 / 失败 / 未知，bridge/outbox.py）。心事、问候、纪念日的占位一起收尾
+            self.outreach_scheduler.settle_delivery(cid,rid,o,result,channel)
+        # QQ：放进发件箱时记下轮次（之后按 qq_outbox 对账，重启也接得上）；插件领取、开始发送时记成 delivering
+        queued=lambda turn,rid=reserved:self.outreach_scheduler.attach(rid,turn,'qq')
+        taken=lambda turn,rid=reserved:self.outreach_scheduler.handed(rid,turn)
+        # 交给插件前、插件领取时再问一次还该不该说：分享和追问分享的那句，在关掉“自己的生活”后撤回（Codex PR #48 第 2 项）
         valid=lambda o=outreach:self.outreach_scheduler.still_valid(o)
-        if self._proactive_on_qq(outreach.intent,lambda ok:done(ok,'qq'),valid):return
+        if self._proactive_on_qq(outreach.intent,lambda result:done(result,'qq'),taken,queued,valid):return
         generation=self.coordinator.active=uuid4().hex
+        self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
         self.outreaches[generation]=done
         self._start(generation,proactive=outreach.intent)
 
-    def _proactive_on_qq(self,intent,done,still_valid=None):
+    def _proactive_on_qq(self,intent,done,taken=None,queued=None,still_valid=None):
         """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
-        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说。返回 True 表示这次走 QQ，桌面不再说。"""
+        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说；插件取件时 taken(轮次)。返回 True 表示这次走 QQ，桌面不再说。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.services.proactive_service import choose_channel
         from aicompanion.ui.desktop_integration import system_idle_seconds
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
         if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
-        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,still_valid=still_valid),self)
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken,on_queued=queued,still_valid=still_valid),self)
         self.tasks.add(worker)
         worker.succeeded.connect(lambda turn:None if turn else done(False))
         worker.failed.connect(lambda error:done(False))
@@ -996,7 +1064,7 @@ class MainWindow(QMainWindow):
             return
         event.ignore(); self.closing=True; self.pump.stop(); self.scheduler.stop(); self._end_call()
         self.pet.shutdown()
-        for view in list(self.sprite_avatars.values())+list(self.rig_avatars.values()): view.shutdown()
+        for view in list(self.sprite_avatars.values())+list(self.rig_avatars.values())+list(self.animation_avatars.values()): view.shutdown()
         if self.web_microphone: self.web_microphone.shutdown()
         self.agent.stop(); self.agent.shutdown()   # 关掉 DeepSeek Harness 运行时
         for worker in self.tasks: worker.cancellation.cancel()

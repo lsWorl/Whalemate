@@ -144,7 +144,7 @@ def copy_database(source, target, migration_id):
 def seed_memes(destination):
     """新图库补入仓库自带原创表情；已有文件和用户图库都不覆盖。"""
     destination = Path(destination); destination.mkdir(parents=True, exist_ok=True)
-    source = Path(__file__).resolve().parents[1]/'characters'/'deepseek-whale'/'sprites'
+    source = Path(__file__).resolve().parents[1]/'assets'/'expression'
     if any(destination.iterdir()): return
     for category, filename in DEFAULT_MEMES.items():
         if not (source/filename).is_file(): continue

@@ -11,7 +11,7 @@ from pathlib import Path
 
 PACKS_DIR = Path(__file__).resolve().parent
 LIVE2D_ASSETS = PACKS_DIR.parent/'assets/live2d'
-RENDERERS = {'sprites', 'none'}
+RENDERERS = {'spritesheet', 'sprites', 'none'}
 REQUIRED_POSES = ('idle', 'talking', 'thinking')
 
 
@@ -103,6 +103,8 @@ def discover(root: Path = PACKS_DIR) -> tuple[list[CharacterPack], list[str]]:
         try:
             pack = load_pack(directory)
             if pack.ready and pack.renderer_kind == 'sprites': load_sprite_manifest(pack.sprite_manifest_path())
+            if pack.renderer_kind == 'spritesheet':
+                _safe_name(pack.renderer.get('animation'), '动画清单')
             packs.append(pack)
         except CharacterPackError as error:
             errors.append(str(error))
@@ -136,12 +138,31 @@ def load_sprite_manifest(path: Path) -> dict:
     return data
 
 
-def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '') -> tuple[str, Path | str | None]:
-    """决定角色用哪种方式显示，返回 (方式, 资源)。
-
-    方式：'sprites'（原生立绘）、'cubism'（用户导入的 Live2D 模型）、'placeholder'（无可用形象）。
-    """
-    if avatar_mode == 'live2d' and model_path: return 'cubism', model_path
-    if pack and pack.ready and pack.renderer_kind == 'sprites': return 'sprites', pack.sprite_manifest_path()
-    if model_path: return 'cubism', model_path
+def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '', *, animation_enabled: bool = True) -> tuple[str, Path | str | None]:
+    """显式选择的外部模型优先，选装动画缺失时尝试角色包自己的形象。"""
+    if avatar_mode == 'live2d' and model_path:
+        return 'cubism', model_path
+    if pack and pack.ready:
+        if pack.renderer_kind in ('spritesheet', 'sprites') and animation_enabled:
+            animation = pack.renderer.get('animation')
+            if animation:
+                manifest = pack.root / _safe_name(animation, '动画清单')
+                if manifest.is_file():
+                    return 'spritesheet', manifest
+        if pack.renderer_kind == 'sprites':
+            return 'sprites', pack.sprite_manifest_path()
+        if pack.renderer_kind == 'spritesheet':
+            if pack.renderer.get('path'):
+                sprites = pack.sprite_manifest_path()
+                if sprites.is_file():
+                    return 'sprites', sprites
+            # 独立骨骼包也能显示，即使整张立绘已损坏或遗失。
+            rig = pack.renderer.get('rig') or {}
+            if rig.get('path'):
+                manifest = pack.root / _safe_name(rig['path'], '骨骼清单')
+                if manifest.is_file():
+                    return 'rig', manifest
+            return 'placeholder', None
+    if model_path:
+        return 'cubism', model_path
     return 'placeholder', None

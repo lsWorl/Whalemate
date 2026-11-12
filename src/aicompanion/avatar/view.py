@@ -5,7 +5,7 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtGui import QColor
-from aicompanion.avatar.model_package import validate_model_package, ModelPackageError
+from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
 
 ASSETS = Path(__file__).resolve().parents[1]/'assets/live2d'
@@ -83,6 +83,7 @@ class AvatarView(QWebEngineView):
             self.bridge.loaded.emit('error:尚未导入 Live2D 模型'); return False
         try:
             candidate = validate_model_package(path)
+            require_cubism_core()
         except (ModelPackageError, OSError) as error:
             self.bridge.loaded.emit('error:'+str(error)); return False
         self._load_path(candidate)

@@ -4,8 +4,8 @@
 
 ## 项目一句话
 
-Windows 桌面常驻的 AI 桌宠（Python 3.14 + PySide6 + SQLite）。默认角色是 DeepSeek 的二创鲸娘；会动（分层网格骨骼）、会记（衰减记忆、心事）、会说（千问声线、语音打断）、能干活（DeepSeek Harness 负责想，桌宠自己的工具执行并把关）。
-计划书：`docs/project_plan_v4.md`（2026-11-10 起的开发依据；v3 保留为历史）；实际完成情况以 `docs/implementation_status.md` 为准。开发时优先参考现有成熟方案，见 v4 的“开发参考”一节。
+Windows 桌面常驻的 AI 桌宠（Python 3.14 + PySide6 + SQLite）。默认角色是 DeepSeek 的二创鲸娘；会动（优先播放本机安装的 Aboutme 大肥鱼帧动画，缺包时显示内置自绘鲸娘）、会记（衰减记忆、心事）、会说（千问声线、语音打断）、能干活（DeepSeek Harness 负责想，桌宠自己的工具执行并把关）。
+计划书：`docs/project_plan_v4.md`（2026-11-10 起的开发依据；v1～v3 已删除，见 git 历史）；实际完成情况以 `docs/implementation_status.md` 为准。开发时优先参考现有成熟方案，见 v4 的“开发参考”一节。
 
 ## 长期架构约束（2026-11-08 用户确认）
 
@@ -27,7 +27,7 @@ Windows 桌面常驻的 AI 桌宠（Python 3.14 + PySide6 + SQLite）。默认�
 | Codex | T2、T5（已确认鲸娘十动作的素材整理与补画）、PR 审查 |
 | 双方先在任务里说好再动 | `ui/main_window.py`、`storage/database.py`（表结构只由一方改）、`config.py`、`pyproject.toml` |
 
-P8 当前仅做已确认的 DeepSeek 二创鲸娘，沿用此前十个动作与角色设计，Claude 少女与 Codex / ChatGPT 白龙暂缓。T5 的美术由 Codex 负责，T6 的代码由 Claude 负责。
+负责人于 2026-11-12 确认，鲸鲸的桌面形象改用本机安装的 Aboutme 大肥鱼。未安装 Aboutme 时使用角色包自带的自绘骨骼或立绘；原 T5/T6 分层源稿可从提交 `fa54555` 找回。Claude 少女与 Codex / ChatGPT 白龙暂缓。Aboutme 上游贴图、缓存和转换产物不得提交或分发。
 
 P7（QQ / B站）由 Claude 实现、Codex 负责方案及代码审查，排在 P8 之后。QQ 采用 AstrBot + NapCat 和桌宠大脑桥接，优先复用成熟方案；开工前仍须约定共享文件和接口范围。任务清单见 `docs/tasks.md`，每个任务一份说明放在 `docs/tasks/`。
 

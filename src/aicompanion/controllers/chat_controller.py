@@ -74,8 +74,10 @@ class ChatController:
         self.memory_service.maybe_extract_memory(content,self.character.id,message_id)
         return message_id
 
-    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None,reply_filter=None,*,expression_context=None,on_expression_event=None,person=None):
-        """所有自然聊天共用这一轮生成；图片控制在 yield 给 UI/TTS 之前剥离。"""
+    def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None,reply_filter=None,*,expression_context=None,on_expression_event=None,person=None,settle_dates=True):
+        """所有自然聊天共用这一轮生成；图片控制在 yield 给 UI/TTS 之前剥离。
+        settle_dates=False：生成完还不等于送到（主动发到 QQ 要等插件回执），这一轮占住的纪念日提醒先不确认，
+        由调用方在送达后 confirm、没送达时 release；生成失败 / 取消照样当场释放。"""
         from dataclasses import replace
         from aicompanion.expression.domain import ExpressionContext,ExpressionEvent
         from aicompanion.expression.stream import ExpressionStream
@@ -166,7 +168,7 @@ class ChatController:
                     content=filtered
                 except Exception:
                     status='failed';error='回复过滤失败'
-            self._settle_dates(character,turn_id,status)
+            if settle_dates or status!='complete':self._settle_dates(character,turn_id,status)
             if attachment and self.expression.catalog.resolve(attachment.asset_id,attachment.revision) is None:
                 self.expression.receipt(attachment.delivery_id,'cancelled');attachment=None
             result=self.expression.result(turn_id,context,content,attachment,status,parser.diagnostics if parser else ())
