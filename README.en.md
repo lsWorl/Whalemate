@@ -100,7 +100,9 @@ Run `卸载鲸伴.exe` (Uninstall Whalemate) in the `鲸伴` folder. It first li
 - the sticker library the app created, the QQ components (NapCat, AstrBot), voice caches, the local speech-recognition model and the agent's temporary folders;
 - the start-with-Windows entry, if you enabled it.
 
-If you chose **your own sticker folder** under Settings → Storage, it is kept by default because it may contain images you collected; tick the box to delete it too. Deletion cannot be undone — back up the database file first if you want to keep your chats. See [storage locations](docs/storage-locations.md) (Chinese) for the exact paths.
+Inside the program folder only Whalemate's own files are removed; anything else you put there is kept.
+
+Two things are **kept by default** and only deleted if you tick them: **your own sticker folder** chosen under Settings → Storage (it may contain images you collected), and the **agent recycle area** (files she "deleted" for you go there first and cannot be recovered once removed). Deletion cannot be undone — back up the database file first if you want to keep your chats. See [storage locations](docs/storage-locations.md) (Chinese) for the exact paths.
 
 ## 🛠️ Run from source (developers)
 
