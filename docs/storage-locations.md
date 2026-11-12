@@ -46,4 +46,4 @@ D:\Study\AICompanion\data\memes\
 | 办事回收区和旧版快照 | 各盘根目录的 .aicompanion-trash、.aicompanion-snapshots；已配置博客目录的 .aicompanion-trash；LocalAppData 应用目录内的 trash。 |
 | 当前用户的鲸伴开机启动项 | HKCU\Software\Microsoft\Windows\CurrentVersion\Run 中名为 AICompanion、指向本次安装的值。 |
 
-正在使用鲸伴时请先从托盘退出。程序目录须包含 AICompanion.exe、卸载鲸伴.exe 和 _internal。遇到磁盘根、用户主目录、系统目录、链接或联接点会拒绝操作。文件被占用时会显示具体路径，可关闭占用程序后手动清理。预览后新增的文件会留在原处。
+正在使用鲸伴时请先从托盘退出，点击卸载窗口的“重新扫描”，核对退出后写入的文件并再次确认。程序目录须包含 AICompanion.exe、卸载鲸伴.exe 和 _internal。遇到磁盘根、用户主目录、系统目录、链接或联接点会拒绝操作。文件被占用时会显示具体路径，可关闭占用程序后手动清理。预览后新增的文件会留在原处。

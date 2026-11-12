@@ -61,6 +61,9 @@ class UninstallWindow(QDialog):
         self.bar.setRange(0, 0)
         body.addWidget(self.bar)
         buttons = QHBoxLayout()
+        self.rescan = QPushButton('重新扫描')
+        self.rescan.clicked.connect(self.scan_again)
+        buttons.addWidget(self.rescan)
         buttons.addStretch()
         self.close_button = QPushButton('关闭')
         self.close_button.clicked.connect(self.reject)
@@ -74,7 +77,23 @@ class UninstallWindow(QDialog):
         buttons.addWidget(self.remove)
         body.addLayout(buttons)
         theme.prepare_controls(self)
-        self.run_job(lambda _: scan(locations), self.loaded)
+        self.scan_again()
+
+    def scan_again(self):
+        if self.worker and self.worker.isRunning():
+            return
+        self.plan = None
+        self.confirm.setChecked(False)
+        self.confirm.setEnabled(False)
+        self.remove.setEnabled(False)
+        self.rescan.setEnabled(False)
+        self.gallery.hide()
+        self.gallery.setChecked(False)
+        self.details.clear()
+        self.status.setText('正在扫描鲸伴程序和存储位置…')
+        self.bar.setRange(0, 0)
+        self.bar.show()
+        self.run_job(lambda _: scan(self.locations), self.loaded)
 
     def run_job(self, operation, callback):
         self.worker = Work(operation, self)
@@ -89,6 +108,9 @@ class UninstallWindow(QDialog):
 
     def loaded(self, plan):
         self.plan = plan
+        self.rescan.setEnabled(True)
+        self.confirm.setEnabled(True)
+        self.gallery.setEnabled(True)
         self.bar.hide()
         self.gallery.setVisible(bool(plan.galleries))
         self.refresh()
@@ -111,17 +133,20 @@ class UninstallWindow(QDialog):
         self.confirm.setEnabled(False)
         self.gallery.setEnabled(False)
         self.remove.setEnabled(False)
+        self.rescan.setEnabled(False)
         self.bar.show()
         self.run_job(lambda job: execute(self.plan, confirmed=confirmed, galleries=galleries,
                                          progress=lambda i, n, path: job.progress.emit(i, n, str(path))), self.complete)
 
     def error(self, message):
         self.bar.hide()
-        self.status.setText(message)
-        if self.plan:
-            self.confirm.setEnabled(True)
-            self.confirm.setChecked(False)
-            self.gallery.setEnabled(True)
+        # 退出桌宠可能会刷新缓存、关闭 WAL。旧清单不能代表退出后的目录。
+        self.status.setText(message+' 处理后请点“重新扫描”，核对新清单。')
+        self.plan = None
+        self.confirm.setChecked(False)
+        self.confirm.setEnabled(False)
+        self.remove.setEnabled(False)
+        self.rescan.setEnabled(True)
 
     def complete(self, result):
         ok, failed = result
@@ -135,6 +160,7 @@ class UninstallWindow(QDialog):
         self.confirm.hide()
         self.gallery.hide()
         self.remove.hide()
+        self.rescan.hide()
 
 
 def output_preview(message):

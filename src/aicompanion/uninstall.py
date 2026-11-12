@@ -321,7 +321,7 @@ def ensure_stopped(plan):
             identity = process_identity(int(row[1]))
             if not identity or not Path(identity[0]).is_relative_to(plan.locations.fence):
                 continue
-        raise ValueError('鲸伴还在运行。请从托盘退出鲸伴，等它关闭后再点卸载。')
+        raise ValueError('鲸伴还在运行。请先从托盘退出鲸伴。')
     for root in plan.qq:
         supervisor = UninstallSupervisor(Layout(root))
         for name in ('astrbot', 'napcat'):

@@ -46,6 +46,7 @@ $window = Wait-Until {
         }
     }
 } '等待本次安装的卸载窗口'
+$temporaryLauncher = (Get-Process -Id $window.Current.ProcessId).Path
 try {
     Wait-Until { Status-Matches '请核对' } '扫描清单' | Out-Null
     if ((By-Name '卸载').Current.IsEnabled) { throw '未勾选确认仍可卸载' }
@@ -60,14 +61,24 @@ try {
         Wait-Until { Status-Matches '鲸伴还在运行' } '运行中拒绝卸载' | Out-Null
         if (-not (Test-Path -LiteralPath (Join-Path $base 'my-memory\aicompanion.sqlite3'))) { throw '运行中已发生删除' }
         if (-not $pet.WaitForExit(120000)) { throw '临时鲸伴没有正常退出' }
-        Write-Output '鲸伴运行中拒绝卸载，退出后重试'
+        (By-Name '重新扫描').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+        Wait-Until { Status-Matches '请核对' } '退出后重新核对清单' | Out-Null
+        Write-Output '鲸伴运行中拒绝卸载，退出后重新扫描并确认'
     }
     Click-Confirm
     $status = Wait-Until { Status-Matches '卸载结束' } '等待逐项删除完成'
     Write-Output $status
+    if ($status -notmatch '失败 0 项') {
+        $pattern = New-Object Windows.Automation.PropertyCondition($ae::IsTextPatternAvailableProperty,$true)
+        foreach ($text in $window.FindAll($subtree,$pattern)) {
+            $detail = $text.GetCurrentPattern([Windows.Automation.TextPattern]::Pattern).DocumentRange.GetText(-1)
+            $detail -split "[\r\n]+" | Where-Object { $_ -like "失败`t*" } | Write-Output
+        }
+    }
     if ($Scenario -ne 'locked' -and $status -notmatch '失败 0 项') { throw $status }
     if ($Scenario -eq 'locked' -and $status -notmatch '失败 [1-9]\d* 项') { throw '未报告锁定文件' }
 } finally {
     $close = By-Name '关闭'
     if ($close) { $close.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke() }
+    Wait-Until { -not (Test-Path -LiteralPath $temporaryLauncher) } '临时卸载助手已清理' | Out-Null
 }
