@@ -46,5 +46,6 @@ class LifeCard(QWidget):
         self.recent.setText('<br>'.join(lines))
 
     def save(self):
-        self.db.set_setting('life_enabled', self.enabled.isChecked())
+        from aicompanion.brain.life import LifeService
+        LifeService(self.db).set_enabled(self.enabled.isChecked())   # 关掉时记下时刻：进行中的活动、选中的分享据此撤回
         self.db.set_setting('life_daily_activities', self.daily.value())

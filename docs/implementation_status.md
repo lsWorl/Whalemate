@@ -1850,3 +1850,25 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
   - 插件 0.10.1 装进本机 AstrBot 后的真实 QQ 发送（超时、停用插件等真实时序）；
   - 真实模型话术。
+
+## 2026-11-12 PR #48 合入 #46 第四轮并修复 Codex 第三轮九项 P2（Claude）
+
+- 做了什么：
+  - 合入 `task/v4-4a-scheduler@7538a00`，合并提交为 `1eec54b`。
+  - 修复 Codex 第三轮（3ecdf25）的 9 项 P2，改法见 `docs/tasks/V4-4b-life.md`。其中第 6、7 项（未知后补到失败回执时撤回分享标记、partial 不标分享）在合并提交里已经处理，本次补了回归测试。
+  - 改动范围：
+    - `pet/script.py`：代码块、引用里的标注原样保留；
+    - `controllers/chat_controller.py`：主动轮次不记关系；
+    - `ui/main_window.py`、`ui/chat_view.py`：桌面分享在首个可见输出前可以撤回；
+    - `brain/life.py`、`ui/life_card.py`：记下关掉的时刻；
+    - `brain/scheduler.py`：库内复核、放下时刻、回应窗口截止；
+    - `bridge/service.py`：领取时加上库内复核。
+- 新增回归：`tests/test_life_review.py::CodexThirdRoundTests` 10 项。
+  - 在合并提交 `1eec54b` 的源码上，有 8 项失败或报错。
+  - 第 6、7 项在合并提交里已经修好，所以这两项在 `1eec54b` 上通过；在 3ecdf25 上的问题即 Codex 的复现。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）全量 `unittest discover` → `Ran 1143 tests … OK (skipped=8)`。
+- 没验证：
+  - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
+  - 真实 MainWindow 里桌面撤回的视觉效果；
+  - 真实模型在代码块里输出标记的频率；
+  - 真实 QQ 和桥接重启时序。

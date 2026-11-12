@@ -1084,12 +1084,16 @@ class BridgeService:
         return fresh
 
     def _still_valid(self, turn) -> bool:
-        """这条主动消息现在还该不该发（没有检查的一律该发；检查本身出错按不该发处理）。"""
+        """这条主动消息现在还该不该发：发起时留下的检查（内存里，检查出错按不该发处理），再加只凭库里记录的复核——
+        桥接重启后内存里的检查没了，关掉“自己的生活”前交出去、还没被领取的分享也得撤回（Codex PR #48 第三轮）。"""
+        from aicompanion.brain.scheduler import ProactiveScheduler
         with self.expression_lock:
             check = self.outbox_valid.get(turn)
-        if check is None: return True
-        try: return bool(check())
-        except Exception: return False
+        if check is not None:
+            try:
+                if not check(): return False
+            except Exception: return False
+        return ProactiveScheduler.turn_still_valid(self.database, turn, self.clock)
 
     def outbox_claim(self, payload) -> dict:
         """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。

@@ -178,7 +178,7 @@ class ChatController:
                                          result.attachments[0] if result.attachments else None,status,
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:on_expression_event(ExpressionEvent('final',turn_id,result=result))
-            self._after_turn(character,channel,scene,person,context,parser,status,turn_id)
+            self._after_turn(character,channel,scene,person,context,parser,status,turn_id,proactive=bool(proactive))
 
     def _settle_dates(self,character,turn_id,status):
         """计划书 v4 功能九：这一轮占住了“今天是特别的日子”的提醒——成功说完就记成今天提过（一天只提一次，重启也不重复）；
@@ -199,12 +199,14 @@ class ChatController:
             except Exception: return None
         return None
 
-    def _after_turn(self,character,channel,scene,person,context,parser,status,turn_id):
+    def _after_turn(self,character,channel,scene,person,context,parser,status,turn_id,proactive=False):
         """她这轮写了 <mind/>：请她做事就记一条 request（不改分，只统计"多常找她做事"）；
         写了 feel / toward（对方让她明显高兴或不爽）就即时记一条关系事件；够条数时后台理解关系事件，吵起来时提前。
-        关系记录出错不影响聊天。"""
+        关系记录出错不影响聊天。
+        proactive：她主动开口的一轮（分享网页、心事、问候……），这一轮对方什么都没说。<mind/> 里的判断只可能来自提示里的材料
+        （比如网页里引用的第三方骂人的话），不能当成主人的言行记进关系档案、也不推动心情（Codex PR #48 第三轮）。"""
         try:
-            person_id=self._person(person,channel,scene,context)
+            person_id=None if proactive else self._person(person,channel,scene,context)
             mind=getattr(parser,'mind',None) if parser else None
             self.last_mind=(turn_id,dict(mind) if mind else {})   # T20：桥接看她这一轮有没有要查的词
             heated=False
@@ -227,11 +229,11 @@ class ChatController:
                 try:
                     from aicompanion.services.mood_service import MoodService
                     mood=MoodService(self.database)
-                    judged=mood.on_mind(character.id,mind,channel) if mind else None
+                    judged=mood.on_mind(character.id,mind,channel) if mind and not proactive else None
                     if judged is None and pending and pending[0]==character.id and pending[1]==channel and time.time()-pending[3]<600:
                         mood.apply_fallback(character.id,pending[2],channel)
                 except Exception: pass
-            if status=='complete':
+            if status=='complete' and not proactive:
                 # 吵起来了就早点让后台把这段对话理一遍（不用等攒够 6 条）
                 self.relationship_analyzer.maybe_run(character.id,channel,self.client(character.id,'relationship'),
                                                      trigger=2 if heated else None,search=self.search_factory(character.id))

@@ -136,6 +136,10 @@ class SegmentedReply:
         self.image.row.setVisible(True)
         return self.image.setAttachment(data, mime, placement)
 
+    def withdraw(self):
+        """她还没开口就撤回了这一轮（例如主动分享生成时关掉了“自己的生活”）：占位气泡整个藏起来，不留“正在想…”。"""
+        for handle in self.texts+([self.image] if self.image else []): handle.setText(''); handle.row.setVisible(False)
+
     def mark(self, note: str):
         """打断 / 失败时在最后一个文字气泡后面注明。"""
         # 用 isHidden 而不是 isVisible：聊天面板关着时所有行都"不可见"（桌宠 Smoke 在面板隐藏时切换角色触发过越界）

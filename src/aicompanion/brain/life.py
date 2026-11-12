@@ -41,6 +41,19 @@ class LifeService:
     def enabled(self) -> bool:
         return bool(self.db.get_setting('life_enabled', True))
 
+    def set_enabled(self, on: bool) -> None:
+        """设置页保存开关。关掉时记下时刻：已经开始的活动、已经选中的分享据此知道“中途被关过”，
+        之后再打开也不会把关掉前那一件恢复成可分享 / 照常发出（Codex PR #48 第三轮）。"""
+        if not on: self.db.set_setting('life_off_at', self.clock())
+        self.db.set_setting('life_enabled', bool(on))
+
+    def switched_off_since(self, since: float | None) -> bool:
+        """现在关着，或者 since 之后关过（哪怕又打开了）。"""
+        if not self.enabled(): return True
+        if since is None: return False
+        try: return float(self.db.get_setting('life_off_at', 0) or 0) >= float(since)
+        except (TypeError, ValueError): return False
+
     def daily(self) -> int:
         try: return max(0, int(self.db.get_setting('life_daily_activities', DAILY)))
         except (TypeError, ValueError): return DAILY
@@ -100,13 +113,13 @@ class LifeService:
             hit = self._pick_hit(character_id, search.search(query, count=5) if search else [])
             if hit is None:
                 self._finish(activity, 'failed'); return activity                 # 没看到东西：不算做过，也不编
-            if not self.enabled():                                                 # 搜的时候你关掉了：不再花一次模型调用
+            if self.switched_off_since(now):                                       # 搜的时候你关掉了（哪怕又打开了）：不再花一次模型调用
                 self._finish(activity, 'cancelled'); return activity
             if client is not None and allow_model is not None and not allow_model():
                 client = None                                                      # 额度到了：走没有模型时的低分记录，不再发请求
             view = self._view(character_id, character_name, interest, hit, client, cancellation)
             # 想的时候你关掉了：看到的东西照样记下（历史），但标成 quiet，以后重新打开也不拿来分享
-            status = 'done' if self.enabled() else 'quiet'
+            status = 'quiet' if self.switched_off_since(now) else 'done'
             with self.db.transaction() as c:
                 c.execute("UPDATE activities SET status=?, title=?, url=?, site=?, excerpt=?, thought=?, opener=?, worth=?, finished_at=? WHERE id=?",
                           (status, hit.title[:80], hit.url[:500], (hit.site or '')[:30], hit.summary[:900], view['thought'], view['opener'],

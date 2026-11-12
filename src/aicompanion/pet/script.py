@@ -52,15 +52,33 @@ class CueStream:
 
     def __init__(self, vocab: Vocab):
         self.vocab = vocab; self.pending = ''
+        # 代码块（```…```）、行内代码（`…`）和引用行（行首 >）里的内容是展示给人看的文字，原样保留、不解析标注：
+        # 用户让她“把文章里的 <task> 示例展示出来”时，代码块里的字面标记不能变成办事委托（Codex PR #48 第三轮）
+        self.fence = False; self.inline = False; self.quote = False; self.line_start = True
 
     def feed(self, token: str, final: bool = False) -> tuple[str, list[Cue]]:
-        if not self.vocab and '<' not in token and not self.pending:
-            return token, []
         text, cues = [], []
         data = self.pending+token; self.pending = ''
         i = 0
         while i < len(data):
             ch = data[i]
+            if ch == '`':
+                run = len(data[i:]) - len(data[i:].lstrip('`'))
+                if i+run == len(data) and run < 3 and not final:
+                    self.pending = data[i:]; break                      # 可能是被拆开的 ```，等下一个 token
+                if run >= 3: self.fence = not self.fence
+                elif not self.fence: self.inline = not self.inline
+                text.append(data[i:i+run]); i += run; self.line_start = False; continue
+            if ch == '\n':
+                self.inline = False; self.quote = False; self.line_start = True
+                text.append(ch); i += 1; continue
+            if self.line_start and ch in ' \t':
+                text.append(ch); i += 1; continue
+            if self.line_start and ch in '>＞' and not self.fence:
+                self.quote = True
+            self.line_start = False
+            if self.fence or self.inline or self.quote:
+                text.append(ch); i += 1; continue                       # 代码、引用里的一律当普通文字
             if ch == '<':
                 rest = data[i:]
                 if rest.startswith(TASK_OPEN):

@@ -79,6 +79,7 @@ class MainWindow(QMainWindow):
         self.life=LifeService(self.database); self.life_worker=None   # 功能四：她自己的生活（按兴趣去看点东西，值得说的来分享）
         self.outreach_scheduler=ProactiveScheduler(self.database,self.purposes,self.proactive,life=self.life)
         self.purpose_ids={}; self.purpose_worker=None; self.scheduler_ticks=0; self.outreaches={}
+        self.outreach_valid={}; self.withdrawn=set()   # 桌面主动消息：第一处可见输出前还该不该说；撤回了的轮次（Codex PR #48 第三轮）
         # P5：词元按用途记账、每日额度；干活（agent）会话
         meter.set_recorder(meter.database_recorder(self.database)); self.quota=meter.Quota(self.database)
         self.agent=AgentSession(self); self.pending_tasks={}
@@ -560,11 +561,34 @@ class MainWindow(QMainWindow):
 
     def _expression_event(self,generation,payload):
         if not self.coordinator.accepts(generation) or self.closing:return
+        if not self._still_wanted(generation,visible=payload[0]=='text' or payload[1].kind=='attachment_ready'):return
         if payload[0]=='text':self._token(generation,payload[1]);return
         _,event,media=payload
         if event.generation_id!=generation:return
         if event.kind=='attachment_ready':self._display_attachment(generation,event.attachment,media)
         elif event.kind=='final':self.expression_results[generation]=(event.result,media)
+
+    def _still_wanted(self,generation,visible):
+        """桌面主动消息在第一处可见输出（第一个字、第一张图）之前，再问一次还该不该说：分享正在生成时关掉了“自己的生活”，
+        就撤回这一轮——不显示、不朗读、从聊天记录拿掉、不记为送到（Codex PR #48 第三轮）。已经显示出来的不追回。"""
+        check=getattr(self,'outreach_valid',{}).get(generation)
+        if check is None:return True
+        try:ok=bool(check())
+        except Exception:ok=False
+        if ok:
+            if visible:self.outreach_valid.pop(generation,None)   # 这次就要显示了：之后不再撤回
+            return True
+        self._withdraw(generation);return False
+
+    def _withdraw(self,generation):
+        self.outreach_valid.pop(generation,None); self.withdrawn.add(generation)
+        for worker in list(self.workers):
+            if getattr(worker,'generation_id',None)==generation:worker.cancellation.cancel()
+        if self.coordinator.active==generation:self.coordinator.cancel(False)
+        item=self.items.get(generation)
+        if item is not None and hasattr(item,'withdraw'):item.withdraw()
+        self.controller.expression.cancel(generation,self.reply_characters.get(generation,self.controller.character.id))
+        self.pet.hide_activity()
 
     def _display_attachment(self,generation,attachment,media):
         if not attachment or attachment.delivery_id in self.displayed_attachments:return
@@ -607,13 +631,17 @@ class MainWindow(QMainWindow):
         key=self.proactive_keys.pop(generation,None)
         if key and state!='complete': self.database.release_proactive(*key)
         outreach_done=self.outreaches.pop(generation,None)
+        getattr(self,'outreach_valid',{}).pop(generation,None)
+        withdrawn=generation in getattr(self,'withdrawn',()); getattr(self,'withdrawn',set()).discard(generation)
+        if withdrawn: state='cancelled'   # 撤回的主动消息：不算说过
         purpose_id=self.purpose_ids.pop(generation,None)
         if purpose_id:
             if state=='complete': self.purposes.delivered(purpose_id)
             else: self.purposes.release(purpose_id)
         self.reply_status[generation]=state
         self._sync_delivery(generation); self.first_token.discard(generation)
-        if not self.coordinator.accepts(generation) or self.closing:
+        if withdrawn: self.database.drop_reply(generation,self.reply_characters.get(generation,self.controller.character.id))
+        if withdrawn or not self.coordinator.accepts(generation) or self.closing:
             if outreach_done: outreach_done(False,'desktop')
             return
         self.pet.hide_activity()
@@ -824,6 +852,7 @@ class MainWindow(QMainWindow):
         generation=self.coordinator.active=uuid4().hex
         self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
         self.outreaches[generation]=done
+        if outreach.source=='share' or outreach.payload.get('origin')=='share': self.outreach_valid[generation]=valid
         self._start(generation,proactive=outreach.intent)
 
     def _proactive_on_qq(self,intent,done,taken=None,queued=None,still_valid=None):
