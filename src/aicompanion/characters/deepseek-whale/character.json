@@ -10,14 +10,13 @@
   "order": 10,
   "theme": "DeepSeek 二创萌化角色",
   "renderer": {
-    "kind": "sprites",
+    "kind": "spritesheet",
     "path": "sprites/sprites.json",
-    "display_height": 300,
     "rig": {
-      "source": "posepack",
-      "path": "rig/rig.json",
-      "note": "原鲸娘十姿态分层包（art/deepseek-whale 用 tools/rig_studio.py compile-poses 编译）；加载失败时依次退回本机 Coopanion 大肥鱼、整张立绘"
+      "source": "pack",
+      "path": "rig/rig.json"
     },
+    "display_height": 300,
     "vocab": {
       "expressions": {
         "平静": "neutral",
@@ -28,7 +27,8 @@
         "慌张": "drag",
         "晕": "dizzy",
         "害羞": "shy",
-        "得意": "smug"
+        "得意": "smug",
+        "气鼓鼓": "pout"
       },
       "motions": {
         "点头": "nod",
@@ -38,9 +38,18 @@
         "跳": "jump",
         "转圈": "spin",
         "歪头": "tilt",
-        "摇摆": "sway"
+        "摇摆": "self_hug",
+        "喝奶茶": "milk_tea",
+        "伸懒腰": "stretch",
+        "行礼": "curtsy",
+        "好奇": "curious",
+        "捂脸": "shy_peek",
+        "小跳": "happy_hops",
+        "鼓脸": "pout_stomp",
+        "偷笑": "giggle"
       }
-    }
+    },
+    "animation": "animation-aboutme/animations.json"
   },
   "voice": {
     "language": "zh",

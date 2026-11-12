@@ -4,6 +4,10 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| T20-动画 | 鲸鲸默认播放本机安装的 Aboutme 大肥鱼，缺包时使用内置自绘鲸娘；分层源稿可从 `fa54555` 找回 | Codex | 独立审查后修订，待复核（PR #25） | [任务说明](tasks/T20-original-whale-animation.md) · [安装与署名](aboutme-pet.md) |
+| OSS-文档清理 | 负责人 2026-11-12 要求删除过时文档：计划书 v1～v3、T14 原始方案、`docs/tasks/evidence/` 下的 T14 评测证据；引用处改为指向 git 历史（提交 `7ebc39c`） | Claude 文档；Codex 审查 | 已合入（PR #50，`82eaeee`） | 旧自绘鲸娘的运行素材按 #25 的回退需求保留 |
+| OSS-Live2D-Core | Live2D Cubism Core（专有许可）从仓库和打包版本中移除：用户按需运行 `tools/fetch_avatar.py` 下载；缺少时导入提示获取方法、启动退回自带形象；`.gitignore`、wheel 和 `build_windows.py` 都排除 Core | Claude 实现；Codex 审查 | 待审查（`task/oss-live2d-core`，叠在 #44 上） | 负责人 2026-11-11 要求；动到 `ui/main_window.py`、`pyproject.toml`（共享文件，改动见 PR） |
+| OSS-开源准备 | 项目取名 Whalemate · 鲸伴；重写中文主 README 并新增英文版 README.en.md；致谢参考过的开源项目与大肥鱼社区；新增 MIT LICENSE（Live2D Cubism Core 等第三方组件除外） | Claude 文档；Codex 审查；负责人确认 | 待审查（`task/oss-readme`） | 美术素材按 MIT（负责人 2026-11-11 决定）；是否改包名 / 仓库名待定 |
 | PR42-冲突 | 合入当前目标分支 #41，保留关系设定与声线修复记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计另行记录 |
 | PR41-冲突 | 合入最新协作基线，保留默认声线与群聊实施记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计结果另行记录 |
 | PR40-冲突 | 接入已合并 PR #39 的基线，保留语音与群聊两份实施记录 | Codex | 已解决（负责人决定合并 PR） | 仅 Markdown 冲突；负责人明确不做回归测试 |

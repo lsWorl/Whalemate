@@ -1090,6 +1090,132 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 验证：`tests/test_stance.py` 新增 5 项（认出自称她爹的说法、外人说了之后好感信任都降且带着气、爹本人说不算、群里四个人各自的关系都写进提示且不带号码、说过不理的人有标注、只有一个人时不加）；容器全量 666 项除基线环境错误外通过，拦截外网 0 次。
 - 没验证：真实模型下她是否真的生气、是否按关系读上下文；Windows 离线检查。
 
+### 2026-11-10 T20：撤回外部外观，原鲸娘自绘补帧与逐帧预览（Codex，草稿待审）
+
+- 用户要求回退 #22 并由 Codex 基于原形象绘制流畅动画；#22 已在未合入时关闭，主项目继续原鲸娘。新分支 task/t20-original-whale-animation 从 e709ace 独立实现，没有外部 Aboutme / dsh-pet / Coopanion 图片或音轨。
+- 内置 image_gen 基于原 idle / talking / thinking 各画 6 张关键帧，共 18 张；原始输出、完整提示词、归一化图和锚点记录保存于 art/deepseek-whale/animation-keys-v1。离线脚底对齐与双向光流补间形成 24 fps 循环，其余沿用原画小幅运动，共 13 动作 / 960 帧，约 28.3 MiB 图集；不声称每帧均为新画或全套大幅肢体动画已完成。
+- 自有 Qt 图集视图：后台解码、单图集缓存、保留原 384 分辨率、初始朝向、动态透明命中、隐藏释放、回收及切回原外观。角色卡只新增动画路径，原图与其他字段保持；未访问真实用户库、修改语音或 Agent。编译只用已有 Pillow / NumPy，锁定离线版本，不新增运行依赖。
+- 动画专项 16 项通过；MCP 单独 12 项与动画组合 28 项通过；三次完整 tools/run_checks.bat 均执行，最后 675 项中 667 通过 / 7 跳过 / 1 错误，62.410 秒。未通过项为既有 test_mcp 鉴权测试的本地 WinError 10053，原因未定位，不能记为全量通过。
+- 桌宠 Smoke 三次通过，最终 renderer=AnimationAvatar / passed=true / failed_checks=[] / remaining_workers=0；包括透明、后台解码、帧推进、拖拽 / 下落、八姿态、外观往返及聊天链路。最终待机性能仅统计预览进程树：稳定 15 秒后采样 10 秒，工作集 260.6 MiB / 私有 172.5 MiB，单核 CPU 3.3%、20 核整机 0.16%。
+- 未完成：用户审图 / 真机观感、另一方代码审查、全量 MCP 错误处理 / 明确延后、长时与高 DPI / 多屏及切换峰值。当前为草稿 PR 候选，非阶段验收或可合并。详情及本机证据见 docs/tasks/T20-original-whale-animation.md。
+
+### 2026-11-10 T20 追加：动作切换过渡（Codex，PR #25）
+
+- 用户要求切换时增加过渡。新增站→工作、站→抱鲸犯困的 8 张中间原画，内置 image_gen 输出、完整提示词与归一化记录保存在 art/deepseek-whale/transition-keys-v1。
+- 编译 22 段 / 200 帧一次性过渡，单段约 0.33～0.58 秒，端点无损匹配目标循环；缺少直连时最多两段衔接。大姿态采用头部 / 脚底对齐的单原画逐格变形，避免双图混合的双脸；来源与 SHA256 在 TRANSITIONS.json。
+- 播放器新增有限预载、末帧等待、当前画面打断续接、拖拽优先、显示帧透明命中及点播时长修正，修复淡入使身体透明度下降。未改主窗口、Agent、语音或真实用户数据。
+- 验证：本轮新增 13 项、累计 29 项动画回归；最终完整 tools/run_checks.bat 退出 0，688 项中 681 通过 / 7 跳过，55.194 秒。Smoke passed=true / failed_checks=[] / remaining_workers=0，真实完成 idle→working→thinking→idle；首轮新增场景的旧挥手干扰已隔离并保留失败证据。之前 MCP 间歇错误本轮未复现，未修改鉴权代码。
+- 真实临时预览连续完成 8 个目标和 8 段过渡，42 ms 间隔、包含截图开销的主进程工作集采样峰值 307.3 MiB；录屏 output/transitions/live-transitions.gif。新增资源 17.37 MiB，未新增运行依赖。
+- 未验收：用户对切换自然度和原形象一致性的真机确认、另一方代码审查、长时 / 多屏 / 高 DPI / 低性能机器。PR 保持草稿，不能标记阶段完成或可合并。
+
+## 2026-11-10：T20 六组性格动作、低步幅与连续混合（Codex，PR #25 草稿）
+
+### 本轮最终结果（Codex，2026-11-10）
+
+- 新增六组性格 / 日常动作，每组六张，共 36 张：叉腰得意、抱臂气鼓鼓、害羞揪袖、惊讶后仰、捧奶茶偷闲、伸懒腰。得意 / 害羞 / 惊讶分别映射独立动作；新增气鼓鼓、喝奶茶、伸懒腰词汇，右键可点播；轻戳使用新气鼓鼓。角色卡除 renderer.vocab 外逐字段与上一提交一致，persona / voice 未变。
+- 低步幅正面 / 背身各六张，共 12 张，保留鲸娘特征。撤下的高抬腿草稿移到 output/personality-first-check/high-step-art，不进入 PR。运行步态上身用自绘图小幅补间；裙摆下提取两条腿做离线小步分层运动，横向最大 10 px、抬升最大 5 px，近直膝。统一双脚基线；不是 24 张手绘或模型训练，也不是运行时新增骨骼引擎。
+- 另外给取奶茶、伸懒腰、转身各新画四张中间姿势，共 12 张，柔和小段光流接续。加上前两轮素材，当前运行主循环用 66 张新绘关键帧、专用过渡用 20 张，共 86 张（不计撤下草稿）。
+- 当前 20 动作 / 1368 循环帧，36 段一次性过渡 / 372 帧；实际 WebP 图集共 72.05 MiB。三个新中间姿态的往返各 18 帧 / 24 fps（0.75 秒），其他片段保持 8 或 14 帧；端点无损像素 / 来源哈希验证通过。
+- 按 Godot Sync / Carry 和 Spine 混合思路，给相容站姿声明混合组，直接实时混合、接续归一化相位，旧图集在 0.22 秒淡出内继续播放，结束 / 隐藏即释放。被打断时使用当前显示图，拖拽仍优先。大姿势使用新画片段，其他轮廓补间柔和续接，不再在中间时刻硬换一张线稿。技术来源见 [动画参考](T20-animation-references.md)，没有复制外部代码 / 人物 / 音轨。
+- desktop_pet.py 从仅 x 方向改成受当前屏幕边界约束的二维路线，浮点累计位置保持斜向总速度一致。起停采用加速度 / 制动，基础速度 42 px/s 随缩放变化；移动距离驱动脚步，加载 / 转身 / 表演等待时不滑走。向上用背身，其余使用正面及镜像，两套透视支持八种路线，并非八套独立透视画。右键“走几步”可点八方向和停止，闲时散步也有小范围上下 / 斜向变化；静音 / 专注仍禁止主动散步，聊天 / 拖拽 / 下落 / 隐藏会打断。
+- 最终 tools/run_checks.bat 退出 0：706 项，699 通过 / 7 跳过，56.602 秒。Smoke passed=true / errors=[] / failed_checks=[] / remaining_workers=0；六组性格动作按对应目标显示，三段实际行走覆盖斜上 / 竖直 / 水平及正反步态，全部到达。原站坐、聊天、拖拽、透明和外观往返检查仍通过；同组思考改为直接混合，Smoke 已按该行为检查实际目标。
+- 真实播放器另外录制六组动作和五条路线，每条步态均实际推进 24 个相位，全部到达 / 无错误。84 ms 截图间隔、含 PNG 录制开销的主进程工作集采样峰值 328.8 MiB、最低 188.1 MiB；不含启动器 / 控制台，不作为长期 / 全机器峰值。录屏与报告：output/personality-animation/live-walking.gif、live-walk-report.json。
+- 第一轮 702 项检查 / Smoke 与原迈步录屏已通过，但用户随后要求低抬脚与更流畅切换，因此仅保留在 output/personality-first-check 作为历史，最终证据以上述新录屏和完整检查为准。普通光流大幅迈步曾有重影，改为清晰单原画 / 低幅腿层后未沿用该草稿。
+- 素材与完整提示词：art/deepseek-whale/personality-keys-v1/prompts.json；locomotion-keys-v2/prompts.json；transition-keys-v2/prompts.json。来源 / 参数 / 哈希在 SOURCE.json 与 TRANSITIONS.json；离线重建用 tools/build_original_animation.py（串联新动作与过渡），未增加运行依赖。新离线脚本 / 桌面行走 / 播放器 / 动画解析器 / 测试 / Smoke 为本轮代码范围，不改 Agent、main_window.py、存储结构或现用语音。
+- 待验收：用户对低步幅、脚步与路线配合、相位混合、大姿势衔接的真机观感；另一方在最新提交审查；长期、多屏、高 DPI、低性能机器。艺术验收不能被单元测试替代，PR #25 继续草稿，不标记可合并。
+
+## 2026-11-10 · T20 唯一参考十动作与旧版回退（Codex，草稿待验收）
+
+- 只以用户本轮上传的 user-identity-reference.png 为本批角色造型来源，使用内置 image_gen 绘制左右行走与八个互动：元气挥手、屈膝礼、歪头观察、捂脸偷看、三次小跳、自抱晃动、鼓脸跺脚、捂嘴偷笑。每组六张关键姿态，另绘统一站姿；左行走单独细化三分之四朝向。首稿保留审计，不参与运行。完整提示词与输入关系在 art/deepseek-whale/reference-motion-v1/prompts.json。
+- 本批每项 384×384、12 FPS、120 帧、精确10秒，共1200帧；另有120帧标准站姿。正常站姿头顶约18%、脚底约85%、人物高度约67%；屈膝 / 跳跃保持同一人物尺度而允许姿态高度变化。全部帧实际最小边距54px（14.1%），超过10%要求；所有八个互动首末共用同一标准站姿，行走首末同一相位。
+- 不是1200张手绘或视频模型输出。小段光流与单原画采样补间不交叉叠出第二张脸 / 第二双手；八个步态周期中只在两周期使用闭眼关键姿态；三次小跳在2～6秒中完成，分段接续连续。WebP无损编码使用exact=True，已对编码后RGBA首尾比较；来源 / 图集SHA和构图记录在新包SOURCE.json。
+- 新运行包 animation-reference-v1 的11个图集共68.44MiB。原 animation-original 的20动作图集保留不覆盖，通过replacementPack在表达层合成，默认共30动作、保留22段旧大姿势过渡。其他旧动作解码时等比构图适配到新版站姿，不改变角色身份或记忆。
+- 已按用户选择接入：点击 / 摸头、挥手 / 害羞 / 生气、鞠躬 / 歪头 / 摇摆 / 小跳及新增词汇映射对应动作。右键动画菜单优先列十项新动作，去除兼容别名重复。右键“动画版本 → 旧版动画（回退）”可切换；版本偏好按角色保存，实际来回切换通过。
+- 新模式使用独立左向 / 右向原画，原地动画不把窗口位移烘进素材；桌面走动由实际距离推进，八周期换算不再受帧数 / fps改变影响，路线以半个步态周期规划停步。新模式不再整图镜像待机、衣服或鲸鱼图案；转向 / 重设路线保留当前显示画面，加载完成后才继续移动。本批按最新规格提供左右行走；旧二维走动留在回退模式。先前未提交的二维基准图实验已归档 output/walking-fix/superseded，不进入新素材包。
+- 最终 tools/run_checks.bat 退出0：716项，709通过 / 7跳过，60.459秒。Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0；十个新动作逐一实际加载，全部120帧 / 12FPS；左右实走均到达；新→旧→新回退与旧版站坐过渡仍通过，原聊天、拖拽、透明、八姿态和外观切回检查保留。设置和测试均为临时库，未读取.env或真实用户库。
+- 最终实际播放器录屏：90帧、84ms截图间隔，左右各120px均到达、各实际推进60个图集帧；using_reference=true、无错误。含PNG录制开销的主进程工作集采样峰值371.7MiB、最低207.3MiB，不含启动器 / 控制台，也不作为长期峰值或350MB目标验收。文件：output/reference-motion-v1/runtime-walking.gif、live-walk-report.json。
+- 交付：output/reference-motion-v1/all-actions.gif、walking-pair.gif、各动作GIF / 透明动态WebP、frames/<动作>/000..119.png，共1200张PNG；DeepSeek-10-actions-12fps.zip为161.1MiB。完整离线重建 tools/build_original_animation.py 已串联本批构建；不增加依赖，不改Agent、main_window.py、数据库结构或现用声音。角色卡逐字段核对，voice / persona与上一提交一致，仅renderer.vocab扩展。
+- 待验收：用户对脸型 / 发型 / 服装细微一致性、肢体遮挡与插值自然程度的审图；这仍是有限关键姿态补间，不能由帧数 / 边距测试证明完整物理惯性。另一方最新提交代码审查，以及长期、多屏、高DPI、低性能机器和不含录制开销的内存验证未完成。PR #25继续草稿，不标记可合并。
+
+## 2026-11-10 · T20-动画同步最新基线与关闭保护（Codex，草稿）
+
+已rebase到collaboration-baseline 5286e1d，联合保留双方任务 / 实施记录；社交T20与动画T20编号重叠，动画清单使用T20-动画，分支和文件名沿用旧名。没有覆盖已合入社交 / 词库代码。
+
+最终tools/run_checks.bat退出0：803项，796通过 / 7跳过，103.802秒；Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0，十动作 / 左右走动 / 新旧回退均通过。新增关闭保护：最后保存一次位置，关闭后的移动 / 缩放与晚到回调不再写设置；首次同步日志中的两次临时库OperationalError在最终完整检查中未再出现，原日志保留审计。
+
+新基线录屏91帧，左右各120px到达、各推进60个图集帧，using_reference=true；短时主进程工作集峰值348.3MiB、最低204.4MiB（含PNG录制，不含启动器 / 控制台），不作为长期内存目标验收。最新报告与GIF仍在output/reference-motion-v1；同步前报告 / 录屏另存pre-baseline前缀。本批图集与动作逻辑不变；用户审图、另一方审查、长期 / 多屏 / DPI和低性能机器仍未验收。
+
+## 整帧行走替换与验证（Codex，2026-11-10）
+
+- 按用户最新要求撤下拆手脚 / IK 实验，改用完整人物原画帧。左右各一张3列6行清稿，使用其中17张独立完整姿势，按17×7+1组成120帧；末帧直接复用首帧。内置image_gen生成，原始用户图为唯一身份参考；全周期清稿统一脸型、服装与配饰，过程输入和完整提示词在art/deepseek-whale/walk-cels-v1。不是120张不同新画，不是视频生成模型输出。
+- 只整帧裁格、共同等比缩放、水平居中及接地线对齐，不切开手脚、不扭曲关节、不用光流生成行走中间帧。固定图纸含少量跨格留白，裁格外扩后只保留本格完整人物连通主体，避免切掉鞋尖或带入邻格碎片。运行两套仍384×384、10秒、12FPS、120帧，首尾编码后RGBA完全一致，左右最小安全边距58px。
+- 参考aboutme-pets的完整画面图集及逐动作JSON字段组织方式，新增walking_left.json / walking_right.json；项目仍沿用自己的播放器和聚合清单。导出链tools/build_walk_cels.py → build_reference_motion.py → build_original_animation.py已接通。运行每帧与17张整帧PNG逐像素对应，并记录序列和哈希。
+- 新模式桌面步速按图集距离/时长计算，当前300px显示宽度为28px/s；保持距离驱动、独立左/右方向及原有版本回退。八个互动WebP逐字节与2fe42f0一致，旧版资源保留。新包11个WebP共67.17MiB。分层实验与重复同侧迈步的草稿回收到output，不纳入PR。
+- 最终tools/run_checks.bat退出0：807项，800通过 / 7跳过，114.938秒。Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0；十动作加载、左右到达、新→旧→新回退、原聊天/拖拽/透明等检查均通过。新增整帧图集像素/比例/来源检查和图集周期匹配步速回归。测试与实测使用临时库和Mock，未读取.env或真实用户库。
+- 实际播放器录屏120帧、84ms截图间隔；左右各120px均到达，各推进52个图集索引，using_reference=true、无错误。含PNG录制开销的主进程工作集短时采样峰值395.4MiB、最低192.0MiB；不含启动器/控制台，不作为长期峰值或350MB目标通过。记录output/reference-motion-v1/runtime-walking.gif、live-walk-report.json。
+- 交付预览walking-pair.gif、可暂停/逐帧拖动的独立walking-preview.html、all-actions.gif、1200张PNG和DeepSeek-10-actions-12fps.zip（250.03MiB），均在output/reference-motion-v1。按帧播放与几何检查不能证明动画已自然；面部视角/服装细节一致性、两腿遮挡和脚底接触仍待用户审图。另一方最新提交审查、长期内存、多屏、高DPI与低性能机器未验证；PR #25保持草稿，不标记可合并。
+
+- 重建验证边界：本轮实际执行了左右整帧导出，并单独验证compile_action入口返回120帧与一致端点；未再次重导旧版全部原画/过渡素材。上面的“导出链接通”指代码已接入，非本轮全量重导出记录。
+
+## 整帧补画与24FPS播放（Codex，本轮结果）
+
+- 用户要求“多画几帧让动作更加流畅”。左右各新增17张完整人物过渡原画，和原17张交替组成34张/周期；旧17张PNG保持像素一致。新增完整帧由内置image_gen绘制，不拆手脚、不用光流造帧；相邻A/B图、统一画风输入、最终清稿和完整提示词存于art/deepseek-whale/walk-cels-v2。初稿背景残留和新旧画风差异经清理后再导出，未采用稿放output回收区。
+- 行走升级为24FPS、10秒、240帧（34×7+2个闭环帧），首末RGBA一致，左右最小边距58px；八个互动仍12FPS/120帧，WebP与a39378d逐字节一致。距离参数280和名义步速28px/s不变，保留旧版回退。不是240张独立新画。
+- 240格384px全图会超过既有32M像素限制，因此新增可选frameMap时序引用，物理图集仅存34张完整原画（8列5行，5,898,240像素）。索引长度、整数类型、范围及原图集像素上限严格校验；当前帧、过渡中旧帧及构图处理使用实际格索引。默认无frameMap的旧资源兼容。每个运行帧都逐像素对应完整原画，未通过运行时扭曲来补画。
+- 两张行走WebP分别1,838,762与1,950,256字节，新包全部11张WebP共58.18MiB。离线编译和总预览支持混合FPS，逐动作JSON带FrameMap，项目独立逐帧网页已适配。实际运行了tools/build_walk_cels.py导出；旧版所有原画/过渡的全量重导出本轮未再次执行。
+- tools/run_checks.bat退出0：809项，802通过 / 7跳过，130.039秒。Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0；十动作加载、左右到达、新旧回退与原交互通过。新增真实Qt红蓝格回归覆盖帧映射和淡出旧帧；旧原画保留、新增原画来源、等比对齐与帧像素匹配检查均通过。临时库/Mock，不读取.env或真实用户库。
+- 实际播放器42ms间隔录制237张，左右各120px均到达，各实际推进103个逻辑帧索引，using_reference=true、无错误。主进程工作集短时采样峰值345.1MiB、最低206.5MiB，含PNG录制开销，不含启动器/控制台，不代表长期内存或350MB目标验收。报告live-walk-dense-report.json，录屏runtime-walking-24fps.gif。
+- 新交付在output/reference-motion-v1：walking-pair-24fps.gif、walking-before-after.gif（同速12/24FPS对照）、walking-preview-24fps.html、all-actions-dense.gif、1440张PNG和DeepSeek-10-actions-walk24fps.zip（276.51MiB）。原12FPS预览和包保留。全套自动检查不能证明自然度与角色细节完全一致，仍待用户对补帧连贯性/遮挡的真机审图、另一方最新提交审查，以及长期/多屏/DPI验证。PR #25继续草稿，不标记可合并。
+
+## 2026-11-11 · T20-动画改为Aboutme画面（Codex，待人工验收/合并）
+
+用户否定此前自绘并要求直接采用Aboutme；上面各阶段自绘记录仅为历史，不再是本分支当前交付。### 当前范围
+
+用户明确要求直接切换 hunmer/aboutme-pets，并授权清理先前不合格自绘。
+停止自绘迭代，固定上游提交 1221697ec20c2057829f9d7fcbd316fee8b3df65，
+选择 dsh/dsh1 共21个源动作。本机打包成22个逻辑动作（左/右行走共享源图）。
+上游完整帧、原12FPS、统一512×288，行走采用 moving 标注15～94帧；
+右行走镜像，角色不重画、不拆肢体、不额外插帧。仅支持左右路线。
+人格、关系、音色、聊天渠道与Agent不在本轮变更范围。
+
+### 代码与安装
+
+- 新增 tools/install_aboutme_pet.py、tools/aboutme-pet.lock.json 与 docs/aboutme-pet.md，
+  固定路径/大小/SHA256；上游贴图及转换包放 Git 忽略的本机目录，不提交公开PR。
+- 安装沿用已有 Pillow 12.3.0，锁定 tools/aboutme-requirements.txt，不增加运行依赖。
+  先联网下载；--offline 可从校验缓存重装。运行时不联网、不自动下载。
+- 角色默认指向 animation-aboutme；缺少本机包时退回基线立绘。
+  沿用后台Qt解码、有限预载、可打断淡入、透明穿透、聊天和拖拽。
+- 移动距离驱动帧相位，按原片段时长40画布px/s；不猜测半步相位去缩放步态。
+  点击别名解析到实际源动作，菜单保留左右入口，右向明确标记镜像。
+- 保留通用解析、frameMap、过渡和移动回归，退休只针对失败素材/生成工具的测试。
+  新增合成图集完整格顺序/透明、缓存拒绝、离线回退、方向和固定步速测试。
+- 不从本机 Coopanion 读取或导出。归属与限制见上游 README/NOTICE 和本接入说明。
+
+### 回收
+
+426个本任务新增的旧图纸/运行包/专用工具与测试，共227,012,097字节；
+另回收14个旧预览目录中2,604个文件，共1,087,123,984字节。
+均移动到 output/recycle/aboutme-migration-2026-11-11，可恢复，未永久删除。
+receipt.json 与 old-previews/receipt.json 分别列出原路径/数量。
+用户原始参考图 user-identity-reference.png、T5/T6基线立绘/骨骼及协作者
+未跟踪 locomotion-locked-v1 未动；其他任务目录未清理。
+
+### 验证（Windows）
+
+- tools/run_checks.bat 退出0：792项，785通过/7跳过，107.018秒；
+  Smoke passed=true、errors=[]、failed_checks=[]、remaining_workers=0。
+  实际22动作加载、待机→忙碌→思考→待机淡入、左右60px到达、
+  切基线立绘再切回Aboutme及原聊天/拖拽/缩放/透明穿透等检查通过。
+- 点击/菜单小修正后针对性72项退出0，2.689秒；Pillow可选测试守卫随后仅改导入边界。
+- 临时库+Mock实际窗口录制93帧，84ms间隔：左右各120px到达，
+  各推进36个帧索引，using_aboutme=true、errors=[]。
+  主进程工作集短时峰318.1MiB/最低235.5MiB，含PNG录制开销；
+  不包含启动器，不代表长期内存目标验收。output/aboutme/live-report.json、
+  runtime-walking.gif。本机21张WebP共121,907,918字节。
+- 未读取.env、真实用户库或私有素材；未联网调用模型、语音或麦克风。
+- 未验证：源动画的自然度/循环接缝人工验收、长期内存、多屏/高DPI/低性能设备、
+  另一方最新提交代码审查。未合并到D盘基线，不标记“可合并”。
 ## 2026-11-10：项目计划书 v4（纯文档，Claude）
 
 - 新增 `docs/project_plan_v4.md`，按负责人要求作为下一阶段的开发依据：七项功能（模型自由切换、可扩展人格包、持续情绪、自己的生活、真正退出、记忆召回与上下文预算、圈子与跨天办事）、现状基线（`5286e1d`）、四条硬底线、开发参考的成熟方案及许可边界、四个阶段的开发顺序、验收方式与待实测事项。
@@ -1548,6 +1674,54 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 仅追加记录和两张不含私人数据的设置截图，业务代码未改；沿用已通过的 963 项单测和 Windows Smoke，不重复全量。临时验收进程已关闭，合成数据与完整证据留在本机忽略目录。
 - 未验证：真实模型话术、真实 QQ 发送、连续多日真实使用及整个阶段的负责人长期体验；不写成这些项目均已通过。
 
+## 2026-11-11 开源准备：取名、双语 README 与 MIT 许可（task/oss-readme，Claude）
+
+- 做了什么：项目对外名称定为 **Whalemate · 鲸伴**（包名 `aicompanion` 和仓库名不变）；`README.md` 重写为中文主版本，新增英文版 `README.en.md`，两边互相链接；致谢一节按“运行时依赖 / 设计参考 / AstrBot 社区插件 / 大肥鱼社区”列出计划书和任务说明里参考过的项目，并写明 GPL / AGPL 项目只借鉴思路；新增 `LICENSE`（MIT），README 写明 Live2D Cubism Core、第三方组件和各公司商标不在 MIT 范围内，并加上同人与声音声明。
+- 依据：`docs/project_plan_v4.md`、`docs/tasks.md`、`docs/tasks/*.md` 中出现的参考仓库；`src/aicompanion/assets/live2d/LICENSE.md`。
+- 怎么验证：只改 Markdown 和新增 LICENSE，不涉及代码，未运行回归；人工核对 README 中引用的本地路径都存在于仓库中。
+- 没验证：GitHub 页面上的实际渲染效果；README 里的功能状态按 `docs/tasks.md` 当日状态写，之后需要随任务进展更新。
+- 审查修复（Codex PR #44 第一轮，1 项 P1、2 项 P2）：
+  - P1：MIT 只覆盖代码和文档。美术素材（`art/`、角色 `sprites/`、`rig/textures/`、`assets/icons/`）的对外许可**尚未由负责人决定**，在中英文 README 里明确排除，并注明保留所有权利；`art/README.md` 补了同样的说明。
+  - P2：可选依赖的安装命令改为 `.\.venv\Scripts\python.exe -m pip install ...`，和快速开始用同一个虚拟环境。
+  - P2：许可说明补上 Live2D“可扩展应用”的情况：本项目支持导入任意模型，可能属于这一类，发行前需要 Live2D 审核并签订专门协议，小规模豁免不适用。依据是 Live2D 官方说明页；**分类和授权都还没有向 Live2D 确认**。
+- 负责人决定（2026-11-11）：美术素材也按 MIT 许可发布。中英文 README 的许可范围改成“代码、文档和美术素材”，`art/README.md` 记录了这项决定；同时写明素材里的公司徽标仍是商标，MIT 不授予商标权。
+
+## 2026-11-12 Live2D Cubism Core 不再随项目分发（task/oss-live2d-core，Claude）
+
+- 做了什么：按负责人要求，把 `src/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js`（Live2D 专有许可）从仓库删除并加入 `.gitignore`；`pyproject.toml` 用 `exclude-package-data` 把它排除在 wheel 之外；`tools/build_windows.py` 默认从构建结果和覆盖更新的发布目录里删掉 Core，新增 `--keep-cubism-core` 只供自用；`tools/fetch_avatar.py` 下载前先打印许可链接。
+- 运行时：`avatar/model_package.py` 新增 `cubism_core_available()` / `require_cubism_core()`；设置里选择或手动填写外部模型时，缺少 Core 会弹出获取方法；`AvatarView.set_model` 同样检查；`main_window._apply_avatar` 在缺少 Core 时退回角色包自带的骨骼形象或立绘，状态栏只提示一次。默认角色从来不加载 Core（骨骼形象只用 PixiJS），不受影响。
+- 文档：中英文 README 的可选组件和许可说明、`docs/live2d_model_sources.md` 已更新。
+- 怎么验证：`PYTHONPATH=src:tests QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests`（容器，Python 3.13）→ 967 项，新增 4 项全部通过；失败 1、错误 2 均为 `test_companion_dates.LunarTests`，原因是容器缺少 `lunar_python`，不改本分支代码时同样失败。
+- 没验证：Windows 真机 `tools\run_checks.bat`；真机上缺少 Core 时的提示和退回效果；`build_windows.py` 实际打包；`fetch_avatar.py` 里 Live2D SDK 下载地址（`CubismSdkForWeb-4-r.7.zip`）是否仍然有效。
+
+## 2026-11-12 清理过时文档（task/oss-docs-cleanup，Claude）
+
+- 做了什么：按负责人要求删除 `docs/project_plan.md`、`docs/project_plan_v2.md`、`docs/project_plan_v3.md`、`docs/tasks/T14-smart-expression-original-2026-11-08.md` 和 `docs/tasks/evidence/`（T14 评测证据 11 个文件）。`project_plan_v4.md`、`AGENTS.md`、`T14-smart-expression-design.md` 里的引用改为指向 git 历史（提交 `7ebc39c` 及之前）。本文件中较早的记录保留原样，其中提到的旧计划书同样可在该提交之前的历史中查看。
+- 怎么验证：只删文档、改引用，不涉及代码；检查仓库里的 Markdown、Python、JSON 和 bat 文件，除本文件的历史记录和已完成任务的说明外，没有其他地方引用被删的文件。
+- 没验证：没有运行回归（纯文档改动）。旧的自绘鲸娘美术不在这次范围内，随 #25（Aboutme 大肥鱼）一起处理。
+- 追加（负责人 2026-11-12）：`docs/live2d_model_sources.md` 删除艾米莉娅和 Haru 示例的旧记录，只保留 Cubism Core 获取方式、导入步骤和兼容性说明；Codex 第一轮 P2 指出的 `T14-claude-handoff.md`、`P0-architecture-constraints.md` 引用已补上 `git show 7ebc39c:<原路径>`。
+
+## 2026-11-12 T20：鲸鲸改用本机 Aboutme 动画（PR #25 首轮，提交 `b570e4b`）
+
+- 将协作基线 `fa54555` 合入原分支，保留基线的鲸鲸角色设定及两侧既有任务、实施记录。
+- 鲸鲸采用 Aboutme 大肥鱼的 21 个源动作。使用者按上游条款将动画安装到本机，缺包时显示占位形象。中英文 README 新增安装步骤、上游署名及许可范围。
+- 此前运行使用的原创鲸娘美术移至 `art/archive/deepseek-whale/`，供创作与查阅。应用图标和已用于表情图库的六张原创图片沿用 MIT 授权。第三方图集和转换产物仅限本机安装。
+- 骨骼编辑器和形象包编译器仍供归档源包及自定义角色使用。旧表情库记录在重新扫描前也能按原图哈希找到迁移后的六张图片。
+- Windows 运行 `tools\run_checks.bat` 退出 0。1019 项单测用时 179.312 秒，1012 项通过、7 项跳过。使用本机素材的桌宠窗口加载 `AnimationAvatar`；另用 `tools\smoke_pet.py --without-aboutme --output-dir output\pr25-missing-smoke` 从无素材目录启动同一角色，窗口显示 `PlaceholderAvatar`。两份报告均为 `passed=true`，错误、失败项和剩余工作线程均为零。
+- Windows 在临时源码目录实际构建 PyInstaller onedir，核对了程序、安装器、MIT 许可、应用图标与六张表情，发布目录中没有本地动画或 Cubism Core。用残留旧图的构建缓存重建 wheel 和 sdist，分别核查 182 个条目和 261 个文件，第三方贴图、旧角色运行纹理及参考图均未进入产物。归档中的 466 张图与基线原件逐一核对了 Git blob。
+- 许可不明的参考图已从本次文件树移除。此前任务分支的历史提交 `eee17fc` 仍可追溯该文件。
+- 待验收：负责人真机确认动作观感、长期运行、多屏及高 DPI。此次未走查打包 exe 的完整交互、真实模型、语音或 QQ 链路；PR 待独立审查。
+
+## 2026-11-12 PR #25 独立审查修订：没装 Aboutme 时显示自绘鲸娘
+
+- 将 `82eaeee` 合入原分支，合并提交为 `ed58baf`。沿用 #50 精简后的 Live2D 文档，补全“角色与形象 → 桌面形象 → 选择 Live2D 模型… → 保存”。
+- 根据负责人最新决定，鲸鲸优先加载本机 Aboutme。没装或动画解码失败时使用角色包中的自绘骨骼或立绘，二者均不可用时才显示占位。用户显式选择且能加载的外部 Live2D 模型仍优先。
+- 删除首轮的 `art/archive/` 共 486 个文件。恢复运行用的两份清单和 232 张图，234 个文件与 `fa54555` 同路径内容完全一致。分层源稿和制作预览可从历史取回，例如 `git show fa54555:art/deepseek-whale/README.md`；整包导出命令见 [art/README.md](../art/README.md)。编辑及编译工具供使用者处理自己的角色素材。六张原创表情及两个图标的内容保持一致。
+- Windows `tools\run_checks.bat` 退出 0。1019 项单测中 1012 项通过、7 项跳过，耗时 191.740 秒。装有本机素材时，桌宠窗口显示 Aboutme（`AnimationAvatar`）。
+- Windows `.venv\Scripts\python.exe tools\smoke_pet.py --without-aboutme --output-dir output\pr25-fallback-82eaeee` 退出 0。使用缺少 Aboutme 的临时角色目录，窗口显示自绘鲸娘（`RigAvatar`、`rig_loaded=ready`），切成立绘并切回骨骼都成功。两次 smoke 均为 `passed=true`、`failed_checks=[]`、`errors=[]`、`remaining_workers=0`。
+- 实建 Windows PyInstaller onedir、wheel、sdist，并从 sdist 再建 wheel。每种产物中的 234 个运行文件、六张表情、两个图标均与基线原件逐一匹配。预置的未引用旧图、模拟本机图集、缓存和 Cubism Core 均未进入产物。上游 Aboutme 贴图继续仅在本机安装。
+- 待负责人复核新提交、真机确认动作观感。此次未走查打包 exe 全部交互、长期运行、多屏高 DPI 或真实模型、语音和 QQ 服务。
+
 ## 2026-11-11 V4-4a 统一主动调度（task/v4-4a-scheduler，schema 12→13）
 
 - 做了什么：
@@ -1584,4 +1758,3 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - 详见 `docs/tasks/V4-4a-scheduler.md`。
 - 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：1013 项通过（跳过 8 项）。新增回归在 e38ed29 的代码上全部失败或报错。
 - 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 发送；真实模型话术。
-

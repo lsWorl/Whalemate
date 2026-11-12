@@ -6,7 +6,7 @@ from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
     QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
-from aicompanion.avatar.model_package import validate_model_package, ModelPackageError
+from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
 
 class SettingsWindow(QDialog):
@@ -55,7 +55,7 @@ class SettingsWindow(QDialog):
         persona.add(Section('人格','同一个她可以有几种性格：新建、复制、切换、导入 SillyTavern 角色卡，每次保存都留一个版本可以回退。'
                                   '“设为当前”后下一句话就用新人格。',self.persona_editor))
         looks=QFormLayout(); looks.addRow('桌面形象',self.avatar_mode); looks.addRow('Live2D 模型',self.model); looks.addRow('',choose)
-        persona.add(Section('桌面形象','默认用角色包自带的立绘动画；也可以导入自己的 Live2D 模型（.model3.json）。',looks))
+        persona.add(Section('桌面形象','鲸鲸优先使用本机安装的 Aboutme 大肥鱼动画，未安装时显示内置的自绘鲸娘。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
         panel=QFormLayout(); panel.addRow('背景图',bg_row); panel.addRow('背景不透明度',self.panel_opacity)
         persona.add(Section('聊天面板外观','背景图只在本机使用，不会上传或随项目分发。',panel))
         persona.finish()
@@ -408,7 +408,7 @@ class SettingsWindow(QDialog):
     def choose_model(self):
         path,_=QFileDialog.getOpenFileName(self,'选择模型','','Live2D model (*.model3.json)')
         if path:
-            try: validate_model_package(path)
+            try: validate_model_package(path); require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 QMessageBox.warning(self,'模型包无效',str(error)); return
             self.model.setText(path)
@@ -500,7 +500,7 @@ class SettingsWindow(QDialog):
     def _validate_model_input(self):
         # 手动输入路径也要检查，不能只在文件选择器里拦截损坏的模型包。
         if self.avatar_mode.currentData()=='live2d' and self.model.text().strip():
-            try: validate_model_package(self.model.text().strip())
+            try: validate_model_package(self.model.text().strip()); require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 QMessageBox.warning(self,'模型包无效',str(error)); return False
         return True

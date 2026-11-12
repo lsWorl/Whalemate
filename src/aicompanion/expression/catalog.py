@@ -64,7 +64,7 @@ class AssetCatalog:
         self.db,self.clock=database,clock
     @property
     def builtin_root(self):
-        return Path(__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'
+        return Path(__file__).resolve().parents[1]/'assets/expression'
     @property
     def root(self):
         value=str(self.db.get_setting('qq_meme_root','') or '').strip()
@@ -297,6 +297,12 @@ class AssetCatalog:
             if old is None:return None
             row.update(dict(old))
         root=Path(row['root']).resolve(); path=(root/row['relative_path']).resolve()
+        # 首次升级后，历史附件可能在图库重新扫描前打开。只迁移旧内置图片，仍核对记录的哈希。
+        if root == self.builtin_root.parents[1]/'characters/deepseek-whale/sprites':
+            from aicompanion.bridge.media import BUILTINS
+            if row['relative_path'] in {name for name, _ in BUILTINS.values()} and not path.is_file():
+                root = self.builtin_root
+                path = root/row['relative_path']
         if not path.is_relative_to(root) or not path.is_file(): return None
         try:
             with path.open('rb') as file: data=file.read(MAX_BYTES+1)

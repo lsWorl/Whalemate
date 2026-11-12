@@ -118,7 +118,7 @@ class LocationMigrationTests(StorageBase):
         expected = {'开心庆祝', '思考疑惑', '困了晚安', '惊讶被戳', '无语出错', '耐心等待'}
         rows = catalog.rows()
         self.assertEqual({r['metadata']['category'] for r in rows}, expected)
-        sprites = Path(locations.__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'
+        sprites = catalog.builtin_root
         for row in rows:
             # 原创图按内容哈希认领：直接通过审核并启用，补上内置中文说明，字节与仓库原图一致
             self.assertEqual((row['review_status'], row['enabled'], row['metadata']['license']), ('approved', 1, 'project-original'))

@@ -1,19 +1,16 @@
-# T5 鲸娘美术
+# 角色美术与许可
 
-当前只推进先前已确认的 DeepSeek 二创鲸娘，沿用原有十动作与对应标志。设计和验收参考见 [十动作预览](deepseek-whale/approved-poses-preview.png)，具体范围见 [T5 任务说明](../docs/tasks/T5-character-art.md)。
+鲸鲸优先使用本机安装的 Aboutme 大肥鱼动画。未安装时使用角色包自带的自绘鲸娘，优先使用骨骼形象，也可显示立绘。两套素材都不可用时才显示占位形象。Aboutme 的上游美术禁止商用，公开二创须署名 PC2005-cloud/dsh-pet。安装步骤和上游声明见 [Aboutme 素材说明](../docs/aboutme-pet.md)。
 
-该预览来自本项目此前生成的原创动作素材，不是 Coopanion 的贴图或导出文件。原图、裁切图层和正式源清单现已整理进 [鲸娘源包](deepseek-whale/README.md)，独立校验的 17 个状态可见 RGBA / Alpha 差异均为 0。遮挡补画、独立支点及最终动画验收仍未完成。
+项目原创美术中，自绘鲸娘的[运行骨骼及纹理](../src/aicompanion/characters/deepseek-whale/rig/)和[立绘](../src/aicompanion/characters/deepseek-whale/sprites/)、[应用图标](../src/aicompanion/assets/icons/)及[六张聊天表情](../src/aicompanion/assets/expression/)按根目录的 [MIT License](../LICENSE) 发布。公司名称和徽标仍是各自权利人的商标。
 
-## 保留的历史草稿
+## 从 Git 历史找回分层源稿
 
-| 文件 | 当前状态 |
-| --- | --- |
-| `deepseek-whale/reference-v1.png` | 侧向重设计草稿，已被原鲸娘十动作基准取代 |
-| `claude-reader/reference-v1.png` | 读书少女草稿，暂缓后续制作 |
-| `chatgpt-dragon/reference-v1.png` | 白龙草稿，暂缓后续制作 |
+自绘鲸娘的分层源稿和制作预览保存在提交 `fa54555`。在仓库根目录运行以下命令，可查看当时的源包说明，或将源稿导出为本机 ZIP 文件。
 
-这三张由内置 ImageGen 生成，提示词、来源和实际尺寸分别见 `prompts.json`、`concepts.json`。保留原始文件供追溯，不是当前交付目标。原生成尺寸为 1254×1254 RGBA；读书少女下角有 alpha=1 的微弱残留。
+```console
+git show fa54555:art/deepseek-whale/README.md
+git archive --format=zip --output=whale-art-fa54555.zip fa54555 art/deepseek-whale
+```
 
-用户已允许 Pillow 做确定性的拆分、缩放、透明画布摆位和合成检查；原画、补画与新表情绘制仍使用 ImageGen。不会为去除已有标志重画当前鲸娘，也不引入 Coopanion 的代码、贴图或导出文件。
-
-对外发布许可尚未指定，发布前由用户确定。
+制作自己的角色时，可以用 `tools/rig_studio.py` 标注和编译分层源图，用 `tools/build_character_pack.py` 将自己的十姿态立绘编译为角色包。
