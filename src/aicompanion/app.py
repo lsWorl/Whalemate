@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import tempfile
-from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
@@ -11,7 +10,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from aicompanion.characters.registry import CharacterRegistry
 
-from aicompanion.config import load_settings
+from aicompanion.config import Settings, load_settings
 from aicompanion.controllers.chat_controller import ChatController
 from aicompanion.services.memory_service import MemoryService
 from aicompanion.storage.database import Database
@@ -67,10 +66,10 @@ def main() -> int:
     # 发布包自检只使用临时数据库和离线模型，不读取或上传用户聊天。
     smoke_directory = tempfile.TemporaryDirectory() if any(flag in sys.argv for flag in ('--smoke-test','--pet-smoke-test')) else None
     try:
-        settings = load_settings()
         if smoke_directory:
-            settings = replace(settings, offline=True, database_path=Path(smoke_directory.name)/'smoke.sqlite3',
-                               tts_provider='system',qwen_api_key='',speech_language='zh')
+            settings = Settings('AICompanion', Path(smoke_directory.name)/'smoke.sqlite3', offline=True)
+        else:
+            settings = load_settings()
     except Exception as error:
         if smoke_directory:
             print('配置错误:',error,flush=True)
@@ -123,7 +122,11 @@ def main() -> int:
     # v2：启动即显示桌面角色；聊天面板只在需要时从角色右键或双击托盘打开。
     window.pet.show()
     if smoke_directory:
-        window.show()
+        # 与源码桌宠自检相同，延迟清理也只能作用于测试数据。
+        from aicompanion.agent.housekeeping import Report
+        window.agent.housekeep = Report
+        if '--pet-smoke-test' not in sys.argv:
+            window.show()
     else:
         window._instance_server = _listen_for_second_instance(window)
         # 聊天平台接口（T9，默认关闭）：设置里打开后，AstrBot 插件把 QQ 消息交给同一个她
@@ -142,11 +145,12 @@ def main() -> int:
     if smoke_directory:
         if '--pet-smoke-test' in sys.argv:
             from aicompanion.ui.pet_smoke_check import schedule_pet_smoke_check
-            schedule_pet_smoke_check(window, database, Path.cwd()/'bundle-pet-smoke')
+            smoke_state = schedule_pet_smoke_check(window, database, Path.cwd()/'bundle-pet-smoke')
         else:
             from aicompanion.ui.smoke_check import schedule_smoke_check
-            schedule_smoke_check(window, database, Path.cwd()/'bundle-smoke')
+            smoke_state = schedule_smoke_check(window, database, Path.cwd()/'bundle-smoke')
     code = app.exec()
     if smoke_directory:
         smoke_directory.cleanup()
+        return code or int(not smoke_state.get('passed'))
     return code

@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)
 ![Status](https://img.shields.io/badge/status-in%20development-orange)
 
-[Features](#-features) · [Quick start](#-quick-start) · [Configuration](#️-configuring-models-and-keys) · [Roadmap](#️-roadmap) · [Contributing](#-contributing) · [Acknowledgements](#-acknowledgements) · [License](#-license-and-notices)
+[Features](#-features) · [Download](#-download-and-install) · [Uninstall](#️-uninstall) · [Configuration](#️-configuring-models-and-keys) · [Roadmap](#️-roadmap) · [Contributing](#-contributing) · [Acknowledgements](#-acknowledgements) · [License](#-license-and-notices)
 
 </div>
 
@@ -71,17 +71,45 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 - One-click setup in Settings: pinned versions are downloaded from official sources, verified, and connected on localhost only.
 
 ### 🔐 Security and privacy
-- API keys are encrypted with Windows DPAPI; the database only stores references. Keys are never shared between providers.
+- Model profiles reference a key for each provider. Keys saved in Settings are encrypted with Windows DPAPI and stored in the local database. Removing the database also removes those keys.
 - Chats, memories and settings live in a local SQLite database, backed up automatically before migrations.
 - Daily usage and quotas are tracked locally.
 
-## 🚀 Quick start
+## 📦 Download and install
+
+No Python or command line needed:
+
+1. Open the [Releases page](https://github.com/lsWorl/AICompanion/releases/latest) and download `Whalemate-v<version>-windows-x64.zip`. You can check the file against `SHA256SUMS.txt` on the same page.
+2. Extract it to a folder on a **non-system drive**, e.g. `D:\Apps`. Chats and memories are kept off drive C where possible.
+3. Open the extracted `Whalemate` folder (`D:\Apps\Whalemate` in this example) and double-click `AICompanion.exe`.
+4. A setup guide appears on first launch (about 3 minutes). It helps you connect a chat model (you need a key from a service such as DeepSeek; the guide shows how to get one), pick a voice and a look. Every step can be skipped; without a model she runs on an offline mock so you can look around first.
+
+Requirements: Windows 10 / 11 (x64). Headphones are recommended for voice calls (speaker echo cancellation is not implemented yet).
+
+The Dafeiyu animation can be installed in step 4 of the guide or under Settings → 角色与形象; for the packaged build see the [Aboutme guide](docs/aboutme-pet.md) (Chinese). The animation is community artwork for personal, non-commercial use and is not included in the zip.
+
+> [!NOTE]
+> Windows may say "Windows protected your PC" because the program is not code-signed. If you downloaded it from this repository's Releases, choose "More info → Run anyway".
+
+## 🗑️ Uninstall
+
+Run `UninstallWhalemate.exe` in the `Whalemate` folder. It first lists everything it will delete and only proceeds after you confirm:
+
+- the program files listed in the release manifest and the locally installed Dafeiyu animation;
+- chats, memories, settings and their database backups, including the encrypted model keys stored there;
+- the sticker library the app created, the QQ components (NapCat, AstrBot), voice caches, the local speech-recognition model and the agent's temporary folders;
+- the current user’s `AICompanion` start-with-Windows entry, only if it points to this installation’s `AICompanion.exe`.
+
+Other files you placed in the program folder are kept. The folder is removed only if empty. Personal folders such as Desktop, Downloads, Documents and OneDrive are always kept.
+
+Two things are **kept by default** and only deleted if you tick them: **your own sticker folder** chosen under Settings → Storage (it may contain images you collected), and the **agent recycle area** (files she "deleted" for you go there first and cannot be recovered once removed). Deletion cannot be undone — copy your database backup to a location outside the uninstall list if you want to keep your chats. See [storage locations](docs/storage-locations.md) (Chinese) for the exact paths.
+
+## 🛠️ Run from source (developers)
 
 ### Requirements
 
 - Windows 10 / 11 (x64)
 - Python 3.11 or newer (developed on 3.14)
-- Headphones recommended for voice calls (speaker echo cancellation is not implemented yet)
 
 ### Install and run
 
@@ -137,15 +165,19 @@ into **a companion with her own life and moods, who reaches out to you, and whos
 
 | # | Feature | Status |
 | --- | --- | --- |
-| 1 | Free model switching: choose provider and model per ability, DeepSeek and MiniMax first | 🚧 In progress (chat and agent usable) |
-| 2 | Extensible persona packs: write, import, export and switch without losing memories | 🔍 In review |
-| 3 | Lasting moods and little tempers: sulking, being clingy, talking back, and calming down | 🔍 In review |
-| 4 | A life of her own: explores her interests, shares interesting finds, then waits for your reply | 📋 Planned |
+| 1 | Free model switching: choose provider and model per ability, DeepSeek and MiniMax first | ✅ Shipped: chat, vision, search, agent and speech can each use their own model |
+| 2 | Extensible persona packs: write, import, export and switch without losing memories | ✅ Shipped (SillyTavern card compatible, with version rollback) |
+| 3 | Lasting moods and little tempers: sulking, being clingy, talking back, and calming down | ✅ Shipped |
+| 4 | A life of her own: explores her interests, shares interesting finds, then waits for your reply | ✅ Shipped (unified proactive scheduler + sharing loop); long-term hands-on testing pending |
 | 5 | Really leaving: closes herself when the mood calls for it, and picks up again next launch | 📋 Planned |
-| 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | 🚧 First part in review |
+| 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | 🚧 Part one shipped (full-text recall, request budgets); semantic recall and summaries to do |
 | 7 | Circles and long-running work: recurring group topics, promises, multi-day tasks, file hand-off | 📋 Planned |
-| 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | 🚧 First version in review |
-| 9 | Companion dates: days since you met, anniversaries she brings up on the day | 📋 Planned |
+| 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | ✅ Shipped (smart reading, default whale voice); QQ voice messages to do |
+| 9 | Companion dates: days since you met, anniversaries she brings up on the day | ✅ Basic version shipped |
+| — | UI redesign: whale theme, first-run guide, settings autosave | ✅ Shipped |
+| — | Ready-to-run Windows build and uninstaller | 🚧 In progress |
+
+"Shipped" means merged into the main line and passing automated tests; real-model, QQ and voice behaviour is confirmed by the owner's hands-on testing.
 
 Known limitations: speaker echo cancellation, live partial transcripts, an Android client and clean-machine install testing are not done yet.
 See [implementation_status.md](docs/implementation_status.md).

@@ -1991,3 +1991,31 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - Windows 定向运行 `test_v4_ui`、`test_storage_locations`、`test_ui_refresh`、`test_model_page`、`test_bridge_page` 共 60 项通过。清除 WebEngine 免沙箱参数后，11 项 V4-UI 测试单独通过。
 - 独立 worktree 运行 `tools\run_checks.bat`，退出码 0。共 1225 项单测，跳过 7 项，耗时 272.161 秒。桌宠 smoke 返回 `passed: true`、`failed_checks: []`、`remaining_workers: 0`。
 - 本轮验证使用临时数据库和离屏窗口。真实用户数据迁移、实体屏幕 DPI 和 Linux root 容器尚待实测。
+
+### 2026-11-12 · V4-发布 · Windows 解压包与卸载程序（待 Claude 审计）
+
+- Codex 完成 A–C。两个 x64 GUI 程序共用鲸伴图标和版本资源。卸载窗口展示逐项路径、文件字节和用途，外部图库默认保留；从临时副本运行，能在同一窗口报告安装目录及原 exe 的实际删除结果。退出桌宠后须重新扫描并确认；重解析点、危险目录和不完整程序目录触发整次拒绝。停 QQ 前核对进程身份。被占用项单独报告。
+- `tools/build_release.py` 从全新临时目录构建，从 Git 提交取可分发角色、插件和应用资源。写 zip 之前检查禁带文件、SQLite 文件头、外部链接和顶层清单。版本取自 pyproject.toml。同步 Claude 的 README 提交 `b6337c7`、`c1d35d9`；包内两份 README 及存储文档与分支文本逐字节相同。
+- Windows 本机运行 `tools\run_checks.bat` 返回 0。共 1240 项单测，1233 项通过、7 项跳过，用时 219.394 秒；源码桌宠 smoke 通过。15 项新增回归覆盖清单与文档一致性、WAL 预览、外部存储、确认、危险路径、联接点、程序和 QQ 进程、占用文件与污染产物。
+- `tools/verify_release.py dist/release/Whalemate-v0.1.0-windows-x64.zip --case all` 返回 0。每个场景使用全新解压目录、临时用户及独立 HKCU 测试子键。两个 exe 的 x64、GUI 子系统、图标和版本资源均通过；主程序 `--smoke-test` 和 `--pet-smoke-test` 退出码均为 0，报告均为 passed。另比对了包内应用入口、两个 smoke 和卸载核心/界面共 5 个模块的字节码。
+- 打包版 `--dry-run` 逐项核对 3728 项。Windows UI Automation 操作真实窗口，正常卸载 3728/3728；锁定备份时 3727 项成功，唯一失败项显示实际路径和 WinError 32；鲸伴运行时先拒绝，正常退出后重新扫描到 3730 项，3730/3730 删除成功。三个场景均保留外部图库、无关 SQLite 文件、其他文件和无关注册表值，并验证临时卸载助手清理。
+- 最终 zip 为 `dist/release/Whalemate-v0.1.0-windows-x64.zip`，421262482 字节，SHA256 为 `1b686b5a4e6d2ad8b7f1e1a69528e65152e9b2e28cb4d3c4898f990bc20ba446`。校验值也写入同目录的 SHA256SUMS.txt。
+- Windows 应用控制曾对一个中间候选包的主 exe 返回 4551（Code Integrity 3077）。该候选包保持原字节重试可运行，最终包也完成上述验证。exe 未作 Authenticode 签名，其他电脑的签名策略、负责人真实使用体验、真实 QQ 登录和模型服务未验收。审计、合并和上传私有 Release 交由 Claude。
+
+### 2026-11-12 · V4-发布 · 英文发布名称与 README 核对（待 Claude 审计）
+
+- 发布包内使用 `Whalemate/`、`AICompanion.exe` 和 `UninstallWhalemate.exe`。打包会拒绝路径中有非 ASCII 字符的条目，专项测试覆盖目录和文件两种情况。Windows 版本信息、卸载自清理和验收工具均使用新的英文名称。
+- 合入 Claude 的 README 提交 `d9aadca`。将干净构建的两个 exe 与更新后的随包文档在新临时目录中重新封装。逐项检查最终 zip 的 3691 个路径（含 3406 个文件），检查两个 exe 的 PE 版本资源并比对 5 个冻结模块的字节码。压缩包内两份 README 和存储文档与当前分支逐字节相同。
+- 独立 worktree 中运行 `tools\run_checks.bat` 返回 0，1241 项单测中 1234 项通过、7 项跳过，用时 236.621 秒。源码桌宠 smoke 通过，剩余工作线程为 0。最终 zip 的 `tools/verify_release.py --case all` 返回 0。两个打包版 smoke 均通过。临时模拟机正常卸载 3728/3728，备份被占用时 3727 项成功、1 项报告 WinError 32，程序运行中先拒绝，正常退出并重新确认后 3730/3730。所有卸载验证均使用临时数据。
+- 当前交付物为 `dist/release/Whalemate-v0.1.0-windows-x64.zip`，421282347 字节，SHA256 为 `87f2d38ee4ddee70f81f1f092549d0db89d85da6ae0120a6a2a6e1021c2d2fb5`，与同目录的 `SHA256SUMS.txt` 一致。
+- README 的下载、解压及程序名称均已核对。另用最终 exe 的 `--dry-run` 模拟安装目录中的 `personal-note.txt`、办事回收区文件和外部图库图片。前两者列为删除，图片列为保留。Claude 新增的中英文说明承诺默认保留前两者，与当前实现有差异，已列入 PR 审计项。
+- 待 Claude 核对上述删除范围。其他电脑的运行策略、负责人从 Releases 下载后的真实体验、真实 QQ 登录和模型服务仍待验收。
+
+### 2026-11-12 · PR #52 · Claude 审计 P1 / P2 修复（待复审）
+
+- P1：`_internal/whalemate-files.json` 列出全部发布文件和目录，并与卸载器内嵌副本比对。普通发布文件按相对路径、大小和 SHA256 认领；清单和卸载器自身按固定名称列入，字节数取自卸载预览。已知运行时文件按应用位置识别，未知文件及目录标记为保留，程序目录清空后才删除。桌面、下载、文档、OneDrive 等个人目录即使为空也保留。
+- P2：办事回收区和旧快照使用独立复选框，默认保留并提示删了就找不回。覆盖各盘的垃圾目录和快照、博客回收区以及 LocalAppData 的 trash。外部图库的勾选状态独立。中英文 README 的英文发布名称、个人文件和回收区说明、当前安装的启动项及数据库内的 DPAPI 密钥已核对。
+- Windows 独立 worktree 运行 `tools\run_checks.bat` 返回 0。1250 项单测中通过 1243 项、跳过 7 项，用时 223.005 秒。源码桌宠 smoke 通过，剩余工作线程为 0。发布专项 25 项全部通过，覆盖同名同大小的私人文件、预览后的修改、清单篡改、四种图库/回收区组合、空个人目录及模拟桌面。
+- 最终交付 `dist/release/Whalemate-v0.1.0-windows-x64.zip`，421612421 字节，SHA256 为 `683605804f1bd8463fb279b9103a81f4ba4f40a579bad987ac118c79821fee2c`。全新临时目录构建，独立复算 3405 个普通发布文件的哈希和整包哈希，与清单、SHA256SUMS.txt 一致。3407 个文件、285 个目录的名称全为 ASCII。两份 README 和存储说明与包内副本逐字节一致，6 个冻结模块与源码一致。
+- 对同一 SHA256 逐项执行 `tools/verify_release.py`。临时用户和注册表下的真实卸载结果为：normal 删除 3731/3731，locked 成功 3730 项、唯一的锁定备份报告 WinError 32，desktop 删除 3728/3728 并保留桌面及私人文件，trash 删除 3744/3744，四处回收区清空而外部图库保留。模拟桌面中与发布文档同名同大小的私人副本字节完整。清单被改或缺失时，打包版预览均返回 1，未删除模拟文件。
+- 最终 ZIP 的 `--case all` 和单独 `--case smoke` 在创建主程序进程时被本机应用控制拒绝（WinError 4551，Code Integrity 事件 3077）。多次全新解压结果一致。`--case running` 的预览通过，启动真实主程序时也被策略拦截。两个打包版 smoke 与运行中卸载仍须在允许该程序运行的 Windows 环境中用上述同一 SHA256 复验。两个 exe 未签名，真实 OneDrive 同步、真实账号及负责人下载试用尚未验收。

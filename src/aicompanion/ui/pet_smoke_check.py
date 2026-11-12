@@ -268,6 +268,10 @@ def schedule_pet_smoke_check(window, database, output):
         import re
         from uuid import uuid4
         original=window.controller.router
+        # 该计数器只测一次表达回复。临时库停用回复完成后独立触发的记忆和关系分析，
+        # 否则它们也会使用下面的合成客户端，给同一个计数器再加一次。
+        database.set_setting('memory_analysis', False)
+        database.set_setting('relationship_learning', False)
         class ExpressionModel:
             calls=0
             def generate_reply_stream(self,history,prompt,cancellation):
