@@ -1758,3 +1758,11 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - 详见 `docs/tasks/V4-4a-scheduler.md`。
 - 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：1013 项通过（跳过 8 项）。新增回归在 e38ed29 的代码上全部失败或报错。
 - 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 发送；真实模型话术。
+
+## 2026-11-12 PR #46 合入基线 91d8bef 与审计复核（Claude）
+
+- 做了什么：把 `collaboration-baseline`（91d8bef，含 #44、#49、#50、#25）合进 `task/v4-4a-scheduler`。只有本文件冲突，两边记录都保留；`ui/main_window.py`、`ui/pet_smoke_check.py`、`ui/settings_window.py` 自动合并，主动调度和 Aboutme 形象两边功能都在。基线表结构仍是 v12，本分支的 v13（`outreach_log`、`qq_outbox`）接在其后，没有重号或覆盖基线迁移。
+- 审计复核：逐条对照 Codex 在 #46 的三轮意见（b8bee45 的 3 项 P2、22b2f18 的 5 项 P2 + 1 项 P3、e38ed29 的 5 项 P2 + 1 项 P3）。每项都有对应回归测试，在合并后的代码上通过；第三轮的新用例放回 e38ed29 的源码上全部失败或报错（22 项），说明不是空测。没有发现仍未解决的 P1 / P2。
+- 新增测试：`tests/test_scheduler.py::test_baseline_v12_database_upgrades_to_v13`（基线 v12 库升级：备份一次、旧消息和设置保留、两张新表可用、再次打开不重复备份）。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）`PYTHONPATH=src:tests python3 -m unittest discover -s tests` → `Ran 1071 tests … OK (skipped=8)`。
+- 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 领取 / 发送；真实模型话术。

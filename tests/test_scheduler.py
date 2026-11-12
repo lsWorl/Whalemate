@@ -276,6 +276,32 @@ class CodexRoundTwoTests(SchedulerTests):
             self.assertTrue({'turn_id', 'handed_at'} <= columns)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM outreach_log').fetchone()[0], 1)
 
+    def test_baseline_v12_database_upgrades_to_v13(self):
+        """协作基线（91d8bef）的库是 v12：没有 outreach_log、qq_outbox。升级到 v13 要备份一次、保留旧消息和设置、
+        建好两张新表；再次打开不重复备份、不改动数据。v13 接在基线最高版本之后，不覆盖基线已有的迁移。"""
+        import sqlite3
+        from contextlib import closing
+        from aicompanion.storage.schema import SCHEMA_VERSION
+        self.assertEqual(SCHEMA_VERSION, 13)
+        path = Path(self.tmp.name)/'v12.sqlite3'
+        db = Database(path); db.initialize()
+        db.add_message('user', '基线里的旧消息', CID); db.set_setting('proactive_daily_limit', 3)
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute('DROP TABLE outreach_log'); conn.execute('DROP TABLE qq_outbox'); conn.execute('PRAGMA user_version=12'); conn.commit()
+        for backup in Path(self.tmp.name).glob('v12.backup-*'): backup.unlink()
+        db = Database(path); db.initialize()
+        self.assertEqual(len(list(Path(self.tmp.name).glob('v12.backup-*.sqlite3'))), 1)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 13)
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertTrue({'outreach_log', 'qq_outbox', 'companion_dates', 'companion_date_mentions'} <= tables)
+        self.assertEqual([r['content'] for r in db.recent_messages(5, CID)], ['基线里的旧消息'])
+        self.assertEqual(int(db.get_setting('proactive_daily_limit', 5)), 3)
+        s = ProactiveScheduler(db, self.purposes, self.greet, clock=lambda: self.now[0], rng=lambda: self.roll[0])
+        self.assertEqual(s.next(CID, 0, 9999).source, 'greeting')                          # 新表可用
+        Database(path).initialize()                                                         # 再次打开
+        self.assertEqual(len(list(Path(self.tmp.name).glob('v12.backup-*.sqlite3'))), 1)
+
 
 
 class CodexRoundThreeTests(CodexRoundTwoTests):
