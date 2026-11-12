@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)
 ![Status](https://img.shields.io/badge/status-in%20development-orange)
 
-[Features](#-features) · [Quick start](#-quick-start) · [Configuration](#️-configuring-models-and-keys) · [Roadmap](#️-roadmap) · [Contributing](#-contributing) · [Acknowledgements](#-acknowledgements) · [License](#-license-and-notices)
+[Features](#-features) · [Download](#-download-and-install) · [Uninstall](#️-uninstall) · [Configuration](#️-configuring-models-and-keys) · [Roadmap](#️-roadmap) · [Contributing](#-contributing) · [Acknowledgements](#-acknowledgements) · [License](#-license-and-notices)
 
 </div>
 
@@ -75,13 +75,39 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 - Chats, memories and settings live in a local SQLite database, backed up automatically before migrations.
 - Daily usage and quotas are tracked locally.
 
-## 🚀 Quick start
+## 📦 Download and install
+
+No Python or command line needed:
+
+1. Open the [Releases page](https://github.com/lsWorl/AICompanion/releases/latest) and download `Whalemate-v<version>-windows-x64.zip`. You can check the file against `SHA256SUMS.txt` on the same page.
+2. Extract it to a folder on a **non-system drive**, e.g. `D:\Whalemate`. Chats and memories are kept off drive C where possible.
+3. Open the extracted `鲸伴` folder and double-click `AICompanion.exe`.
+4. A setup guide appears on first launch (about 3 minutes). It helps you connect a chat model (you need a key from a service such as DeepSeek; the guide shows how to get one), pick a voice and a look. Every step can be skipped; without a model she runs on an offline mock so you can look around first.
+
+Requirements: Windows 10 / 11 (x64). Headphones are recommended for voice calls (speaker echo cancellation is not implemented yet).
+
+The Dafeiyu animation can be installed in step 4 of the guide or under Settings → 角色与形象; for the packaged build see the [Aboutme guide](docs/aboutme-pet.md) (Chinese). The animation is community artwork for personal, non-commercial use and is not included in the zip.
+
+> [!NOTE]
+> Windows may say "Windows protected your PC" because the program is not code-signed. If you downloaded it from this repository's Releases, choose "More info → Run anyway".
+
+## 🗑️ Uninstall
+
+Run `卸载鲸伴.exe` (Uninstall Whalemate) in the `鲸伴` folder. It first lists everything it will delete and only proceeds after you confirm:
+
+- the program folder itself, including the locally installed Dafeiyu animation;
+- chats, memories, settings and their database backups, including the encrypted model keys stored there;
+- the sticker library the app created, the QQ components (NapCat, AstrBot), voice caches, the local speech-recognition model and the agent's temporary folders;
+- the start-with-Windows entry, if you enabled it.
+
+If you chose **your own sticker folder** under Settings → Storage, it is kept by default because it may contain images you collected; tick the box to delete it too. Deletion cannot be undone — back up the database file first if you want to keep your chats. See [storage locations](docs/storage-locations.md) (Chinese) for the exact paths.
+
+## 🛠️ Run from source (developers)
 
 ### Requirements
 
 - Windows 10 / 11 (x64)
 - Python 3.11 or newer (developed on 3.14)
-- Headphones recommended for voice calls (speaker echo cancellation is not implemented yet)
 
 ### Install and run
 
