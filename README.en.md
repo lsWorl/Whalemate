@@ -163,15 +163,19 @@ into **a companion with her own life and moods, who reaches out to you, and whos
 
 | # | Feature | Status |
 | --- | --- | --- |
-| 1 | Free model switching: choose provider and model per ability, DeepSeek and MiniMax first | 🚧 In progress (chat and agent usable) |
-| 2 | Extensible persona packs: write, import, export and switch without losing memories | 🔍 In review |
-| 3 | Lasting moods and little tempers: sulking, being clingy, talking back, and calming down | 🔍 In review |
-| 4 | A life of her own: explores her interests, shares interesting finds, then waits for your reply | 📋 Planned |
+| 1 | Free model switching: choose provider and model per ability, DeepSeek and MiniMax first | ✅ Shipped: chat, vision, search, agent and speech can each use their own model |
+| 2 | Extensible persona packs: write, import, export and switch without losing memories | ✅ Shipped (SillyTavern card compatible, with version rollback) |
+| 3 | Lasting moods and little tempers: sulking, being clingy, talking back, and calming down | ✅ Shipped |
+| 4 | A life of her own: explores her interests, shares interesting finds, then waits for your reply | ✅ Shipped (unified proactive scheduler + sharing loop); long-term hands-on testing pending |
 | 5 | Really leaving: closes herself when the mood calls for it, and picks up again next launch | 📋 Planned |
-| 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | 🚧 First part in review |
+| 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | 🚧 Part one shipped (full-text recall, request budgets); semantic recall and summaries to do |
 | 7 | Circles and long-running work: recurring group topics, promises, multi-day tasks, file hand-off | 📋 Planned |
-| 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | 🚧 First version in review |
-| 9 | Companion dates: days since you met, anniversaries she brings up on the day | 📋 Planned |
+| 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | ✅ Shipped (smart reading, default whale voice); QQ voice messages to do |
+| 9 | Companion dates: days since you met, anniversaries she brings up on the day | ✅ Basic version shipped |
+| — | UI redesign: whale theme, first-run guide, settings autosave | ✅ Shipped |
+| — | Ready-to-run Windows build and uninstaller | 🚧 In progress |
+
+"Shipped" means merged into the main line and passing automated tests; real-model, QQ and voice behaviour is confirmed by the owner's hands-on testing.
 
 Known limitations: speaker echo cancellation, live partial transcripts, an Android client and clean-machine install testing are not done yet.
 See [implementation_status.md](docs/implementation_status.md).
