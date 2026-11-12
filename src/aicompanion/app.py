@@ -64,7 +64,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setWindowIcon(app_icon())   # 所有窗口和对话框默认用鲸娘图标
     # 发布包自检只使用临时数据库和离线模型，不读取或上传用户聊天。
-    smoke_directory = tempfile.TemporaryDirectory() if any(flag in sys.argv for flag in ('--smoke-test','--pet-smoke-test')) else None
+    smoke_directory = tempfile.TemporaryDirectory() if any(flag in sys.argv for flag in ('--smoke-test','--pet-smoke-test','--qq-setup-smoke-test')) else None
     try:
         if smoke_directory:
             settings = Settings('AICompanion', Path(smoke_directory.name)/'smoke.sqlite3', offline=True)
@@ -107,6 +107,10 @@ def main() -> int:
         from aicompanion.providers.router import ModelRouter
         controller = ChatController(database, memory_service, ModelRouter(database, settings))
         controller.character = registry.active()
+        if '--qq-setup-smoke-test' in sys.argv:
+            from aicompanion.qq.setup_smoke import run
+            with smoke_directory as temp_root:
+                return run(database, controller, Path(temp_root))
         window = MainWindow(controller=controller, settings=settings, registry=registry)
     except Exception as error:
         if smoke_directory:

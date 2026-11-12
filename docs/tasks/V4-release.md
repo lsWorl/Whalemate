@@ -72,3 +72,11 @@
 - 不做安装程序，不写系统级注册表（开机启动项除外，那是用户自己开的）。
 - 不改业务逻辑和数据库表结构。
 - 不在负责人真实的数据上测试卸载。
+
+## 可选的本机 QQ 接入包
+
+本机留存的 `NapCat.Shell.Windows.Node.zip` 如与 v4.18.41 官方哈希一致，可在构建时直接附带。将 `--napcat-zip` 指向原版 ZIP，`--napcat-repo` 指向保有固定提交的 NapCatQQ 本地仓库。脚本只从仓库读取该提交的 LICENSE。两个参数同时指定时，`tools/build_release.py` 输出到 `dist/local-napcat/`。常规发布仍输出到 `dist/release/`。
+
+本机包解压后的 `Whalemate/third-party/napcat/` 包含未改动的原版 ZIP、完整 LICENSE 和 NOTICE.txt。NapCat 仅限非商业用途。NapCat、腾讯 QQ 二进制和 Node.js 均适用各自的许可。面向其他用户分发 QQ 运行时的授权尚未核实。
+
+用 `tools/verify_release.py <ZIP> --case qq` 运行联网的扫码前验收。它启动解压出的主程序，在临时用户目录里准备真实组件，检查 WebUI、二维码、AstrBot 监听和插件心跳，随后停止服务。正式账号登录由负责人扫码。[构建来源与实测记录](V4-qq-local-napcat.md)

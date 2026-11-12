@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from aicompanion import uninstall as u
 from aicompanion.release_manifest import inventory
-from tools.build_release import PUBLIC, check_member, package
+from tools.build_release import NAPCAT_FILES, PUBLIC, check_member, package, validated_members
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -74,6 +74,19 @@ class ReleaseTests(unittest.TestCase):
             (bundle/'_internal/extra.txt').touch()
             with self.assertRaisesRegex(ValueError, '清单不一致'):
                 package(root, bundle, root/'release', '1.2.3')
+
+    def test_napcat_archive_requires_its_license_notice_and_pinned_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, license_file, notice = (root/name for name in NAPCAT_FILES)
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(b'wrong archive')
+            with self.assertRaisesRegex(ValueError, '须同时包含'):
+                validated_members(root, ())
+            license_file.touch()
+            notice.touch()
+            with self.assertRaisesRegex(ValueError, '校验失败'):
+                validated_members(root, ())
 
     def test_document_lists_all_categories(self):
         table = (ROOT/'docs/storage-locations.md').read_text('utf-8').split('## 卸载会删除哪些内容')[1]

@@ -193,7 +193,7 @@ def main():
     import winreg
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
-    parser.add_argument('--case', choices=('all', 'smoke', 'normal', 'locked', 'running', 'desktop', 'trash'), default='all')
+    parser.add_argument('--case', choices=('all', 'smoke', 'qq', 'normal', 'locked', 'running', 'desktop', 'trash'), default='all')
     args = parser.parse_args()
     archive = args.archive.resolve(strict=True)
     with archive.open('rb') as stream:
@@ -210,7 +210,13 @@ def main():
                 desktop = Path(env['USERPROFILE'])/'Desktop'
                 expect(install.parent == root and desktop.is_relative_to(root), '模拟桌面越界')
                 install = install.rename(desktop)
-            if case == 'smoke':
+            if case == 'qq':
+                # 真实接入会下载 uv、Python 和 AstrBot。单独运行，以便离线发布检查独立完成。
+                proc = subprocess.run([str(install/'AICompanion.exe'), '--qq-setup-smoke-test'], cwd=root, env=env)
+                report = json.loads((root/'bundle-qq-smoke/report.json').read_text('utf-8'))
+                print(json.dumps(report, ensure_ascii=False), flush=True)
+                expect(proc.returncode == 0 and report.get('passed'), 'QQ 扫码前检查未全部通过')
+            elif case == 'smoke':
                 smoke(install, root, env, '--smoke-test', 'bundle-smoke')
                 smoke(install, root, env, '--pet-smoke-test', 'bundle-pet-smoke')
             else:

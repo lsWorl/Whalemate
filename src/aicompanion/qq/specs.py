@@ -32,8 +32,13 @@ NAPCAT = Archive(
     '51fbb10e7bcd56b0c2a6de86c37811e7518330e48a137ac689ab1e4d8627d3f0', 118,
     required=('node.exe', 'index.js', 'wrapper.node', 'napcat/napcat.mjs'),
     license_note='NapCat 由 NapNeko 开发，使用其"Limited Redistribution License"：仅限非商业用途。'
-                 '桌宠从 NapCat 官方 GitHub 发布页下载原版文件，不修改、不再分发。',
+                 '桌宠核对原版 ZIP 的 SHA-256 后安装。QQ 运行时及 Node.js 各自适用其许可。',
 )
+NAPCAT_ZIP = 'NapCat.Shell.Windows.Node.zip'
+NAPCAT_BUNDLE_DIR = 'third-party/napcat'
+NAPCAT_COMMIT = '859eb530c5801577633c2c3ae871d23586edf281'
+NAPCAT_LICENSE_SHA256 = '2bbc0dba0c62fcde4adfe38ebadad0b7d4e23b06b88d9551904bbe07769dc46f'
+
 # uv：在自己的目录里装 Python 3.12 和 AstrBot 的独立虚拟环境（AstrBot 官方脚本部署同样用 uv + Python 3.12）
 UV = Archive(
     'uv', '0.13.5',
