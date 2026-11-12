@@ -20,6 +20,8 @@ NATIVE = (SpriteAvatar, RigAvatar, AnimationAvatar, PlaceholderAvatar)
 def schedule_pet_smoke_check(window, database, output):
     output.mkdir(parents=True, exist_ok=True)
     state = {'errors': [], 'poses_seen': []}
+    # 后面会主动触发一次调度来验心事，隔离库里的兴趣搜索要关闭，离线自检不能向外发请求。
+    database.set_setting('life_enabled', False)
     pet = window.pet
     pet.input_locked = True   # 自检不受手动拖动、点菜单影响
     # 记录台词标注、用户气泡、活动图标的调用，验证 P2 链路
@@ -258,6 +260,9 @@ def schedule_pet_smoke_check(window, database, output):
             state['persona_ready'] = bool(dialog.persona_editor.current_id) and bool(dialog.persona_editor.description.toPlainText())
             # 计划书 v4 功能三：心情卡能读出当前心情
             state['mood_ready'] = bool(dialog.mood_card.summary.text())
+            state['self_exit_default_on'] = dialog.self_exit.isChecked()
+            dialog.self_exit.click()
+            state['self_exit_switch_saved'] = database.get_setting('self_exit_enabled') is False
             if hasattr(dialog.library_page, 'analyzer') and dialog.library_page.analyzer is not None:
                 dialog.library_page.analyzer.wait(5000)
         finally:
@@ -279,6 +284,8 @@ def schedule_pet_smoke_check(window, database, output):
                 handle=re.search(r'^(s\d+)｜',prompt,re.M).group(1)   # 本轮候选短编号
                 yield '<sticker id="'+handle+'"/>'
                 yield '【开心】好耶，表达自检完成！<挥手>'
+                yield '<lea'
+                yield 've reason="想休息一下"/>'
         model=ExpressionModel();window.controller.use_client(model)
         generation=uuid4().hex;window.coordinator.active=generation
         window._start(generation,query='合成的庆祝消息')
@@ -302,6 +309,8 @@ def schedule_pet_smoke_check(window, database, output):
                 state['expression_flow']=bool(window.controller.expression.history(generation,window.controller.character.id))
                 state['expression_single_request']=model.calls==1
                 state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
+                state['self_exit_disabled_reply'] = (window.texts[generation] == '好耶，表达自检完成！'
+                                                      and window.departure is None and not window.closing)
                 state['expression_trace_ready']=state['expression_trace_stage']=='OK_displayed'
                 from aicompanion.ui.library_page import LibraryPage
                 page=LibraryPage(database,window.controller.character.id)
@@ -550,6 +559,7 @@ def schedule_pet_smoke_check(window, database, output):
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'outreach_logged', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
+        required.extend(['self_exit_default_on', 'self_exit_switch_saved', 'self_exit_disabled_reply'])
         if animation:
             required.extend(['animation_body_hit','animation_background_decode','legacy_setting_keeps_aboutme','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])
             if state.get('animation_frame_count',0)<3: state['failed_animation_frames']=True

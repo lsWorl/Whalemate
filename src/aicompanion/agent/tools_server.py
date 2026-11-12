@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import fnmatch
+import hashlib
+import json
 import os
 from pathlib import Path, PureWindowsPath
 import re
@@ -203,6 +205,7 @@ class Task:
     created: set = field(default_factory=set)              # 这次任务新建的文件（删它不用问）
     always: set = field(default_factory=set)               # 选了"本次任务都可以"的类别（'command' 或 文件夹路径）
     cancelled: threading.Event = field(default_factory=threading.Event)
+    resuming: bool = False
 
 
 class ToolBox:
@@ -213,8 +216,11 @@ class ToolBox:
         self.trash = trash        # 测试时指定；平时按盘选（见 trash_root）
         self.approve: Callable[[str, str, str], str] = lambda kind, title, detail: 'no'
         self.on_call: Callable[[dict], None] = lambda record: None
+        self.reserve_effect = None
         self.task = Task()                 # 当前任务；每次工具调用开始时绑定到这个线程（见 current）
         self._local = threading.local()
+        self._calls_lock = threading.Lock()
+        self._active_calls = 0
         self.run_command = run_command or self._run_powershell
 
     # ---- MCP 工具清单 ----------------------------------------------------------------
@@ -245,6 +251,11 @@ class ToolBox:
 
     # ---- 调度 ------------------------------------------------------------------------
     @property
+    def working(self) -> bool:
+        with self._calls_lock:
+            return self._active_calls > 0
+
+    @property
     def current(self) -> Task:
         """这次调用所属的任务。调用开始时绑定，之后即使 self.task 换成了新任务，这次调用也只认原来那个
         （旧命令照样会被旧任务的停止信号结束，迟到的审批和审计也记在原任务名下）。"""
@@ -253,6 +264,8 @@ class ToolBox:
     def call(self, name: str, args: dict) -> tuple[str, bool]:
         """执行一个工具，返回（文字结果, 是否出错）。"""
         task = self.task; self._local.task = task
+        with self._calls_lock:
+            self._active_calls += 1
         record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': '', 'run_id': task.run_id}
         try:
             if task.cancelled.is_set(): raise PermissionError('任务已经停止')
@@ -271,8 +284,20 @@ class ToolBox:
             self._local.task = None
             try: self.on_call(record)
             except Exception: pass
+            finally:
+                with self._calls_lock:
+                    self._active_calls -= 1
 
     # ---- 把关 ------------------------------------------------------------------------
+    def _before_effect(self, record, *operation):
+        task = self.current
+        if task.cancelled.is_set():
+            raise PermissionError('任务已经停止')
+        if self.reserve_effect and task.run_id:
+            # 用实际路径、命令和内容计算指纹，不把文件正文、命令或凭据写入恢复记录。
+            payload = json.dumps([record['tool'], *operation], ensure_ascii=False)
+            self.reserve_effect(task.run_id, hashlib.sha256(payload.encode()).hexdigest(), task.resuming)
+
     def _check_read(self, path: Path):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能读（{reason}）')
@@ -294,16 +319,25 @@ class ToolBox:
     def _check_write(self, record, path: Path, action: str):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能改（{reason}）')
-        if any(part.lower() == '.git' for part in path.parts):
-            # .git 里的配置和钩子能让之后的 git 命令（包括只读的 status / diff）执行任意程序：放开的文件夹里也要问，且不记住
-            self._ask(record, 'write', f'要{action}，位置在 Git 仓库的内部目录里：\n{path}',
-                      '.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
+        resuming = self.current.resuming
+        git_internal = any(part.lower() == '.git' for part in path.parts)
+        outside = not self._allowed(path)
+        if not (resuming or git_internal or outside):
             return
-        if self._allowed(path): return
-        folder = path if path.is_dir() else path.parent
-        self._ask(record, 'write', f'要在放开的文件夹外{action}：\n{path}',
-                  f'这次任务放开的文件夹：\n' + '\n'.join(str(p) for p in self.current.allowed) + f'\n\n同意后她会{action}这个位置；选"这个文件夹本次都可以"会放开 {folder}。',
-                  remember=str(folder))
+        title = ('继续任务，' if resuming else '') + f'要{action}'
+        details = ['请确认这是还没做的部分。'] if resuming else []
+        remember = None
+        if git_internal:
+            title += '，位置在 Git 仓库的内部目录里'
+            details.append('.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
+        if outside:
+            title += '，超出这次任务放开的文件夹'
+            folders = '\n'.join(str(p) for p in self.current.allowed) or '（无）'
+            details.append(f'这次任务放开的文件夹：\n{folders}\n\n同意后她会{action}这个位置。')
+            if not (resuming or git_internal):
+                remember = str(path if path.is_dir() else path.parent)
+                details.append(f'选“这个文件夹本次都可以”会放开 {remember}。')
+        self._ask(record, 'resume' if resuming else 'write', f'{title}：\n{path}', '\n\n'.join(details), remember=remember)
 
     def _backup(self, path: Path) -> str:
         """覆盖或删除前把旧版本移 / 复制进回收区：<盘>\\.aicompanion-trash\\<时间>-<任务号>\\<原路径>。"""
@@ -375,6 +409,7 @@ class ToolBox:
     # ---- 写 --------------------------------------------------------------------------
     def _t_write_file(self, record, path, content):
         p = _norm(path); self._check_write(record, p, '写入文件')
+        self._before_effect(record, os.path.normcase(p), content)
         backup = self._backup(p) if p.exists() else ''
         if not p.exists(): self.current.created.add(str(p).lower())
         p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding='utf-8')
@@ -386,12 +421,14 @@ class ToolBox:
         count = text.count(old_text)
         if count == 0: raise ValueError('old_text 在文件里找不到（要和原文一字不差，包括空格和换行）')
         if count > 1 and not replace_all: raise ValueError(f'old_text 出现了 {count} 次，请多带一点上下文让它唯一，或设 replace_all')
+        self._before_effect(record, os.path.normcase(p), old_text, new_text, bool(replace_all))
         backup = self._backup(p)
         p.write_text(text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1), encoding='utf-8')
         return f'已修改 {p}（替换 {count if replace_all else 1} 处）；旧版本留底在 {backup}'
 
     def _t_make_dir(self, record, path):
         p = _norm(path); self._check_write(record, p, '新建文件夹')
+        self._before_effect(record, os.path.normcase(p))
         p.mkdir(parents=True, exist_ok=True); self.current.created.add(str(p).lower())
         return f'已建好 {p}'
 
@@ -404,10 +441,13 @@ class ToolBox:
         source_ok = self._allowed(src) or str(src).lower() in self.current.created
         target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
         if any(part.lower() == '.git' for p in (src, dst) for part in p.parts): source_ok = target_ok = False   # 挪进 / 挪出 .git 都要问
-        if not (source_ok and target_ok):
+        if self.current.resuming:
+            self._ask(record, 'resume', f'继续任务，要把\n{src}\n移到\n{dst}', '请确认这个移动还没做过。')
+        elif not (source_ok and target_ok):
             where = [] if source_ok else ['原位置在放开的文件夹外或 .git 里']
             if not target_ok: where.append('目标在放开的文件夹外')
             self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '，'.join(where)+'。移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
+        self._before_effect(record, os.path.normcase(src), os.path.normcase(dst))
         backup = self._backup(src)
         dst.parent.mkdir(parents=True, exist_ok=True); shutil.move(str(src), str(dst))
         return f'已移动到 {dst}'+(f'；原样留底在 {backup}' if backup else '')
@@ -417,10 +457,11 @@ class ToolBox:
         secret = _secret_reason(p, self.secrets)
         if secret: raise PermissionError(f'{p} 不能删（{secret}）')
         if not p.exists(): return f'{p} 本来就不存在'
-        if str(p).lower() not in self.current.created:
+        if self.current.resuming or str(p).lower() not in self.current.created:
             what = '整个文件夹' if p.is_dir() else '文件'
             self._ask(record, 'delete', f'要删除{what}：\n{p}'+(f'\n原因：{reason}' if reason else ''),
                       '同意后会移到同一个盘的 .aicompanion-trash 回收区，需要时可以从那里找回。')
+        self._before_effect(record, os.path.normcase(p))
         target = self._backup(p)
         if p.is_dir(): shutil.rmtree(p)
         else: p.unlink()
@@ -435,10 +476,12 @@ class ToolBox:
         names = {s.name.lower() for s in self.secrets if s.suffix or s.name.startswith('.')} | {'.env', 'id_rsa', 'id_ed25519', '.git-credentials'}
         if any(re.search(r'(?<![\w.-])'+re.escape(n)+r'(?![\w-])', command.lower()) for n in names) or re.search(r'(?i)aicompanion[^\s]*\.sqlite3', command):
             raise PermissionError('命令涉及密钥文件或我的数据库')
-        if not is_read_only_command(command):
-            self._ask(record, 'command', '要运行命令：\n'+command[:600]+(f'\n用途：{reason}' if reason else ''),
+        if self.current.resuming or not is_read_only_command(command):
+            kind = 'resume' if self.current.resuming else 'command'
+            self._ask(record, kind, '要运行命令：\n'+command[:600]+(f'\n用途：{reason}' if reason else ''),
                       f'在 {folder} 运行。这条命令可能会改动文件或系统，请看清楚再同意。命令以低权限运行，改不了 C 盘的系统和用户目录。',
-                      remember='command')
+                      remember=None if self.current.resuming else 'command')
+            self._before_effect(record, os.path.normcase(folder), command.strip())
         return self.run_command(command, folder)
 
     @staticmethod

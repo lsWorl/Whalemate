@@ -88,12 +88,23 @@ class ChatController:
             raise ValueError('表达上下文与当前轮次不一致')
         context=replace(context,supports_images=context.supports_images and on_expression_event is not None,
                         early_before=context.early_before and reply_filter is None)
+        # 绑定主人的 QQ 私聊也复用 desktop 历史频道，必须同时检查实际来源。
+        local_reply = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice') and not proactive
+                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop'
+                       and context.scene == 'pet' and context.trigger == 'user_reply')
         self.database.start_turn(turn_id,character.id)
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
             history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id,turn_id=turn_id)
             marks={'base':len(prompt)}
+            if local_reply:
+                if self.database.get_setting('self_exit_enabled', True):
+                    prompt += ('\n如果你此刻确实想离开桌面，可以先用自己的口吻道别，再在末尾写 '
+                               '<leave reason="想一个人静一静"/>。reason 用一句能直接对用户说的简短原因，'
+                               '不要写分析过程。普通聊天不用这个标记，求助、办事和涉及安全时先认真回应。')
+                else:
+                    prompt += '\n想暂时离开时，可以告诉用户你想安静一会儿。'
             if proactive:
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去；句子中间停顿用逗号，别用空格），不编造经历。'
             # T15：她和对方的关系、此刻的心情精力、对方最近多常找她做事——给同一个大脑做判断的依据，不规定回应方式
@@ -146,7 +157,11 @@ class ChatController:
                 aid,placement=parser.selection
                 attachment=self.expression.attachment(turn_id,context,choices[aid],placement)
             if not ''.join(parts).strip() and attachment is None:
-                raise RuntimeError('模型未返回有效内容。')
+                if local_reply and parser.leave_reason:
+                    parts.append('我想先安静一会儿。')
+                    yield parts[-1]
+                else:
+                    raise RuntimeError('模型未返回有效内容。')
         except ReplyCancelled:
             status='cancelled'
             if parser:parser.cancel()
@@ -177,7 +192,9 @@ class ChatController:
                                          parser.markers if parser else 0,parser.selection if parser else None,
                                          result.attachments[0] if result.attachments else None,status,
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
-            if on_expression_event:on_expression_event(ExpressionEvent('final',turn_id,result=result))
+            if on_expression_event:
+                reason = parser.leave_reason if local_reply and status == 'complete' and content and parser else ''
+                on_expression_event(ExpressionEvent('final',turn_id,result=result,leave_reason=reason))
             self._after_turn(character,channel,scene,person,context,parser,status,turn_id,proactive=bool(proactive))
 
     def _settle_dates(self,character,turn_id,status):

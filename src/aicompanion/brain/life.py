@@ -96,6 +96,11 @@ class LifeService:
             c.execute("UPDATE activities SET status='interrupted', finished_at=? WHERE character_id=? AND status='doing' AND started_at<?",
                       (self.clock(), character_id, self.clock()-STALE_SECONDS))
 
+    def interrupt_on_exit(self, c):
+        # 已派发但尚未占位的线程也会核对 epoch。重启后仅按通常的间隔决定下一次活动。
+        self.db.set_setting_in(c, 'life_epoch', self.db.setting_in(c, 'life_epoch', 0) + 1)
+        c.execute("UPDATE activities SET status='interrupted', finished_at=? WHERE status='doing'", (self.clock(),))
+
     def should_start(self, character_id: str) -> bool:
         if not self.enabled(): return False
         self.recover(character_id)
@@ -143,7 +148,7 @@ class LifeService:
             # 想的时候你关掉了：看到的东西照样记下（历史），但标成 quiet，以后重新打开也不拿来分享
             def finish(c):
                 status = 'done' if self.epoch(c) == epoch else 'quiet'
-                c.execute("UPDATE activities SET status=?, title=?, url=?, site=?, excerpt=?, thought=?, opener=?, worth=?, finished_at=? WHERE id=?",
+                c.execute("UPDATE activities SET status=?, title=?, url=?, site=?, excerpt=?, thought=?, opener=?, worth=?, finished_at=? WHERE id=? AND status='doing'",
                           (status, hit.title[:80], hit.url[:500], (hit.site or '')[:30], hit.summary[:900], view['thought'], view['opener'],
                            view['worth'], self.clock(), activity))
             self.db.locked(finish)
@@ -154,7 +159,7 @@ class LifeService:
 
     def _finish(self, activity: int, status: str) -> None:
         with self.db.transaction() as c:
-            c.execute('UPDATE activities SET status=?, finished_at=? WHERE id=?', (status, self.clock(), activity))
+            c.execute("UPDATE activities SET status=?, finished_at=? WHERE id=? AND status='doing'", (status, self.clock(), activity))
 
     def _pick_hit(self, character_id, hits):
         """挑一条 30 天内没看过、有正文摘要的结果。"""

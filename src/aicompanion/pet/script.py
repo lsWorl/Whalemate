@@ -14,7 +14,7 @@ MAX_TAG = 8   # 标注内容最长字数，超过就当普通文字
 TASK_OPEN, TASK_CLOSE = '<task>', '</task>'   # P5：陪伴通路里"需要动手"的标记，界面据此问"要我动手吗"
 MAX_TASK = 1500   # 任务说明可能带一整段文字，太短会让标记解析失败、原样显示出来
 EXPRESSION_TAGS = ('<sticker', '<meme', '<expression', '<mind')
-CONTROL_TAGS = EXPRESSION_TAGS + ('<img', TASK_OPEN)
+CONTROL_TAGS = EXPRESSION_TAGS + ('<img', '<leave', TASK_OPEN)
 
 
 @dataclass(frozen=True)

@@ -91,3 +91,4 @@ class ExpressionEvent:
     generation_id: str
     attachment: ExpressionAttachment | None = None
     result: ExpressionResult | None = None
+    leave_reason: str = ''   # 只随桌面 final 事件传给界面，不进入 QQ 的 wire()。

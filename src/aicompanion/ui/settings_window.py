@@ -224,7 +224,11 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.life_card import LifeCard
         self.life_card=LifeCard(self.database,cid,self)
         proactive_page.add(Section('自己的生活','她会按兴趣去看点真实的东西，遇到趣事来找你分享，并等你回应。',self.life_card))
-        proactive_page.add(ComingSoon('允许她自己退出','情绪和情境合适时，她会告别并真的关掉自己；关掉这个开关后她只会表示不想说话。'))
+        self.self_exit = QCheckBox('允许她自己退出')
+        self.self_exit.setChecked(self.database.get_setting('self_exit_enabled', True))
+        # 告别可能正在朗读，撤销许可要在下一次退出检查之前生效。
+        self.self_exit.toggled.connect(lambda enabled: self.database.set_setting('self_exit_enabled', enabled))
+        proactive_page.add(Section('告别', '她想离开时会先道别，下次打开时会记得原因。关闭后，她只会说想安静一会儿。', self.self_exit))
         proactive_page.finish()
         self.refresh_reminders()
 
@@ -246,7 +250,8 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.relationship_page import RelationshipPage   # T15
         from aicompanion.ui.community_page import CommunityPage           # T18
         from aicompanion.ui.storage_page import StoragePage
-        self.agent_page=AgentPage(self.database); self.audit_page=AuditPage(self.database)
+        self.agent_page=AgentPage(self.database)
+        self.audit_page=AuditPage(self.database, resume=self._resume_task if getattr(parent, 'agent', None) else None)
         agent_page=TabPage('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
         agent_settings=QWidget(); agent_box=QVBoxLayout(agent_settings); agent_box.setContentsMargins(0,6,0,0)
         agent_box.addWidget(self.agent_page)
@@ -313,6 +318,12 @@ class SettingsWindow(QDialog):
         self.nav.page_changed.connect(lambda key: self._refresh_overview() if key == 'overview' else None)
         self.open_page(page or 'overview')
         theme.prepare_controls(self)
+
+    def _resume_task(self, run_id, remaining):
+        if self.parent().agent.start(remaining, paused_run=run_id):
+            self.accept()
+        else:
+            QMessageBox.information(self, '任务仍暂停', '请确认当前角色、办事模型和任务状态，再试一次。')
 
     def open_page(self, key):
         return self.nav.show_page(key)
