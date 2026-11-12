@@ -2040,3 +2040,11 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - Windows 专项单测 14 项通过。用 `.venv\Scripts\python.exe tools\verify_self_exit.py` 从桌面提交合成转写文本，系统朗读完整告别，本次 5 个进程均已结束，后台线程、语音、MCP 和 QQ 回环桥均已关闭。两次启动退出码均为 0，重启首句接上离开原因，只出现一次。详见 `output/v2-check/self-exit.json`。
 - `tools\run_agent_checks.bat` 的离线部分通过。真实模型办事阶段因进程环境缺少测试 Key 跳过（阶段退出码 2），见 `output/dsh-live/report.json`。本轮未测真实麦克风识别、云端声线及 QQ 账号登录。
 - 首次单独运行 `tools\run_checks.bat` 时，`test_dsh.KeyRelayTest.test_token_and_path_are_checked` 的回环请求出现 WinError 10053，见 `output/v2-check/unittest-review-first.log`。同一用例独立连续运行三次均通过。原样重跑完整脚本返回 0，1264 项单测中 1260 项通过、4 项跳过，用时 212.397 秒。桌宠 smoke 的 `passed` 为 true、剩余工作线程为 0，详见 `output/v2-check/unittest.log` 和 `output/v2-check/smoke.log`。
+
+## 2026-11-12 · V4-9b 纪念日提前提醒（待 Claude 审查）
+
+“我们的日子”可为每条用户日期选择提前一天、当天、两次或关闭提醒。生日默认两次，自定义纪念日默认当天。schema 14 → 15 在事务内为原记录加列。农历在换算到公历后检查本地明天，程序推算的节日和周年只参与当天提醒。
+
+统一调度增加 `date_eve` 来源，沿用总开关、安静时段、每日次数、间隔、等待回应和投递结算。桌面或已绑定主人 QQ 私聊的轮次取得占位后才带上日期标题。QQ 完整回执持久确认，确定失败可重试，跨过午夜或用户关闭待发提醒时撤回。
+
+在合并 #53 的基线 `d9f2abb` 上运行 Windows `tools\run_checks.bat`，退出 0。1278 项单测，1271 通过、7 跳过，用时 345.267 秒。桌宠 smoke 的 `date_reminder_editable=true`、`passed=true`，失败项与错误均为空，残留工作线程为 0。测试使用临时库、可控时钟与模拟 QQ 投递；未操作真实用户库、登录真实 QQ 或完成人工跨日验收。

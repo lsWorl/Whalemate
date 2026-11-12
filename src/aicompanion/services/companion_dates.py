@@ -24,6 +24,8 @@ MILESTONES = (100, 200, 300, 500, 520, 1000, 1314)
 HOLIDAYS = {(1, 1): '元旦', (2, 14): '情人节', (5, 1): '劳动节', (10, 1): '国庆节', (12, 25): '圣诞节'}
 LUNAR_HOLIDAYS = {(1, 1): '春节', (1, 15): '元宵节', (5, 5): '端午节', (7, 7): '七夕', (8, 15): '中秋节'}
 KINDS = {'birthday': '你的生日', 'her_birthday': '她的生日', 'custom': '纪念日'}
+REMINDERS = {'eve': '提前一天提醒', 'day': '当天提醒', 'both': '都要', 'off': '不提醒'}
+DATE_EVE_INTENT = '私下提醒主人留意明天的日子，具体日子见本轮提醒。'
 MAX_TITLE = 30
 CLAIM_TTL = 600   # 一轮生成占住提醒最多这么久（秒）：进程里出了意外没走到确认 / 释放，过期后别的轮次还能提
 
@@ -40,6 +42,12 @@ class Day:
     title: str        # 给人看、给她看的说法
     kind: str         # milestone / anniversary / her_birthday / birthday / custom / holiday / first
     private: bool = True
+    reminder: str = 'day'
+
+
+def default_reminder(kind: str) -> str:
+    return 'both' if kind in ('birthday', 'her_birthday') else 'day'
+
 
 
 def _local(ts: float) -> date:
@@ -133,9 +141,12 @@ class CompanionDates:
             rows = c.execute("SELECT * FROM companion_dates WHERE character_id=? AND kind!='met' ORDER BY month, day, id", (character_id,)).fetchall()
         return [dict(r) for r in rows]
 
-    def add(self, character_id: str, kind: str, title: str, when: date, yearly: bool = True, lunar: bool = False) -> int:
+    def add(self, character_id: str, kind: str, title: str, when: date, yearly: bool = True, lunar: bool = False,
+            reminder: str | None = None) -> int:
         """when 是公历日期；lunar=True 时按它对应的农历月日每年重复（农历生日：在日历上选出生那天的公历日期就行）。"""
         if kind not in KINDS: raise ValueError('未知的日子类型')
+        if reminder is None: reminder = default_reminder(kind)
+        if reminder not in REMINDERS: raise ValueError('未知的提醒方式')
         title = ' '.join(str(title or '').split())[:MAX_TITLE] or KINDS[kind]
         calendar, (year, month, day) = 'solar', (when.year, when.month, when.day)
         # 只一次的日子就是选中的那一天，按公历存最准：换成农历月日会丢掉闰月，落到普通月的同一天（Codex PR #43 R2）。
@@ -147,9 +158,15 @@ class CompanionDates:
         def work(c):
             if kind == 'her_birthday':   # 她的生日只有一个：改默认就是替换
                 c.execute("DELETE FROM companion_dates WHERE character_id=? AND kind='her_birthday'", (character_id,))
-            return c.execute("INSERT INTO companion_dates(character_id, kind, title, calendar, year, month, day, yearly, source, created_at) VALUES (?,?,?,?,?,?,?,?,'user',?)",
-                             (character_id, kind, title, calendar, year, month, day, int(bool(yearly)), self.clock())).lastrowid
+            return c.execute("INSERT INTO companion_dates(character_id, kind, title, calendar, year, month, day, yearly, reminder, source, created_at) VALUES (?,?,?,?,?,?,?,?,?,'user',?)",
+                             (character_id, kind, title, calendar, year, month, day, int(bool(yearly)), reminder, self.clock())).lastrowid
         return self.db.locked(work)
+
+    def set_reminder(self, character_id: str, date_id: int, reminder: str) -> None:
+        if reminder not in REMINDERS: raise ValueError('未知的提醒方式')
+        with self.db.transaction() as c:
+            c.execute("UPDATE companion_dates SET reminder=? WHERE character_id=? AND id=? AND kind!='met'",
+                      (reminder, character_id, date_id))
 
     def remove(self, character_id: str, date_id: int) -> None:
         with self.db.transaction() as c:
@@ -193,6 +210,20 @@ class CompanionDates:
         first = self.first_achievement(character_id)
         if options['milestones'] and first and on.year > first.year and on == _on(on.year, first.month, first.day):
             out.append(Day(f'first-done:{on.year - first.year}', f'第一次一起办成事 {on.year - first.year} 周年', 'first'))
+        out.extend(self._user_events(rows, on))
+        if options['holidays']:
+            if (on.month, on.day) in HOLIDAYS:
+                out.append(Day(f'holiday:{on.month}-{on.day}', HOLIDAYS[(on.month, on.day)], 'holiday', private=False))
+            lunar = solar_to_lunar(on)
+            if lunar and (lunar[1], lunar[2]) in LUNAR_HOLIDAYS and lunar_to_solar(lunar[0], lunar[1], lunar[2]) == on:   # 闰月那天不算
+                out.append(Day(f'lunar:{lunar[1]}-{lunar[2]}', LUNAR_HOLIDAYS[(lunar[1], lunar[2])], 'holiday', private=False))
+            tomorrow = solar_to_lunar(on + timedelta(days=1))
+            if tomorrow and (tomorrow[1], tomorrow[2]) == (1, 1):
+                out.append(Day('lunar:eve', '除夕', 'holiday', private=False))
+        return out
+
+    @staticmethod
+    def _user_events(rows, on):
         for r in rows:
             if not r['enabled']: continue
             if r['calendar'] == 'lunar':
@@ -204,18 +235,13 @@ class CompanionDates:
                       (not r['yearly'] and r['year'] and on == date(r['year'], r['month'], r['day']))
             if hit:
                 title = r['title'] if r['kind'] == 'custom' else KINDS[r['kind']]
-                if r['kind'] == 'birthday': title = '你的生日'
-                out.append(Day(f"user:{r['id']}:{on.year}", title, r['kind']))
-        if options['holidays']:
-            if (on.month, on.day) in HOLIDAYS:
-                out.append(Day(f'holiday:{on.month}-{on.day}', HOLIDAYS[(on.month, on.day)], 'holiday', private=False))
-            lunar = solar_to_lunar(on)
-            if lunar and (lunar[1], lunar[2]) in LUNAR_HOLIDAYS and lunar_to_solar(lunar[0], lunar[1], lunar[2]) == on:   # 闰月那天不算
-                out.append(Day(f'lunar:{lunar[1]}-{lunar[2]}', LUNAR_HOLIDAYS[(lunar[1], lunar[2])], 'holiday', private=False))
-            tomorrow = solar_to_lunar(on + timedelta(days=1))
-            if tomorrow and (tomorrow[1], tomorrow[2]) == (1, 1):
-                out.append(Day('lunar:eve', '除夕', 'holiday', private=False))
-        return out
+                yield Day(f"user:{r['id']}:{on.year}", title, r['kind'], reminder=r['reminder'])
+
+    def reminders(self, character_id: str, on: date, *, eve: bool = False) -> list[Day]:
+        if eve:
+            events = self._user_events(self.user_dates(character_id), on + timedelta(days=1))
+            return [d for d in events if d.reminder in ('eve', 'both')]
+        return [d for d in self.events_on(character_id, on) if d.reminder in ('day', 'both')]
 
     def upcoming(self, character_id: str, days: int = 60) -> list[tuple[date, list[Day]]]:
         start = self.today()
@@ -251,8 +277,7 @@ class CompanionDates:
         给了 claim（这一轮的 id）时，提醒到的日子会先替这一轮占住，别的轮次同时生成也不会再拿到；说完调 confirm(claim)，
         失败 / 取消调 release(claim)。不给 claim 时由调用方自己 mark(key)。"""
         text = self.background(character_id)
-        if not text: return '', ()
-        events = self.events_on(character_id)
+        events = self.reminders(character_id, self.today())
         if claim is None:
             fresh = [d for d in events if not self.mentioned(character_id, d.key)]
         else:
@@ -262,12 +287,22 @@ class CompanionDates:
                  '。这一轮可以自然地提一句（像真人那样，一句就好，可以配个表情或语气），今天提过就不用再提。')
         return text, tuple(d.key for d in fresh)
 
+    def eve_prompt(self, character_id: str, turn: str) -> str:
+        """只给调度器已绑定的私聊轮次占住明天的日子。跨过午夜或用户修改了提醒时撤回。"""
+        today = self.today()
+        with self.db.transaction() as c:
+            pending = c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND turn_id=? AND source='date_eve' "
+                                "AND key=? AND status='pending'", (character_id, turn, f'date_eve:{today}')).fetchone()
+        if not pending: return ''
+        fresh = self._claim(character_id, self.reminders(character_id, today, eve=True), turn, day=today)
+        return ('明天是' + '、'.join(d.title for d in fresh) + '。') if fresh else ''
+
     def _slot(self, character_id: str, key: str, day: date) -> tuple[str, str, str, str]:
         return (str(getattr(self.db, 'database_path', id(self.db))), character_id, key, day.isoformat())
 
-    def _claim(self, character_id: str, events, claim: str) -> list[Day]:
+    def _claim(self, character_id: str, events, claim: str, *, day: date | None = None) -> list[Day]:
         """在锁里看“今天提过没有、别的轮次占了没有”，没有就替这一轮占住。查库和占位在同一把锁里，两轮不会都拿到。"""
-        day, now = self.today(), time.monotonic()
+        day, now = day or self.today(), time.monotonic()
         taken, flying = [], self._in_flight(character_id, day)
         with _CLAIMS_LOCK:
             for slot, (_, until) in list(_CLAIMS.items()):

@@ -928,7 +928,7 @@ class MainWindow(QMainWindow):
             else: dates.release(character_id,generation)
             done(sent,channel)
         self.outreaches[generation]=desktop_done
-        if outreach.source=='share' or outreach.payload.get('origin')=='share': self.outreach_valid[generation]=valid
+        if outreach.source in ('share','date_eve') or outreach.payload.get('origin')=='share': self.outreach_valid[generation]=valid
         self._start(generation,proactive=outreach.intent)
 
     def _proactive_on_qq(self,intent,done,taken=None,queued=None,still_valid=None):

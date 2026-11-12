@@ -106,6 +106,12 @@ class ChatController:
                 else:
                     prompt += '\n想暂时离开时，可以告诉用户你想安静一会儿。'
             if proactive:
+                from aicompanion.services.companion_dates import DATE_EVE_INTENT, CompanionDates
+                if proactive == DATE_EVE_INTENT:
+                    reminder = (CompanionDates(self.database).eve_prompt(character.id, turn_id)
+                                if channel == 'desktop' and scene == 'pet' else '')
+                    if not reminder: raise ReplyCancelled('提前提醒已失效')
+                    prompt += '\n' + reminder
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去；句子中间停顿用逗号，别用空格），不编造经历。'
             # T15：她和对方的关系、此刻的心情精力、对方最近多常找她做事——给同一个大脑做判断的依据，不规定回应方式
             person_id=self._person(person,channel,scene,context)
