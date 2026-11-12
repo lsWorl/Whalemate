@@ -723,6 +723,36 @@ Codex 审计 `e28c1ac` 后的修正与基线同步（见设计文档 14.17）：
 - 修复后的 Windows Smoke 复跑；QQ 实际分条发送（只在插件替身里测过）；负责人人工评估；人工评估未做；多轮真实长聊天（历史里有她发过的图时）的效果未验证；
 - QQ 真实平台显示、真实用户图库（审核状态 / 素材包是否导入）未核实；Qt 原生崩溃 0xC0000005 根因仍未定位；T13 未合入。
 
+## 2026-11-08：T14-M 独立审计、日常贴纸补齐与历史连续验证（Codex）
+
+- 基于Claude的589acdc建立独立task/t14-sticker-library-audit，不并行修改其ChatController / parser / bridge / schema / 角色运行代码；原#13仍由Claude实现、Codex审计。
+- 复算round6（600c2a6）88条与原评分44图；按她自身回复意图及原图首/中帧，独立暂评34合适/9勉强/1不合适，适合场景31/64发且合适、含勉强39/64。保留Claude原文；“errors=0”不掩盖3次无效选图，模拟ACK不冒充真实显示。
+- 可复现171项目录：保留80、增29鲸娘GIF与62通用反应PNG；109鲸娘按作者非商业署名分享条件，标注CC BY-NC4，Twemoji图形CC BY4。所有项保留作者/来源/许可/原标识/版本/哈希；没有Coopanion或其导出。通用图补祝贺6、慰问5、震惊5、困惑5、晚安5及其他日常反应；亲密图限定对象。
+- 新增独立素材准备工具，固定URL/SHA、非系统盘输出、缓存复用、冲突保留、许可随包；不读账号/配置/数据库，不引入第二套运行根目录设置。首次复用108、复制62、真实下载1；第二次171全部复用。D盘全新临时库首导171/重导复用171/非法0/独立SHA171，15.74秒。约81MB的第三方GIF留在下载包，不塞进Git，源码含62PNG、原SVG、许可和可重建目录。
+- 准备工具9项离线通过；最终全量506项：499通过/7跳过（38.222秒），Smoke passed=true / remaining_workers=0。没有把当前图像行为缺陷因离线检查通过而标为修复。
+- 本轮经单独授权只取模型API字段，32次真实DeepSeek合成生成，无旧聊天上传或QQ实网。24轮同库普通聊天实际Qt气泡显示9张，第12轮重建控制器恢复4张；6次无效选择中4次历史回声。之后同快照两组4轮：图片历史可见3次显示，隐藏请求副本标记0次，首轮候选相同。样本小、非严格因果估计，不能把“隐藏历史”当修复。
+- 真实验证有边界：原ChatWorker/ChatView/ExpressionImage组件，不是完整桌宠主窗口/ASR/TTS/角色动作；24轮无角色动作词表，两组对照均有词表，仅在对照内部比较。临时驱动在已保存结果后访问被删ChatWorker导致收尾退出1，离线isValid保护验证通过；不冒充端到端全通过，也不把驱动问题误报产品原生崩溃。临时模型脚本用stdin执行，无脚本文件。
+- 已向Claude报告两项P2：短无效编号原文进持久观测 / debug，早到displayed回执被最终E_pending覆盖；另有历史sent回声导致缺图、慰问意图未召回，以及R6无依据文件重命名声明。新增素材不等于核心表达通过；#13不审查通过、不标可合并，等Claude修复并使用新包复测。
+- 详见docs/tasks/T14-round6-codex-review-2026-11-08.md及版本化合成证据；本轮无真实用户库 / 账号配置变更，不合并其他PR，不提前做T15/T16或重造T13路径。
+- 收尾发现#13已更新726c401：Claude称两项P2及召回已修，静态diff可见错误分类白名单 / 终态查询；上文问题与32次模型实测限定589acdc，新版本不据此判残留，也不因自报修复即审查通过。
+- 补充独立复跑726c401隔离快照：510项 / 503通过 / 7跳过（39.459秒），Smoke passed=true / remaining_workers=0，命令进程均退出0；最新运行代码没有合入本素材分支。未对最新版再次真实模型验收或完整审计新增QQ分段发送，不标可合并。
+
+
+## 2026-11-09：T14 新版726c401独立审计（Codex）
+
+- 完整离线510项（503通过 / 7跳过）、Smoke通过；原隐私无效编号分支与隐藏面板打断修复有回归支持。
+- 新增确定性离线探针仍有两项P2：QQ after_text文字明确失败 / 超时后继续发图；delivery状态查询与trace写入之间回执到达时仍覆盖为pending。均已评论PR #13，运行修复由Claude继续负责，Codex没有改运行代码。
+- 第七轮原59图初评45/12/2，完整回复和实际图首 / 中帧独立复核暂评42合适 / 17勉强 / 0不合适；适合场景发且合适39/64（60.9%）。保留原评，主观阈值不能代替整体验收。
+- 最新8轮沿用含9张实际已显示图的合成历史副本，原ChatWorker / 新SegmentedReply / 角色词表 / 真实DeepSeek：实际Qt显示4、模型纯文字3、history_echo拒绝1；8次生成complete、驱动退出0、临时库清理。第5轮承诺陪着却发Zzz，候选无慰问图，说明上下文意图 / 历史使用质量仍未解决。此轮未验证QQ实网 / 完整主窗口 / ASR / TTS，未改真实数据。
+- 素材PR #14同步双方有效Markdown记录消除文档冲突；详见docs/tasks/T14-726c401-codex-review-2026-11-09.md及合成证据。不标审查通过、不标可合并。
+
+
+## 2026-11-09：T14增量0a2b1d6审计（Codex）
+
+- 审查期间新提交0a2b1d6按哈希识别自带图：隔离Windows全量512（505通过 / 7跳过，39.007秒）、Smoke passed=true / remaining_workers=0。
+- 新P2：待审核的自带图副本即使用户明确停用，scan仍将enabled从0写回1，且覆盖自定义语义。只用合成图库和临时库确定性复现。原两个P2的service / 插件文件与726c401逐字节相同，仍适用；没有把已绿的测试当作全部放行。
+- 当前三项P2待Claude修复；未修改运行代码。最近真实8轮仍针对726c401，本增量没有再次调用模型或QQ实网；详细证据见docs/tasks/T14-0a2b1d6-codex-review-2026-11-09.md。素材PR不擅自合并，用户自定义内容保留。
+
 
 ### 2026-11-09 T14 真机验收修复：导入素材清单无反馈（Codex）
 
@@ -1721,6 +1751,25 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - Windows `.venv\Scripts\python.exe tools\smoke_pet.py --without-aboutme --output-dir output\pr25-fallback-82eaeee` 退出 0。使用缺少 Aboutme 的临时角色目录，窗口显示自绘鲸娘（`RigAvatar`、`rig_loaded=ready`），切成立绘并切回骨骼都成功。两次 smoke 均为 `passed=true`、`failed_checks=[]`、`errors=[]`、`remaining_workers=0`。
 - 实建 Windows PyInstaller onedir、wheel、sdist，并从 sdist 再建 wheel。每种产物中的 234 个运行文件、六张表情、两个图标均与基线原件逐一匹配。预置的未引用旧图、模拟本机图集、缓存和 Cubism Core 均未进入产物。上游 Aboutme 贴图继续仅在本机安装。
 - 待负责人复核新提交、真机确认动作观感。此次未走查打包 exe 全部交互、长期运行、多屏高 DPI 或真实模型、语音和 QQ 服务。
+
+## 2026-11-12 PR #14 改基于协作基线、收窄范围并复核三项 P2（Claude）
+
+- 做了什么：
+  - PR #14 的 base 从已合入的 `task/t14-smart-expression` 改为 `collaboration-baseline`，并合入 91d8bef。冲突只在 `docs/tasks.md` 和本文件，两边记录都保留。
+  - 按 #50 的决定，本 PR 不再往仓库里加评测证据和审计报告。删掉的是 `docs/tasks/evidence/` 下 13 个文件（含 4 张截图），以及 `docs/tasks/T14-round6-codex-review-2026-11-08.md`、`T14-726c401-codex-review-2026-11-09.md`、`T14-0a2b1d6-codex-review-2026-11-09.md`。必要结论写在 PR 描述里；上面 Codex 的历史记录保留原样，提到的文件可以在提交 `f403043` 中查看。
+  - 现在的范围：`assets/stickers/daily-reactions-v2/`（目录、62 张 Twemoji PNG 和原 SVG、许可全文）、`tools/prepare_daily_stickers.py`、`tests/test_daily_sticker_pack.py`、`tests/test_t14_sticker_recheck.py`。PR 里没有任何 GIF；109 张鲸娘 GIF 只由准备工具在本机下载。
+  - 中英文 README 的“致谢”增加“通用表情图形”一节（Twemoji，CC BY 4.0）。“许可与声明”写明 Twemoji 图形不适用 MIT，以及署名、改动说明和许可全文的位置；同时写明鲸娘 GIF 不随仓库分发，`catalog.json` 中鲸娘条目的标注参考了 CC BY-NC 4.0 的知识库。
+- 三项 P2 复核（在基线 91d8bef 上）：都已经不存在，基线里分别有回归测试。
+  - QQ 文字失败 / 超时后仍发图片：`test_expression_qq.test_text_failure_before_image_stops_and_reports_not_attempted`、`test_middle_text_failure_stops_remaining_text_and_image`。
+  - 回执竞态：`test_expression_decision.test_receipt_between_delivery_update_and_trace_update_is_not_lost`、`test_receipt_arriving_while_trace_is_written_still_ends_displayed`。
+  - 识别自带图后重新启用已停用的图：`test_expression_catalog.test_explicit_disable_and_custom_meaning_survive_recognition`。
+  - 本次又补了两项按 Codex 原始条件写的回归（`tests/test_t14_sticker_recheck.py`）：主动消息发件箱在文字超时后不发图；待审核时直接停用、从没启用过的图，识别后仍停用，自定义说明保留。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）`PYTHONPATH=src:tests python3 -m unittest discover -s tests` → `Ran 1030 tests … OK (skipped=8)`。第一次全量运行在 Qt 界面测试处卡住、无输出（低 CPU），重跑通过，疑似容器内偶发的界面测试挂起，未定位。
+- 没验证：
+  - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
+  - 准备工具真实联网下载 109 张 GIF；
+  - 171 张素材在真实图库导入后的效果；
+  - 真实 QQ 发送。
 
 ## 2026-11-11 V4-4a 统一主动调度（task/v4-4a-scheduler，schema 12→13）
 

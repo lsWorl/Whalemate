@@ -293,7 +293,13 @@ Special thanks to the creators in the Dafeiyu fan community — her personality,
 | [astrbot_plugin_feiyu_voice](https://github.com/Esmerubphire/astrbot_plugin_feiyu_voice), [WhaleTalk](https://github.com/Tokimorphling/WhaleTalk-) | The feel of her voice, pre-synthesised fixed lines, volume-driven lip sync |
 | [dsh-whale-musume discussion](https://github.com/deepseek-ai/deepseek-harness/discussions/2262) | Community discussion of the whale-girl design |
 
-This repository does **not** include any of the community assets above; stickers must be imported by users under their authors' licenses.
+### General emoji graphics
+
+| Project | How we use it |
+| --- | --- |
+| [Twemoji](https://github.com/jdecked/twemoji) (Twitter, Inc. and other contributors, CC BY 4.0) | 62 general reaction images in the daily sticker library `assets/stickers/daily-reactions-v2/`. The original SVGs are included; we rendered them with Qt to 256×256 transparent PNGs without redrawing or adding text |
+
+This repository does **not** include any of the Dafeiyu community artwork above. The 109 whale-girl GIFs in the daily sticker library are downloaded locally by `tools/prepare_daily_stickers.py` from the author's site (fixed URLs and hashes); neither the repository nor release packages contain them. Other stickers must likewise be imported by users under their authors' licenses.
 If you are an author of one of these projects and something here is inaccurate or you'd like the credit changed, please open an issue.
 
 ## 📄 License and notices
@@ -302,6 +308,8 @@ The [MIT License](LICENSE) covers Whalemate's code, documentation, the bundled o
 
 - **Aboutme Dafeiyu** artwork and locally generated animation sheets follow the [upstream asset notice](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt). Use them only for noncommercial purposes and credit PC2005-cloud/dsh-pet in public derivatives. The repository and release packages exclude these assets.
 - **Live2D Cubism Core**, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html). Neither the repository nor the packaged builds **include** Core. It is only needed to import external Live2D models; users download it themselves from Live2D with `tools/fetch_avatar.py`, which means accepting that license. Because Whalemate can import arbitrary models, distributing a build that bundles Core may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/), which requires Live2D review and a special Publication License Agreement; the exemptions for individuals and small businesses do not apply. `tools/build_windows.py` strips Core from builds by default; `--keep-cubism-core` is for your own machine only and must not be distributed.
+- **Twemoji graphics** (`assets/stickers/daily-reactions-v2/images/twemoji/`, `sources/twemoji-svg/`): Copyright Twitter, Inc. and other contributors, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), not MIT. We rendered the original SVGs to 256×256 PNGs without changing the artwork. The full license text is in [`licenses/TWEMOJI-CC-BY-4.0.txt`](assets/stickers/daily-reactions-v2/licenses/TWEMOJI-CC-BY-4.0.txt); keep the attribution and license link when redistributing.
+- **Whale-girl sticker GIFs**: copyright remains with the artist 可以叫我云大人 / 雾雪 ([bilibili](https://space.bilibili.com/103739) · [kiriyuki.com](https://kiriyuki.com)); noncommercial sharing only, keeping the artist's links. The repository and release packages exclude them. The whale entries' annotations in `catalog.json` draw on the [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) knowledge base (CC BY-NC 4.0); that part is not under MIT. See [`licenses/WHALE-ASSETS.txt`](assets/stickers/daily-reactions-v2/licenses/WHALE-ASSETS.txt).
 - Other third-party libraries and components, under their respective licenses.
 - "DeepSeek", "Claude", "ChatGPT" and related names and logos are trademarks of their respective owners, including logos that appear in the character artwork. The MIT License grants no trademark rights.
 
