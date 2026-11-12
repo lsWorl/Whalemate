@@ -27,6 +27,13 @@ class DesktopShareVisibilityTests(unittest.TestCase):
                            'quiet_start': 0, 'quiet_end': 0, 'memory_analysis': False, 'agent_enabled': False}.items():
             self.db.set_setting(key, value)
         stack = self.enterContext(ExitStack())
+        # SpeechOutput 即使禁用朗读，构造时也会加载系统 TTS 和播放器。
+        self.native_tts = stack.enter_context(patch('aicompanion.speech.output.QTextToSpeech',
+                                                    side_effect=AssertionError('分享测试不应加载原生语音引擎')))
+        speech = stack.enter_context(patch('aicompanion.ui.main_window.SpeechOutput')).return_value
+        speech.enabled = speech.busy = False
+        speech.queue, speech.workers = (), ()
+        speech.playback_rms.return_value = 0.0
         stack.enter_context(patch.object(MainWindow, '_build_tray', lambda w: setattr(w, 'tray', SimpleNamespace(hide=lambda: None))))
         stack.enter_context(patch.object(MainWindow, '_apply_avatar',
                                          lambda w: w.pet.set_view(PlaceholderAvatar('测试'), 'placeholder')))
@@ -106,6 +113,62 @@ class DesktopShareVisibilityTests(unittest.TestCase):
         self.win.life.set_enabled(False)
         self.finish(worker, resume)
         self.assert_withdrawn(turn)
+
+    def test_share_without_native_speech_backend(self):
+        worker, resume = self.start()
+        self.finish(worker, resume)
+        self.assertEqual(self.win.life.recent(self.cid)[0]['status'], 'shared')
+        self.win.speech.enqueue.assert_not_called()
+        self.native_tts.assert_not_called()
+
+    def exercise_final_task(self, *, share=False, interrupt=False):
+        from aicompanion.pet.script import Cue, Vocab
+        from aicompanion.speech.output import spoken_text
+        original = '请帮我整理桌面，保留文件的原名。'
+        visible = '用 ` 号分隔。\n好啦。'
+        reply = visible.replace('好啦', '【开心】好啦') + '<task>模型改写过的任务</task>'
+        self.controller.client = lambda *a, **kw: FakeClient(reply)
+        self.controller.agent_enabled = True
+        self.win.vocab = self.controller.vocabs[self.cid] = Vocab({'开心': 'happy'})
+        self.db.set_setting('speech_style', 'full')
+        self.win.speech.enabled = True
+        self.win.speech.enqueue.side_effect = lambda text, turn: self.win._sentence_started(spoken_text(text))
+        # 跳过启动 Agent 前的界面等待，调用真实 _offer_task，只替换外部执行入口。
+        timer = SimpleNamespace(singleShot=lambda delay, callback: callback())
+        with patch('aicompanion.ui.main_window.QTimer', timer), patch.object(self.win.agent, 'start') as start, \
+                patch.object(self.win.pet, 'perform') as perform:
+            if share:
+                self.win._deliver_outreach(self.cid, self.share)
+            else:
+                self.win.coordinator.active = 'final-user-task'
+                self.win._start('final-user-task', original)
+            worker, = self.win.workers
+            turn = worker.generation_id
+            self.assertTrue(worker.wait(5000))
+            if interrupt:
+                self.win.interrupt()
+            self.app.processEvents()
+            if share or interrupt:
+                start.assert_not_called()
+            else:
+                start.assert_called_once_with(original, announce=False)
+            if interrupt:
+                perform.assert_not_called()
+                self.win.speech.enqueue.assert_not_called()
+            else:
+                self.assertEqual(self.win.items[turn].content, visible)
+                perform.assert_called_once_with(Cue('expression', 'happy'))
+                spoken = [call.args[0] for call in self.win.speech.enqueue.call_args_list if call.args[1] == turn]
+                self.assertEqual(spoken, visible.splitlines())
+
+    def test_final_markers_start_user_task_once_with_original_query(self):
+        self.exercise_final_task()
+
+    def test_final_markers_in_proactive_share_do_not_start_task(self):
+        self.exercise_final_task(share=True)
+
+    def test_interrupted_user_turn_does_not_dispatch_final_markers(self):
+        self.exercise_final_task(interrupt=True)
 
     def test_worker_completes_while_window_has_not_displayed_the_share(self):
         worker, resume = self.start()

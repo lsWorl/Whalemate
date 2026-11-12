@@ -251,25 +251,30 @@ class ExpressionStream:
         elif ch == '【' and self.cue_words is not None: self.bracket = ch
         else: self._emit(ch, out)
 
-    def feed(self, chunk):
-        if self.cancelled or self.finished: return ''
-        out = []
-        for ch in str(chunk):
-            # 已开始的控制标记、JSON 字符串内部沿用原协议。其他字符和桌宠动作解析共用 Markdown 边界。
-            in_tag = self.pending.lower().startswith(RESERVED + ('<img', '['))
-            normal = not (in_tag or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
-            if self.markdown.protected(ch, syntax=normal):
+    def _markdown_enabled(self):
+        in_tag = self.pending.lower().startswith(RESERVED + ('<img', '['))
+        return not (in_tag or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
+
+    def _read(self, chunk, out, *, final=False):
+        for ch, literal in self.markdown.feed(chunk, self._markdown_enabled, final=final):
+            if literal:
                 if self.pending or self.bracket:
                     self._emit(self.pending + self.bracket, out)
                     self.pending = self.bracket = ''
                 self._emit(ch, out)
             else:
                 self._char(ch, out)
+
+    def feed(self, chunk):
+        if self.cancelled or self.finished: return ''
+        out = []
+        self._read(str(chunk), out)
         return ''.join(out)
 
     def finish(self):
         if self.finished or self.cancelled: return ''
         out = []
+        self._read('', out, final=True)
         if self.pending:
             if any(self.pending.startswith(prefix) for prefix in HISTORY_ANNOTATIONS): self.diagnose('internal_annotation_echo')
             elif not self.pending.lower().startswith(RESERVED): self._emit(self.pending, out)
@@ -283,6 +288,7 @@ class ExpressionStream:
         return ''.join(out)
 
     def cancel(self):
+        self.markdown = MarkdownLiterals()
         self.cancelled = True; self.selection = None; self.pending = self.task = self.bracket = ''; self.img = 0; self.img_quote = ''
 
 

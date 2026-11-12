@@ -635,7 +635,7 @@ class MainWindow(QMainWindow):
         if generation in getattr(self,'outreach_valid',{}) and self.coordinator.accepts(generation):
             self._still_wanted(generation,visible=False)
         expression,media=self.expression_results.pop(generation,(None,None))
-        allowed_task=generation in getattr(self,'task_turns',()); getattr(self,'task_turns',set()).discard(generation)
+        task_turns=getattr(self,'task_turns',set())
         key=self.proactive_keys.pop(generation,None)
         if key and state!='complete': self.database.release_proactive(*key)
         outreach_done=self.outreaches.pop(generation,None)
@@ -648,7 +648,10 @@ class MainWindow(QMainWindow):
             else: self.purposes.release(purpose_id)
         self.reply_status[generation]=state
         self._sync_delivery(generation); self.first_token.discard(generation)
+        stream=getattr(self,'cue_streams',{}).pop(generation,None)
         if withdrawn or not self.coordinator.accepts(generation) or self.closing:
+            task_turns.discard(generation)
+            getattr(self,'pending_tasks',{}).pop(generation,None)
             character_id=self.reply_characters.get(generation,self.controller.character.id)
             if withdrawn or (outreach_done and not self.texts.get(generation,'').strip()
                              and not self.controller.expression.history(generation,character_id)):
@@ -656,12 +659,14 @@ class MainWindow(QMainWindow):
             if outreach_done: outreach_done(False,'desktop')
             return
         self.pet.hide_activity()
-        stream=self.cue_streams.pop(generation,None)
-        if stream:
+        if stream and state=='complete':
             rest,cues=stream.flush(); self._handle_cues(generation,cues)
-            if rest and state=='complete':
+            if rest:
                 self.texts[generation]+=rest; self.items[generation].set_text(self.texts[generation])
                 for sentence in self.sentences.feed(rest): self._enqueue_sentence(sentence,generation)
+        # 落单反引号后面的委托可能到 flush 才能辨认，这时仍须核实是用户发起的轮次。
+        allowed_task=generation in task_turns
+        task_turns.discard(generation)
         if state=='complete' and expression and expression.status=='complete':
             for attachment in expression.attachments:self._display_attachment(generation,attachment,media)
             if expression.attachments and not self.texts.get(generation,'').strip() and not any(a.delivery_id in self.displayed_attachments for a in expression.attachments):
