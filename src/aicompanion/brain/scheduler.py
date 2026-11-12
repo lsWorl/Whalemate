@@ -119,6 +119,12 @@ class ProactiveScheduler:
         with self.db.transaction() as c:
             c.execute("DELETE FROM outreach_log WHERE id=? AND status IN ('pending','delivering','unknown')", (outreach_id,))
 
+    def discard(self, outreach_id: int) -> None:
+        """确定没发出去：不管这条后来被记成什么（结果未知期间他说了话、被记成 answered 之类），都撤掉，
+        今天的次数也跟着减回去（Codex PR #46 第四轮：迟到的明确失败回执要能纠正已经变化的状态）。"""
+        with self.db.transaction() as c:
+            c.execute("DELETE FROM outreach_log WHERE id=?", (outreach_id,))
+
     def settle_delivery(self, character_id: str, outreach_id: int, outreach: Outreach, result, channel: str = 'qq') -> None:
         """按投递结果收尾这条主动开口，以及它在心事 / 问候 / 纪念日那边的占位。
         result：bridge.outbox.Delivery（QQ），或 True / False（桌面说完没有）。
@@ -127,13 +133,9 @@ class ProactiveScheduler:
         - 结果未知：不主动重发（心事算送到、问候 / 纪念日的占位留着），但纪念日“提没提过”不确认（bridge/outbox.py），
           他来聊天时还可能自然提起——宁可再提一次，也不能没提却当作提过。"""
         status = getattr(result, 'status', 'sent' if result else 'failed')
-        if status in ('sent', 'partial'): self.confirm(character_id, outreach_id, outreach, channel, getattr(result, 'first_at', None))
-        elif status == 'unknown':
-            self.unknown(outreach_id)
-            parent = outreach.payload.get('parent_id')
-            if parent:   # 追过了（到没到不知道）：这个话题不再追
-                with self.db.transaction() as c: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
-        else: self.release(outreach_id)
+        # 先做连带的写入（心事送到 / 放回、问候和纪念日占位放回，都可以重复做），最后才改调度记录：
+        # 中途退出时调度记录还停在原来的状态，重启后按 qq_outbox 对账会把整套重放一遍，不会出现“记成说过、心事却还是待说”
+        # 这样的半截状态（Codex PR #46 第四轮）
         purpose = outreach.key.split(':', 1)[1] if outreach.source == 'purpose' and outreach.key.startswith('purpose:') else None
         try:
             if purpose and self.purposes is not None:
@@ -142,6 +144,13 @@ class ProactiveScheduler:
             if status == 'failed' and outreach.source in ('date', 'greeting'): self.db.release_proactive(character_id, outreach.key)
         except Exception:
             pass
+        if status in ('sent', 'partial'): self.confirm(character_id, outreach_id, outreach, channel, getattr(result, 'first_at', None))
+        elif status == 'unknown':
+            parent = outreach.payload.get('parent_id')
+            if parent:   # 追过了（到没到不知道）：这个话题不再追
+                with self.db.transaction() as c: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
+            self.unknown(outreach_id)
+        else: self.discard(outreach_id)
 
     def record(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
         """占位并立刻确认（已经说出来时用）。"""
@@ -166,15 +175,28 @@ class ProactiveScheduler:
             from aicompanion.bridge.outbox import Delivery, OutboxStore
             OutboxStore(self.db, self.clock).sweep()
             with self.db.transaction() as c:
+                # 要对账的：还没结算的；投递确定失败的（不管调度记录后来变成了什么）；
+                # 迟到的发出回执、首达时间和记录不一致的（结果未知期间他说了话被记成 answered 等，也要按实际首达时间校正）
                 rows = c.execute("SELECT o.*, q.status AS delivery, q.first_sent_at FROM outreach_log o JOIN qq_outbox q ON q.turn_id=o.turn_id "
-                                 "WHERE o.character_id=? AND o.status IN ('pending','delivering','unknown') "
-                                 "AND q.status IN ('sent','partial','failed','unknown')", (character_id,)).fetchall()
+                                 "WHERE o.character_id=? AND q.status IN ('sent','partial','failed','unknown') AND ("
+                                 " o.status IN ('pending','delivering') OR (o.status='unknown' AND q.status!='unknown') OR q.status='failed'"
+                                 " OR (q.status IN ('sent','partial') AND q.first_sent_at IS NOT NULL AND (o.sent_at!=q.first_sent_at OR o.channel!='qq')))",
+                                 (character_id,)).fetchall()
         except Exception:
             return
         for row in rows:
-            if row['status'] == 'unknown' and row['delivery'] == 'unknown': continue
             outreach = Outreach(row['source'], row['key'], '', {'parent_id': row['parent_id']} if row['parent_id'] else {})
-            self.settle_delivery(character_id, row['id'], outreach, Delivery(row['delivery'], row['first_sent_at']))
+            delivery = Delivery(row['delivery'], row['first_sent_at'])
+            if row['status'] in ('pending', 'delivering', 'unknown') or row['delivery'] == 'failed':
+                self.settle_delivery(character_id, row['id'], outreach, delivery)
+            else:   # 已经有了对话上的去向（answered / let_go / ignored …）：只校正首达时间和渠道，去向不动；心事照样补记送到
+                try:
+                    if row['source'] == 'purpose' and self.purposes is not None and str(row['key']).startswith('purpose:'):
+                        self.purposes.delivered(int(str(row['key']).split(':', 1)[1]))
+                except Exception:
+                    pass
+                with self.db.transaction() as c:
+                    c.execute("UPDATE outreach_log SET sent_at=?, channel='qq' WHERE id=?", (row['first_sent_at'], row['id']))
 
     def pending(self, character_id: str) -> bool:
         """有还在发送中的主动消息。先按 QQ 投递记录对账；再把超过 PENDING_STALE 还没送出去、也没进 QQ 发件箱的
@@ -182,6 +204,11 @@ class ProactiveScheduler:
         self.reconcile(character_id)
         now = self.clock()
         with self.db.transaction() as c:
+            # 跑过本 PR 早期版本（e38ed29）的库：插件取走了、回执前退出，留下没有发件箱记录的 delivering，对账永远对不上。
+            # 取走超过半小时还没结果的当作“结果未知”：算今天一次、不重发、不追问，三小时后悄悄放下（Codex PR #46 第四轮）
+            c.execute("UPDATE outreach_log SET status='unknown', settled_at=? WHERE character_id=? AND status='delivering' "
+                      "AND COALESCE(handed_at, sent_at)<? AND NOT EXISTS (SELECT 1 FROM qq_outbox q WHERE q.turn_id=outreach_log.turn_id)",
+                      (now, character_id, now-PENDING_STALE))
             stale = c.execute("SELECT * FROM outreach_log o WHERE character_id=? AND status='pending' AND sent_at<? "
                               "AND NOT EXISTS (SELECT 1 FROM qq_outbox q WHERE q.turn_id=o.turn_id)", (character_id, now-PENDING_STALE)).fetchall()
             for row in stale: c.execute("DELETE FROM outreach_log WHERE id=? AND status='pending'", (row['id'],))

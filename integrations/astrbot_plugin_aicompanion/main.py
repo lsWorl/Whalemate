@@ -25,7 +25,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.10.0'
+PLUGIN_VERSION = '0.10.1'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -33,6 +33,8 @@ MAX_STICKERS = 3
 # 0.9.6：不再按 8 段防刷屏合并（负责人 2026-11-11：按打字速度慢慢发就不会刷屏），这里只是格式上限
 # 0.10.0：主动消息先向桌宠领取、领到才发；回执带第一段实际发出后过了几秒、发出了几段，并且会重试（Codex PR #46 第三轮）。
 #         桌宠只按插件报回的事实判断“发没发到、什么时候发到、纪念日算不算提过”，旧插件不再用来主动发
+# 0.10.1：超时 / 断连只算“不确定”（回报 unknown，不重发）；中途被停用不再报 sent；图在前时也记首达时间；
+#         回执带 first_after_claim（领取后几秒第一条发出），回执在路上耽搁不影响首达时间（Codex PR #46 第四轮）
 MAX_SEGMENTS = 64
 AT_ONLY = '[@了你一下，没说别的]'
 # 商城表情（mface）的图片只从 QQ 自己的固定主机下载
@@ -585,6 +587,7 @@ class AICompanionBridge(Star):
                 try: await asyncio.shield(self.ack_outbox({'id': key, 'status': 'failed', 'sent': 0}))
                 except Exception: pass
             return
+        claimed = time.monotonic()   # 首达时间按“领取成功后过了几秒”回报：桌宠用自己记的领取时刻换算，回执在路上耽搁多久都不影响（Codex PR #46 第四轮）
         segments = self.segments_of({'reply': '', 'segments': item.get('segments')})
         delays = self.delays_of(item, len(segments))
         expression = item.get('expression') if isinstance(item.get('expression'), dict) else {}
@@ -592,10 +595,16 @@ class AICompanionBridge(Star):
         origin = self.private_origins.get(user) or f'{self.platform_id}:FriendMessage:{user}'
         from astrbot.api.event import MessageChain
         from astrbot.api.message_components import Image, Plain
+        class Refused(Exception): pass
         async def send(component):
             ok = await asyncio.wait_for(self.context.send_message(origin, MessageChain(chain=[component])), timeout=30)
-            if ok is False: raise RuntimeError('会话不存在')
-        sent = 0; failed = False; first = None
+            if ok is False: raise Refused('会话不存在')
+        def refused(error):
+            # 只有平台明确拒收才算“确定没发出”。超时、断连可能已经送到（只是没等到响应），算“不确定”：
+            # 桌宠那边留着防重、不重发同一句（Codex PR #46 第四轮）
+            return isinstance(error, Refused) or type(error).__name__ == 'ActionFailed'
+        # sent：确认发出的条数；failed：正文中途停下；uncertain：有一条结果不确定；done：所有正文都发完了
+        sent = 0; failed = False; uncertain = False; done = False; first = None
         image = None; delivery = ''
         if attachments:
             a = attachments[0]; delivery = str(a.get('delivery_id') or '')
@@ -607,7 +616,8 @@ class AICompanionBridge(Star):
                         image = (Image.fromBase64(match[1]), a.get('placement'))
                 except ValueError: image = None
         async def send_image():
-            nonlocal sent
+            # first 也要声明：以前只声明了 sent，图在前时读 first 抛 UnboundLocalError、被下面吞掉，首达时间丢了（Codex PR #46 第四轮）
+            nonlocal sent, first, uncertain
             try: permission = await self.expression_control('claim', {'delivery_id': delivery})
             except Exception: return
             if not permission.get('allowed'): return
@@ -615,9 +625,11 @@ class AICompanionBridge(Star):
             try:
                 await send(image[0]); status = 'accepted'; sent += 1
                 if first is None: first = time.monotonic()
-            except asyncio.CancelledError: raise
+            except asyncio.CancelledError:
+                uncertain = True; raise
             except Exception as error:
-                if type(error).__name__ == 'ActionFailed': status = 'failed'
+                if type(error).__name__ == 'ActionFailed' or isinstance(error, Refused): status = 'failed'
+                else: uncertain = True
             try: await asyncio.shield(self.expression_control('ack', {'delivery_id': delivery, 'status': status}))
             except Exception: pass
         try:
@@ -627,21 +639,33 @@ class AICompanionBridge(Star):
                 try:
                     await send(Plain(text)); sent += 1
                     if first is None: first = time.monotonic()
-                except asyncio.CancelledError: raise
+                except asyncio.CancelledError:
+                    uncertain = True; raise                               # 正在发这一条时被停用：这一条到没到不知道
                 except Exception as error:
-                    logger.warning(f'AICompanion 主动消息第 {index+1} 条发送失败：{type(error).__name__}'); failed = True; break
+                    logger.warning(f'AICompanion 主动消息第 {index+1} 条发送失败：{type(error).__name__}'); failed = True
+                    if not refused(error): uncertain = True
+                    break
+            done = not failed                                             # 正文都发完了才可能是 sent
             if image and image[1] == 'after_text' and not failed:
                 if segments: await self.pause('')
                 await send_image()
         finally:
-            status = 'failed' if not sent else ('partial' if failed else 'sent')
+            # 中途被取消（插件停用、AstrBot 退出）时 done 还是 False：已经发出的按 partial，一条都没确认发出、又有一条在途的按 unknown，
+            # 绝不报 sent（Codex PR #46 第四轮：只发出寒暄、生日祝福没发，却回报整条成功）
+            if done: status = 'sent'
+            elif sent: status = 'partial'
+            elif uncertain: status = 'unknown'
+            else: status = 'failed'
             report = {'id': key, 'status': status, 'sent': sent}
-            if first is not None: report['first_delay'] = round(time.monotonic()-first, 3)
+            if first is not None:
+                report['first_delay'] = round(time.monotonic()-first, 3)
+                report['first_after_claim'] = round(max(0.0, first-claimed), 3)
             try: await asyncio.shield(self.ack_outbox(report))
             except Exception: pass
 
     async def ack_outbox(self, report):
-        """回报主动消息的结果；没送到桌宠就重试几次（桌宠那边重复收到同一条只算一次）。first_delay 在每次重试前重新算。"""
+        """回报主动消息的结果；没送到桌宠就重试几次（桌宠那边重复收到同一条只算一次）。first_delay 在每次重试前重新算；
+        first_after_claim 不随重试变化，桌宠优先用它（不受回执在路上耽搁的影响）。"""
         started = time.monotonic(); base = report.get('first_delay')
         for wait in (0, 2, 5, 15):
             if wait: await asyncio.sleep(wait)

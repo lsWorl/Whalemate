@@ -1766,3 +1766,21 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 新增测试：`tests/test_scheduler.py::test_baseline_v12_database_upgrades_to_v13`（基线 v12 库升级：备份一次、旧消息和设置保留、两张新表可用、再次打开不重复备份）。
 - 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）`PYTHONPATH=src:tests python3 -m unittest discover -s tests` → `Ran 1071 tests … OK (skipped=8)`。
 - 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 领取 / 发送；真实模型话术。
+
+## 2026-11-12 PR #46 Codex 第四轮修复（Claude）
+
+- 做了什么：修复 Codex 第四轮（a9aa4fc）的 7 项 P2 和 1 项 P3，改法见 `docs/tasks/V4-4a-scheduler.md`。
+  - 插件升到 0.10.1：超时只算“不确定”；中途停用不报 sent；图在前也记首达时间；回执带 `first_after_claim`。桌宠要求插件 0.10.1 起才主动发消息。
+  - 桥接：接受 `unknown` 回执，首达时间按“领取时刻 + 领取后秒数”换算；生成前记 `generating`。
+  - 发件箱：结果和连带写入在同一个事务里提交。
+  - 调度：先做可重放的连带写入、最后改记录；对账时纠正迟到的失败 / 成功回执；早期 v13 遗留的 `delivering` 有界恢复。
+  - 启动：`generating` 和 `queued`、`dequeued` 一样记失败并拿掉回复。
+- 新增回归 12 项，在 a9aa4fc 的源码上全部失败或报错：
+  - `test_qq_proactive.PluginTests`：`test_send_timeout_is_unknown_not_failed`、`test_stopped_between_segments_reports_partial_not_sent`、`test_sticker_first_sets_first_arrival`。
+  - `ProactiveQQTests`：`test_unknown_receipt_keeps_topic_and_is_not_resent`、`test_first_arrival_uses_claim_offset_not_receipt_arrival`、`test_reply_committed_before_outbox_is_dropped_on_restart`，另外 `test_ready_needs_bound_owner_connected_new_plugin` 补了 0.10.0 不可用的断言。
+  - `test_scheduler.CodexRoundFourTests` 5 项。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）全量 `unittest discover` → `Ran 1095 tests … OK (skipped=8)`。
+- 没验证：
+  - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
+  - 插件 0.10.1 装进本机 AstrBot 后的真实 QQ 发送（超时、停用插件等真实时序）；
+  - 真实模型话术。

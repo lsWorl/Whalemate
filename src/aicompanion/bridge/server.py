@@ -6,7 +6,7 @@ POST /v1/heartbeat {"astrbot","onebot":{"connected","self_id","error"},"groups":
                 → {"ok": true, "groups": [允许的群号], "media": {...}, "outbox"?: [主动发到 QQ 私聊的消息]}
                   插件每 15 秒一次：桌宠据此显示连接状态，插件据此拿到允许的群和待发的主动消息
 POST /v1/outbox/claim {"id"} → {"allowed"}（插件 0.10.0 起：领取成功才发送）
-POST /v1/outbox/ack {"id","status": sent|partial|failed, "first_delay"?: 第一段发出后过了几秒, "sent"?: 发出了几段} → {"ok"}（可重发）
+POST /v1/outbox/ack {"id","status": sent|partial|failed|unknown, "first_delay"?: 第一段发出后过了几秒, "first_after_claim"?: 领取后几秒第一段发出, "sent"?: 发出了几段} → {"ok"}（可重发）
 """
 from __future__ import annotations
 

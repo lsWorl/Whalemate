@@ -99,9 +99,10 @@ class Database:
                                        "SELECT character_id,content,category,fact_key,importance,scope,source_ids,'migrated' FROM memories")
                 connection.execute("UPDATE conversation_turns SET status='interrupted' WHERE status='generating'")
                 connection.execute("UPDATE purposes SET status='pending' WHERE status='delivering'")
-                # 上次退出时还在发件箱里、没被插件领取的 QQ 主动消息：内存里的待发内容已经没了，确定发不出去。
-                # 标成失败并把那条回复从聊天记录里拿掉（插件之后再来领取也会被拒绝，不会发）。领取过的等回执或超时
-                stuck = [r[0] for r in connection.execute("SELECT turn_id FROM qq_outbox WHERE status IN ('queued','dequeued')")]
+                # 上次退出时还在生成、或在发件箱里没被插件领取的 QQ 主动消息：内存里的待发内容已经没了，确定发不出去。
+                # 标成失败并把那条回复从聊天记录里拿掉（插件之后再来领取也会被拒绝，不会发）。领取过的等回执或超时。
+                # generating：回复可能已经写进聊天记录、还没放进发件箱（Codex PR #46 第四轮 P3）
+                stuck = [r[0] for r in connection.execute("SELECT turn_id FROM qq_outbox WHERE status IN ('generating','queued','dequeued')")]
                 for turn in stuck:
                     connection.execute("UPDATE qq_outbox SET status='failed', settled_at=? WHERE turn_id=?", (time.time(), turn))
                     connection.execute("DELETE FROM chat_messages WHERE turn_id=? AND role='assistant'", (turn,))

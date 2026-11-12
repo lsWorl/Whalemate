@@ -15,6 +15,10 @@ from aicompanion.storage.database import Database
 import test_astrbot_plugin as plugin_fixture
 
 
+class ActionFailed(Exception):
+    """和 OneBot 明确拒收时抛的异常同名：插件按名字认“确定没发出”。"""
+
+
 class Model:
     model = 'mock'
     def __init__(self): self.reply = '爹 吃饭了没'; self.prompts = []
@@ -31,7 +35,7 @@ class Base(unittest.TestCase):
         self.service = BridgeService(self.db, self.controller)
         self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.saved = runtime.last_heartbeat
-        runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.10.0', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
+        runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.10.1', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
     def tearDown(self):
         runtime.last_heartbeat = self.saved; self.service.close(); self.temp.cleanup()
 
@@ -41,7 +45,8 @@ class ProactiveQQTests(Base):
         self.assertTrue(self.service.qq_ready())
         runtime.last_heartbeat['astrbot'] = 'plugin-0.8.0'; self.assertFalse(self.service.qq_ready())   # 旧插件不会发发件箱
         runtime.last_heartbeat['astrbot'] = 'plugin-0.9.6'; self.assertFalse(self.service.qq_ready())   # 不会先领取、回执不带实际发送时间
-        runtime.last_heartbeat['astrbot'] = 'plugin-0.10.0'; runtime.last_heartbeat['onebot']['connected'] = False
+        runtime.last_heartbeat['astrbot'] = 'plugin-0.10.0'; self.assertFalse(self.service.qq_ready())  # 超时会报 failed、中途停用会报 sent
+        runtime.last_heartbeat['astrbot'] = 'plugin-0.10.1'; runtime.last_heartbeat['onebot']['connected'] = False
         self.assertFalse(self.service.qq_ready())
         runtime.last_heartbeat['onebot']['connected'] = True; runtime.last_heartbeat['at'] = time.time()-120
         self.assertFalse(self.service.qq_ready())
@@ -167,6 +172,72 @@ class ProactiveQQTests(Base):
         self.assertEqual(OutboxStore(self.db).get(turn)['status'], 'failed')
         self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])
 
+    # ---- Codex PR #46 第四轮（a9aa4fc）桥接这边 ----------------------------------------------------------------
+    def scheduled(self, now):
+        """真实的调度器 + 桥接：选中一条问候、占位，经 proactive_qq 生成、插件取走并领取。返回（调度器, 轮次, 占位 id）。"""
+        from aicompanion.brain.scheduler import Outreach, ProactiveScheduler
+        from test_scheduler import FakeGreetings
+        self.db.set_setting('quiet_start', 3); self.db.set_setting('quiet_end', 4)
+        self.service.clock = lambda: now[0]
+        s = ProactiveScheduler(self.db, greetings=FakeGreetings(), clock=lambda: now[0], rng=lambda: 0.0)
+        cid = self.character.id; o = Outreach('greeting', 'g:1', '闲聊')
+        rid = s.reserve(cid, o)
+        turn = self.service.proactive_qq('闲聊', on_done=lambda r: s.settle_delivery(cid, rid, o, r),
+                                         on_taken=lambda t: s.handed(rid, t), on_queued=lambda t: s.attach(rid, t, 'qq'))
+        self.service.take_outbox(); self.assertTrue(self.service.outbox_claim({'id': turn})['allowed'])
+        return s, turn, rid
+
+    def user_says(self, at, text='在呢'):
+        from datetime import datetime, timezone
+        stamp = datetime.fromtimestamp(at, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO chat_messages(role, content, created_at, character_id, status, channel, source) VALUES ('user',?,?,?, 'complete', 'desktop', 'qq')",
+                      (text, stamp, self.character.id))
+
+    def outreach(self, rid):
+        with self.db.transaction() as c:
+            return c.execute('SELECT * FROM outreach_log WHERE id=?', (rid,)).fetchone()
+
+    def test_unknown_receipt_keeps_topic_and_is_not_resent(self):
+        """第 1 项（桥接这边）：插件回报 unknown（发送超时，可能已经送到）：调度记录留着防重，一分钟后不再生成、不再投递同一句；
+        回复留在记录里，纪念日不算提过。"""
+        now = [time.time()]
+        s, turn, rid = self.scheduled(now)
+        self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'unknown', 'sent': 0})['ok'])
+        self.assertEqual(self.outreach(rid)['status'], 'unknown'); self.assertEqual(self.replies(turn), 1)
+        now[0] += 60
+        self.assertIsNone(s.next(self.character.id, 0, 9999))
+        self.assertEqual(self.service.take_outbox(), [])
+
+    def test_first_arrival_uses_claim_offset_not_receipt_arrival(self):
+        """第 4 项：23:59:57 领取，领取后 1 秒首段可见，回执在路上 3 秒、00:00:01 才到。首达按 23:59:58 记：
+        主人 23:59:59 的回复算回应；第二天的次数不被占用。"""
+        from datetime import datetime
+        now = [datetime(2026, 11, 12, 23, 59, 57).timestamp()]
+        s, turn, rid = self.scheduled(now)
+        claimed = now[0]
+        self.user_says(claimed+2)
+        now[0] += 4
+        self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 0.0, 'first_after_claim': 1.0, 'sent': 1})['ok'])
+        self.assertAlmostEqual(self.outreach(rid)['sent_at'], claimed+1, delta=0.01)
+        now[0] = datetime(2026, 11, 13, 0, 0, 2).timestamp()
+        self.assertEqual(s.today_count(self.character.id), 0)
+        s.settle(self.character.id)
+        self.assertEqual(self.outreach(rid)['status'], 'answered')
+
+    def test_reply_committed_before_outbox_is_dropped_on_restart(self):
+        """P3：正文已经写进聊天记录、还没放进发件箱时退出：重启后聊天记录里没有这条，投递记为失败，插件领取被拒。"""
+        from aicompanion.bridge.outbox import OutboxStore
+        with mock.patch.object(OutboxStore, 'add', side_effect=SystemExit):
+            with self.assertRaises(SystemExit): self.service.proactive_qq('闲聊')
+        with self.db.transaction() as c:
+            turn = c.execute("SELECT turn_id FROM qq_outbox WHERE status='generating'").fetchone()[0]
+        self.assertEqual(self.replies(turn), 1)                                                  # 退出前已经写进去了
+        Database(self.db.database_path).initialize()                                             # 重启
+        self.assertEqual(self.replies(turn), 0)
+        self.assertEqual(OutboxStore(self.db).get(turn)['status'], 'failed')
+        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])
+
     def test_not_ready_generates_nothing(self):
         runtime.last_heartbeat = None
         self.assertIsNone(self.service.proactive_qq('闲聊')); self.assertEqual(self.model.prompts, [])
@@ -232,8 +303,11 @@ class PluginTests(unittest.TestCase):
 
     claim_allowed = True
 
-    def run_outbox(self, plugin, item, fail_text=False, fail_second=False):
+    def run_outbox(self, plugin, item, fail_text=False, fail_second=False, text_error=None, pause_error=None, clock=None):
+        """text_error：发文字时抛的异常（默认 ActionFailed，平台明确拒收）；pause_error：停顿时抛（模拟中途停用插件）；
+        clock：替换插件里的 time.monotonic（只换插件模块里的 time，不动 asyncio）。"""
         sent, posts = [], []
+        text_error = text_error or ActionFailed
         class Chain:
             def __init__(self, chain): self.chain = chain
         api_event = types.ModuleType('astrbot.api.event'); api_event.MessageChain = Chain
@@ -241,18 +315,24 @@ class PluginTests(unittest.TestCase):
         components.Image = type('Image', (), {'fromBase64': staticmethod(lambda value: ('image', value))})
         components.Plain = lambda value: ('text', value)
         async def send_message(origin, chain):
-            if fail_text and chain.chain[0][0] == 'text': raise RuntimeError('boom')
-            if fail_second and sent: raise RuntimeError('boom')
+            if fail_text and chain.chain[0][0] == 'text': raise text_error('boom')
+            if fail_second and sent: raise text_error('boom')
             sent.append((origin, chain.chain[0])); return True
         plugin.context = types.SimpleNamespace(send_message=send_message)
         async def control(path, payload): posts.append((path, payload)); return {'allowed': True}
         async def post_json(path, payload):
             posts.append((path, payload)); return {'ok': True, 'allowed': self.claim_allowed}
         self.delays = []
-        async def pause(text, delay=None): self.delays.append(delay)
+        async def pause(text, delay=None):
+            self.delays.append(delay)
+            if clock: clock[0] += 7
+            if pause_error: raise pause_error()
         plugin.expression_control = control; plugin.post_json = post_json; plugin.pause = pause
-        with mock.patch.dict(sys.modules, {'astrbot.api.event': api_event, 'astrbot.api.message_components': components}):
-            asyncio.run(plugin.deliver_outbox(item))
+        fake_time = types.SimpleNamespace(monotonic=lambda: clock[0], time=time.time) if clock else self.module.time
+        with mock.patch.dict(sys.modules, {'astrbot.api.event': api_event, 'astrbot.api.message_components': components}), \
+             mock.patch.object(self.module, 'time', fake_time):
+            try: asyncio.run(plugin.deliver_outbox(item))
+            except asyncio.CancelledError: self.cancelled = True
         return sent, posts
 
     def test_outbox_with_seven_or_eight_text_segments_is_sent_in_order_and_acked(self):
@@ -298,6 +378,40 @@ class PluginTests(unittest.TestCase):
         self.assertEqual([x[1] for x in sent], [('text', '在吗')])
         ack = posts[-1][1]
         self.assertEqual((ack['status'], ack['sent']), ('partial', 1)); self.assertGreaterEqual(ack['first_delay'], 0)
+
+
+    # ---- Codex PR #46 第四轮（a9aa4fc）插件这边的三项 ----------------------------------------------------------
+    def test_send_timeout_is_unknown_not_failed(self):
+        """第 1 项：适配器等响应超时（消息可能已经送到）：回报 unknown，不报 failed，桌宠就不会一分钟后重发同一句。
+        平台明确拒收仍报 failed。"""
+        plugin = self.plugin(); self.claim_allowed = True
+        for error, expected in ((asyncio.TimeoutError, 'unknown'), (ConnectionResetError, 'unknown'), (ActionFailed, 'failed')):
+            key = {'unknown': '1', 'failed': '2'}[expected] + str(len(error.__name__) % 10)
+            _, posts = self.run_outbox(plugin, {'id': (key*16)[:32], 'user_id': '10001', 'segments': ['你在吗']}, fail_text=True, text_error=error)
+            ack = posts[-1][1]
+            self.assertEqual((ack['status'], ack['sent']), (expected, 0), error.__name__)
+
+    def test_stopped_between_segments_reports_partial_not_sent(self):
+        """第 2 项：发出“你在吗”后，在第二段（生日祝福）前的停顿里插件被停用：回报 partial、发出 1 段，绝不报 sent。"""
+        plugin = self.plugin(); self.claim_allowed = True; self.cancelled = False
+        sent, posts = self.run_outbox(plugin, {'id': '3'*32, 'user_id': '10001', 'segments': ['你在吗', '今天是我们认识的第一百天'],
+                                               'segment_delays': [0, 1.5]}, pause_error=asyncio.CancelledError)
+        self.assertTrue(self.cancelled)
+        self.assertEqual([x[1] for x in sent], [('text', '你在吗')])
+        ack = posts[-1][1]
+        self.assertEqual((ack['status'], ack['sent']), ('partial', 1))
+
+    def test_sticker_first_sets_first_arrival(self):
+        """第 3 项：先发表情（第 0 秒），7 秒后才发文字：首达时间按表情算（领取后 0 秒），主人对表情的回复能算回应。"""
+        plugin = self.plugin(); self.claim_allowed = True
+        item = {'id': '4'*32, 'user_id': '10001', 'segments': ['嘿嘿'], 'expression': {'attachments': [
+            {'delivery_id': 'b'*32, 'placement': 'before_text', 'data_uri': 'data:image/png;base64,YWJj', 'content_sha256': hashlib.sha256(b'abc').hexdigest()}]}}
+        clock = [100.0]
+        sent, posts = self.run_outbox(plugin, item, clock=clock)
+        self.assertEqual([x[1] for x in sent], [('image', 'YWJj'), ('text', '嘿嘿')])
+        ack = posts[-1][1]
+        self.assertEqual(ack['status'], 'sent'); self.assertEqual(ack['first_after_claim'], 0.0)
+        self.assertEqual(ack['first_delay'], 7.0)
 
 
 if __name__ == '__main__':
