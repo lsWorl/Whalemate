@@ -172,13 +172,14 @@ into **a companion with her own life and moods, who reaches out to you, and whos
 | 2 | Extensible persona packs: write, import, export and switch without losing memories | ✅ Shipped (SillyTavern card compatible, with version rollback) |
 | 3 | Lasting moods and little tempers: sulking, being clingy, talking back, and calming down | ✅ Shipped |
 | 4 | A life of her own: explores her interests, shares interesting finds, then waits for your reply | ✅ Shipped (unified proactive scheduler + sharing loop); long-term hands-on testing pending |
-| 5 | Really leaving: closes herself when the mood calls for it, and picks up again next launch | 📋 Planned |
+| 5 | Really leaving: closes herself when the mood calls for it, and picks up again next launch | ✅ Shipped (farewell exit, restart greeting, paused tasks resume) |
 | 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | 🚧 Part one shipped (full-text recall, request budgets); semantic recall and summaries to do |
 | 7 | Circles and long-running work: recurring group topics, promises, multi-day tasks, file hand-off | 📋 Planned |
 | 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | ✅ Shipped (smart reading, default whale voice); QQ voice messages to do |
 | 9 | Companion dates: days since you met, anniversaries she brings up on the day | ✅ Basic version shipped |
 | — | UI redesign: whale theme, first-run guide, settings autosave | ✅ Shipped |
 | — | Ready-to-run Windows build and uninstaller | ✅ Released (v0.1.0) |
+| — | QQ setup ships NapCat in the zip: scan the QR code to log in, no online download needed | ✅ Released (v0.1.0); real-account messaging awaits hands-on testing |
 
 "Shipped" means merged into the main line and passing automated tests; real-model, QQ and voice behaviour is confirmed by the owner's hands-on testing.
 
