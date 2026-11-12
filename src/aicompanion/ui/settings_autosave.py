@@ -60,7 +60,7 @@ class SettingsAutosave(QObject):
                    bridge.vision_enabled, bridge.proactive_qq, bridge.memes_enabled, bridge.meme_root,
                    bridge.meme_cooldown, bridge.avatar_enabled, bridge.learning, bridge.chat_card_enabled,
                    bridge.community_auto, bridge.community_groups, bridge.community_source,
-                   bridge.daily, bridge.autostart, bridge.index)
+                   bridge.daily, bridge.autostart, bridge.index, bridge.napcat_source)
         if d.model_page:
             d.model_page.persisted.connect(lambda: d.saved.emit('models'))
             d.model_page.save_failed.connect(self.failed)

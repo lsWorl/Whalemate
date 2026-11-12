@@ -8,6 +8,7 @@
   qq_secrets        {'onebot', 'webui', 'dashboard'}：三段各自的随机令牌 / 密码，不写日志
   qq_bot_uin        机器人 QQ 号（登录成功后记下，下次用 -q 快速登录）
   qq_autostart      打开桌宠时自动启动组件
+  qq_napcat_source   本地原版 ZIP 或存放该 ZIP 的目录
   qq_index_url      PyPI 镜像（高级设置，空 = 官方）
 插件 ↔ 桌宠的令牌沿用第一版的 bridge_token，端口 bridge_port。
 """
@@ -18,16 +19,20 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
+import tempfile
 import socket
 import subprocess
 import time
 
 from aicompanion.qq import configure, specs
-from aicompanion.qq.fetch import fetch
+from aicompanion.qq.fetch import FetchError, fetch, sha256_of
 from aicompanion.qq.layout import Layout, default_root, install_archive
 from aicompanion.qq.launch import astrbot_command
 from aicompanion.qq.napcat_webui import NapCatWebUI, WebUIError
 from aicompanion.qq.supervisor import Supervisor
+
+from aicompanion.storage.locations import project_root
 
 DEFAULT_PORTS = {'onebot': 6199, 'webui': 6099, 'dashboard': 6185}
 HEARTBEAT_STALE = 45
@@ -121,17 +126,63 @@ class QQManager:
         self.db.set_setting('qq_mode', 'auto')
         layout = self.layout; layout.root.mkdir(parents=True, exist_ok=True)
         components = dict(layout.manifest().get('components') or {})
-        for index, spec in enumerate((specs.NAPCAT, specs.UV)):
+        for spec in (specs.NAPCAT, specs.UV):
             step = f'下载 {spec.name}'
-            archive = self.fetcher(spec.url, layout.downloads/Path(spec.url).name, spec.sha256,
-                                   progress=lambda done, total, s=step: progress(s, f'{done/1e6:.0f} / {total/1e6:.0f} MB' if total else f'{done/1e6:.0f} MB', done/total if total else 0),
-                                   cancelled=cancelled)
-            progress(f'安装 {spec.name}', '解压并检查文件')
-            path = install_archive(layout, spec, archive)
-            components[spec.name] = {'version': spec.version, 'url': spec.url, 'sha256': spec.sha256, 'path': str(path)}
+            def download():
+                return self.fetcher(spec.url, layout.downloads/Path(spec.url).name, spec.sha256,
+                                    progress=lambda done, total: progress(step, f'{done/1e6:.0f} MB', done/total if total else 0),
+                                    cancelled=cancelled)
+
+            with tempfile.TemporaryDirectory(dir=layout.root) as tmp:
+                if spec == specs.NAPCAT:
+                    archive, source = self._napcat_archive(Path(tmp), download, progress, cancelled)
+                else:
+                    archive, source = download(), 'cache-or-upstream'
+                if cancelled():
+                    raise SetupError('已取消')
+                progress(f'安装 {spec.name}', '解压并检查文件')
+                path = install_archive(layout, spec, archive)
+            components[spec.name] = {'version': spec.version, 'url': spec.url, 'sha256': spec.sha256,
+                                     'path': str(path), 'source': source}
             layout.update_manifest(components=components)
         self._install_astrbot(components, progress, cancelled)
         self.configure(progress)
+
+    def _napcat_archive(self, staging, download, progress, cancelled):
+        spec = specs.NAPCAT
+        configured = self.db.get_setting('qq_napcat_source', '')
+        candidates = [('随包 ZIP', project_root()/specs.NAPCAT_BUNDLE_DIR/specs.NAPCAT_ZIP)]
+        if configured:
+            path = Path(configured)
+            candidates.append(('设置中的 ZIP', path/specs.NAPCAT_ZIP if path.is_dir() else path))
+        issues = []
+        for label, source in candidates:
+            if cancelled():
+                raise SetupError('已取消')
+            try:
+                if not source.is_file():
+                    issues.append(f'{label}未找到')
+                    continue
+                progress('检查 NapCat', f'校验{label}')
+                # 只解压本次校验的快照，选择的原文件可以在安装期间被移动或替换。
+                snapshot = staging/specs.NAPCAT_ZIP
+                shutil.copyfile(source, snapshot)
+                if sha256_of(snapshot) == spec.sha256:
+                    return snapshot, label
+                issues.append(f'{label}的 SHA-256 不匹配')
+            except OSError as error:
+                issues.append(f'{label}读取失败（{error.strerror}）')
+        if cancelled():
+            raise SetupError('已取消')
+        progress('下载 NapCat', '；'.join(issues) + '，检查下载缓存和官方地址')
+        try:
+            return download(), 'cache-or-upstream'
+        except (FetchError, OSError) as error:
+            if cancelled():
+                raise SetupError('已取消') from error
+            detail = '；'.join([*issues, f'官方来源失败（{error}）'])
+            raise SetupError(f'无法安装 NapCat {spec.version}。{detail}。'
+                             f'请在 QQ 高级设置选择原版 {specs.NAPCAT_ZIP} 后重新准备组件。') from error
 
     def _uv(self, *args, timeout=1800):
         uv = self.layout.current('uv')/'uv.exe'
@@ -299,7 +350,8 @@ class QQManager:
                 code = self.supervisor.exited_with(name)
                 if code is not None:
                     detail = self.supervisor.tail(name, secrets=self.known_secrets())
-                    if 'os error 4551' in detail or 'WinError 4551' in detail:
+                    if any(marker in detail.casefold() for marker in (
+                            'os error 4551', 'winerror 4551', '应用程序控制策略已阻止', 'application control policy has blocked')):
                         detail = ('Windows 应用控制阻止了组件运行（4551），不是 QQ 登录或插件连接错误。'
                                   '请在 Windows 安全中心及代码完整性事件中确认被阻止的文件，使用符合系统信任要求的运行环境；'
                                   '重复启动或重置账号配置不能解除此拦截。\n'+detail)

@@ -1,4 +1,5 @@
 """在一次性构建目录里生成 Windows x64 发布包及校验文件。"""
+import argparse
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
@@ -14,6 +15,8 @@ import zipfile
 
 # 源码运行构建工具时也使用随应用打包的清单格式。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src'))
+from aicompanion.qq import specs
+from aicompanion.qq.fetch import sha256_of
 from aicompanion.release_manifest import EXE, MANIFEST, inventory
 
 if __package__:
@@ -26,6 +29,34 @@ UNINSTALLER = Path(EXE).stem
 PUBLIC = ('LICENSE', 'README.md', 'README.en.md', '.env.example',
           'docs/aboutme-pet.md', 'docs/live2d_model_sources.md', 'docs/storage-locations.md',
           'tools/install_aboutme_pet.py', 'tools/aboutme-pet.lock.json', 'tools/aboutme-requirements.txt')
+
+
+NAPCAT_FILES = tuple(f'{specs.NAPCAT_BUNDLE_DIR}/{name}' for name in (specs.NAPCAT_ZIP, 'LICENSE', 'NOTICE.txt'))
+
+
+def napcat_notice():
+    spec = specs.NAPCAT
+    return (f'NapCatQQ v{spec.version}, Copyright © 2024 Mlikiowa\n'
+            f'Source: https://github.com/NapNeko/NapCatQQ (commit {specs.NAPCAT_COMMIT})\n'
+            f'Original release: {spec.url}\nSHA-256: {spec.sha256}\n'
+            'NapCat 仅限非商业用途，许可全文见同目录 LICENSE。Whalemate 的 MIT 许可不适用于此包。\n'
+            'QQ NT 9.9.31.49738 的 wrapper.node 等运行库归腾讯及相应权利人所有。\n'
+            'Node.js 22.11.0 x64: https://nodejs.org/dist/v22.11.0/ (Node.js and third-party licenses).\n'
+            '本包供本机验证；对外分发 QQ 运行时需另行核实授权。\n').encode('utf-8')
+
+
+def stage_napcat(bundle, archive, repo):
+    target = bundle/specs.NAPCAT_BUNDLE_DIR
+    target.mkdir(parents=True)
+    shutil.copyfile(archive, target/specs.NAPCAT_ZIP)
+    if sha256_of(target/specs.NAPCAT_ZIP) != specs.NAPCAT.sha256:
+        raise ValueError('本地 NapCat ZIP 与固定 SHA-256 不匹配')
+    license_text = subprocess.check_output(['git', '-c', f'safe.directory={repo.resolve().as_posix()}',
+                                            '-C', str(repo), 'show', f'{specs.NAPCAT_COMMIT}:LICENSE'])
+    if hashlib.sha256(license_text).hexdigest() != specs.NAPCAT_LICENSE_SHA256:
+        raise ValueError('NapCat 标签中的 LICENSE 与固定 SHA-256 不匹配')
+    (target/'LICENSE').write_bytes(license_text)
+    (target/'NOTICE.txt').write_bytes(napcat_notice())
 
 
 def check_member(relative):
@@ -96,7 +127,7 @@ def validated_members(bundle, required_files):
         relative = item.relative_to(bundle)
         check_member(relative)
         if (item.is_file() and relative.parts[0] != '_internal'
-                and relative.as_posix() not in (*PUBLIC, 'AICompanion.exe', UNINSTALLER+'.exe')):
+                and relative.as_posix() not in (*PUBLIC, *NAPCAT_FILES, 'AICompanion.exe', UNINSTALLER+'.exe')):
             raise ValueError(f'发布包出现未列入清单的文件：{relative}')
         if item.resolve() != item.absolute():
             raise ValueError(f'发布目录含外部链接：{item}')
@@ -104,6 +135,13 @@ def validated_members(bundle, required_files):
             with item.open('rb') as stream:
                 if stream.read(16) == b'SQLite format 3\0':
                     raise ValueError(f'发布目录含 SQLite 数据库：{relative}')
+    if (bundle/specs.NAPCAT_BUNDLE_DIR).exists():
+        archive, license_file, notice = (bundle/name for name in NAPCAT_FILES)
+        if not all(p.is_file() for p in (archive, license_file, notice)):
+            raise ValueError('本地包须同时包含 NapCat 原版 ZIP、LICENSE 全文和 NOTICE.txt')
+        if (sha256_of(archive) != specs.NAPCAT.sha256 or sha256_of(license_file) != specs.NAPCAT_LICENSE_SHA256
+                or notice.read_bytes() != napcat_notice()):
+            raise ValueError('NapCat 原包、许可或来源声明校验失败')
     return members
 
 
@@ -133,6 +171,12 @@ def package(work, bundle, release, version):
 def main():
     if sys.platform != 'win32' or platform.machine().upper() not in ('AMD64', 'X86_64') or sys.maxsize < 2**32:
         raise SystemExit('请在 Windows x64 和 64 位 Python 环境构建')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--napcat-zip', type=Path, help='本机自用包附带的固定版本 NapCat 原版 ZIP')
+    parser.add_argument('--napcat-repo', type=Path, help='从本地 NapCatQQ Git 仓库的固定提交读取 LICENSE')
+    args = parser.parse_args()
+    if bool(args.napcat_zip) != bool(args.napcat_repo):
+        parser.error('--napcat-zip 和 --napcat-repo 必须一起指定')
     version = tomllib.loads((ROOT/'pyproject.toml').read_text('utf-8'))['project']['version']
     with tempfile.TemporaryDirectory(prefix='whalemate-release-') as tmp:
         work = Path(tmp)
@@ -151,13 +195,15 @@ def main():
         for name in PUBLIC:
             (bundle/name).parent.mkdir(exist_ok=True)
             shutil.copy2(ROOT/name, bundle/name)
+        if args.napcat_zip:
+            stage_napcat(bundle, args.napcat_zip, args.napcat_repo)
         validated_members(bundle, (*PUBLIC, 'AICompanion.exe'))
         manifest = bundle/MANIFEST
         manifest.write_bytes(inventory(bundle))
         freeze(work, UNINSTALLER, 'tools/uninstall_entry.py', version, [
             '--onefile', '--add-data', f'{manifest}:.', '--add-data', f'{work/"assets/icons"}:aicompanion/assets/icons'])
         (work/'dist'/EXE).rename(bundle/EXE)
-        package(work, bundle, ROOT/'dist/release', version)
+        package(work, bundle, ROOT/'dist'/('local-napcat' if args.napcat_zip else 'release'), version)
 
 
 if __name__ == '__main__':
