@@ -284,7 +284,13 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 | [astrbot_plugin_feiyu_voice](https://github.com/Esmerubphire/astrbot_plugin_feiyu_voice)、[WhaleTalk](https://github.com/Tokimorphling/WhaleTalk-) | 大肥鱼声线的听感、固定台词预合成、按音量驱动口型 |
 | [dsh-whale-musume 讨论](https://github.com/deepseek-ai/deepseek-harness/discussions/2262) | 鲸娘形象的社区讨论 |
 
-本仓库**没有**收录上述社区素材；表情包素材需要用户按原作者的许可自行导入。如果你是上述项目的作者，发现描述有误或希望调整署名，欢迎提 Issue。
+### 通用表情图形
+
+| 项目 | 怎么用的 |
+| --- | --- |
+| [Twemoji](https://github.com/jdecked/twemoji)（Twitter, Inc. 及其他贡献者，CC BY 4.0） | 日常表情素材库 `assets/stickers/daily-reactions-v2/` 里的 62 张通用反应图：原 SVG 一并收录，用 Qt 渲染成 256×256 透明 PNG，没有重绘或加字 |
+
+本仓库**没有**收录上述大肥鱼社区的图片素材。日常表情素材库里的 109 张鲸娘 GIF 由 `tools/prepare_daily_stickers.py` 在本机从作者网站按固定地址和哈希下载，仓库和发布包都不附带；其他表情包同样需要用户按原作者的许可自行导入。如果你是上述项目的作者，发现描述有误或希望调整署名，欢迎提 Issue。
 
 ## 📄 许可与声明
 
@@ -292,6 +298,8 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 - **Aboutme 大肥鱼**素材和据此生成的本机动画图集适用[上游素材声明](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt)。禁止商用，公开二创须署名 PC2005-cloud/dsh-pet。上游图集仅在本机安装，仓库和发布包均不附带。
 - **Live2D Cubism Core**：适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。本项目的仓库和打包版本都**不包含** Core，只有导入外部 Live2D 模型时才需要，由用户运行 `tools/fetch_avatar.py` 从 Live2D 官网自行下载，下载即表示同意该许可。因为能导入任意模型，带着 Core 分发本项目的构建版本可能属于 Live2D 定义的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免不适用。`tools/build_windows.py` 默认会把 Core 从构建结果里去掉；`--keep-cubism-core` 只供自己电脑使用，不要对外分发。
+- **Twemoji 图形**（`assets/stickers/daily-reactions-v2/images/twemoji/`、`sources/twemoji-svg/`）：Copyright Twitter, Inc. 及其他贡献者，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，不适用 MIT。我们把原 SVG 渲染成 256×256 PNG，没有改动图形内容。许可全文见 [`licenses/TWEMOJI-CC-BY-4.0.txt`](assets/stickers/daily-reactions-v2/licenses/TWEMOJI-CC-BY-4.0.txt)，再分发时请保留署名和许可链接。
+- **鲸娘表情 GIF**：作者“可以叫我云大人 / 雾雪”（[bilibili](https://space.bilibili.com/103739) · [kiriyuki.com](https://kiriyuki.com)）保留版权，只允许非商业、保留作者链接的分享，仓库和发布包都不附带。`catalog.json` 中鲸娘条目的说明标注参考了 [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) 的知识库（CC BY-NC 4.0），这部分不适用 MIT，详见 [`licenses/WHALE-ASSETS.txt`](assets/stickers/daily-reactions-v2/licenses/WHALE-ASSETS.txt)。
 - 其他第三方库和组件，以各自的许可证为准。
 - “DeepSeek”“Claude”“ChatGPT”等名称和徽标是各自权利人的商标，其中也包括出现在角色立绘里的徽标。MIT 许可不授予任何商标权。
 
