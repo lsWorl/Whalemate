@@ -250,15 +250,21 @@ class ExpressionUITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             db=Database(Path(temp)/'synthetic.sqlite3');db.initialize()
             char=replace(DEFAULT_CHARACTER,id='deepseek-whale',name='鲸娘');db.add_character(char)
-            model=controller_fixtures.Model();ctl=ChatController(db,MemoryService(db),model);ctl.character=char
+            class SpokenModel(controller_fixtures.Model):
+                def generate_reply_stream(self, *args):
+                    yield from super().generate_reply_stream(*args)
+                    yield '<say>语音专用</say>'
+            model=SpokenModel();ctl=ChatController(db,MemoryService(db),model);ctl.character=char
             worker=ChatWorker(ctl,'generation',char,'嘿');events=[];worker.expression_event.connect(lambda g,p:events.append((g,p)))
             worker.start()
-            deadline=time.monotonic()+10
-            while worker.isRunning() and time.monotonic()<deadline:self.app.processEvents();time.sleep(.005)
-            worker.wait();self.app.processEvents()
+            # worker 不等待 UI 回调。先让后台完成读图，再在主线程排空信号，避免两个线程同时进入 Qt 图像插件。
+            self.assertTrue(worker.wait(10000), '本地图片与模拟回复应在十秒内生成')
+            self.app.processEvents()
             self.assertTrue(events);self.assertEqual(events[0][1][1].kind,'attachment_ready')
             text=''.join(p[1] for _,p in events if p[0]=='text')
             self.assertEqual(text,'好耶！');self.assertNotIn('sticker',text);self.assertEqual(model.calls,1)
+            final = events[-1][1][1]
+            self.assertEqual((final.kind, final.result.text, final.spoken_summary), ('final', '好耶！', '语音专用'))
             worker.deleteLater();self.app.processEvents()
 
     def finish_library_task(self,page):
