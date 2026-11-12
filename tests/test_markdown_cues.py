@@ -99,6 +99,94 @@ class MarkdownCueTests(unittest.TestCase):
                        '落单 ' + TICK + ' 后仍可展示 ' + TICK * 2 + BODY + TICK * 2 + '。'):
             self.assert_active_after(prefix)
 
+    def stream_steps(self, chunks, through_expression, step, vocab=VOCAB):
+        """记录每次喂入前端后可见的增量，最后单列回复结束时的输出。"""
+        expression = None
+        if through_expression:
+            words = vocab.expressions.keys() | vocab.motions.keys()
+            expression = ExpressionStream([ASSET], handles={'s1': ASSET}, cue_words=words)
+        actions = CueStream(vocab)
+        for chunk in chunks:
+            shown, events = [], []
+            for i in range(0, len(chunk), step):
+                token = chunk[i:i + step]
+                text, cues = actions.feed(expression.feed(token) if expression else token)
+                shown.append(text)
+                events.extend(cues)
+            yield ''.join(shown), events
+        yield actions.feed(expression.finish() if expression else '', final=True)
+
+    def test_unpaired_tick_streams_later_text_and_cue_before_final(self):
+        chunks = ('用 ' + TICK + ' 号分隔', '就行。\n第二句很长', '第三句。\n第四句【开心】', '结束')
+        expected = ''.join(chunks).replace('【开心】', '')
+        for through_expression in (False, True):
+            for step in (1, 5, max(map(len, chunks))):
+                with self.subTest(pipe=through_expression, step=step):
+                    turns = list(self.stream_steps(chunks, through_expression, step))
+                    self.assertIn('用 ' + TICK + ' 号分隔就行。', ''.join(text for text, _ in turns[:2]))
+                    self.assertEqual(''.join(text for text, _ in turns[:3]), expected.removesuffix('结束'))
+                    self.assertEqual([cue for _, cues in turns[:3] for cue in cues], [Cue('expression', 'happy')])
+                    self.assertEqual(turns[3:], [('结束', []), ('', [])])
+
+    def test_blank_line_releases_pending_markers_across_crlf_tokens(self):
+        chunks = ('示例 ' + TICK + ' 号【开心】', '\r', '\n \t\r', '\n', '下一段')
+        for through_expression in (False, True):
+            with self.subTest(pipe=through_expression):
+                turns = list(self.stream_steps(chunks, through_expression, 1))
+                self.assertEqual(''.join(text for text, _ in turns[:4]), '示例 ' + TICK + ' 号\r\n \t\r\n')
+                self.assertEqual([cue for _, cues in turns[:4] for cue in cues], [Cue('expression', 'happy')])
+                self.assertEqual(turns[4:], [('下一段', []), ('', [])])
+
+    def test_multiline_paired_tick_never_dispatches_literal_task_while_streaming(self):
+        chunks = ('展示 ' + TICK * 2 + '例子', '\r', '\n' + BODY, TICK * 2 + '。', '\n正文【开心】')
+        for through_expression in (False, True):
+            for step in (1, 5, max(map(len, chunks))):
+                with self.subTest(pipe=through_expression, step=step):
+                    turns = list(self.stream_steps(chunks, through_expression, step))
+                    self.assertEqual(''.join(text for text, _ in turns[:4]), ''.join(chunks[:4]))
+                    self.assertFalse(any(cues for _, cues in turns[:4]))
+                    self.assertEqual(turns[4:], [('\n正文', [Cue('expression', 'happy')]), ('', [])])
+
+    def test_long_multiline_code_keeps_tasks_literal_until_its_closing_ticks(self):
+        for delimiter, literal in ((TICK, TASK), (TICK * 2, BODY)):
+            code = '展示 ' + delimiter + '第一行\n第二行\r\n第三行\n' + '字' * 500
+            chunks = (code, literal, delimiter + '。', '正文【开心】<task>整理新文件</task>')
+            for through_expression in (False, True):
+                for step in (1, 7, len(code)):
+                    with self.subTest(delimiter=delimiter, pipe=through_expression, step=step):
+                        turns = list(self.stream_steps(chunks, through_expression, step))
+                        self.assertEqual(''.join(text for text, _ in turns[:3]), ''.join(chunks[:3]))
+                        self.assertFalse(any(cues for _, cues in turns[:3]))
+                        self.assertEqual(turns[3:], [
+                            ('正文', [Cue('expression', 'happy'), Cue('task', '整理新文件')]), ('', []),
+                        ])
+
+    def test_unpaired_tick_streams_long_prose_with_paths_and_comparisons(self):
+        for prose in (r'路径是 D:\notes\daily.txt。', '算式里 a < b 成立。', '2<3 成立。', '【注意】后面是正文。'):
+            chunks = ('说明 ' + TICK + ' 号。' + prose, '字' * 300, '继续【开心】', '结束')
+            for through_expression in (False, True):
+                # 短的词表外表情只由 ExpressionStream 隐藏，单独的 CueStream 原样显示。
+                expected = ''.join(chunks[:2])
+                if through_expression:
+                    expected = expected.replace('【注意】', '')
+                for step in (1, 13, 300):
+                    with self.subTest(prose=prose, pipe=through_expression, step=step):
+                        turns = list(self.stream_steps(chunks, through_expression, step))
+                        self.assertEqual(''.join(text for text, _ in turns[:2]), expected)
+                        self.assertEqual(turns[2:], [('继续', [Cue('expression', 'happy')]), ('结束', []), ('', [])])
+
+    def test_task_named_in_custom_cue_vocab_stays_literal_inside_a_long_code_span(self):
+        vocab = Vocab({'task': 'surprise'}, {})
+        prefix = '展示 ' + TICK + '第一行\n第二行\n' + '字' * 300
+        chunks = (prefix, '<task>示例</task>', TICK + '。', '正文<task>整理新文件</task>')
+        for through_expression in (False, True):
+            for step in (1, len(prefix)):
+                with self.subTest(pipe=through_expression, step=step):
+                    turns = list(self.stream_steps(chunks, through_expression, step, vocab))
+                    self.assertEqual(''.join(text for text, _ in turns[:3]), ''.join(chunks[:3]))
+                    self.assertFalse(any(cues for _, cues in turns[:3]))
+                    self.assertEqual(turns[3:], [('正文', [Cue('task', '整理新文件')]), ('', [])])
+
     def test_list_continuations_and_subitems_leave_markers_active(self):
         original = '1. 第一项\n    '
         self.assertEqual(CueStream(VOCAB).feed(original + '【开心】子项', final=True),

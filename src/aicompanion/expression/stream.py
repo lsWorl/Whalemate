@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 import re
-from aicompanion.pet.script import MarkdownLiterals
+from aicompanion.pet.script import CONTROL_TAGS, EXPRESSION_TAGS, MarkdownLiterals
 from .domain import ASSET_ID
 
 ATTR = re.compile(r"""([a-z_]+)\s*=\s*(?:"([^"<>\n]*)"|'([^'<>\n]*)'|([^\s"'<>/]+))""")
@@ -21,8 +21,8 @@ HANDLE = re.compile(r's(?:[1-9]|10)\Z')
 HISTORY_ANNOTATIONS = ('[角色已发送表情：', '[角色已发送表情:')
 # <img …>：第八轮验收里模型写过 `<img src="">` 想"贴图"，原样露在正文里；当作无效的图片标记隐藏（代码块里的照常保留）。
 # 标签名后面可以是任意空白（空格、制表符、换行、CRLF）、/ 或 >，属性可以跨行（Codex 审计）：进入单独的 img 状态一直吃到 >。
-STARTS = ('<sticker', '<meme', '<expression', '<img', '<task>', '<mind')+HISTORY_ANNOTATIONS
-RESERVED = ('<sticker', '<meme', '<expression', '<mind')
+STARTS = CONTROL_TAGS + HISTORY_ANNOTATIONS
+RESERVED = EXPRESSION_TAGS
 # <mind intent="…" willing="0~1"/>：T15 她对"对方请她做事"的态度，对方看不到；只记录给关系统计和观测，不决定执行与否
 IMG_LIMIT = 1024
 # 角色动画标注：给桌宠脸和动作用，屏幕上会被 CueStream 去掉，不算对方能看到的正文。
