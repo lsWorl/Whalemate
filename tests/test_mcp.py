@@ -112,19 +112,18 @@ class McpServerTests(unittest.TestCase):
         self.assertFalse(self.server._thread.is_alive())
 
     def test_auth_origin_and_invalid_json(self):
-        for auth in ('', 'Bearer wrong'):
-            with self.assertRaises(urllib.error.HTTPError) as raised:
-                self.post({'jsonrpc': '2.0', 'id': 1, 'method': 'ping'}, {'Authorization': auth})
-            self.assertEqual(raised.exception.code, 401)
-            raised.exception.close()
-        with self.assertRaises(urllib.error.HTTPError) as raised:
-            self.post({'jsonrpc': '2.0', 'id': 1, 'method': 'ping'}, {'Origin': 'https://untrusted.example'})
-        self.assertEqual(raised.exception.code, 403)
-        raised.exception.close()
-        with self.assertRaises(urllib.error.HTTPError) as raised:
-            self.post(b'{invalid')
-        self.assertEqual(raised.exception.code, 400)
-        raised.exception.close()
+        import httpx2
+        # urllib 强制 Connection: close。Windows 上认证先拒绝、请求体后到时，客户端可能先收到 TCP 重置。
+        # 与正式 MCP 客户端一样保持回环连接，让测试核对实际 HTTP 状态码。
+        url = self.server.url
+        headers = {'Authorization': 'Bearer '+self.server.token, 'Content-Type': 'application/json',
+                   'Accept': 'application/json, text/event-stream'}
+        ping = {'jsonrpc': '2.0', 'id': 1, 'method': 'ping'}
+        with httpx2.Client(headers=headers, trust_env=False, timeout=10) as client:
+            for auth in ('', 'Bearer wrong'):
+                self.assertEqual(client.post(url, json=ping, headers={'Authorization': auth}).status_code, 401)
+            self.assertEqual(client.post(url, json=ping, headers={'Origin': 'https://untrusted.example'}).status_code, 403)
+            self.assertEqual(client.post(url, content=b'{invalid').status_code, 400)
 
     def test_protocol_versions_and_schema_validate_before_dispatch(self):
         records = []; self.box.on_call = records.append
