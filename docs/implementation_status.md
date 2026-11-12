@@ -1991,3 +1991,13 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - Windows 定向运行 `test_v4_ui`、`test_storage_locations`、`test_ui_refresh`、`test_model_page`、`test_bridge_page` 共 60 项通过。清除 WebEngine 免沙箱参数后，11 项 V4-UI 测试单独通过。
 - 独立 worktree 运行 `tools\run_checks.bat`，退出码 0。共 1225 项单测，跳过 7 项，耗时 272.161 秒。桌宠 smoke 返回 `passed: true`、`failed_checks: []`、`remaining_workers: 0`。
 - 本轮验证使用临时数据库和离屏窗口。真实用户数据迁移、实体屏幕 DPI 和 Linux root 容器尚待实测。
+
+### 2026-11-12 · V4-发布 · Windows 解压包与卸载程序（待 Claude 审计）
+
+- Codex 完成 A–C。两个 x64 GUI 程序共用鲸伴图标和版本资源。卸载窗口展示逐项路径、文件字节和用途，外部图库默认保留；从临时副本运行，能在同一窗口报告安装目录及原 exe 的实际删除结果。退出桌宠后须重新扫描并确认；重解析点、危险目录和不完整程序目录触发整次拒绝。停 QQ 前核对进程身份。被占用项单独报告。
+- `tools/build_release.py` 从全新临时目录构建，从 Git 提交取可分发角色、插件和应用资源。写 zip 之前检查禁带文件、SQLite 文件头、外部链接和顶层清单。版本取自 pyproject.toml。同步 Claude 的 README 提交 `b6337c7`、`c1d35d9`；包内两份 README 及存储文档与分支文本逐字节相同。
+- Windows 本机运行 `tools\run_checks.bat` 返回 0。共 1240 项单测，1233 项通过、7 项跳过，用时 219.394 秒；源码桌宠 smoke 通过。15 项新增回归覆盖清单与文档一致性、WAL 预览、外部存储、确认、危险路径、联接点、程序和 QQ 进程、占用文件与污染产物。
+- `tools/verify_release.py dist/release/Whalemate-v0.1.0-windows-x64.zip --case all` 返回 0。每个场景使用全新解压目录、临时用户及独立 HKCU 测试子键。两个 exe 的 x64、GUI 子系统、图标和版本资源均通过；主程序 `--smoke-test` 和 `--pet-smoke-test` 退出码均为 0，报告均为 passed。另比对了包内应用入口、两个 smoke 和卸载核心/界面共 5 个模块的字节码。
+- 打包版 `--dry-run` 逐项核对 3728 项。Windows UI Automation 操作真实窗口，正常卸载 3728/3728；锁定备份时 3727 项成功，唯一失败项显示实际路径和 WinError 32；鲸伴运行时先拒绝，正常退出后重新扫描到 3730 项，3730/3730 删除成功。三个场景均保留外部图库、无关 SQLite 文件、其他文件和无关注册表值，并验证临时卸载助手清理。
+- 最终 zip 为 `dist/release/Whalemate-v0.1.0-windows-x64.zip`，421262482 字节，SHA256 为 `1b686b5a4e6d2ad8b7f1e1a69528e65152e9b2e28cb4d3c4898f990bc20ba446`。校验值也写入同目录的 SHA256SUMS.txt。
+- Windows 应用控制曾对一个中间候选包的主 exe 返回 4551（Code Integrity 3077）。该候选包保持原字节重试可运行，最终包也完成上述验证。exe 未作 Authenticode 签名，其他电脑的签名策略、负责人真实使用体验、真实 QQ 登录和模型服务未验收。审计、合并和上传私有 Release 交由 Claude。
