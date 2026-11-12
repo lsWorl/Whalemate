@@ -47,6 +47,12 @@ def _clauses(text: str) -> list[str]:
     return [c for c in out if c.strip()]
 
 
+def summary_segments(summary: str) -> list[str]:
+    """口播原本就是给人听的，只清理格式、分段，并遵守整轮字数上限。"""
+    text = spoken_text(summary)[:TOTAL].strip()
+    return [text[i:i + SEGMENT_MAX] for i in range(0, len(text), SEGMENT_MAX)]
+
+
 class SmartReader:
     def __init__(self, short: int = SHORT, total: int = TOTAL, rng: random.Random | None = None, tails=TAILS):
         self.short, self.total = short, total

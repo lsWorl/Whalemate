@@ -151,6 +151,7 @@ class DshResult:
     steps: list = field(default_factory=list)   # [(工具名, 一句话, 参数)]
     usage: Usage = field(default_factory=Usage)
     raw: str = ''               # 失败时的运行时输出（写进审计记录，方便排查）
+    spoken_summary: str = ''    # 仅随最终结果交给桌面 TTS
 
 
 def tool_name(title: str) -> str:
@@ -333,16 +334,28 @@ class DshAgent:
         self.stopping = False; self.done.clear(); self.session_id = None
         steps: list = []; text: list[str] = []; context = {'used': [], 'chars': 0, 'final_from': 0}; calls: dict = {}
 
+        from aicompanion.pet.script import CueStream, Vocab
+        parser = CueStream(Vocab(), summary_only=True)
+
+        def visible(chunk):
+            if chunk:
+                text.append(chunk)
+                on_event('text', {'text': chunk})
+
         def listen(message):
+            nonlocal parser
             params = message.get('params') or {}
             if params.get('sessionId') != self.session_id: return
             update = params.get('update') or {}; kind = update.get('sessionUpdate')
             if kind == 'agent_message_chunk':
                 chunk = (update.get('content') or {}).get('text') or ''
-                if chunk: text.append(chunk); context['chars'] += len(chunk); on_event('text', {'text': chunk})
+                context['chars'] += len(chunk)
+                visible(parser.feed(chunk)[0])
             elif kind == 'tool_call':
                 name = tool_name(str(update.get('title') or 'tool')); args = update.get('rawInput') or {}
                 calls[update.get('toolCallId')] = name
+                visible(parser.flush()[0])
+                parser = CueStream(Vocab(), summary_only=True)
                 context['final_from'] = len(text)   # 工具调用前说的话是过程，最后回复只取最后一次工具调用之后的
                 context['chars'] += len(json.dumps(args, ensure_ascii=False))
                 line = describe_tool(name, args if isinstance(args, dict) else {})
@@ -385,10 +398,12 @@ class DshAgent:
         usage = self._final_usage(on_event, context)
         self.done.set()
         status = {'end_turn': 'done', 'cancelled': 'cancelled', 'max_tokens': 'limit', 'max_turn_requests': 'limit'}.get(reason, 'failed')
+        visible(parser.flush()[0])
         reply_text = ''.join(text[context['final_from']:]).strip() or ''.join(text).strip()
         if status == 'cancelled': reply_text = '好，我停下了。'   # 停下时的半句话是过程，不当回复
         elif not reply_text: reply_text = '做完了。' if status == 'done' else f'没有做完（{reason}）。'
-        return DshResult(status, reply_text, steps, usage, '' if status in ('done', 'cancelled') else '\n'.join((conn.stderr if conn else [])[-15:]))
+        return DshResult(status, reply_text, steps, usage, '' if status in ('done', 'cancelled') else '\n'.join((conn.stderr if conn else [])[-15:]),
+                         spoken_summary=parser.say.summary if status == 'done' else '')
 
     def _final_usage(self, on_event, context) -> Usage:
         """优先用 DSH 记的准确用量；它的缓存文件常常还没写到最新（实测），这时按每次请求的上下文大小估算：

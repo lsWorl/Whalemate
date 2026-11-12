@@ -81,7 +81,7 @@ class ChatController:
         from dataclasses import replace
         from aicompanion.expression.domain import ExpressionContext,ExpressionEvent
         from aicompanion.expression.stream import ExpressionStream
-        from aicompanion.pet.script import Vocab,strip_cues
+        from aicompanion.pet.script import SAY_PROMPT,Vocab,strip_cues
         context=expression_context or ExpressionContext(turn_id,character.id,'desktop:'+character.id,
             channel,scene,'proactive' if proactive else 'user_reply',proactive,supports_images=bool(on_expression_event))
         if context.generation_id!=turn_id or context.character_id!=character.id:
@@ -123,6 +123,8 @@ class ChatController:
             prompt+=self._community(character,query,channel)
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
+            if channel == 'desktop' and scene == 'pet' and source != 'qq':
+                prompt += SAY_PROMPT
             marks['other']=len(prompt)
             if self.agent_enabled and not proactive and offer_tasks:
                 from aicompanion.pet.script import TASK_PROMPT
@@ -200,7 +202,8 @@ class ChatController:
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:
                 reason = parser.leave_reason if local_reply and status == 'complete' and content and parser else ''
-                on_expression_event(ExpressionEvent('final',turn_id,result=result,leave_reason=reason))
+                summary = parser.say.summary if parser and status == 'complete' and source != 'qq' and channel == 'desktop' and scene == 'pet' else ''
+                on_expression_event(ExpressionEvent('final',turn_id,result=result,leave_reason=reason,spoken_summary=summary))
             self._after_turn(character,channel,scene,person,context,parser,status,turn_id,proactive=bool(proactive))
 
     def _settle_dates(self,character,turn_id,status):

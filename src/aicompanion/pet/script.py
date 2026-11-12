@@ -14,7 +14,10 @@ MAX_TAG = 8   # 标注内容最长字数，超过就当普通文字
 TASK_OPEN, TASK_CLOSE = '<task>', '</task>'   # P5：陪伴通路里"需要动手"的标记，界面据此问"要我动手吗"
 MAX_TASK = 1500   # 任务说明可能带一整段文字，太短会让标记解析失败、原样显示出来
 EXPRESSION_TAGS = ('<sticker', '<meme', '<expression', '<mind')
-CONTROL_TAGS = EXPRESSION_TAGS + ('<img', '<leave', TASK_OPEN)
+SAY_OPEN, SAY_CLOSE = '<say>', '</say>'
+MAX_SAY = 1200   # 超过这个长度按原文显示；真正朗读另用 speech.smart.TOTAL
+SAY_PROMPT = '\n长回复或办事结果可以附带 <say>几句口语化的总结</say>，正文仍写完整。'
+CONTROL_TAGS = EXPRESSION_TAGS + ('<img', '<leave', TASK_OPEN, SAY_OPEN)
 
 
 @dataclass(frozen=True)
@@ -277,10 +280,46 @@ class MarkdownLiterals:
             yield from self._finish_span(syntax)
 
 
+class SayBlock:
+    """只缓存一个有上限的口播候选。超长时立刻回吐，后面的文字逐字透传到闭合处。"""
+
+    def __init__(self):
+        self.buffer = ''
+        self.literal_tail = None
+        self.summary = ''
+
+    def __bool__(self):
+        return bool(self.buffer) or self.literal_tail is not None
+
+    def feed(self, ch):
+        if self.literal_tail is not None:
+            self.literal_tail = (self.literal_tail + ch)[-len(SAY_CLOSE):]
+            if self.literal_tail == SAY_CLOSE: self.literal_tail = None
+            return ch
+        self.buffer += ch
+        if self.buffer.endswith(SAY_CLOSE):
+            raw, self.buffer = self.buffer, ''
+            body = raw[len(SAY_OPEN):-len(SAY_CLOSE)]
+            if len(body) > MAX_SAY: return raw
+            if not self.summary and not re.search(r'</?[a-zA-Z][^>]*>', body):
+                self.summary = body.strip()
+        elif len(self.buffer) >= len(SAY_OPEN) + MAX_SAY + len(SAY_CLOSE):
+            raw, self.buffer = self.buffer, ''
+            self.literal_tail = raw[-(len(SAY_CLOSE) - 1):]
+            return raw
+        return ''
+
+    def finish(self):
+        raw, self.buffer, self.literal_tail = self.buffer, '', None
+        return raw
+
+
 class CueStream:
     """逐 token 喂入，返回 (可显示文字, 本次解析出的标注)。"""
 
-    def __init__(self, vocab: Vocab):
+    def __init__(self, vocab: Vocab, *, summary_only: bool = False):
+        self.say = SayBlock()
+        self.summary_only = summary_only
         self.vocab = vocab
         self.pending = ''
         self.markdown = MarkdownLiterals()
@@ -288,7 +327,10 @@ class CueStream:
     def feed(self, token: str, final: bool = False) -> tuple[str, list[Cue]]:
         text, cues = [], []
         # 委托正文内可以包含文件名和代码，交给下游的内容仍是原文。
-        for ch, literal in self.markdown.feed(token, lambda: not self.pending.startswith(TASK_OPEN), final=final):
+        for ch, literal in self.markdown.feed(token, lambda: not (self.say or self.pending.startswith(TASK_OPEN)), final=final):
+            if self.say:
+                text.append(self.say.feed(ch))
+                continue
             if literal:
                 if self.pending:
                     text.append(self.pending)
@@ -302,10 +344,20 @@ class CueStream:
                     text.append(ch)
                 continue
             self.pending += ch
+            if self.pending == SAY_OPEN:
+                if self.summary_only:
+                    self.say.buffer = SAY_OPEN
+                else:
+                    # 聊天上游已解析过口播。仍能到达这里的是字面示例或无效块，应保留其中的标记。
+                    text.append(SAY_OPEN)
+                    self.say.literal_tail = ''
+                self.pending = ''
+                continue
             if self.pending.startswith(TASK_OPEN):
                 if self.pending.endswith(TASK_CLOSE):
                     task = self.pending[len(TASK_OPEN):-len(TASK_CLOSE)].strip()
-                    if task: cues.append(Cue('task', task[:MAX_TASK]))
+                    if self.summary_only: text.append(self.pending)
+                    elif task: cues.append(Cue('task', task[:MAX_TASK]))
                     self.pending = ''
                 elif len(self.pending) > MAX_TASK + len(TASK_OPEN) + len(TASK_CLOSE):
                     text.append(self.pending)
@@ -319,6 +371,7 @@ class CueStream:
             elif len(self.pending) > MAX_TAG + 1 or ch in '\r\n':
                 text.append(self.pending)
                 self.pending = ''
+        if final: text.append(self.say.finish())
         if final and self.pending:
             text.append(self.pending)
             self.pending = ''

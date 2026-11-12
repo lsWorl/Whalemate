@@ -92,3 +92,4 @@ class ExpressionEvent:
     attachment: ExpressionAttachment | None = None
     result: ExpressionResult | None = None
     leave_reason: str = ''   # 只随桌面 final 事件传给界面，不进入 QQ 的 wire()。
+    spoken_summary: str = ''   # 只交给桌面语音；不在 ExpressionResult.wire() 的 QQ 协议中
