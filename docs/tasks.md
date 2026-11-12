@@ -51,3 +51,4 @@
 | T22 | 说了不理就真的不理、按好感分三档决定回几条回不回、回得更像真人、和外人聊不用逗号、预置词库第 2 版（二游 / 米哈游 / 抽象 +167） | Claude 实现；Codex 审查 | 待审查（Claude，和 T21 同在 `task/t21-seed-lexicon`） | docs/tasks/T22-outsider-stance.md |
 | PLAN-V4 | 项目计划书 v4：模型自由切换、人格包、持续情绪、自己的生活、真正退出、记忆召回与预算、圈子与跨天办事；开发参考成熟方案 | Claude 文档；Codex 审查；负责人确认 | 待审查（Claude，`task/project-plan-v4`） | docs/project_plan_v4.md；以后各功能的任务说明以此为依据 |
 | V4-1 | 阶段一·地基：模型配置、凭据、按能力解析与快照、思考策略、模型设置页（里程碑：能正常聊天） | Claude 实现；Codex 审查；负责人实机验收 | 进行中（Claude，`task/v4-1-model-routing`，叠在 PLAN-V4 上） | docs/tasks/V4-1-model-routing.md；分 V4-1a / 1b / 1c 三个 PR |
+| T14-M | 日常表情素材库（171 项：62 张 Twemoji PNG 随仓库，109 张鲸娘 GIF 由准备工具本机下载、不提交）；审计时指出的三项 P2 由 Claude 复核 | Codex 素材；Claude 修复及复测；Codex 审计 | 待复核（PR #14，已改为基于 collaboration-baseline；评测证据与审计报告按 #50 不再入库，结论写进 PR 描述与 implementation_status） | assets/stickers/daily-reactions-v2/README.md |
