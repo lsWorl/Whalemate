@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
                                QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
                                QPushButton, QSlider, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -16,6 +16,8 @@ PREVIEW_ASK = '今天加班到好晚，好累啊'
 
 
 class PersonaEditor(QWidget):
+    edited = Signal()
+
     def __init__(self, controller, pack_persona=None, parent=None, run=None):
         super().__init__(parent)
         self.controller, self.db = controller, controller.database
@@ -96,8 +98,7 @@ class PersonaEditor(QWidget):
         self.preview_text = QLabel(''); self.preview_text.setWordWrap(True); self.preview_text.setObjectName('Hint')
         self.preview_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); box.addWidget(self.preview_text)
         save_row = QHBoxLayout(); self.status = QLabel(''); self.status.setObjectName('Hint'); self.status.setWordWrap(True)
-        save = QPushButton('保存这个人格'); save.setObjectName('Primary'); save.clicked.connect(self.save)
-        save_row.addWidget(self.status, 1); save_row.addWidget(save); box.addLayout(save_row)
+        save_row.addWidget(self.status, 1); box.addLayout(save_row)
 
         for widget in (self.title, self.interests, self.notes, self.bond_call, self.bond_refer, self.bond_tag, self.bond_relation,
                        self.bond_claims): widget.textEdited.connect(self._changed)
@@ -227,7 +228,7 @@ class PersonaEditor(QWidget):
 
     def _changed(self, *args):
         if self._loading: return
-        self.dirty = True; self._show_size(); self.status.setText('有改动，记得保存')
+        self.dirty = True; self._show_size(); self.status.setText('正在编辑…'); self.edited.emit()
 
     def _show_size(self):
         persona = self.service.get(self.current_id)
@@ -242,7 +243,11 @@ class PersonaEditor(QWidget):
         self.size.setText(text); self.size.style().unpolish(self.size); self.size.style().polish(self.size)
 
     # ---- 操作 ----
-    def save(self) -> bool:
+    def autosave(self):
+        if not self.save(inline=True):
+            raise ValueError(self.status.text())
+
+    def save(self, *, inline=False) -> bool:
         persona = self.service.get(self.current_id) if self.current_id else None
         if persona is None: return True
         if not self.dirty: return True
@@ -251,9 +256,17 @@ class PersonaEditor(QWidget):
             if not content['description'].strip(): raise PersonaError('角色设定不能为空')
             saved = self.service.save(persona.with_content(content))
         except PersonaError as error:
-            QMessageBox.warning(self, '人格没有保存', str(error)); return False
+            self.status.setText(str(error))
+            if not inline: QMessageBox.warning(self, '人格没有保存', str(error))
+            return False
         self._sync_controller()
-        self.dirty = False; self.reload(select=saved.id); self.status.setText('已保存'+('，下一句话就用新内容' if self._is_active(saved.id) else ''))
+        self.dirty = False
+        if not inline: self.reload(select=saved.id)
+        else:
+            mark = '✓ ' if self._is_active(saved.id) else '　'
+            suffix = '（内置）' if saved.builtin and '内置' not in saved.title else ''
+            self.picker.setItemText(self.picker.currentIndex(), mark + saved.title + suffix)
+        self.status.setText('已保存'+('，下一句话就用新内容' if self._is_active(saved.id) else ''))
         return True
 
     def use(self):

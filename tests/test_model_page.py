@@ -221,6 +221,8 @@ class PageTests(unittest.TestCase):
         # 实机反馈：选完不点“应用”就切换范围或关闭设置，选择会丢
         ds = self.admin.add_account('deepseek', key='k1'); bz = self.admin.add_account('breezeblue', key='k2'); self.page.refresh()
         chat = self.page.pickers['chat']; chat.setCurrentIndex(chat.findData(f'{ds.id}/deepseek-flash'))
+        from PySide6.QtTest import QTest
+        QTest.qWait(650)
         self.assertEqual(self.admin.binding('chat', None).model, f'{ds.id}/deepseek-flash')
         self.page.scope.setCurrentIndex(self.page.scope.findData('deepseek-whale'))     # 切换范围不会改动全局
         self.assertEqual(self.admin.binding('chat', None).model, f'{ds.id}/deepseek-flash')
@@ -228,11 +230,12 @@ class PageTests(unittest.TestCase):
         tts = self.page.pickers['tts']
         with mock.patch.object(QMessageBox, 'warning') as warning:
             tts.setCurrentIndex(tts.findData(f'{bz.id}/breeze-tts-2'))                   # 还没填音色：只提示，不弹窗
+        QTest.qWait(650)
         warning.assert_not_called()
         self.assertIn('音色', self.page.status.text())
-        self.page.voice.setText('voc_whale'); self.page.voice.editingFinished.emit()
+        self.page.voice.setText('voc_whale'); QTest.qWait(650)
         self.assertEqual(self.router.tts_target('deepseek-whale').voice, 'voc_whale')
-        self.page.speed.setValue(1.3)
+        self.page.speed.setValue(1.3); QTest.qWait(650)
         self.assertEqual(self.router.tts_target('deepseek-whale').speed, 1.3)
         self.page.scope.setCurrentIndex(0)
         self.page.scope.setCurrentIndex(self.page.scope.findData('deepseek-whale'))

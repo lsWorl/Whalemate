@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer
@@ -13,7 +14,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePol
 
 from aicompanion.ui import theme
 
-SYSTEM_SENDERS = {'任务': '🛠', '步骤': '·', '确认': '🔒', '提议': '💡', '提醒': '⏰'}
+SYSTEM_SENDERS = {'任务', '步骤', '确认', '提议', '提醒'}
 
 
 class Backdrop(QWidget):
@@ -69,7 +70,7 @@ class Bubble(QFrame):
         super().__init__()
         self.kind = kind
         self.setObjectName({'user': 'UserBubble', 'her': 'HerBubble'}.get(kind, 'SystemChip'))
-        layout = QVBoxLayout(self); layout.setContentsMargins(*((12, 8, 12, 8) if kind != 'system' else (10, 3, 10, 3)))
+        layout = QVBoxLayout(self); layout.setContentsMargins(*((14, 10, 14, 10) if kind != 'system' else (10, 3, 10, 3)))
         self.label = QLabel(text); self.label.setWordWrap(True); self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.label.setObjectName('BubbleText' if kind != 'system' else 'ChipText')
@@ -160,9 +161,22 @@ class ChatView(QScrollArea):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setObjectName('ChatView'); self.viewport().setAutoFillBackground(False)
         self.body = QWidget(); self.body.setObjectName('ChatBody'); self.body.setAutoFillBackground(False)
-        self.column = QVBoxLayout(self.body); self.column.setContentsMargins(14, 12, 14, 12); self.column.setSpacing(8)
-        self.column.addStretch(1)
+        body_layout = QVBoxLayout(self.body)
+        body_layout.setContentsMargins(14, 12, 14, 12)
+        self.column = QVBoxLayout()
+        self.column.setSpacing(10)
+        self.column.addSpacing(0)
+        body_layout.addLayout(self.column)
+        body_layout.addStretch(1)
         self.setWidget(self.body)
+        from aicompanion.ui.icons import app_icon, portrait
+        self.avatar = app_icon().pixmap(28, 28)
+        self.empty = QLabel('还没有聊天记录', self.viewport())
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setObjectName('Hint')
+        self.empty_art = QLabel(self.viewport())
+        self.empty_art.setPixmap(portrait('sleepy', 100, 108))
+        self.empty_art.adjustSize()
         self._stick = True
         self.verticalScrollBar().valueChanged.connect(lambda v: setattr(self, '_stick', v >= self.verticalScrollBar().maximum()-40))
         self.verticalScrollBar().rangeChanged.connect(lambda lo, hi: self.verticalScrollBar().setValue(hi) if self._stick else None)
@@ -172,6 +186,13 @@ class ChatView(QScrollArea):
             item = self.column.takeAt(1)
             if item.widget(): item.widget().deleteLater()
         self._stick = True
+        self.empty.show()
+        self.empty_art.show()
+
+    def set_avatar(self, avatar):
+        self.avatar = avatar.scaled(28, 28, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        for label in self.body.findChildren(QLabel, 'ReplyAvatar'):
+            label.setPixmap(self.avatar)
 
     def _kind(self, sender):
         if sender == self.me: return 'user'
@@ -180,11 +201,18 @@ class ChatView(QScrollArea):
 
     def _row(self, sender, text):
         kind = self._kind(sender)
-        if kind == 'system': text = f'{SYSTEM_SENDERS[sender]} {sender} · {text}' if sender != '步骤' else text
+        if kind == 'system': text = f'{sender} · {text}' if sender != '步骤' else text
         bubble = Bubble(kind, text)
         row = QWidget(); line = QHBoxLayout(row); line.setContentsMargins(0, 0, 0, 0); line.setSpacing(0)
         if kind == 'user': line.addStretch(1); line.addWidget(bubble)
-        elif kind == 'her': line.addWidget(bubble); line.addStretch(1)
+        elif kind == 'her':
+            face = QLabel()
+            face.setObjectName('ReplyAvatar')
+            face.setPixmap(self.avatar)
+            line.addWidget(face, 0, Qt.AlignmentFlag.AlignBottom)
+            line.addSpacing(8)
+            line.addWidget(bubble)
+            line.addStretch(1)
         else: line.addStretch(1); line.addWidget(bubble); line.addStretch(1)
         self._limit(bubble)
         return row, bubble
@@ -196,12 +224,30 @@ class ChatView(QScrollArea):
         natural = max((metrics.horizontalAdvance(line) for line in bubble.label.text().split('\n')), default=0)+6
         bubble.label.setMinimumWidth(min(natural, width)); bubble.label.setMaximumWidth(width)
 
-    def append(self, sender, text, index=None, before=None) -> MessageHandle:
+    def append(self, sender, text, index=None, before=None, timestamp=None) -> MessageHandle:
         """index 不为空时插到历史顶部的第 index 条（加载更早记录用）；before 是某个已有的行，新行插在它前面。"""
-        row, bubble = self._row(sender, text)
+        self.empty.hide()
+        self.empty_art.hide()
+        when = (datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc).astimezone()
+                if timestamp else datetime.now().astimezone())
+        content, bubble = self._row(sender, text)
+        row = QWidget()
+        box = QVBoxLayout(row)
+        box.setContentsMargins(0, 0, 0, 0)
+        row.when = when
+        day = '今天' if when.date() == datetime.now().date() else when.strftime('%m月%d日')
+        row.stamp = QLabel(f'{day} {when:%H:%M}')
+        row.stamp.setObjectName('Timestamp')
+        box.addWidget(row.stamp, 0, Qt.AlignmentFlag.AlignHCenter)
+        box.addWidget(content)
         if before is not None and self.column.indexOf(before) >= 0: self.column.insertWidget(self.column.indexOf(before), row)
         elif index is not None: self.column.insertWidget(1+index, row)
         else: self.column.addWidget(row); self._stick = True
+        pos = self.column.indexOf(row)
+        for i in range(pos, min(pos + 2, self.column.count())):
+            current = self.column.itemAt(i).widget()
+            prev = self.column.itemAt(i - 1).widget()
+            current.stamp.setVisible(prev is None or abs((current.when - prev.when).total_seconds()) >= 900)
         return MessageHandle(self, sender, row, bubble)
 
     def reply(self, sender, placeholder='') -> SegmentedReply:
@@ -215,6 +261,10 @@ class ChatView(QScrollArea):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        center = self.viewport().rect().center()
+        self.empty.adjustSize()
+        self.empty.move(center.x() - self.empty.width() // 2, center.y() + 46)
+        self.empty_art.move(center.x() - self.empty_art.width() // 2, center.y() - 64)
         for i in range(1, self.column.count()):
             row = self.column.itemAt(i).widget()
             bubble = row.findChild(Bubble) if row else None

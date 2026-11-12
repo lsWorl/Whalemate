@@ -13,7 +13,7 @@ from aicompanion.ui import desktop_integration as desktop
 
 TOOL_FLAGS = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
               | Qt.WindowType.NoDropShadowWindowHint)
-ACCENT = QColor('#4D6BFE')
+ACCENT = QColor('#2F5BEA')
 
 
 def bubble_font(point_size=10.5):
@@ -252,7 +252,7 @@ class QuickInput(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         layout = QHBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
         self.edit = QLineEdit(); self.edit.setFont(bubble_font(10)); self.edit.setPlaceholderText('说点什么，回车发送，Esc 取消')
-        self.edit.setStyleSheet('QLineEdit{background:#ffffff;border:1.6px solid #4D6BFE;border-radius:15px;padding:7px 12px;color:#1f2a44;}')
+        self.edit.setStyleSheet('QLineEdit{background:#ffffff;border:1.6px solid #2F5BEA;border-radius:15px;padding:7px 12px;color:#1f2a44;}')
         self.edit.returnPressed.connect(self._submit); layout.addWidget(self.edit)
         self.resize(260, 40)
 
@@ -303,22 +303,24 @@ class ConfirmBubble(QWidget):
         from PySide6.QtWidgets import QPushButton
         for label_text, value in choices:
             button = QPushButton(label_text); button.setFont(bubble_font(9.5)); button.setCursor(Qt.CursorShape.PointingHandCursor)
-            primary = value in ('yes', 'go')
+            primary = value in ('yes', 'go', 'once')
             button.setStyleSheet('QPushButton{padding:4px 10px;border-radius:9px;border:1px solid %s;background:%s;color:%s;}'
-                                 'QPushButton:hover{background:%s;}' % (('#4D6BFE', '#4D6BFE', 'white', '#3d58e0') if primary else ('#c9d2ee', 'white', '#1f2a44', '#eef1fb')))
-            button.clicked.connect(lambda checked=False, v=value: self._choose(v)); row.addWidget(button)
+                                 'QPushButton:hover{background:%s;}' % (('#2F5BEA', '#2F5BEA', 'white', '#3d58e0') if primary else ('#c9d2ee', 'white', '#1f2a44', '#eef1fb')))
+            button.clicked.connect(lambda checked=False, v=value: self.choose(v)); row.addWidget(button)
         if details:
             more = QPushButton('详情'); more.setFont(bubble_font(9)); more.setFlat(True); more.setCursor(Qt.CursorShape.PointingHandCursor)
-            more.setStyleSheet('QPushButton{color:#4D6BFE;border:none;background:transparent;padding:4px;}')
+            more.setStyleSheet('QPushButton{color:#2F5BEA;border:none;background:transparent;padding:4px;}')
             more.clicked.connect(self._toggle_details); row.addWidget(more)
         row.addStretch(); layout.addLayout(row)
 
     def _toggle_details(self):
         self.details.setVisible(not self.details.isVisible()); self.adjustSize(); self._place()
 
-    def _choose(self, value):
+    def choose(self, value):
         if self.answered: return
         self.answered = True; self.chosen.emit(value); self.close()
+
+    _choose = choose
 
     def show_at(self, anchor: QPoint):
         self.anchor = QPoint(anchor); self.adjustSize(); self._place(); self.show(); self.raise_()

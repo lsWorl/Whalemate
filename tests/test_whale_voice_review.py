@@ -125,8 +125,8 @@ class WindowTests(Base):
         with mock.patch.object(module, 'QMediaDevices', SimpleNamespace(audioInputs=lambda: [])):
             return module.SettingsWindow(controller, self.settings, speech_output=speech_output, page='voice')
 
-    def test_preview_then_cancel_keeps_old_voice_and_save_applies_new(self):
-        # 审查 3：初始 A（软糯少女）→ 选 B（傲娇小姐）→ 试听 → 取消：库和路由仍是 A；再选 B → 保存：才变成 B
+    def test_preview_and_close_flushes_selected_voice(self):
+        # 试听沿用已选音色，防抖期间关闭窗口也要保存。
         self.add_minimax(); self.db.set_setting('tts_provider', 'breeze')
 
         class FakeSpeech(QObject):
@@ -148,8 +148,8 @@ class WindowTests(Base):
             dialog.reject()
         finally:
             dialog.deleteLater()
-        self.assertIsNone(self.db.get_setting(f'voice_choice:{WHALE_ID}'))
-        self.assertEqual(self.router.tts_target(WHALE_ID).voice, WHALE.minimax_voice)         # 取消后仍是 A
+        self.assertEqual(self.db.get_setting(f'voice_choice:{WHALE_ID}'), 'Arrogant_Miss')
+        self.assertEqual(self.router.tts_target(WHALE_ID).voice, 'Arrogant_Miss')
 
         dialog = self.settings_window()
         try:

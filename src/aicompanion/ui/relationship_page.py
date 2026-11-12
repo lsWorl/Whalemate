@@ -18,7 +18,7 @@ ORIGINS = {'group': '群聊', 'qq_private': 'QQ 私聊', 'desktop': '桌面'}
 
 
 class RelationshipPage(QWidget):
-    def __init__(self, database, character_id, parent=None, relationships=None):
+    def __init__(self, database, character_id, parent=None, relationships=None, defer=None):
         super().__init__(parent)
         self.db, self.character_id = database, character_id
         self.service = relationships or RelationshipService(database)
@@ -29,7 +29,9 @@ class RelationshipPage(QWidget):
         hint.setWordWrap(True); layout.addWidget(hint)
         self.learning = QCheckBox('从聊天里自动理解关系变化（后台少量调用模型）')
         self.learning.setChecked(bool(database.get_setting('relationship_learning', True)))
-        self.learning.toggled.connect(lambda on: database.set_setting('relationship_learning', bool(on))); layout.addWidget(self.learning)
+        self.defer = defer or (lambda group, save: save())
+        self.adjustments = {}
+        self.learning.toggled.connect(lambda: self.defer('relationship', self.save_learning)); layout.addWidget(self.learning)
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(['名称', '平台身份', '好感', '熟悉', '信任', '最近互动', '互动次数'])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -39,8 +41,11 @@ class RelationshipPage(QWidget):
         for d in DIMENSIONS:
             spin = QDoubleSpinBox(); spin.setRange(0, 100); spin.setDecimals(1); spin.setSingleStep(5)
             self.spins[d] = spin; edit.addWidget(QLabel(NAMES[d])); edit.addWidget(spin)
-        for label, fn in (('保存调整', self.save), ('重置档案', self.reset), ('删除档案', self.delete), ('刷新', self.refresh)):
+        for label, fn in (('重置档案', self.reset), ('删除档案', self.delete), ('刷新', self.refresh)):
             button = QPushButton(label); button.clicked.connect(fn); edit.addWidget(button)
+        if defer:
+            for dimension, spin in self.spins.items():
+                spin.valueChanged.connect(lambda value, d=dimension: self.queue_adjustment(d, value))
         layout.addLayout(edit)
         self.details = QPlainTextEdit(); self.details.setReadOnly(True); self.details.setMaximumHeight(180); layout.addWidget(self.details)
         layout.addWidget(QLabel('她记得的关于这个人的事（越靠前越清楚；不对的可以让她忘掉）：'))
@@ -73,7 +78,10 @@ class RelationshipPage(QWidget):
         pid = self.selected()
         p = self.service.profile(self.character_id, pid) if pid else None
         if not p: return
-        for d in DIMENSIONS: self.spins[d].setValue(p[d])
+        for d, spin in self.spins.items():
+            spin.blockSignals(True)
+            spin.setValue(self.adjustments.get(pid, {}).get(d, p[d]))
+            spin.blockSignals(False)
         lines = []
         try:
             # T22：她现在对这个人的态度（由好感、今天冲她来的次数、她有没有说过不理他决定），让好感度的作用看得见
@@ -111,6 +119,24 @@ class RelationshipPage(QWidget):
         self.service.notes.forget(item.data(Qt.ItemDataRole.UserRole))
         self.status.setText('已忘掉这条。'); self.select()
 
+    def save_learning(self):
+        self.db.set_setting('relationship_learning', self.learning.isChecked())
+
+    def queue_adjustment(self, dimension, value):
+        pid = self.selected()
+        if pid:
+            self.adjustments.setdefault(pid, {})[dimension] = value
+            self.defer('relationship', self.flush_adjustments)
+
+    def flush_adjustments(self):
+        # 防抖期间可能改选另一个人，调整按编辑当时的人物 ID 归属。
+        for pid, changes in list(self.adjustments.items()):
+            if self.service.profile(self.character_id, pid):
+                self.service.adjust(self.character_id, pid, **changes)
+            del self.adjustments[pid]
+        self.status.setText('调整已保存，72 小时内不会被自动改掉。')
+        self.refresh()
+
     def save(self):
         pid = self.selected()
         if not pid: return
@@ -124,6 +150,7 @@ class RelationshipPage(QWidget):
         pid = self.selected()
         if not pid: return
         if QMessageBox.question(self, '重置档案', '分数回到初始值，清空关系事件和她记得的关于这个人的事。确定吗？') != QMessageBox.StandardButton.Yes: return
+        self.adjustments.pop(pid, None)
         self.service.reset(self.character_id, pid); self.status.setText('已重置。'); self.refresh()
 
     def delete(self):

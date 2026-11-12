@@ -238,6 +238,18 @@ def schedule_pet_smoke_check(window, database, output):
         state['app_icon_ready'] = not window.windowIcon().isNull() and not window.tray.icon().isNull()
         state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and not window.attach_button.isEnabled()
                                          and window.speak_toggle.isCheckable())
+        from aicompanion.ui.onboarding import Onboarding
+        menu = window.pet.build_menu()
+        sections = [a.text() for a in menu.actions() if not a.isEnabled() and a.text()]
+        state['menu_groups_ready'] = sections == ['和她说话', '让她帮忙', '她的样子']
+        menu.deleteLater()
+        wizard = Onboarding(window)
+        visited = []
+        for _ in range(5):
+            visited.append(wizard.pages.currentIndex())
+            wizard.next.click()
+        state['wizard_complete'] = visited == list(range(5)) and database.get_setting('onboarding_done', False)
+        wizard.deleteLater()
         dialog = SettingsWindow(window.controller, window.settings, window, page='models')
         try:
             state['settings_pages_ready'] = (dialog.nav.current() == 'models'
@@ -536,7 +548,7 @@ def schedule_pet_smoke_check(window, database, output):
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
-        required.extend(['app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
+        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')

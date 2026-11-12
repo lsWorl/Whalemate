@@ -140,6 +140,7 @@ class UsagePage(QWidget):
         self.prices = QPlainTextEdit(json.dumps({k: v for k, v in meter.load_prices(database).items()}, ensure_ascii=False, indent=1))
         self.prices.setMaximumHeight(120)
         layout.addWidget(QLabel('价目表（元 / 百万词元，按模型名包含的关键词匹配；以官网为准）')); layout.addWidget(self.prices)
+        self.price_error = QLabel(); self.price_error.setObjectName('Warn'); self.price_error.hide(); layout.addWidget(self.price_error)
         layout.addWidget(QLabel('到 80% 时她会提醒一次；到 100% 该用途停止（总额到了全部停止），陪伴聊天改用本地台词。数字是本地估算，以账单为准。'))
         self.refresh()
 
@@ -164,10 +165,15 @@ class UsagePage(QWidget):
         self.top.setText('今天最贵的几次：'+('；'.join(f'{meter.PURPOSES.get(t["purpose"], t["purpose"])} {t["model"]} {t["prompt_tokens"]}+{t["completion_tokens"]} 词元 {t["cost"]:.4f} 元' for t in top) or '无'))
 
     def save(self):
-        self.database.set_setting('quota_daily_total', self.total.value())
-        for p, box in self.limits.items(): self.database.set_setting(f'quota_daily:{p}', box.value())
         try:
             table = json.loads(self.prices.toPlainText())
-            if isinstance(table, dict): self.database.set_setting('price_table', table)
+            if not isinstance(table, dict):
+                raise ValueError
         except ValueError:
-            QMessageBox.warning(self, '价目表', '价目表不是合法 JSON，未保存这一项。')
+            self.price_error.setText('价目表需要是 JSON 对象。')
+            self.price_error.show()
+            raise ValueError(self.price_error.text()) from None
+        self.price_error.hide()
+        self.database.set_setting('quota_daily_total', self.total.value())
+        for p, box in self.limits.items(): self.database.set_setting(f'quota_daily:{p}', box.value())
+        self.database.set_setting('price_table', table)

@@ -83,6 +83,7 @@ class BridgePage(QWidget):
         self.memes_enabled = QCheckBox('聊天时可以发表情包')
         self.memes_enabled.setChecked(bool(database.get_setting('qq_memes_enabled', True)))
         self.meme_root = QLineEdit(str(database.get_setting('qq_meme_root', '') or ''))
+        self.loaded_meme_root = self.meme_root.text().strip()
         self.meme_root.setPlaceholderText('留空使用自带鲸鲸表情；也可选本地表情包目录')
         choose_memes = QPushButton('选择图库…'); choose_memes.clicked.connect(self._choose_memes)
         meme_row = QHBoxLayout(); meme_row.addWidget(self.meme_root, 1); meme_row.addWidget(choose_memes)
@@ -112,7 +113,8 @@ class BridgePage(QWidget):
         self.community_status = QLabel('读取公开话题及受限社区词义，不上传聊天；相关时只供理解，不向群友科普。'); self.community_status.setWordWrap(True)
         social_form.addRow('社区语境', self.community_source); social_form.addRow('', self.community_groups)
         social_form.addRow('', self.community_auto); social_form.addRow('', refresh_community); social_form.addRow('', self.community_status)
-        save_people = QPushButton('保存'); save_people.clicked.connect(self.save_people); pl.addRow('', save_people)
+        self.owner_error = QLabel(); self.owner_error.setObjectName('Warn'); self.owner_error.hide()
+        pl.insertRow(1, '', self.owner_error)
         layout.addWidget(people)
         self._fill_groups([])
         layout.addWidget(self.social_group)
@@ -155,8 +157,10 @@ class BridgePage(QWidget):
         """后台流程（接入、重试）会改接口开关和令牌：把数据库里的当前值放回页面，并记下来——保存时只写用户真正改过的项，
         不会用页面打开时的旧值把后台刚开的接口又关掉。"""
         db = self.database
+        for field in (self.enabled, self.port, self.token): field.blockSignals(True)
         self.enabled.setChecked(bool(setting(db, 'bridge_enabled'))); self.port.setValue(int(setting(db, 'bridge_port')))
         self.token.setText(setting(db, 'bridge_token') or '')
+        for field in (self.enabled, self.port, self.token): field.blockSignals(False)
         self.loaded = {'enabled': self.enabled.isChecked(), 'port': self.port.value(), 'token': self.token.text()}
 
     # ---- 状态 -----------------------------------------------------------------------------
@@ -197,6 +201,7 @@ class BridgePage(QWidget):
         known = {str(g['id']): g.get('name') or '' for g in groups}
         for gid in chosen: known.setdefault(gid, '')
         if set(known) == set(current): return
+        self.groups.blockSignals(True)
         self.groups.clear()
         for gid, name in sorted(known.items(), key=lambda x: x[1] or x[0]):
             item = QListWidgetItem(f'{name}（{gid}）' if name else gid); item.setData(Qt.ItemDataRole.UserRole, gid)
@@ -206,6 +211,8 @@ class BridgePage(QWidget):
         self.groups_hint.setVisible(not groups)
 
     # ---- 操作 -----------------------------------------------------------------------------
+        self.groups.blockSignals(False)
+
     def _do_action(self):
         code = self.status.code if self.status else ''
         if code in ('not_setup', 'not_ready'): return self._prepare()
@@ -394,8 +401,10 @@ class BridgePage(QWidget):
     def save_people(self):
         db = self.database
         owner = self.owner.text().strip()
-        if owner and not re.fullmatch(r'\d{5,12}', owner):
-            return QMessageBox.warning(self, '你的 QQ 号', 'QQ 号应该是 5 到 12 位数字。')
+        if owner and not re.fullmatch(r'[0-9]{5,12}', owner):
+            self.owner_error.setText('QQ 号应该是 5 到 12 位数字。'); self.owner_error.show()
+            return False
+        self.owner_error.hide()
         db.set_setting('bridge_owner:qq', owner)
         groups = [self.groups.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.groups.count())
                   if self.groups.item(i).checkState() == Qt.CheckState.Checked]
@@ -406,7 +415,11 @@ class BridgePage(QWidget):
         db.set_setting('qq_vision_enabled', self.vision_enabled.isChecked())
         db.set_setting('proactive_qq_enabled', self.proactive_qq.isChecked())
         db.set_setting('qq_memes_enabled', self.memes_enabled.isChecked())
-        db.set_setting('qq_meme_root', self.meme_root.text().strip())
+        # 存储页也能改图库。只写本页实际编辑过的路径，避免保存 QQ 号时还原图库。
+        meme_root = self.meme_root.text().strip()
+        if meme_root != self.loaded_meme_root:
+            db.set_setting('qq_meme_root', meme_root)
+            self.loaded_meme_root = meme_root
         db.set_setting('qq_meme_cooldown', self.meme_cooldown.value())
         db.set_setting('qq_avatars_enabled', self.avatar_enabled.isChecked())
         db.set_setting('qq_social_learning', self.learning.isChecked())
@@ -420,7 +433,8 @@ class BridgePage(QWidget):
     def save(self):
         """设置窗口的"保存"：QQ 号、群和高级设置一起保存；接口端口 / 令牌变了就重启接口并同步插件配置。"""
         db = self.database
-        self.save_people()
+        if self.save_people() is False:
+            raise ValueError(self.owner_error.text())
         old = (setting(db, 'bridge_enabled'), setting(db, 'bridge_port'), setting(db, 'bridge_token'))
         # 只写用户在页面上改过的项（和上次同步的值比较）；没动的保持数据库里的当前值
         if self.enabled.isChecked() != self.loaded['enabled']: db.set_setting('bridge_enabled', self.enabled.isChecked())

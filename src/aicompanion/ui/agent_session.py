@@ -115,6 +115,9 @@ class AgentSession(QObject):
         self.worker.finished.connect(self._worker_finished)
         w.pet.agent_busy = True
         w.pet.dispatch('work_started', tool='agent', task=goal); w.pet.show_activity('thinking')
+        w.task_card.detail.setText(goal)
+        w.task_card.clear_approval()
+        w.task_card.show()
         if announce: w._append_message('任务', goal)   # 从聊天里自动开始时，原话已经在聊天记录里了
         w._status(f'正在干活（工作区 {cwd}）')
         self.worker.start()
@@ -232,7 +235,7 @@ class AgentSession(QObject):
         """工具要你点头时（后台线程）：弹确认气泡，返回 once / always / no / timeout。"""
         if self.auto_approve: return self.auto_approve(kind, title, detail)
         label, can_remember = CHOICES.get(kind, (None, False))
-        choices = [('可以', 'once')] + ([(label, 'always')] if can_remember and label else []) + [('不行', 'no')]
+        choices = [('同意', 'once')] + ([(label, 'always')] if can_remember and label else []) + [('让她停下', 'no')]
         answer = self._wait_ui({'text': title, 'choices': choices, 'details': detail, 'log': title.replace('\n', ' ')})
         if self.worker is not None:
             self.bridge.event.emit('approved', {'tool': kind, 'decision': answer, 'title': title})
@@ -254,7 +257,14 @@ class AgentSession(QObject):
     def _ask(self, spec, box):
         w = self.window
         bubble = w.pet.ask(spec['text'][:420], spec['choices'], spec.get('details', ''))
+        w.task_card.detail.setText(spec['text'])
+        details = spec.get('details', '')
+        w.task_card.details.setPlainText(details)
+        w.task_card.details.setVisible(bool(details))
+        w.task_card.answer = bubble.choose
+        w.task_card.actions.show()
         def chosen(value):
+            w.task_card.clear_approval()
             box['answer'] = value; box['event'].set()
             w.pet.dispatch('waiting', active=False)
         bubble.chosen.connect(chosen)
@@ -268,6 +278,7 @@ class AgentSession(QObject):
         if kind == 'result':
             self.got_result = True; self._done(data); return
         if kind == 'tool':
+            w.task_card.detail.setText(f'正在{tool_label(data.get("tool", ""))} · ' + data.get('summary', '')[:120])
             w.pet.show_activity(ACTIVITY.get(data.get('tool'), 'computer'))
             w.pet.dispatch('work_started', tool=data.get('tool', ''), task=self.goal)
             w._status(f'正在{tool_label(data.get("tool", ""))}：'+data.get('summary', '').split('：', 1)[-1][:40])
@@ -317,6 +328,8 @@ class AgentSession(QObject):
     def _worker_finished(self):
         w = self.window
         worker, self.worker = self.worker, None
+        w.task_card.clear_approval()
+        w.task_card.hide()
         w.pet.agent_busy = False
         if not getattr(self, 'got_result', True):
             # 线程异常退出且没有结果：也要把界面从"干活中"恢复过来

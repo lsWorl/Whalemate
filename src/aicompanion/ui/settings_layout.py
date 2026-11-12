@@ -48,7 +48,8 @@ class Page(QScrollArea):
         self.setWidgetResizable(True); self.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget(); body.setObjectName('PageBody'); self.setWidget(body)
         self.box = QVBoxLayout(body); self.box.setContentsMargins(22, 18, 22, 18); self.box.setSpacing(12)
-        head = QLabel(title); head.setObjectName('PageTitle'); self.box.addWidget(head)
+        if title:
+            head = QLabel(title); head.setObjectName('PageTitle'); self.box.addWidget(head)
         if intro:
             text = QLabel(intro); text.setObjectName('PageIntro'); text.setWordWrap(True); self.box.addWidget(text)
         self._stretch = False
@@ -78,12 +79,28 @@ class SettingsNav(QWidget):
     """左侧分组导航 + 右侧页面。add_group 加分组标题，add_page 加一页（key 用来从别处直接跳过来）。"""
     page_changed = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, title="鲸鲸的设置", parent=None):
         super().__init__(parent)
         row = QHBoxLayout(self); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(0)
-        self.list = QListWidget(); self.list.setObjectName('Nav'); self.list.setFixedWidth(176)
+        self.list = QListWidget(); self.list.setObjectName('Nav'); self.list.setFixedWidth(214)
         self.stack = QStackedWidget(); self.stack.setObjectName('Stack')
-        row.addWidget(self.list); row.addWidget(self.stack, 1)
+        from aicompanion.ui.icons import app_icon
+        sidebar = QFrame()
+        sidebar.setObjectName('Brand')
+        side = QVBoxLayout(sidebar)
+        side.setContentsMargins(3, 12, 3, 4)
+        brand = QHBoxLayout()
+        brand.setContentsMargins(12, 0, 4, 2)
+        face = QLabel()
+        face.setPixmap(app_icon().pixmap(30, 30))
+        brand.addWidget(face)
+        name = QLabel(title)
+        name.setObjectName('CardTitle')
+        brand.addWidget(name, 1)
+        side.addLayout(brand)
+        side.addWidget(self.list, 1)
+        row.addWidget(sidebar)
+        row.addWidget(self.stack, 1)
         self.keys: list[str] = []          # 与 list 的行一一对应；分组标题行为空串
         self.pages: dict[str, QWidget] = {}
         self.list.currentRowChanged.connect(self._row_changed)
@@ -94,7 +111,8 @@ class SettingsNav(QWidget):
         self.list.addItem(item); self.keys.append('')
 
     def add_page(self, key: str, label: str, widget: QWidget, hint: str = ''):
-        item = QListWidgetItem('　'+label); item.setToolTip(hint or label); self.list.addItem(item)
+        from aicompanion.ui.icons import line_icon
+        item = QListWidgetItem(line_icon(key), label); item.setToolTip(hint or label); self.list.addItem(item)
         self.keys.append(key); self.pages[key] = widget; self.stack.addWidget(widget)
         return widget
 

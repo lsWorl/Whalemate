@@ -1,12 +1,16 @@
 from dataclasses import replace
 from uuid import uuid4
-from datetime import timezone
-from PySide6.QtCore import Qt,QDateTime,QTimeZone
+from datetime import datetime, timezone
+from PySide6.QtCore import Qt,QDateTime,QTimeZone,QTimer,Signal
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
-    QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
+    QFrame,QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
 from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
+
+
+def play_voice_preview(speech, target=None):
+    speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。', uuid4().hex, target=target)
 
 
 class SettingsWindow(QDialog):
@@ -15,6 +19,7 @@ class SettingsWindow(QDialog):
     页面键（open_page 参数、概览里的“去设置”按钮都用它）：overview、persona、memory、relationship、proactive、
     models、voice、agent、library、platforms、storage、usage。
     """
+    saved = Signal(str)
     PAGES = ('overview', 'persona', 'memory', 'relationship', 'proactive', 'models', 'voice', 'agent', 'library',
              'platforms', 'storage', 'usage')
 
@@ -23,14 +28,17 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.settings_layout import ComingSoon, Page, Section, SettingsNav, scrolled, tabs
         self.controller=controller; self.database=controller.database; self.settings=settings
         self.speech_output=speech_output
-        self.setWindowTitle('设置'); self.resize(980,700); self.setMinimumSize(820,560)
+        self.previewing = False
+        self.reopen_wizard = False
+        self.setWindowTitle(controller.character.name+'的设置'); self.resize(1100,720); self.setMinimumSize(820,560)
         from aicompanion.ui import theme; self.setStyleSheet(theme.DIALOG)
         layout=QVBoxLayout(self); layout.setContentsMargins(0,0,0,0); layout.setSpacing(0)
-        self.nav=SettingsNav(); layout.addWidget(self.nav,1)
+        self.nav=SettingsNav(self.windowTitle()); layout.addWidget(self.nav,1)
         cid=controller.character.id
 
         # ---- 角色与形象 ---------------------------------------------------------------------
         self.name=QLineEdit(controller.character.name)
+        self.name_error = QLabel('名字不能为空'); self.name_error.setObjectName('Warn'); self.name_error.hide()
         # 计划书 v4 功能二：设定和说话风格属于“人格”，在人格编辑器里改；这里的 description / style 指向编辑器的输入框
         from aicompanion.ui.persona_page import PersonaEditor
         registry=getattr(parent,'registry',None); pack=registry.pack(cid) if registry is not None else None
@@ -50,12 +58,30 @@ class SettingsWindow(QDialog):
         self.panel_opacity=QSpinBox(); self.panel_opacity.setRange(0,100); self.panel_opacity.setSuffix(' %')
         self.panel_opacity.setValue(int(round(float(self.database.get_setting('panel_background_opacity',0.16) or 0)*100)))
         persona=Page('角色与形象','她是谁、怎么想怎么说、长什么样。换人格、改名字都不会影响记忆和关系。')
-        who=QFormLayout(); who.addRow('名字',self.name)
+        who=QFormLayout(); who.addRow('名字',self.name); who.addRow('', self.name_error)
         identity=persona.add(Section('她是谁','名字属于她自己，换人格也不会变。',who)); identity.add(new)
         persona.add(Section('人格','同一个她可以有几种性格：新建、复制、切换、导入 SillyTavern 角色卡，每次保存都留一个版本可以回退。'
                                   '“设为当前”后下一句话就用新人格。',self.persona_editor))
         looks=QFormLayout(); looks.addRow('桌面形象',self.avatar_mode); looks.addRow('Live2D 模型',self.model); looks.addRow('',choose)
         persona.add(Section('桌面形象','鲸鲸优先使用本机安装的 Aboutme 大肥鱼动画，未安装时显示内置的自绘鲸娘。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
+        pet = getattr(parent, 'pet', None)
+        if pet is not None:
+            more = QPushButton('更多')
+            def show_more():
+                menu = pet.more_menu(more)
+                menu.exec(more.mapToGlobal(more.rect().bottomLeft()))
+                menu.deleteLater()
+            more.clicked.connect(show_more)
+            looks.addRow('', more)
+        from aicompanion.ui.aboutme_preview import AboutmePreview
+        self.aboutme = AboutmePreview()
+        looks.addRow('大肥鱼动画版', self.aboutme)
+        self.finished.connect(self.aboutme.shutdown)
+        self.model_error = QLabel()
+        self.model_error.setWordWrap(True)
+        self.model_error.setObjectName('Warn')
+        self.model_error.hide()
+        looks.insertRow(2, '', self.model_error)
         panel=QFormLayout(); panel.addRow('背景图',bg_row); panel.addRow('背景不透明度',self.panel_opacity)
         persona.add(Section('聊天面板外观','背景图只在本机使用，不会上传或随项目分发。',panel))
         persona.finish()
@@ -227,9 +253,9 @@ class SettingsWindow(QDialog):
         agent_box.addWidget(ComingSoon('跨天的任务','任务有进度和检查点，重启后从断点继续；你也可以在 QQ 私聊里交办，审批发到你那里确认。'))
         agent_box.addStretch(1)
         agent_page.add(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
-        self.library_page=LibraryPage(self.database,cid,self,controller=controller)
+        self.library_page=LibraryPage(self.database,cid,self,controller=controller, defer=self.queue_setting)
         library_page=Page('表情图库','她能发的表情包。自己的图放进目录就能用，含义由识图模型自动识别。'); library_page.add(self.library_page)
-        self.relationship_page=RelationshipPage(self.database,cid,self)
+        self.relationship_page=RelationshipPage(self.database,cid,self, defer=self.queue_setting)
         relation_page=Page('关系与心情','她现在的心情，以及她和每个人的关系（桌面主人、QQ 上的朋友）。')
         from aicompanion.ui.mood_card import MoodCard
         self.mood_card=MoodCard(self.database,cid,self)
@@ -237,7 +263,7 @@ class SettingsWindow(QDialog):
                                   '容不容易生气、消气快慢在“角色与形象 → 人格 → 情绪倾向”里调。心情不改好感，也不影响办事。',self.mood_card))
         relation_page.add(self.relationship_page)
         from aicompanion.ui.dates_card import DatesCard
-        self.dates_card=DatesCard(self.database,cid,self)
+        self.dates_card=DatesCard(self.database,cid,self, defer=self.queue_setting)
         relation_page.add(Section('我们的日子','她记得你们认识了多少天、哪些日子值得纪念；到了那天她会在和你聊天时自然提一句，一天只提一次。',self.dates_card))
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
@@ -252,7 +278,7 @@ class SettingsWindow(QDialog):
         usage_page=Page('用量','每天的模型和语音用量，以及额度上限。'); usage_page.add(self.usage_page); usage_page.add(other); usage_page.finish()
 
         # ---- 概览（最后建：要读上面各页的状态） ------------------------------------------------------
-        overview=self._overview_page(Page, Section, ComingSoon)
+        overview=self._overview_page(Page, Section)
 
         nav=self.nav
         nav.add_page('overview','概览',overview,'还差哪几步、常用操作在哪里')
@@ -268,54 +294,123 @@ class SettingsWindow(QDialog):
         nav.add_page('storage','存储位置',storage_page); nav.add_page('usage','用量',usage_page)
 
         footer=QWidget(); footer.setObjectName('Footer'); bar=QHBoxLayout(footer); bar.setContentsMargins(18,10,18,10)
-        tip=QLabel('“模型与 Key”“表情图库”里的改动立即生效；其他页改完点“保存”。'); tip.setObjectName('Hint'); bar.addWidget(tip,1)
-        cancel=QPushButton('取消'); cancel.clicked.connect(self.reject); bar.addWidget(cancel)
-        save=QPushButton('保存'); save.setObjectName('Primary'); save.setDefault(True); save.clicked.connect(self.save); bar.addWidget(save)
+        saved_time = self.database.get_setting('settings_saved_time', '')
+        self.save_status = QLabel('✓ 已自动保存 · ' + saved_time if saved_time else '尚无改动')
+        self.save_status.setObjectName('Good')
+        bar.addWidget(self.save_status)
+        tip = QLabel('这里的改动会马上生效并自动保存，不需要再点保存。')
+        tip.setObjectName('Hint')
+        tip.setWordWrap(True)
+        bar.addWidget(tip, 1)
+        done = QPushButton('完成')
+        done.setObjectName('Primary')
+        done.clicked.connect(self.accept)
+        bar.addWidget(done)
         layout.addWidget(footer)
+        self._setup_autosave()
         self.refresh()
+        self.nav.page_changed.connect(lambda key: self._refresh_overview() if key == 'overview' else None)
         self.open_page(page or 'overview')
 
-    def open_page(self,key):
-        """跳到某一页（概览的“去设置”、聊天面板的引导条都用它）。"""
+    def open_page(self, key):
         return self.nav.show_page(key)
 
-    def _overview_page(self,Page,Section,ComingSoon):
-        """概览：几项关键设置的状态 + 一键跳转，再列出常用操作和即将推出的功能。"""
-        cid=self.controller.character.id; router=self.controller.router
-        page=Page(f'你好，这里是{self.controller.character.name}的设置','先把下面几项看一遍；带 ✓ 的已经可以用了。')
-        steps=Section('准备情况','')
-        from PySide6.QtWidgets import QGridLayout
-        grid=QGridLayout(); grid.setHorizontalSpacing(14); grid.setVerticalSpacing(10); grid.setColumnStretch(1,1)
-        def row(title,ok,text,key,action='去设置'):
-            n=grid.rowCount(); name=QLabel(title); name.setObjectName('CardTitle')
-            state=QLabel(('✓ ' if ok else '○ ')+text); state.setObjectName('Good' if ok else 'Warn'); state.setWordWrap(True)
-            go=QPushButton(action); go.setObjectName('Link'); go.clicked.connect(lambda _=False,k=key:self.open_page(k))
-            top=Qt.AlignmentFlag.AlignTop
-            grid.addWidget(name,n,0,top); grid.addWidget(state,n,1,top); grid.addWidget(go,n,2,top)
-        try: chat_ok=bool(router.configured('chat',cid))
-        except Exception: chat_ok=False
-        row('聊天模型',chat_ok,('现在用：'+router.label(cid)) if chat_ok else '还没有配置，现在是离线模拟回复。先添加一个账户并选聊天模型','models')
-        try: target=router.agent_target(cid); problem='' if target else router.agent_problem(cid)
-        except Exception: target,problem=None,''
-        if not target and (not problem or problem.startswith('还没有配置')): problem='还没有选办事模型（可选，在“模型与 Key”页的“办事”里选）'
-        row('办事',target is not None,('办事模型：'+target.label) if target else problem,'models')
-        providers={'system':'本地朗读','cloud':'智谱语音','qwen':'千问动漫声线','breeze':'云端声线'}
-        tts=self.database.get_setting('tts_provider',self.settings.tts_provider)
-        row('声音',True,f'朗读方式：{providers.get(tts,tts)}；默认开着，聊天面板上的“朗读”可以关掉','voice')
-        from aicompanion.bridge.service import setting as bridge_setting
-        bridge=bool(bridge_setting(self.database,'bridge_enabled'))
-        row('QQ',bridge,'QQ 桥接已打开' if bridge else '没有接 QQ（可选）','platforms')
-        meme=str(self.database.get_setting('qq_meme_root','') or '')
-        row('表情图库',bool(meme),f'图库目录：{meme}' if meme else '还没选表情包目录（可选）','library')
-        steps.add(grid); page.add(steps)
-        tips=QLabel('· 在聊天面板直接打字和她聊天；点输入框左边的“办事”，这句话就交给她动手做。\n'
-                    '· 点“通话”后按住右 Ctrl 说话，松开发送；她说话时你开口也能打断她。\n'
-                    '· 右键桌面上的她：打开聊天、切换角色、让她办事、退出。\n'
-                    '· 单击托盘图标召回她，双击打开聊天面板。')
-        tips.setWordWrap(True); page.add(Section('常用操作','',tips))
-        page.add(ComingSoon('接下来会有','人格包与版本 · 持续的心情与小脾气 · 她自己的生活和趣事分享 · 想得起更久以前的事 · '
-                                  '圈子话题与约定 · 把文件交给她办事 · 跨天任务与 QQ 交办 · 自己告别退出。具体见项目计划书 v4。'))
+    def _overview_page(self, Page, Section):
+        from PySide6.QtWidgets import QProgressBar
+        from aicompanion.ui.icons import portrait
+        page = Page('', '')
+        banner = QFrame()
+        banner.setObjectName('OverviewBanner')
+        row = QHBoxLayout(banner)
+        row.setContentsMargins(22, 12, 18, 12)
+        words = QVBoxLayout()
+        self.overview_title = QLabel()
+        self.overview_title.setObjectName('PageTitle')
+        words.addWidget(self.overview_title)
+        note = QLabel('绿色的已经能用了。可选项可以以后再设置。')
+        note.setObjectName('Hint')
+        words.addWidget(note)
+        self.readiness = QProgressBar()
+        self.readiness.setMaximumWidth(360)
+        self.readiness.setRange(0, 5)
+        self.readiness.setFixedHeight(8)
+        self.readiness.setTextVisible(False)
+        words.addWidget(self.readiness)
+        row.addLayout(words, 1)
+        picture = QLabel()
+        picture.setPixmap(portrait('idle', 90, 108))
+        picture.setFixedWidth(90)
+        row.addWidget(picture)
+        page.add(banner)
+        self.checklist = []
+        checklist = QFrame()
+        checklist.setObjectName('Card')
+        rows = QVBoxLayout(checklist)
+        rows.setContentsMargins(12, 4, 12, 4)
+        rows.setSpacing(0)
+        page.add(checklist)
+        for key, title, action in (('models', '聊天模型', '连接模型'), ('voice', '她会念出回复', '换个声音'),
+                                   ('persona', '桌面形象', '去看看'), ('agent', '让她帮你做事', '开始设置'),
+                                   ('platforms', '在 QQ 上聊天', '开始设置')):
+            card = QFrame()
+            row = QHBoxLayout(card)
+            mark = QLabel()
+            row.addWidget(mark)
+            words = QVBoxLayout()
+            heading = QLabel(title)
+            heading.setObjectName('CardTitle')
+            words.addWidget(heading)
+            summary = QLabel()
+            summary.setObjectName('Hint')
+            summary.setWordWrap(True)
+            words.addWidget(summary)
+            row.addLayout(words, 1)
+            go = QPushButton(action)
+            go.clicked.connect(lambda checked=False, k=key: self.open_page(k))
+            row.addWidget(go)
+            self.checklist.append((mark, summary, go))
+            rows.addWidget(card)
+        reopen = QPushButton('重新打开新手向导')
+        reopen.setObjectName('Link')
+        reopen.clicked.connect(self._reopen)
+        page.add(reopen)
+        self._refresh_overview()
         return page.finish()
+
+    def _reopen(self):
+        self.reopen_wizard = True
+        self.accept()
+        if self.isVisible():
+            self.reopen_wizard = False
+
+    def _refresh_overview(self):
+        from aicompanion.ui.icons import line_icon
+        from aicompanion.agent.dsh_backend import problem
+        from aicompanion.agent.mcp_server import dependency_problem
+        from aicompanion.bridge.service import setting
+        router = self.controller.router
+        cid = self.controller.character.id
+        chat = router.configured('chat', cid)
+        speech = self.database.get_setting('speech_enabled', True)
+        agent = bool(self.database.get_setting('agent_enabled', True) and
+                     router.agent_target(cid) and not problem() and not dependency_problem())
+        qq = bool(setting(self.database, 'bridge_enabled') and self.database.get_setting('bridge_owner:qq', ''))
+        values = ((chat, '已连上，可以开始聊天。' if chat else '还没有配置，可以先离线试用。'),
+                  (speech, '回复时会念出来。' if speech else '只打字聊天。'),
+                  (True, '自带的鲸鲸，也可以安装大肥鱼动画版。'),
+                  (agent, '整理文件、查资料。'), (qq, '需要一个 QQ 小号当她的号。'))
+        for i, ((mark, summary, go), (ready, text)) in enumerate(zip(self.checklist, values)):
+            if ready: mark.setPixmap(line_icon('check', '#16683F').pixmap(18, 18))
+            else: mark.setText('可选' if i in (1, 3, 4) else '待连接')
+            mark.setObjectName('Good' if ready else 'Hint')
+            mark.style().unpolish(mark)
+            mark.style().polish(mark)
+            summary.setText(text)
+            if i == 0:
+                go.setText('修改' if ready else '连接模型')
+        count = sum(bool(v[0]) for v in values)
+        self.readiness.setValue(count)
+        self.overview_title.setText(f'还差 {5-count} 步就全部准备好' if count < 5 else '全部准备好了')
 
     def _pick_background(self):
         path,_=QFileDialog.getOpenFileName(self,'选择背景图','', '图片 (*.png *.jpg *.jpeg *.webp)')
@@ -377,12 +472,13 @@ class SettingsWindow(QDialog):
         return value[len('choice:'):] if value.startswith('choice:') else None
 
     def _save_voice_choice(self,cid):
-        """默认声线的候选音色存成 voice_choice:<角色>，路由按它选 MiniMax 音色。只在点“保存”时调用。"""
+        """默认声线的候选音色按角色保存，路由用它选择 MiniMax 音色。"""
         choice=self._voice_choice()
         if choice is not None: self.database.set_setting(f'voice_choice:{cid}',choice)
 
     def preview_voice(self):
         if not self.speech_output: return
+        self.previewing = True
         speech=self.speech_output; speech.stop(); speech.enabled=True
         speech.provider=self.provider.currentData(); speech.voice=self.selected_voice()
         # 试听当前选中的候选音色：临时取一份合成配置交给这一句，不写数据库；点“取消”后仍是原来的音色（Codex PR #41 审查 3）
@@ -397,13 +493,14 @@ class SettingsWindow(QDialog):
         speech.style=self.voice_style.toPlainText()
         # 系统朗读可能同步触发开始信号，先显示准备状态，避免覆盖正在试听的提示。
         self.preview_status.setText('正在准备试听，云端合成会产生少量用量。')
-        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex,target=target)
+        play_voice_preview(speech, target)
 
     def _preview_started(self,active):
         if active: self.preview_status.setText('正在试听')
 
     def _finish_preview(self,*args):
-        self.speech_output.stop()
+        if self.previewing:
+            self.speech_output.stop()
         self.speech_output.error.disconnect(self.preview_status.setText)
         self.speech_output.speaking.disconnect(self._preview_started)
 
@@ -465,47 +562,85 @@ class SettingsWindow(QDialog):
             self.database.set_setting(f'context_after:{self.controller.character.id}',history[-1]['id'] if history else 0)
         self.refresh()
 
-    def save(self):
-        if self.model_page is not None and not self.model_page.save(): return
-        if not self.name.text().strip() or not self._validate_model_input(): return
-        if not self.persona_editor.save(): return
-        # 设定和说话风格以当前人格为准（人格编辑器保存时已写回角色表）；这里只改名字、形象和声音
-        current=next((c for c in self.database.characters() if c.id==self.controller.character.id),self.controller.character)
-        character=replace(current,name=self.name.text().strip(),model_path=self.model.text().strip(),
-                          voice=self.controller.character.voice if self.provider.currentData() in ('qwen','breeze') else self.selected_voice())
-        self.database.update_character(character); self.controller.character=character
-        if self.provider.currentData()=='qwen':
-            self.database.set_setting(f'qwen_voice:{character.id}',self.selected_voice())
-        self._save_voice_choice(character.id)
-        self.database.set_setting(f'qwen_style:{character.id}',self.voice_style.toPlainText())
-        self.database.set_setting(f'qwen_mood:{character.id}',self.voice_mood.currentData())
-        self.database.set_setting(f'speech_language:{character.id}',self.speech_language.currentData())
-        self.database.set_setting(f'avatar_mode:{character.id}',self.avatar_mode.currentData())
-        self.database.set_setting(f'japanese_style:{character.id}',self.japanese_style.toPlainText())
-        tts_provider=self.provider.currentData()
-        if self.stored_tts_provider is not None or self.tts_provider_touched:
-            self.database.set_setting('tts_provider',tts_provider)
-        for key,value in [('input_device',self.input.currentData()),
-                          ('asr_provider',self.asr_provider.currentData()),('voice_mode',self.voice_mode.currentData()),
-                          ('speech_style',self.speech_style.currentData()),
-                          ('panel_background',self.panel_background.text().strip()),('panel_background_opacity',self.panel_opacity.value()/100),
-                          ('ptt_key',self.ptt_key.currentData()),('echo_backend',self.echo_backend.currentData()),
-                          ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
-                          ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value()),
-                          ('proactive_daily_limit',self.proactive_limit.value()),('proactive_gap_minutes',self.proactive_gap.value())]: self.database.set_setting(key,value)
-        self.life_card.save()
-        self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
-        try: self.storage_page.save()
-        except (OSError, ValueError) as error:
-            QMessageBox.warning(self, '存储位置没有保存', str(error)); return
-        self.accept()
+    def queue_setting(self, group, save):
+        self.autosave.schedule(group, save)
 
-    def _validate_model_input(self):
+    def _setup_autosave(self):
+        from aicompanion.ui.settings_autosave import SettingsAutosave
+        self.autosave = SettingsAutosave(self)
+        self.saved.connect(self._saved)
+        self.autosave.failed.connect(self._save_failed)
+
+    def _saved(self, key):
+        errors = list(self.autosave.errors.values())
+        if self.model_page:
+            errors.extend(self.model_page.errors.values())
+        if errors:
+            self._save_failed(errors[0])
+            return
+        self.save_status.setObjectName('Good')
+        self.save_status.style().polish(self.save_status)
+        stamp = datetime.now().strftime('%H:%M')
+        if self.database.get_setting('settings_saved_time', '') != stamp:
+            self.database.set_setting('settings_saved_time', stamp)
+        self.save_status.setText('✓ 已自动保存 · ' + stamp)
+
+    def _save_failed(self, message):
+        self.save_status.setObjectName('Warn')
+        self.save_status.style().polish(self.save_status)
+        self.save_status.setText('未保存 · ' + message)
+        self.save_status.setWordWrap(True)
+
+    def save(self):
+        model_ok = self.model_page.flush() if self.model_page else True
+        return self.autosave.flush() and model_ok
+
+    def done(self, result):
+        ok = self.save()
+        if ok or result == QDialog.DialogCode.Rejected:
+            self.bridge_page.timer.stop()
+            super().done(result)
+
+    def save_identity(self):
+        name = self.name.text().strip()
+        self.name_error.setVisible(not name)
+        if not name:
+            raise ValueError('名字不能为空')
+        if not self._validate_model_input(inline=True):
+            raise ValueError(self.model_error.text())
+        current = self.controller.character
+        character = replace(current, name=name, model_path=self.model.text().strip())
+        self.database.update_character(character)
+        self.controller.character = character
+        self.database.set_setting(f'avatar_mode:{character.id}', self.avatar_mode.currentData())
+
+    def save_voice(self):
+        character = self.controller.character
+        provider = self.provider.currentData()
+        if provider == 'qwen':
+            self.database.set_setting(f'qwen_voice:{character.id}', self.selected_voice())
+        elif provider != 'breeze' and character.voice != self.selected_voice():
+            character = replace(character, voice=self.selected_voice())
+            self.database.update_character(character)
+            self.controller.character = character
+        self._save_voice_choice(character.id)
+        if self.tts_provider_touched:
+            self.database.set_setting('tts_provider', provider)
+
+    def _validate_model_input(self, inline=False):
         # 手动输入路径也要检查，不能只在文件选择器里拦截损坏的模型包。
-        if self.avatar_mode.currentData()=='live2d' and self.model.text().strip():
-            try: validate_model_package(self.model.text().strip()); require_cubism_core()
+        path = self.model.text().strip()
+        changed = inline and path != self.controller.character.model_path
+        if path and (changed or self.avatar_mode.currentData() == 'live2d'):
+            try:
+                validate_model_package(path)
+                if self.avatar_mode.currentData() == 'live2d': require_cubism_core()
             except (ModelPackageError,OSError) as error:
-                QMessageBox.warning(self,'模型包无效',str(error)); return False
+                if inline:
+                    self.model_error.setText(str(error)); self.model_error.show()
+                else: QMessageBox.warning(self,'模型包无效',str(error))
+                return False
+        if inline: self.model_error.hide()
         return True
 
     def refresh_reminders(self):

@@ -33,7 +33,7 @@ class StoragePage(QWidget):
         recommendation = QPushButton('使用项目盘 / 非系统盘的推荐目录')
         recommendation.clicked.connect(lambda: (self.memory.setText(str(default)), self.memes.setText(str(default/'memes'))))
         layout.addWidget(recommendation)
-        self.status = QLabel('选择 D 盘或其他非系统盘，点下方“保存”，再从托盘彻底退出并重开桌宠。表情目录可选已有分类图库；空目录会补入自带鲸娘表情。')
+        self.status = QLabel('选择 D 盘或其他非系统盘，自动保存后，再从托盘彻底退出并重开桌宠。表情目录可选已有分类图库；空目录会补入自带鲸娘表情。')
         self.status.setWordWrap(True); layout.addWidget(self.status); layout.addStretch(1)
 
     def _choose(self, field):

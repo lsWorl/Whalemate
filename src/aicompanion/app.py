@@ -135,6 +135,9 @@ def main() -> int:
         from aicompanion.qq import runtime as qq
         qq.autostart(database)
         app.aboutToQuit.connect(lambda: qq.shutdown(database))
+        from aicompanion.ui.onboarding import needs_onboarding
+        if needs_onboarding(controller):
+            QTimer.singleShot(0, window.open_onboarding)
         QTimer.singleShot(1500, window.pet.drop_in)  # 从屏幕顶部掉下来，落地后打招呼
     if smoke_directory:
         if '--pet-smoke-test' in sys.argv:

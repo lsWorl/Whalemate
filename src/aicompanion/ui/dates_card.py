@@ -17,7 +17,7 @@ def _pydate(value: QDate) -> date: return date(value.year(), value.month(), valu
 
 
 class DatesCard(QWidget):
-    def __init__(self, database, character_id: str, parent=None, clock=None):
+    def __init__(self, database, character_id: str, parent=None, clock=None, defer=None):
         super().__init__(parent)
         self.dates = CompanionDates(database, clock=clock) if clock else CompanionDates(database)
         self.cid = character_id
@@ -26,8 +26,7 @@ class DatesCard(QWidget):
 
         met = QHBoxLayout()
         self.met = QDateEdit(); self.met.setCalendarPopup(True); self.met.setDisplayFormat('yyyy-MM-dd')
-        change = QPushButton('改成这天'); change.clicked.connect(self.change_met)
-        met.addWidget(QLabel('认识那天')); met.addWidget(self.met); met.addWidget(change)
+        met.addWidget(QLabel('认识那天')); met.addWidget(self.met)
         hint = QLabel('以前在别处养过她，可以把这天改早一点'); hint.setObjectName('Hint'); met.addWidget(hint, 1)
         box.addLayout(met)
 
@@ -57,11 +56,12 @@ class DatesCard(QWidget):
         toggles = QHBoxLayout()
         self.milestones = QCheckBox('认识第 100 天、周年这类纪念日'); self.holidays = QCheckBox('节日（春节、中秋、元旦、国庆等）')
         for check in (self.milestones, self.holidays):
-            check.toggled.connect(self.save_options); toggles.addWidget(check)
+            check.toggled.connect(lambda: defer('dates', self.save_options) if defer else self.save_options()); toggles.addWidget(check)
         toggles.addStretch(1); box.addLayout(toggles)
         note = QLabel('这些日子只在你们私下聊天时用，QQ 群里不会说出你的生日。农历生日勾上“农历”，日历里选出生那天就行。')
         note.setObjectName('Hint'); note.setWordWrap(True); box.addWidget(note)
         self.refresh(reset_met=True, reset_when=True)
+        self.met.dateChanged.connect(lambda: defer('dates', self.change_met) if defer else self.change_met())
 
     def refresh(self, reset_met: bool = False, reset_when: bool = False):
         """重画天数、日程和列表。两个日期输入框只在打开时、改完认识那天 / 添加完以后重置：
