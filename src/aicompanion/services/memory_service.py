@@ -25,7 +25,7 @@ class MemoryService:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def build_memory_context(self, query="", character_id="emilia", scene="pet") -> str:
+    def build_memory_context(self, query="", character_id="deepseek-whale", scene="pet") -> str:
         """按相关性、重要度和清晰度挑记忆；模糊的会标出来；和这句话相关而被用上的记忆清晰度回升。"""
         from aicompanion.brain.memory_card import render, select_for_prompt
         selected = select_for_prompt(self.database.memory_card(character_id), query, 8, scene)
@@ -58,7 +58,7 @@ class MemoryService:
             return not any(similar(content, r['content']) for r in private)
         return guard
 
-    def maybe_extract_memory(self, user_message: str, character_id="emilia", source_id=None) -> None:
+    def maybe_extract_memory(self, user_message: str, character_id="deepseek-whale", source_id=None) -> None:
         # 离线规则仅识别明确稳定信息，否定、假设和过去偏好交给模型分析。
         patterns = [("identity", "name", r"(?:我的名字是|我叫)([^，。！？\n]{1,20})"),
                     ("preference", "like", r"^我喜欢([^，。！？\n]{1,40})[。！]?$"),
@@ -109,8 +109,9 @@ class MemoryService:
             '使用已有相同事实键更新更正后的事实；无新事实返回空数组。不要输出 Markdown。'
         )
         if public:
-            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#编号"（标着"【爹】"的是用户本人，也就是她爹）。'
-                            '记忆必须写清楚是谁的事，例如"群友大壮#2 是程序员"、"爹在群里说周末去爬山"；不要把群友的事记成爹的；'
+            instruction += ('\n这是聊天平台上的群聊或陌生人私聊记录，说话人不是同一个"用户"：每条用户消息开头是"昵称#编号"（行首带【】标记的是用户本人，例如旧记录里的【爹】）。'
+                            # 记忆里统一写“用户”，不写“爹”“男朋友”这类关系称呼：换人格、换关系设定后记忆照样成立（长期约束 2）
+                            '记忆必须写清楚是谁的事，例如"群友大壮#2 是程序员"、"用户在群里说周末去爬山"；不要把群友的事记成用户的；'
                             'fact_key 里带上说话人标记（如 "qq#2:job"）。群里的玩笑、刷屏、对她的调侃不用记。summary 留空。')
         context = json.dumps({"previous_summary":'' if public else self.database.load_summary(character_id),"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
                               "existing": [{"content":r['content'],"fact_key":r['fact_key']} for r in existing]}, ensure_ascii=False)

@@ -11,6 +11,7 @@ import math
 from time import monotonic
 import re
 import wave
+from uuid import uuid4
 from PySide6.QtCore import QObject, Signal, QBuffer, QIODevice, QUrl, QLocale, QTimer
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtTextToSpeech import QTextToSpeech
@@ -18,15 +19,61 @@ from aicompanion.speech.qwen_client import validate_wav
 from aicompanion.ui.chat_worker import TaskWorker
 
 
+# 朗读时不念的东西（负责人 2026-11-11 实机反馈：完整朗读会把文件名一个字母一个字母念出来）。
+# 气泡和聊天记录保留原文，这里只影响念出来的内容。
+_FILE_EXT = (r'(?:py|pyw|js|ts|tsx|jsx|json|md|txt|log|csv|tsv|xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|webp|svg|bmp|ico|'
+             r'mp3|wav|flac|ogg|m4a|mp4|mov|mkv|avi|zip|7z|rar|gz|tar|exe|msi|bat|cmd|ps1|sh|html?|css|ya?ml|toml|ini|cfg|'
+             r'conf|env|sqlite3?|db|java|kt|cpp|cc|c|h|hpp|go|rs|rb|php|swift|vue|lua|sql|xml|ipynb|apk|dll|so|lock)')
+_CODE_BLOCK = re.compile(r'```.*?(?:```|$)', re.S)
+_INLINE_CODE = re.compile(r'`[^`\n]*`')
+_URL = re.compile(r'(?:https?|ftp)://[^\s，。！？；、）)」』]+', re.I)
+# Windows（C:\…、\\server\…）与类 Unix（/home/…、./x、~/x）路径；中文目录名也算
+_PATH = re.compile(r'(?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\.{1,2}[\\/]|(?<![\w.])/(?=[\w.\u4e00-\u9fff-]+/))'
+                   r'[^\s，。！？；、：:“”"\'（）()「」『』`]*')
+# 不带前缀的相对路径（src/app/main.py、docs/tasks/）：英文片段之间有斜杠，并且以文件扩展名或斜杠结尾，
+# 避免把“开心/难过”这类中文斜杠当成路径
+_REL_PATH = re.compile(r'(?<![\w/\\])[A-Za-z0-9_.-]+(?:[\\/][\w.\u4e00-\u9fff-]+)+(?:\.' + _FILE_EXT + r'\b|[\\/])', re.I)
+_FILE = re.compile(r'(?<![\w./\\])[\w\u4e00-\u9fff-]+(?:\.[\w-]+)*\.' + _FILE_EXT + r'\b', re.I)
+
+
+def _say_path(match) -> str:
+    """路径念成“那个文件 / 那个文件夹”；后面本来就跟着“文件 / 文件夹 / 目录”时只念“那个”，避免重复。"""
+    rest = match.string[match.end():].lstrip()
+    if rest.startswith(('文件夹', '目录', '文件')): return '那个'
+    return '那个文件' if re.search(r'\.' + _FILE_EXT + r'$', match.group(), re.I) else '那个文件夹'
+
+
 def spoken_text(text):
-    """保留台词，去掉常见 Markdown 标记和链接地址，避免念出格式符号。"""
+    """把要朗读的台词整理成能念的话：去掉 Markdown 记号和代码，链接、路径、文件名换成简短说法。"""
+    text = _CODE_BLOCK.sub('一段代码', text)
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    return re.sub(r'[*`#_]', '', text).strip()
+    text = _INLINE_CODE.sub(lambda m: m.group()[1:-1] if len(m.group()) <= 26 else '一段代码', text)   # 短代码去掉反引号再按路径规则处理
+    text = _URL.sub('链接', text)
+    text = _PATH.sub(_say_path, text)
+    text = _REL_PATH.sub(_say_path, text)
+    text = _FILE.sub(lambda m: '那个' if m.string[m.end():].lstrip().startswith('文件') else '文件', text)
+    text = re.sub(r'^\s*(?:[-*+]|\d+[.)、])\s+', '', text, flags=re.M)    # 列表记号
+    text = re.sub(r'[*`#_|>]', '', text)
+    return re.sub(r'[ \t]{2,}', ' ', text).strip()
 
 
 class SentenceBuffer:
+    """把流式文字切成句子交给朗读。记住是否在 ``` 代码块里：模型逐 token 输出时，开围栏、代码行、闭围栏会被切成
+    不同的句子，单句去看认不出代码（Codex 审计 R7），所以跨句保持状态——代码块整体读成一次“一段代码”。
+    只影响朗读，气泡和历史仍是原文。"""
     def __init__(self):
         self.text = ''
+        self.in_code = False
+
+    def _speakable(self, sentence):
+        parts = sentence.split('```')
+        kept = []
+        for index, part in enumerate(parts):
+            if index:   # 每遇到一个围栏切换一次
+                self.in_code = not self.in_code
+                if self.in_code: kept.append('一段代码。')
+            if not self.in_code and part.strip(): kept.append(part)
+        return ''.join(kept).strip()
 
     def feed(self, text, final=False):
         self.text += text
@@ -41,6 +88,7 @@ class SentenceBuffer:
             if not length:
                 break
             sentence, self.text = self.text[:length].strip(), self.text[length:]
+            sentence = self._speakable(sentence) if sentence else ''
             if sentence:
                 result.append(sentence)
         return result
@@ -57,8 +105,10 @@ class SpeechSegment:
     style: str
     language: str = 'zh'
     role_style: str = ''
+    target: object = None      # Breeze 等模型页配置的语音：入队时取好的完整 TtsTarget，合成和缓存都用它（Codex 审计 R4）
     requested: bool = False
     audio: bytes | None = None
+    fell_back: bool = False    # 原本要云端合成、因本轮云端失败改成了本地念
 
 
 CACHE_CHARS = 16   # 语气词这类短句合成一次存盘，之后不再请求接口
@@ -80,6 +130,8 @@ class SpeechOutput(QObject):
     error = Signal(str)
     usage = Signal(int)
     delivered = Signal(str, str)
+    fallback = Signal(str)       # 云端声线说不了、这一轮退回本地朗读时的提示（计划书 v4 功能八）
+    GAP_MS = 250                 # 同一轮两段之间停一下，不连成一口气（计划书：200～400 毫秒）
 
     def __init__(self, client, parent=None):
         super().__init__(parent)
@@ -95,6 +147,7 @@ class SpeechOutput(QObject):
         self.language = 'zh'
         self.role_style = ''
         self.failed_generation = None
+        self.fallback_generation = None   # 这一轮已经退回本地朗读（云端合成失败）
         self.delivered_count = 0
         self.tts = QTextToSpeech(self)
         self.tts.setLocale(QLocale('zh_CN'))
@@ -142,16 +195,37 @@ class SpeechOutput(QObject):
         values.frombytes(chunk[:len(chunk)//2*2])
         return math.sqrt(sum(x*x for x in values)/len(values))/32768 if values else 0.0
 
-    def enqueue(self, text, generation_id=''):
+    def enqueue(self, text, generation_id='', target=None):
+        """target：调用方直接指定这句用哪个云端账户和音色（设置页试听未保存的候选音色），不传则按当前配置取。"""
         text = spoken_text(text)
         if not self.enabled or not text or generation_id == self.failed_generation:
             return
         if len(self.queue) >= 12:
             self._error('语音队列已满，本轮后续内容仅显示文字。')
             return
-        self.queue.append(SpeechSegment(text, generation_id, self.provider, self.voice, self.mood, self.style, self.language, self.role_style))
+        voice, target = self.voice, None
+        if self.provider != 'system' and generation_id and generation_id == getattr(self, 'fallback_generation', None):
+            # 这一轮已经退回本地朗读：后面的句子也直接本地念，不再一句句去试云端
+            self.queue.append(SpeechSegment(text, generation_id, 'system', '', self.mood, self.style, self.language, self.role_style))
+            self._next(); return
+        if self.provider == 'breeze':
+            # 入队时就定下这句用哪个账户和音色；之后改了设置只影响新句子，排队中的句子不会换成新音色、也不会把新音色存进旧缓存
+            if target is None:
+                source = getattr(self.client, 'tts_source', None)
+                target = source() if source else None
+            voice = target.cache_id if target else ''
+        self.queue.append(SpeechSegment(text, generation_id, self.provider, voice, self.mood, self.style, self.language,
+                                        self.role_style, target))
         self._next()
         self._prefetch()
+
+    def play_audio(self, text, raw, provider='breeze'):
+        """直接播放一段已经合成好的 WAV（模型页的“试听”用）：走正式的播放链路（字幕、口型、可打断），
+        不再请求合成，也不改朗读开关和朗读方式（Codex 审计 R6）。"""
+        self.stop()
+        job = SpeechSegment(text, uuid4().hex, provider, '', self.mood, self.style, self.language, self.role_style)
+        job.requested, job.audio = True, validate_wav(raw)
+        self.queue.append(job); self._next()
 
     def _next(self):
         if self.busy or not self.queue:
@@ -191,20 +265,40 @@ class SpeechOutput(QObject):
                     continue
             epoch = self.epoch
             worker = TaskWorker(lambda token, j=job: self.client.synthesize(j.text, j.voice, token,
-                provider=j.provider, mood=j.mood, style=j.style, language=j.language, role_style=j.role_style), self)
+                provider=j.provider, mood=j.mood, style=j.style, language=j.language, role_style=j.role_style,
+                **({'target': j.target} if j.target is not None else {})), self)
             self.workers.add(worker)
             worker.succeeded.connect(lambda raw, j=job, e=epoch: self._ready(j, raw, e))
-            worker.failed.connect(lambda error, e=epoch: self._error(error) if e == self.epoch else None)
+            worker.failed.connect(lambda error, j=job, e=epoch: self._synth_failed(j, error) if e == self.epoch else None)
             worker.finished.connect(lambda w=worker: self._dispose(w))
             worker.start()
 
+    def _synth_failed(self, job, error):
+        """云端合成失败（没配声线、额度用完、网络或服务出错）：这一轮剩下的句子都改用本地朗读，回复照常完成。
+        日语配音本地念不了，才按原来的方式报错停下。"""
+        if job.fell_back:
+            # 这句已经随本轮改成本地念了，晚到的云端失败是过期消息：不能当成本地朗读出错去停播、清队列（Codex PR #39 第 1 项）
+            return
+        if job.provider == 'system' or job.language != 'zh':
+            self._error(error); return
+        generation = job.generation_id
+        for queued in [job, *self.queue]:
+            if queued.generation_id == generation and queued.provider != 'system':
+                queued.provider, queued.requested, queued.audio, queued.target = 'system', True, None, None
+                queued.fell_back = True
+        self.fallback_generation = generation
+        self.fallback.emit('云端声线暂时用不了（' + str(error)[:60] + '），这一轮先用本地朗读。')
+        if self.busy and job is self.current_job:
+            # 正在等这句的音频：直接改成本地念
+            self.busy = False; self.queue.appendleft(job); self.current_job = None; self._next()
+
     def _ready(self, job, raw, epoch):
-        if epoch != self.epoch:
+        if epoch != self.epoch or job.provider == 'system':   # 已经改成本地念的句子，晚到的云端音频不用
             return
         try:
             job.audio = validate_wav(raw)
         except RuntimeError as error:
-            self._error(str(error))
+            self._synth_failed(job, str(error))   # 云端回来的音频坏了，和合成失败一样退回本地念
             return
         if len(job.text) <= CACHE_CHARS:
             try:
@@ -307,12 +401,17 @@ class SpeechOutput(QObject):
 
     def _done(self):
         self._mark_delivered(len(self.current))
+        finished = self.current_id
         self.busy = False
         self.current_job = None
         self._release_audio()
         self.mouth.emit(0)
         self.speaking.emit(False)
-        self._next()
+        if self.queue and self.queue[0].generation_id == finished and self.GAP_MS > 0:
+            epoch = self.epoch
+            QTimer.singleShot(self.GAP_MS, lambda: self._next() if epoch == self.epoch else None)
+        else:
+            self._next()
 
     def _error(self, text):
         self.failed_generation = self.current_id

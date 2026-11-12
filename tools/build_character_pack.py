@@ -1,4 +1,4 @@
-"""把美术素材包（asset-pack-vN）转换为运行时角色立绘包。
+"""用你自己的角色素材（asset-pack-vN）编译运行时立绘包。
 
 处理内容（原图不改动）：
 1. 内部 alpha 252~254 统一为 255，避免整只角色 1% 透明及穿透判断不稳。
@@ -8,8 +8,9 @@
 5. 生成 sprites.json 与预览拼图。
 
 用法（需要开发依赖 Pillow、numpy，scipy 可选）：
-    python tools/build_character_pack.py output/desktop-pet/asset-pack-v3 \
-        src/aicompanion/characters/deepseek-whale/sprites
+    python tools/build_character_pack.py my-character/asset-pack output/compiled-sprites
+
+输入目录需包含 manifest.json 和 assets/ 下对应的 PNG。
 """
 from __future__ import annotations
 
@@ -146,8 +147,9 @@ def preview(output: Path, sprites: dict) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Build a runtime sprite pack from an art asset pack.')
-    parser.add_argument('source', type=Path); parser.add_argument('output', type=Path)
+    parser = argparse.ArgumentParser(description='用你自己的角色素材编译运行时立绘包。')
+    parser.add_argument('source', type=Path, help='包含 manifest.json 和 assets/ 的目录')
+    parser.add_argument('output', type=Path, help='立绘包输出目录，例如 output/compiled-sprites')
     args = parser.parse_args()
     report = build(args.source, args.output)
     print(json.dumps(report, ensure_ascii=False, indent=2))

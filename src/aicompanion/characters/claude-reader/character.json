@@ -7,16 +7,6 @@
   "order": 20,
   "theme": "Claude 二创萌化角色",
   "renderer": {"kind": "sprites", "path": "sprites/sprites.json", "display_height": 300},
-  "provider": {
-    "label": "Claude",
-    "host": "api.anthropic.com",
-    "base_url": "",
-    "key_env": "CLAUDE_COMPAT_API_KEY",
-    "model_env": "CLAUDE_COMPAT_MODEL",
-    "base_url_env": "CLAUDE_COMPAT_BASE_URL",
-    "default_model": "",
-    "supports_tools": true
-  },
   "voice": {"language": "zh"},
   "lines": "lines.json",
   "persona": {

@@ -16,13 +16,17 @@ PLUGIN = Path(__file__).resolve().parents[1]/'integrations'/'astrbot_plugin_aico
 
 def load_plugin():
     fakes = {}
-    api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None, debug=lambda *a: None)
+    api = types.ModuleType('astrbot.api'); api.logger = types.SimpleNamespace(error=lambda *a: None, warning=lambda *a: None, debug=lambda *a: None, info=lambda *a: None)
     event = types.ModuleType('astrbot.api.event')
+
+    registered = []   # 被装饰器登记为消息处理函数的名字（真实 AstrBot 只调用登记过的）
 
     class Filter:
         class EventMessageType: ALL = 'all'
         @staticmethod
-        def event_message_type(kind, priority=0): return lambda fn: fn
+        def event_message_type(kind, priority=0):
+            def mark(fn): registered.append(fn.__name__); return fn
+            return mark
     event.filter = Filter; event.AstrMessageEvent = object
     star = types.ModuleType('astrbot.api.star')
 
@@ -40,6 +44,7 @@ def load_plugin():
     try:
         spec = importlib.util.spec_from_file_location('aicompanion_astrbot_plugin', PLUGIN)
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        module.REGISTERED = list(registered)
         return module
     finally:
         for k, v in saved.items():
@@ -83,6 +88,12 @@ class PluginTests(unittest.TestCase):
         plugin.sent = None; plugin.ask_pet = fake
         async def collect(): return [item async for item in plugin.on_message(event)]
         return asyncio.run(collect())
+
+    def test_handler_is_registered(self):
+        # 0.9.0 实测：装饰器挂错函数，插件收不到任何消息，私聊全部回"LLM 请求失败"
+        self.assertEqual(self.module.REGISTERED, ['on_message'])
+        import inspect
+        self.assertTrue(inspect.isasyncgenfunction(self.module.AICompanionBridge.on_message))
 
     def test_routes_only_qq_sessions_it_owns(self):
         p = self.plugin()
@@ -134,7 +145,7 @@ class PluginTests(unittest.TestCase):
             out = self.run_handler(plugin, event, {'reply': '蓝色图片', 'silent': False})
             self.assertEqual(out, [('plain', '蓝色图片')])
             self.assertTrue(plugin.sent['images'][0].startswith('data:image/jpeg;base64,'))
-            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[收到图片]')
+            self.assertNotIn(folder, str(plugin.sent)); self.assertEqual(plugin.sent['text'], '[图片]')
 
     def test_picture_converter_refuses_unmanaged_path(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -145,7 +156,7 @@ class PluginTests(unittest.TestCase):
                 async def convert_to_file_path(self): return str(outside)
             plugin = self.plugin(); plugin.managed_temp_root = lambda: str(managed)
             self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '没能读取', 'silent': False})
-            self.assertNotIn('images', plugin.sent); self.assertIn('未能读取', plugin.sent['text'])
+            self.assertNotIn('images', plugin.sent); self.assertIn('[图片]', plugin.sent['text']); self.assertNotIn('未能读取', plugin.sent['text'])
 
     def test_private_gif_and_webp_stickers_are_forwarded_as_actual_pixels(self):
         try:
@@ -177,11 +188,11 @@ class PluginTests(unittest.TestCase):
         plugin = self.plugin(group_only_when_called=False)
         self.run_handler(plugin, Event('', group='30003', called=False, images=[Segment()]), {'reply': '', 'silent': True})
         self.assertNotIn('images', plugin.sent)
-        self.assertIn('旁听不自动识图', plugin.sent['text'])
+        self.assertIn('[图片]', plugin.sent['text']); self.assertNotIn('识图', plugin.sent['text'])
         plugin.pet_vision = False
         self.run_handler(plugin, Event('', images=[Segment()]), {'reply': '', 'silent': True})
         self.assertNotIn('images', plugin.sent)
-        self.assertIn('识图已关闭', plugin.sent['text'])
+        self.assertEqual(plugin.sent['text'].count('[图片]'), 1); self.assertNotIn('识图', plugin.sent['text'])
 
     def test_meme_is_sent_as_astrbot_image_message_even_without_text(self):
         import hashlib
@@ -200,6 +211,233 @@ class PluginTests(unittest.TestCase):
             self.assertEqual(controls[-1],('ack',{'delivery_id':'a'*32,'status':'accepted'}))
             event=Event('再发');self.run_handler(plugin,event,answer);self.assertEqual(event.sent_messages,[])
             self.assertEqual(self.run_handler(self.plugin(),Event('发表情'),{'reply':'好呀','silent':False,'images':['file:///private.png']}),[('plain','好呀')])
+
+    def test_bare_at_goes_to_her_and_never_falls_back_to_astrbot_llm(self):
+        # 2026-11-09 实测：群里只 @ 她、不带字，AstrBot 自己（没配模型）回"LLM 请求失败"
+        class AtEvent(Event):
+            def __init__(self, *a, raw=None, me='2776148574', **k):
+                super().__init__(*a, **k); self.call_llm = False; self.me = me
+                self.message_obj = types.SimpleNamespace(raw_message={'message': raw or []})
+            def should_call_llm(self, value): self.call_llm = value
+            def get_self_id(self): return self.me
+        plugin = self.plugin()
+        event = AtEvent('', group='30003', called=True)
+        self.run_handler(plugin, event, {'reply': '咋了', 'silent': False})
+        self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        self.assertIs(plugin.sent['debounce'], True)                                 # 0.9.3：允许桌宠合并连发
+        # AstrBot 没打唤醒标记、但原始消息里 @ 的是她自己：也算叫她
+        event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '2776148574'}}, {'type': 'text', 'data': {'text': '  '}}])
+        self.run_handler(plugin, event, {'reply': '在呢', 'silent': False})
+        self.assertEqual(plugin.sent['text'], self.module.AT_ONLY); self.assertTrue(event.call_llm)
+        # @ 的是别人、不带字：不是叫她，不接
+        event = AtEvent('', group='30003', called=False, raw=[{'type': 'at', 'data': {'qq': '3023143286'}}])
+        self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent); self.assertFalse(event.stopped)
+        # 她选择不回（silent）：也不能让 AstrBot 的默认模型接手
+        event = AtEvent('看图', group='30003', called=True)
+        self.assertEqual(self.run_handler(plugin, event, {'reply': '', 'silent': True}), []); self.assertTrue(event.call_llm)
+        # 没勾选的群里只 @：同样吞掉，不落到 AstrBot 的模型
+        event = AtEvent('', group='99999', called=True)
+        self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
+        self.assertTrue(event.stopped); self.assertTrue(event.call_llm)
+        # 私聊里空消息（戳一戳之类）不当成叫她
+        event = AtEvent('', called=True); self.run_handler(plugin, event, {'reply': 'x', 'silent': False}); self.assertIsNone(plugin.sent)
+
+    def test_busy_group_reply_quotes_the_message_once(self):
+        # 负责人 2026-11-09 22:32：群里多个人 @ 她时分不清她在回谁。桌宠给 quote 时，第一条回复引用对方那条消息
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Plain=lambda value:('text',value)
+        components.Reply=lambda id:('reply',id)
+        class QuoteEvent(Event):
+            def __init__(self,*a,**k):
+                super().__init__(*a,**k); self.message_obj=types.SimpleNamespace(message_id=777,raw_message={})
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            plugin=self.plugin()
+            async def pause(text,delay=None):pass
+            plugin.pause=pause
+            event=QuoteEvent('你好',group='30003',called=True)
+            self.run_handler(plugin,event,{'reply':'在\n干嘛','silent':False,'segments':['在','干嘛'],'quote':True})
+            self.assertEqual([m[1] for m in event.sent_messages],[[('reply','777'),('text','在')],[('text','干嘛')]])
+            event=QuoteEvent('你好',group='30003',called=True)
+            out=self.run_handler(plugin,event,{'reply':'在','silent':False,'quote':True})
+            self.assertEqual(out,[('chain',[('reply','777'),('text','在')])])
+            event=QuoteEvent('你好',called=True)                                       # 私聊不引用
+            self.assertEqual(self.run_handler(plugin,event,{'reply':'在','silent':False,'quote':True}),[('plain','在')])
+
+    def test_pause_uses_given_delay_or_estimates_typing_time(self):
+        waited=[]
+        async def sleep(seconds):waited.append(seconds)
+        plugin=self.plugin()
+        with mock.patch('asyncio.sleep',sleep):
+            for args in (('逆天这次都用上了',2.7),('逆天这次都用上了',),('嗯',)):asyncio.run(plugin.pause(*args))
+        self.assertEqual(waited[0],2.7);self.assertGreater(waited[1],2.0);self.assertEqual(waited[2],1.0)
+
+    def test_multi_segment_reply_is_sent_as_separate_messages(self):
+        # 负责人要求：多段回复分几条消息发，不塞进一条
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        plugin=self.plugin();pauses=[]
+        async def pause(text,delay=None):pauses.append(text)
+        plugin.pause=pause
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('好消息')
+            out=self.run_handler(plugin,event,{'reply':'哇！\n\n恭喜爹','silent':False,'segments':['哇！','恭喜爹']})
+            self.assertEqual(out,[]);self.assertEqual(event.sent_messages,[('chain',[('text','哇！')]),('chain',[('text','恭喜爹')])])
+            self.assertEqual(pauses,['恭喜爹'])
+            # 负责人 2026-11-09 18:05：每条之间隔一段时间——用桌宠按打字速度算好的间隔；格式不对就自己估
+            delays=[]
+            async def timed(text,delay=None):delays.append(delay)
+            plugin.pause=timed
+            self.run_handler(plugin,Event('哈'),{'reply':'哟\n逆天','silent':False,'segments':['哟','逆天这次都用上了'],'segment_delays':[0,2.7]})
+            self.run_handler(plugin,Event('哈'),{'reply':'哟\n逆天','silent':False,'segments':['哟','逆天'],'segment_delays':[0,99]})
+            self.assertEqual(delays,[2.7,None])
+            plugin.pause=pause
+            # 旧桌宠没有 segments：整段一条
+            self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False}),[('plain','在呢')])
+            # 不合法的 segments 不用：回退为整段
+            self.assertEqual(self.run_handler(plugin,Event('在吗'),{'reply':'在呢','silent':False,'segments':['在呢',3]}),[('plain','在呢')])
+
+    def test_every_segment_is_sent_without_merging(self):
+        # Codex 审查 17012ca P2：两边上限要一致；0.9.6 起不按条数防刷屏合并（负责人 2026-11-11：按打字速度慢慢发就不会刷屏）
+        from aicompanion.expression.segments import QQ_SEGMENTS_MAX
+        self.assertEqual(self.module.MAX_SEGMENTS, QQ_SEGMENTS_MAX)
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Plain=lambda value:('text',value)
+        for count in (7, 8, 11):
+            plugin=self.plugin();delays=[]
+            async def pause(text,delay=None):delays.append(delay)
+            plugin.pause=pause
+            parts=[f'第{n}条' for n in range(count)]; given=[0]+[1.0+n%5 for n in range(count-1)]
+            with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+                event=Event('聊')
+                out=self.run_handler(plugin,event,{'reply':'\n'.join(parts),'silent':False,'segments':parts,'segment_delays':given})
+            self.assertEqual(out,[]);self.assertEqual([m[1][0][1] for m in event.sent_messages],parts)
+            self.assertEqual(delays,given[1:])
+
+    def test_eight_segments_with_sticker_after_text(self):
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        async def control(path,payload):return {'allowed':True,'ok':True}
+        plugin=self.plugin();plugin.expression_control=control;delays=[]
+        async def pause(text,delay=None):delays.append(delay)
+        plugin.pause=pause
+        parts=[f'第{n}条' for n in range(8)]
+        answer={'reply':'\n'.join(parts),'segments':parts,'segment_delays':[0]+[2.0]*7,'silent':False,'expression_version':1,'expression':{'text':'\n'.join(parts),'attachments':[
+            {'delivery_id':'c'*32,'asset_id':'st_test0000','revision':'x','placement':'after_text',
+             'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+        with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+            event=Event('聊');self.run_handler(plugin,event,answer)
+        self.assertEqual([m[1][0] for m in event.sent_messages],[('text',p) for p in parts]+[('image','YWJj')])
+        self.assertEqual(delays[:7],[2.0]*7)
+
+    def test_sticker_is_its_own_message_before_or_after_the_segments(self):
+        import hashlib
+        components=types.ModuleType('astrbot.api.message_components')
+        components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
+        components.Plain=lambda value:('text',value)
+        async def control(path,payload):return {'allowed':True,'ok':True}
+        async def pause(text,delay=None):pass
+        for placement,expected in (('before_text',[('image','YWJj'),('text','一'),('text','二')]),
+                                   ('after_text',[('text','一'),('text','二'),('image','YWJj')])):
+            plugin=self.plugin();plugin.expression_control=control;plugin.pause=pause
+            answer={'reply':'一\n\n二','segments':['一','二'],'silent':False,'expression_version':1,'expression':{'text':'一\n\n二','attachments':[
+                {'delivery_id':('a' if placement=='before_text' else 'b')*32,'asset_id':'st_test0000','revision':'x','placement':placement,
+                 'data_uri':'data:image/png;base64,YWJj','content_sha256':hashlib.sha256(b'abc').hexdigest()}]}}
+            with mock.patch.dict(sys.modules,{'astrbot.api.message_components':components}):
+                event=Event('来');self.run_handler(plugin,event,answer)
+            self.assertEqual([m[1][0] for m in event.sent_messages],expected,placement)
+
+    # ---- v0.8.0：收集别人发的表情包（用户 2026-11-09） ----
+    @staticmethod
+    def raw(event, segments):
+        event.message_obj = types.SimpleNamespace(raw_message={'message': segments}); return event
+
+    def gif(self, folder, name='s.gif'):
+        try:
+            from PIL import Image
+        except ImportError: self.skipTest('需要 AstrBot 自带的 Pillow')
+        path = Path(folder)/name
+        Image.new('RGB', (40, 40), 'blue').save(path, save_all=True, append_images=[Image.new('RGB', (40, 40), 'red')], duration=100, loop=0)
+        return path
+
+    def test_overheard_group_sticker_is_sent_as_original_gif_but_photos_stay_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.gif(folder)
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'
+                async def convert_to_file_path(self): return str(path)
+            class Photo:
+                type = 'Image'; file = 'photo.jpg'
+                async def convert_to_file_path(self): raise AssertionError('旁听的普通照片不应读取')
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = self.raw(Event('', group='30003', called=False, images=[Sticker(), Photo()]),
+                             [{'type': 'image', 'data': {'file': 'abc.gif', 'sub_type': 1, 'summary': '[动画表情]'}},
+                              {'type': 'image', 'data': {'file': 'photo.jpg', 'sub_type': 0}}])
+            self.run_handler(plugin, event, {'reply': '', 'silent': True, 'reason': 'observed'})
+            self.assertEqual(len(plugin.sent['stickers']), 1)
+            self.assertTrue(plugin.sent['stickers'][0].startswith('data:image/gif;base64,'))   # 原图，动画保留
+            self.assertEqual(base64.b64decode(plugin.sent['stickers'][0].split(',', 1)[1]), path.read_bytes())
+            self.assertNotIn('images', plugin.sent); self.assertNotIn(folder, str(plugin.sent))
+
+    def test_called_mixed_message_reports_which_image_is_the_sticker(self):
+        # Codex 审计（7aaa065）：桌宠按对应关系只跳过已看懂的表情，照片照常识图
+        with tempfile.TemporaryDirectory() as folder:
+            gif = self.gif(folder)
+            from PIL import Image
+            photo_path = Path(folder)/'p.png'; Image.new('RGB', (30, 30), 'green').save(photo_path)
+            class Photo:
+                type = 'Image'; file = 'p.png'
+                async def convert_to_file_path(self): return str(photo_path)
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'; sub_type = 1
+                async def convert_to_file_path(self): return str(gif)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            event = self.raw(Event('看', images=[Photo(), Sticker()]),
+                             [{'type': 'image', 'data': {'file': 'p.png', 'sub_type': 0}}, {'type': 'image', 'data': {'file': 'abc.gif', 'sub_type': 1}},
+                              {'type': 'mface', 'data': {'url': 'https://gxh.vip.qq.com/x/raw300.gif'}}])
+            async def market(url): return b'GIF89a'+b'm'*20
+            plugin.fetch_market = market
+            self.run_handler(plugin, event, {'reply': '好', 'silent': False})
+            self.assertEqual(plugin.sent['image_parts'], [0, 1]); self.assertEqual(len(plugin.sent['images']), 2)
+            self.assertEqual(plugin.sent['sticker_parts'], [1, -1]); self.assertEqual(len(plugin.sent['stickers']), 2)
+
+    def test_known_sticker_only_sends_hash_and_collect_can_be_turned_off(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.gif(folder); digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            class Sticker:
+                type = 'Image'; file = 'abc.gif'; sub_type = '1'
+                async def convert_to_file_path(self): return str(path)
+            plugin = self.plugin(); plugin.managed_temp_root = lambda: folder
+            self.run_handler(plugin, Event('', group='30003', called=False, images=[Sticker()]),
+                             {'reply': '', 'silent': True, 'stickers_known': [digest]})
+            self.assertIn(digest, plugin.known_stickers)
+            self.run_handler(plugin, Event('', group='30003', called=False, images=[Sticker()]), {'reply': '', 'silent': True})
+            self.assertEqual(plugin.sent['stickers'], [{'sha256': digest}])
+            plugin.pet_collect = False
+            self.run_handler(plugin, Event('', group='30003', called=False, images=[Sticker()]), {'reply': '', 'silent': True})
+            self.assertNotIn('stickers', plugin.sent)
+
+    def test_market_face_only_message_is_routed_and_only_fixed_hosts_are_fetched(self):
+        plugin = self.plugin(); fetched = []
+        async def fetch(url): fetched.append(url); return None
+        plugin.fetch_market = fetch
+        event = self.raw(Event('', group='30003', called=False),
+                         [{'type': 'mface', 'data': {'url': 'https://gxh.vip.qq.com/club/item/parcel/item/ab/abc/raw300.gif', 'summary': '[开心]'}},
+                          {'type': 'mface', 'data': {'url': 'https://evil.example.com/x.gif'}},
+                          {'type': 'mface', 'data': {'url': 'http://gxh.vip.qq.com/x.gif'}}])
+        self.assertIsNotNone(plugin.route(event))     # AstrBot 丢掉了商城表情，原始段里仍能认出来
+        self.run_handler(plugin, event, {'reply': '', 'silent': True})
+        self.assertEqual(fetched, ['https://gxh.vip.qq.com/club/item/parcel/item/ab/abc/raw300.gif'])
+        self.assertFalse(plugin.market_url_ok('https://gxh.vip.qq.com.evil.com/x.gif'))
+
+    def test_sticker_uri_accepts_only_image_headers(self):
+        self.assertTrue(self.module.AICompanionBridge.sticker_uri(b'GIF89a'+b'x'*10).startswith('data:image/gif;base64,'))
+        self.assertTrue(self.module.AICompanionBridge.sticker_uri(b'RIFF\0\0\0\0WEBPVP8 ').startswith('data:image/webp;base64,'))
+        for bad in (b'', b'<svg/>', b'GIF89a'+b'x'*(1024*1024)):
+            with self.assertRaises(ValueError): self.module.AICompanionBridge.sticker_uri(bad)
 
     def test_avatar_only_downloads_after_desktop_permission_and_uses_sender(self):
         plugin = self.plugin(); calls = []
@@ -293,3 +531,4 @@ class HeartbeatTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

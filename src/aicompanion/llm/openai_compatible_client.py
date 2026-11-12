@@ -5,7 +5,11 @@ import json
 import socket
 from http.client import HTTPException
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+# 不跟随重定向，避免 Authorization 头被带到别的域名（硬底线：凭据不串）。
+# 保留 urlopen 这个名字，测试仍可按原路径替换。
+from aicompanion.net import open_url as urlopen
 
 from aicompanion.llm.base import ChatTurn
 from aicompanion.domain.cancellation import CancellationToken, ReplyCancelled
@@ -34,6 +38,8 @@ class OpenAICompatibleClient:
         model: str,
         temperature: float = 0.8,
         timeout_seconds: int = 60,
+        extra: dict | None = None,
+        max_tokens: int | None = None,
     ) -> None:
         # API key 为空时提前失败，避免真正请求时才得到难懂的 401 错误。
         if not api_key:
@@ -52,6 +58,11 @@ class OpenAICompatibleClient:
         # 流式请求时让接口在最后一块返回用量；个别平台不认这个参数时自动关掉。
         self.stream_usage = True
         self.last_usage = None
+        # 供应商专用参数（例如 DeepSeek 关闭思考、MiniMax 分离推理），由模型配置按用途给出，
+        # 每个请求都会带上；没有配置时与旧行为完全一样。
+        self.extra = dict(extra or {})
+        # 默认输出上限；None 表示不发送，由服务端决定（旧行为）。
+        self.max_tokens = max_tokens
 
     def generate_reply(self, messages: list[ChatTurn], system_prompt: str) -> str:
         """非流式生成完整回复。"""
@@ -183,8 +194,9 @@ class OpenAICompatibleClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
+        if max_tokens or self.max_tokens:
+            payload["max_tokens"] = max_tokens or self.max_tokens
+        payload.update(self.extra)
         if extra:
             payload.update(extra)
         request = self._build_request(payload)
@@ -254,12 +266,16 @@ class OpenAICompatibleClient:
         )
 
         # 返回 OpenAI-compatible /chat/completions 常用请求结构。
-        return {
+        payload = {
             "model": self.model,
             "messages": api_messages,
             "temperature": self.temperature,
             "stream": stream,
         }
+        if self.max_tokens:
+            payload["max_tokens"] = self.max_tokens
+        payload.update(self.extra)
+        return payload
 
     def _build_request(self, payload: dict) -> Request:
         """把 Python dict 转换成 urllib 可发送的 HTTP 请求。"""

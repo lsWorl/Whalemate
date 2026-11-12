@@ -11,11 +11,11 @@ from aicompanion.bridge.service import BridgeService
 import test_astrbot_plugin as plugin_fixture
 
 class Model:
-    def __init__(self):self.position='after_text';self.pure=False;self.silent=False;self.calls=0
+    def __init__(self):self.position='after_text';self.pure=False;self.silent=False;self.calls=0;self.reply_text='好耶'
     def generate_reply_stream(self,history,prompt,cancellation):
         self.calls+=1;ids=re.findall(r'^(s\d+)｜',prompt,re.M)
         marker=f'<sticker id="{ids[0]}" position="{self.position}"/>' if ids else ''
-        text='【不说】' if self.silent else ('' if self.pure else '好耶')
+        text='【不说】' if self.silent else ('' if self.pure else self.reply_text)
         yield marker+text if self.position=='before_text' else text+marker
 
 class QQExpressionTests(unittest.TestCase):
@@ -25,6 +25,7 @@ class QQExpressionTests(unittest.TestCase):
         self.model=Model();self.controller=ChatController(self.db,MemoryService(self.db),self.model);self.controller.character=char
         self.db.set_setting('bridge_owner:qq','10001');self.db.set_setting('bridge_groups',['30003']);self.db.set_setting('bridge_memory_every',0)
         self.service=BridgeService(self.db,self.controller)
+        self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.module=plugin_fixture.load_plugin()
         self.components=types.ModuleType('astrbot.api.message_components')
         self.components.Image=type('Image',(),{'fromBase64':staticmethod(lambda value:('image',value))})
@@ -39,7 +40,8 @@ class QQExpressionTests(unittest.TestCase):
         async def ask(payload):return answer
         async def control(path,payload):
             return self.service.expression_claim(payload) if path=='claim' else self.service.expression_ack(payload)
-        plugin.avatar_permission=denied;plugin.ask_pet=ask;plugin.expression_control=control
+        async def no_pause(text,delay=None):pass
+        plugin.avatar_permission=denied;plugin.ask_pet=ask;plugin.expression_control=control;plugin.pause=no_pause
         async def run():return [item async for item in plugin.on_message(event)]
         with mock.patch.dict(sys.modules,{'astrbot.api.message_components':self.components}):out=asyncio.run(run())
         return event,plugin,out
@@ -47,7 +49,8 @@ class QQExpressionTests(unittest.TestCase):
         for position,pure,expected in [('before_text',False,['image','text']),('after_text',False,['text','image']),('after_text',True,['image'])]:
             self.model.position=position;self.model.pure=pure
             result=self.ask();event,_,out=self.handler(result)
-            self.assertEqual(out,[]);self.assertEqual([p[0] for p in event.sent_messages[0][1]],expected)
+            # 表情包单独一条消息，文字另起（负责人要求多段 / 图文分条发）
+            self.assertEqual(out,[]);self.assertEqual([m[1][0][0] for m in event.sent_messages],expected)
             delivery=result['expression']['attachments'][0]['delivery_id']
             self.assertEqual(self.controller.expression.delivery(delivery)['status'],'accepted')
             self.assertTrue(self.service.expression_ack({'delivery_id':delivery,'status':'accepted'})['ok'])
@@ -71,7 +74,10 @@ class QQExpressionTests(unittest.TestCase):
     def test_timeout_unknown_and_no_retry(self):
         answer=self.ask();delivery=answer['expression']['attachments'][0]['delivery_id']
         event=plugin_fixture.Event('嘿')
-        async def timeout(message):raise asyncio.TimeoutError()
+        sent=event.sent_messages
+        async def timeout(message):   # 文字正常，图片这一条超时：结果未知，不重发
+            if any(part[0]=='image' for part in message[1]):raise asyncio.TimeoutError()
+            sent.append(message)
         event.send=timeout;_,plugin,_=self.handler(answer,event)
         self.assertEqual(self.controller.expression.delivery(delivery)['status'],'unknown')
         again,_,_=self.handler(answer,plugin=plugin);self.assertEqual(again.sent_messages,[])
@@ -80,9 +86,34 @@ class QQExpressionTests(unittest.TestCase):
         answer=self.ask();delivery=answer['expression']['attachments'][0]['delivery_id']
         class ActionFailed(Exception):pass
         event=plugin_fixture.Event('嘿')
-        async def reject(message):raise ActionFailed()
+        async def reject(message):
+            if any(part[0]=='image' for part in message[1]):raise ActionFailed()
         event.send=reject;self.handler(answer,event)
         self.assertEqual(self.controller.expression.delivery(delivery)['status'],'failed')
+    def test_text_failure_before_image_stops_and_reports_not_attempted(self):
+        # Codex 审计 P2：图在后时前面的文字失败 / 超时，就整条停下，图片不发，如实上报 cancelled（不伪造 accepted / unknown）
+        class ActionFailed(Exception):pass
+        for error in (ActionFailed(),asyncio.TimeoutError()):
+            self.model.position='after_text';self.db.set_setting('qq_meme_cooldown',0)
+            answer=self.ask();delivery=answer['expression']['attachments'][0]['delivery_id']
+            event=plugin_fixture.Event('嘿');attempted=[]
+            async def fail(message,error=error):attempted.append([p[0] for p in message[1]]);raise error
+            event.send=fail;_,plugin,out=self.handler(answer,event)
+            self.assertEqual(attempted,[['text']],type(error).__name__)
+            self.assertEqual(self.controller.expression.delivery(delivery)['status'],'cancelled')
+            self.assertEqual(self.controller.expression.traces(1)[-1]['stage'],'E_not_delivered')
+    def test_middle_text_failure_stops_remaining_text_and_image(self):
+        self.model.position='after_text';self.model.reply_text='一\n\n二\n\n三'
+        answer=self.ask();self.assertEqual(answer.get('segments'),['一','二','三'])
+        delivery=answer['expression']['attachments'][0]['delivery_id']
+        class ActionFailed(Exception):pass
+        event=plugin_fixture.Event('嘿');attempted=[]
+        async def second_fails(message):
+            attempted.append(message[1][0][1] if message[1][0][0]=='text' else 'image')
+            if len(attempted)==2:raise ActionFailed()
+        event.send=second_fails;self.handler(answer,event)
+        self.assertEqual(attempted,['一','二'])
+        self.assertEqual(self.controller.expression.delivery(delivery)['status'],'cancelled')
     def test_oversized_image_falls_back_to_text_and_no_claim(self):
         answer=self.ask();answer['expression']['attachments'][0]['data_uri']='data:image/png;base64,'+'A'*1500000
         event,_,out=self.handler(answer)
@@ -98,7 +129,7 @@ class QQExpressionTests(unittest.TestCase):
 
     def test_role_switch_and_expiry_reject_pending_old_image(self):
         answer=self.ask();delivery=answer['expression']['attachments'][0]['delivery_id']
-        old=self.controller.character;self.controller.character=DEFAULT_CHARACTER
+        old=self.controller.character;self.controller.character=replace(DEFAULT_CHARACTER,id='other-role')
         self.assertFalse(self.service.expression_claim({'delivery_id':delivery})['allowed'])
         self.controller.character=old
         with self.db.transaction() as c:c.execute('UPDATE expression_deliveries SET created_at=0 WHERE delivery_id=?',(delivery,))

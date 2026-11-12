@@ -1,0 +1,367 @@
+{
+  "repository": "https://github.com/hunmer/aboutme-pets",
+  "revision": "1221697ec20c2057829f9d7fcbd316fee8b3df65",
+  "actions": [
+    {
+      "key": "idle",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/待机呼吸休闲.webp",
+      "name": "待机呼吸休闲",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 990292,
+      "sha256": "f76ec34bd97005bd161de2f36cae43ca4de0ddef80afe4a11184963ed34f5a2f"
+    },
+    {
+      "key": "talking",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/碎碎念-对屏碎碎念.webp",
+      "name": "碎碎念-对屏碎碎念",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 995686,
+      "sha256": "a222bf200729eb6b222e436df9e08504e5e741c8d5d7d64ed99123a4b1682b03"
+    },
+    {
+      "key": "thinking",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/工作状态-思考冒泡.webp",
+      "name": "工作状态-思考冒泡",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 995580,
+      "sha256": "f35408d7aa341f7b3b32a2202f949fb8d3630a8f89bc840f6ee3d5d93d6031b7"
+    },
+    {
+      "key": "working",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/工作状态-忙碌点按.webp",
+      "name": "工作状态-忙碌点按",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 988292,
+      "sha256": "98c02bd181e3769606c4ab918fef3168c2213ce6f57de79a64359b32161ecb30"
+    },
+    {
+      "key": "wait",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/工作状态-原地踱步张望.webp",
+      "name": "工作状态-原地踱步张望",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 986218,
+      "sha256": "2be9d8bc9d836c718195336e3db6d8aecfc5c38d543fe1db53d7bbc5bdebf5a9"
+    },
+    {
+      "key": "error",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/工作状态-垂头叹气冒汗.webp",
+      "name": "工作状态-垂头叹气冒汗",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 8,
+        "frameCount": 59,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 996178,
+      "sha256": "e5195ea022fea2c4fc82a5fd2be610396e07334b13c643b84f16ab11908e7603"
+    },
+    {
+      "key": "celebrate",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/工作状态-雀跃庆祝.webp",
+      "name": "工作状态-雀跃庆祝",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 998722,
+      "sha256": "e7a7b7ffe95c5a0cc6b1c458cb0c1a62463c6c3ac2c647d9ad18b08da049314e"
+    },
+    {
+      "key": "sleepy",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/原地小憩沉眠.webp",
+      "name": "原地小憩沉眠",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 996422,
+      "sha256": "3d7483feb186f2ce34a957c305d8d5fea45f341ad30844764ca3f4fb99e6a20b"
+    },
+    {
+      "key": "grabbed",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/被鼠标拖拽悬空反馈.webp",
+      "name": "被鼠标拖拽悬空反馈",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 987672,
+      "sha256": "d8a5eeed69cf0ce1aaa473e02b6ac7d9796a8bc32e9216a09f3396e267ba8db1"
+    },
+    {
+      "key": "pout",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/点击回应-傲娇生气.webp",
+      "name": "点击回应-傲娇生气",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 999524,
+      "sha256": "a38cd60eed450192fe3a1bb86af61c2bd6f4223e638222622043fe9e3c9548b8"
+    },
+    {
+      "key": "wave",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/点击回应-元气挥手.webp",
+      "name": "点击回应-元气挥手",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 992866,
+      "sha256": "9d24e9472f7480843369062f647f2be6fe3064fa1dfff7f7464e840769305073"
+    },
+    {
+      "key": "shy",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/点击回应-害羞惊讶.webp",
+      "name": "点击回应-害羞惊讶",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 992946,
+      "sha256": "61d5c1b80fad3880669a255f2dc26bec9f6c2f2f1b92d61fb9132ac99d21fb2d"
+    },
+    {
+      "key": "happy",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/点击回应-开心跃动.webp",
+      "name": "点击回应-开心跃动",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 987224,
+      "sha256": "6e7c3f4893d855c389eba509324d6e311352cf8aebc6f55b69bbe88761af2374"
+    },
+    {
+      "key": "giggle",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/点击回应-挠痒咯咯笑.webp",
+      "name": "点击回应-挠痒咯咯笑",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 993154,
+      "sha256": "946ed19160b16d1bb47cf270783c38c002f918ea711f1eb3aade2a6b62748098"
+    },
+    {
+      "key": "curtsy",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/女仆屈膝礼仪.webp",
+      "name": "女仆屈膝礼仪",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 986064,
+      "sha256": "d7c6aae5c838dda0803053c0fd5f93d9ff8c5c33e2d1044d232abd87a97e3e5e"
+    },
+    {
+      "key": "curious",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/东张西望.webp",
+      "name": "东张西望",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 996548,
+      "sha256": "7b71965eb651a88a9e69f2b85474e15f6f93e432dd3ac6c1cc538a15f41ff7d1"
+    },
+    {
+      "key": "stretch",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/超大伸懒腰.webp",
+      "name": "超大伸懒腰",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 994526,
+      "sha256": "35887db82d7c802b65b3470e88d6fc08ef378cb29fa6403c1377e50516ccb1db"
+    },
+    {
+      "key": "self_hug",
+      "pack": "dsh",
+      "path": "pets/dsh/spritesheet/轻快摇摆舞.webp",
+      "name": "轻快摇摆舞",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 993528,
+      "sha256": "65b510b42f00fce383da2e06495538c6da567a98c4fd00d68e97c0e7638f6f0a"
+    },
+    {
+      "key": "milk_tea",
+      "pack": "dsh1",
+      "path": "pets/dsh1/spritesheet/雪克杯摇奶茶.webp",
+      "name": "雪克杯摇奶茶",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 23,
+        "frameCount": 180,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 1493152,
+      "sha256": "7aa756f7c5cb2a9ae14410286ccee550fa453bab98dee4e1f85c38703ecffaa1"
+    },
+    {
+      "key": "smug",
+      "pack": "dsh1",
+      "path": "pets/dsh1/spritesheet/得意炫耀转圈.webp",
+      "name": "得意炫耀转圈",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 23,
+        "frameCount": 180,
+        "fps": 12
+      },
+      "facing": "left",
+      "bytes": 1475166,
+      "sha256": "3303dec3cb341f9420af946b63e43723a3b73122b420755f2c3725a812f67376"
+    },
+    {
+      "key": "walking",
+      "pack": "dsh1",
+      "path": "pets/dsh1/spritesheet/走路.webp",
+      "name": "走路",
+      "spritesheet": {
+        "frameWidth": 640,
+        "frameHeight": 360,
+        "columns": 8,
+        "rows": 15,
+        "frameCount": 120,
+        "fps": 12
+      },
+      "facing": "left",
+      "frames": [
+        15,
+        95
+      ],
+      "bytes": 1484232,
+      "sha256": "7c5bada89a1d7e27ef9fc75c651f85f2cfd6a54f8eac25cb3469b7111d9b15ba"
+    }
+  ]
+}

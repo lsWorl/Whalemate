@@ -5,7 +5,9 @@ import json
 import re
 import time
 import threading
-from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.request import Request, build_opener
+
+from aicompanion.net import NoRedirect  # 共用的“不跟随跳转”
 
 SOURCES = {'bilibili': ('哔哩哔哩', 'https://s.search.bilibili.com/main/hotword'),
            'v2ex': ('V2EX 技术社区', 'https://www.v2ex.com/api/topics/hot.json')}
@@ -14,8 +16,6 @@ IN_FLIGHT = set()
 ATTEMPTS = {}
 
 
-class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl): return None
 
 
 def refresh(database, source: str, opener=None, clock=time.time):

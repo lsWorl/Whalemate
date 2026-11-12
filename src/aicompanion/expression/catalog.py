@@ -6,7 +6,16 @@ import os
 import tempfile
 from pathlib import Path
 import time
-LICENSES = ('project-original','user-owned','CC0-1.0','CC-BY-4.0','CC-BY-SA-4.0','CC-BY-NC-4.0','kiriyuki-noncommercial-attribution')
+# qq-collected：从 QQ 聊天里收集的表情包（用户 2026-11-09 决定收集来的图分析后可直接使用，仅本机个人使用，见 expression/collect.py）
+LICENSES = ('project-original','user-owned','CC0-1.0','CC-BY-4.0','CC-BY-SA-4.0','CC-BY-NC-4.0','kiriyuki-noncommercial-attribution','qq-collected')
+# 许可的中文说明（界面只显示这些，不让用户自己输入许可名）
+LICENSE_LABELS = {'user-owned':'自己的图（自用）','qq-collected':'QQ 聊天里收集','project-original':'项目原创',
+                  'CC0-1.0':'CC0 公共领域','CC-BY-4.0':'CC BY 4.0（需署名）','CC-BY-SA-4.0':'CC BY-SA 4.0（需署名、同方式共享）',
+                  'CC-BY-NC-4.0':'CC BY-NC 4.0（需署名、非商用）','kiriyuki-noncommercial-attribution':'作者授权（非商用、需署名）',
+                  'unknown':'来源不明'}
+# 用户自己放进图库或手动导入的图：默认当作“自己的图（自用）”直接可用（负责人 2026-11-11：
+# 很多人不知道许可怎么填、来源在哪，逐张审核负担太重）。素材清单导入的图仍按清单写明的许可，没写的待确认。
+OWNED = dict(license='user-owned', author='我自己', source='本机图库')
 SUFFIXES = {'.png','.jpg','.jpeg','.gif','.webp'}
 MAX_BYTES = 1024*1024
 
@@ -55,7 +64,7 @@ class AssetCatalog:
         self.db,self.clock=database,clock
     @property
     def builtin_root(self):
-        return Path(__file__).resolve().parents[1]/'characters/deepseek-whale/sprites'
+        return Path(__file__).resolve().parents[1]/'assets/expression'
     @property
     def root(self):
         value=str(self.db.get_setting('qq_meme_root','') or '').strip()
@@ -119,16 +128,93 @@ class AssetCatalog:
                 for path in sorted(category.iterdir())[:512]:
                     if path.suffix.lower() not in SUFFIXES: continue
                     meta=dict(conf.get('asset_defaults') or {}); meta.update(raw.get('asset_metadata') or {})
-                    meta.update(category=category.name,semantic=raw.get('description',category.name))
+                    if 'description' in raw:meta['semantic']=raw['description']
+                    # 记下哪些说明字段是扫描时补的默认值（清单没写）：之后识别出原创图时只替换这些，清单写明的一律保留
+                    meta[self.DEFAULTS_KEY]=[k for k in self.ANNOTATION_FIELDS if k not in meta]
+                    meta.setdefault('semantic',category.name); meta['category']=category.name
+                    if 'license' not in meta: meta.update(OWNED)
                     entries.append((path,meta))
+        originals=self.original_sprites() if root!=self.builtin_root.resolve() else {}
         for path,metadata in entries[:2048]:
             if cancellation:cancellation.check()
             try:
+                # 用户图库里和仓库自带姿态图内容完全相同的文件（例如 T13 新建图库时补入的 6 张）：按原创素材归档。
+                # 只认内容哈希，不认目录名或 manifest，用户之后放进同一目录的其他图不会被误标。
+                original=originals.get(self._digest(path)) if originals else None
+                if original:metadata=self._with_original(metadata,original)
+                elif 'semantic' in (metadata.get(self.DEFAULTS_KEY) or []):metadata['analysis']='pending'   # 含义交给识图自动识别
                 aid,reused=self.register(path,root,metadata)
+                if original:self._approve_original(aid,original)
+                elif reused:self._adopt(aid,metadata)
                 counts['reused' if reused else 'imported']+=1
                 if self.get(aid)['review_status']!='approved': counts['pending']+=1
             except (ValueError,OSError,TypeError): counts['invalid']+=1
         return counts
+    def original_sprites(self):
+        """仓库自带 6 张原创姿态图的内容哈希 → 内置元数据。"""
+        from aicompanion.bridge.media import BUILTINS
+        result={}
+        for key,(name,desc) in BUILTINS.items():
+            path=self.builtin_root/name
+            try:result[self._digest(path)]=dict(category=key,semantic=desc,emotions=[key],intents=desc.split('、'),
+                       character_id='deepseek-whale',license='project-original',author='AICompanion 原创姿态',source='repository:T5')
+            except OSError:continue
+        return result
+    @staticmethod
+    def _digest(path):
+        with Path(path).open('rb') as file:data=file.read(MAX_BYTES+1)
+        return hashlib.sha256(data).hexdigest() if 0<len(data)<=MAX_BYTES else None
+    PROVENANCE=('license','author','source','character_id')
+    def _approve_original(self,asset_id,original):
+        """之前按"无许可"登记成待审核的同一张原创图：只补来源 / 许可并通过审核。
+        Codex 审计（0a2b1d6）：来源许可和用户的选择要分开——
+        - 用户明确启用 / 停用过（user_enabled）就按用户的；没表过态才默认启用；
+        - 用户改过含义 / 情绪 / 用法（user_annotated）就保留用户写的，没改过才补内置说明；
+        - 已拒绝 / 已审核的都不碰。整个读改写在一个写事务里，和用户在图库页的操作串行。"""
+        def apply(c):
+            row=c.execute('SELECT metadata,review_status,enabled FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if not row or row['review_status']!='pending_review':return
+            metadata=json.loads(row['metadata'])
+            metadata.update({k:original[k] for k in self.PROVENANCE if k in original})
+            metadata=self._with_original(metadata,original)
+            enabled=self._chosen_enabled(metadata,row)
+            c.execute("UPDATE expression_assets SET metadata=?,review_status='approved',enabled=? WHERE asset_id=?",
+                      (json.dumps(metadata,ensure_ascii=False),int(enabled),asset_id))
+        self.db.locked(apply)
+    def _adopt(self,asset_id,scanned):
+        """旧版扫描登记成“待审核、来源不明”的自己的图：按新的默认改成自己的图并启用（用户停用过的保持停用）；
+        含义还是默认值且没排过识别的，排进自动识别。
+        Codex 审计（PR #31 R1）：from_pack 是这个 PR 才写的，旧版 import_pack 导入的记录没有它，不能据此判断来源。
+        所以只认“旧记录本身就是来源不明”的：许可 unknown 且原作者、来源都是空的（旧版扫描登记的样子）。
+        写了原作者或来源的（旧素材清单、旧版手动导入填过的）保持原样待确认，原作者、来源、含义都不改。
+        含义是不是默认值也只看旧记录自己的元数据，不看这次扫描补的默认值。"""
+        def apply(c):
+            row=c.execute('SELECT metadata,review_status,enabled FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if not row:return
+            metadata=json.loads(row['metadata']);status=row['review_status'];enabled=row['enabled']
+            if metadata.get('from_pack') or metadata.get('collected'):return
+            if status=='pending_review' and self._unattributed(metadata) and scanned.get('license')=='user-owned':
+                metadata.update(OWNED);status='approved';enabled=int(self._chosen_enabled(metadata,row))
+            # 含义排队识别和许可无关：没审核的图只是先排着，审核启用后才真正识别（见 collect.pending）
+            if scanned.get('analysis')=='pending' and 'analysis' not in metadata and self._default_meaning(metadata):
+                metadata['analysis']='pending'
+            c.execute('UPDATE expression_assets SET metadata=?,review_status=?,enabled=? WHERE asset_id=?',
+                      (json.dumps(metadata,ensure_ascii=False),status,enabled,asset_id))
+        self.db.locked(apply)
+    @staticmethod
+    def _unattributed(metadata):
+        """旧记录是不是“来源不明”：许可未知，原作者和来源也都没写。"""
+        return (metadata.get('license','unknown')=='unknown' and not str(metadata.get('author','')).strip()
+                and not str(metadata.get('source','')).strip())
+    @classmethod
+    def _default_meaning(cls,metadata):
+        """旧记录的含义是否只是扫描时补的默认值（可以交给识图）。用户改过的、清单写明的都不算。
+        有 annotation_defaults 的按它；更早的记录没有这个标记，只有含义为空或等于分类目录名才算默认。"""
+        if metadata.get('user_annotated'):return False
+        defaults=metadata.get(cls.DEFAULTS_KEY)
+        if isinstance(defaults,list):return 'semantic' in defaults
+        semantic=str(metadata.get('semantic','')).strip()
+        return not semantic or semantic==str(metadata.get('category','')).strip()
     def get(self,asset_id):
         with self.db.transaction() as c: row=c.execute('SELECT * FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
         if row is None: return None
@@ -137,28 +223,71 @@ class AssetCatalog:
         with self.db.transaction() as c:
             rows=c.execute('SELECT * FROM expression_assets WHERE root=? ORDER BY asset_id',(str(Path(root or self.root).resolve()),)).fetchall()
         return [dict(r,metadata=json.loads(r['metadata'])) for r in rows]
-    def review(self,asset_id,*,author,source,license,enabled=True):
-        if license not in LICENSES or not str(author).strip() or not str(source).strip():
-            raise ValueError('需填写作者、来源和明确许可；未知许可不能启用')
-        row=self.get(asset_id)
-        if row is None: raise ValueError('素材不存在')
-        metadata=row['metadata']; metadata.update(author=str(author)[:200],source=str(source)[:500],license=license,review_status='approved')
-        if 'coopanion' in json.dumps(metadata,ensure_ascii=False).casefold(): raise ValueError('禁止来源素材')
-        with self.db.transaction() as c:
+    ANNOTATION_FIELDS=('semantic','intents','emotions')
+    DEFAULTS_KEY='annotation_defaults'
+    @classmethod
+    def _replaceable(cls,metadata):
+        """识别出原创图时，哪些说明字段可以换成内置说明。来源 / 许可和表达标注分开处理（Codex 审计 e28c1ac）：
+        - 用户在图库页改过（user_annotated）：一个都不换；
+        - 新版扫描记下了哪些是默认值（annotation_defaults）：只换这些，清单写明的保留；
+        - 旧记录没有这个标记，无法证明没被用户改过：只补空字段，非空的一律保留（哪怕和目录名相同），用户可在图库页自行改。"""
+        if metadata.get('user_annotated'):return set()
+        defaults=metadata.get(cls.DEFAULTS_KEY)
+        if isinstance(defaults,list):return {k for k in defaults if k in cls.ANNOTATION_FIELDS}
+        return {k for k in cls.ANNOTATION_FIELDS if not metadata.get(k)}
+    def _with_original(self,metadata,original):
+        metadata=dict(metadata); replace=self._replaceable(metadata)
+        metadata.update({k:original[k] for k in self.PROVENANCE if k in original})
+        metadata.update({k:original[k] for k in replace if k in original})
+        if isinstance(metadata.get(self.DEFAULTS_KEY),list):
+            metadata[self.DEFAULTS_KEY]=[k for k in metadata[self.DEFAULTS_KEY] if k not in replace]
+        return metadata
+    @staticmethod
+    def _chosen_enabled(metadata,row):
+        """启用状态：用户明确选过就按用户的；已审核的图保持现状；没审核过、也没表过态才默认启用。"""
+        if isinstance(metadata.get('user_enabled'),bool):return metadata['user_enabled']
+        if row['review_status']=='approved':return bool(row['enabled'])
+        return True
+    def review(self,asset_id,*,author,source,license,enabled=None):
+        """确认来源和许可。审核和启用是两件事（Codex 审计 ee541d0）：
+        不传 enabled 时不改变用户的启停选择——已审核但被停用的图，保存标注和许可后仍然停用。
+        读改写在一个写事务里，和图库页的启停 / 标注、自动识别串行。"""
+        if license=='user-owned':author=str(author).strip() or OWNED['author'];source=str(source).strip() or OWNED['source']
+        if license not in LICENSES: raise ValueError('请选择许可；来源不明的图不能启用')
+        if not str(author).strip() or not str(source).strip():
+            raise ValueError(f'“{LICENSE_LABELS.get(license,license)}”需要原作者和来源；不清楚的话选“自己的图（自用）”')
+        def apply(c):
+            row=c.execute('SELECT metadata,review_status,enabled FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if row is None: raise ValueError('素材不存在')
+            metadata=json.loads(row['metadata']); metadata.update(author=str(author)[:200],source=str(source)[:500],license=license,review_status='approved')
+            if 'coopanion' in json.dumps(metadata,ensure_ascii=False).casefold(): raise ValueError('禁止来源素材')
+            if enabled is not None: metadata['user_enabled']=bool(enabled)
+            value=self._chosen_enabled(metadata,row)
             c.execute('UPDATE expression_assets SET metadata=?,review_status=?,enabled=? WHERE asset_id=?',
-                      (json.dumps(metadata,ensure_ascii=False),'approved',int(enabled),asset_id))
+                      (json.dumps(metadata,ensure_ascii=False),'approved',int(value),asset_id))
+        self.db.locked(apply)
     def annotate(self,asset_id,values):
-        row=self.get(asset_id)
-        if row is None:raise ValueError('素材不存在')
-        metadata=row['metadata']
-        for key in ('semantic','intents','emotions','character_id'):
-            if key in values:metadata[key]=values[key]
-        metadata=normalize_metadata(metadata)
-        with self.db.transaction() as c:c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
+        def apply(c):
+            row=c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if row is None:raise ValueError('素材不存在')
+            metadata=json.loads(row['metadata'])
+            for key in ('semantic','intents','emotions','character_id'):
+                if key in values:metadata[key]=values[key]
+            metadata['user_annotated']=True   # 用户自己写的说明：以后自动识别不覆盖
+            metadata.pop(self.DEFAULTS_KEY,None)
+            metadata=normalize_metadata(metadata)
+            c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
+        self.db.locked(apply)
 
     def enable(self,asset_id,enabled):
-        with self.db.transaction() as c:
+        """记下用户的明确选择（待审核的图也记，审核通过后按这个来）；只有已审核的图立即生效。"""
+        def apply(c):
+            row=c.execute('SELECT metadata FROM expression_assets WHERE asset_id=?',(asset_id,)).fetchone()
+            if row is None:return
+            metadata=json.loads(row['metadata']);metadata['user_enabled']=bool(enabled)
+            c.execute('UPDATE expression_assets SET metadata=? WHERE asset_id=?',(json.dumps(metadata,ensure_ascii=False),asset_id))
             c.execute("UPDATE expression_assets SET enabled=? WHERE asset_id=? AND review_status='approved'",(int(enabled),asset_id))
+        self.db.locked(apply)
     def resolve(self,asset_id,revision=None,approved=True):
         row=self.get(asset_id)
         if row is None or (approved and (not row['enabled'] or row['review_status']!='approved')): return None
@@ -168,6 +297,12 @@ class AssetCatalog:
             if old is None:return None
             row.update(dict(old))
         root=Path(row['root']).resolve(); path=(root/row['relative_path']).resolve()
+        # 首次升级后，历史附件可能在图库重新扫描前打开。只迁移旧内置图片，仍核对记录的哈希。
+        if root == self.builtin_root.parents[1]/'characters/deepseek-whale/sprites':
+            from aicompanion.bridge.media import BUILTINS
+            if row['relative_path'] in {name for name, _ in BUILTINS.values()} and not path.is_file():
+                root = self.builtin_root
+                path = root/row['relative_path']
         if not path.is_relative_to(root) or not path.is_file(): return None
         try:
             with path.open('rb') as file: data=file.read(MAX_BYTES+1)
@@ -175,7 +310,11 @@ class AssetCatalog:
             from aicompanion.bridge.media import inspect_image
             return data,inspect_image(data)
         except (OSError,ValueError): return None
-    def import_image(self,source,metadata):
+    def import_image(self,source,metadata,owned=True):
+        """手动导入一张图。owned：没写许可时按“自己的图（自用）”直接可用；素材清单导入时为 False，按清单写的来。"""
+        metadata=dict(metadata or {})
+        if owned and metadata.get('license','unknown')=='unknown':metadata.update(OWNED)
+        if owned and not str(metadata.get('semantic','')).strip():metadata['analysis']='pending'
         metadata=normalize_metadata(metadata);source=Path(source).resolve()
         if 'coopanion' in (str(source)+' '+json.dumps(metadata,ensure_ascii=False)).casefold():raise ValueError('禁止来源素材')
         configured=str(self.db.get_setting('qq_meme_root','') or '').strip()
@@ -223,8 +362,9 @@ class AssetCatalog:
                 metadata=normalize_metadata(item.get('metadata',{}))
                 if 'coopanion' in (str(path)+' '+json.dumps(metadata,ensure_ascii=False)).casefold():raise ValueError('禁止来源素材')
                 if path.stat().st_size>MAX_BYTES:raise ValueError('素材超过体积限制')
+                if not metadata.get('semantic'):metadata['analysis']='pending'   # 清单没写含义：自动识别
                 if item.get('sha256') and hashlib.sha256(path.read_bytes()).hexdigest()!=item['sha256']:raise ValueError('素材哈希不符')
-                _,reused=self.import_image(path,metadata)
+                _,reused=self.import_image(path,dict(metadata,from_pack=True),owned=False)
                 counts['reused' if reused else 'imported']+=1
             except (ValueError,OSError,KeyError,TypeError):counts['invalid']+=1
         return counts

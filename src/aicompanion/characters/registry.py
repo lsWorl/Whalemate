@@ -1,8 +1,7 @@
-"""角色注册表：把角色包同步到数据库，并为每个角色解析对应的大模型客户端。"""
+"""角色注册表：把角色包同步到数据库。用哪个模型由设置里的模型配置决定（providers 模块），与角色包无关。"""
 from __future__ import annotations
 
 import os
-from urllib.parse import urlsplit
 
 from aicompanion.characters import CharacterPack, discover
 from aicompanion.domain.character import CharacterProfile
@@ -19,17 +18,21 @@ class CharacterRegistry:
         if packs is None: packs, self.errors = discover()
         else: self.errors = []
         self.packs = {pack.id: pack for pack in packs}
-        self._clients = {}
 
     def sync(self) -> None:
         """为每个就绪角色包补齐数据库行和初始语音设置；已有的用户修改不覆盖。"""
+        from aicompanion.services.persona_service import PersonaService
+        personas = PersonaService(self.database)
         existing = {character.id for character in self.database.characters()}
         for pack in self.packs.values():
             if not pack.ready: continue
             if pack.persona and pack.id not in existing:
                 self.database.add_character(CharacterProfile(pack.name, pack.persona['description'], pack.persona['speaking_style'], pack.id))
-            elif pack.persona and pack.id in existing: self._upgrade_persona(pack)
+            elif pack.persona and pack.id in existing and not personas.personas(pack.id):
+                # 人格包启用之前的老库：先按原来的规则替换占位 / 升级人设，下面再从结果建人格
+                self._replace_placeholder(pack); self._upgrade_persona(pack)
             if pack.id not in existing and pack.id not in {c.id for c in self.database.characters()}: continue
+            self._rename(pack)
             language = pack.voice.get('language')
             if language and self.database.get_setting(f'speech_language:{pack.id}') is None:
                 self.database.set_setting(f'speech_language:{pack.id}', language)
@@ -37,11 +40,35 @@ class CharacterRegistry:
             voice = self.environ.get(voice_env, '').strip() if voice_env else ''
             if voice and self.database.get_setting(f'qwen_voice:{pack.id}') is None:
                 self.database.set_setting(f'qwen_voice:{pack.id}', voice)
-        # v2 首次启动默认切到鲸娘，只做一次；之后尊重用户的选择。
+        # 计划书 v4 功能二：每个角色至少有一个人格；角色包的人设是内置人格，包升级时只更新用户没改过的内置人格
+        for character in self.database.characters():
+            pack = self.pack(character.id)
+            try: personas.ensure(character, pack.persona if pack else None)
+            except Exception: pass   # 人格表异常不影响启动；角色表里的设定照常可用
+        # v2 首次启动默认切到鲸鲸（原名鲸娘），只做一次；之后尊重用户的选择。
         if self.database.get_setting(DEFAULT_KEY) is None:
             if self.pack(DEFAULT_CHARACTER_ID) and any(c.id == DEFAULT_CHARACTER_ID for c in self.database.characters()):
                 self.database.set_setting(ACTIVE_KEY, DEFAULT_CHARACTER_ID)
             self.database.set_setting(DEFAULT_KEY, True)
+
+    def _rename(self, pack) -> None:
+        """角色包改了名字（例如鲸娘 → 鲸鲸，负责人 2026-11-11）：数据库里还是包的旧名字时换成新名字。
+        每个新名字只换一次，之后用户在设置里改回旧名字也不会再被换掉；用户自己起的名字不在旧名单里，不动。"""
+        from dataclasses import replace
+        key = f'pack_name:{pack.id}'
+        if not getattr(pack, 'previous_names', ()) or self.database.get_setting(key) == pack.name: return
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current and current.name in pack.previous_names: self.database.update_character(replace(current, name=pack.name))
+        self.database.set_setting(key, pack.name)
+
+    def _replace_placeholder(self, pack) -> None:
+        """数据库初始化写入的占位角色与角色包同 ID：还是占位文字时换成包里的名字和人设（用户改过的不动）。"""
+        from dataclasses import replace
+        from aicompanion.domain.character import DEFAULT_CHARACTER
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current and (current.description, current.speaking_style) == (DEFAULT_CHARACTER.description, DEFAULT_CHARACTER.speaking_style):
+            self.database.update_character(replace(current, name=pack.name, description=pack.persona['description'],
+                                                   speaking_style=pack.persona['speaking_style']))
 
     def _upgrade_persona(self, pack) -> None:
         """角色包人设升级：只在数据库里还是上一版原文（用户没改过）时替换；替换前把旧的存一份。"""
@@ -77,28 +104,3 @@ class CharacterRegistry:
 
     def set_active(self, character_id: str) -> None:
         self.database.set_setting(ACTIVE_KEY, character_id)
-
-    def client_for(self, character_id: str, default_client):
-        """返回 (客户端, 说明)。
-
-        优先使用角色包声明的专属密钥；没有专属密钥但默认模型就是同一家时直接复用；
-        否则退回默认模型，并在说明中如实标出。
-        """
-        pack = self.packs.get(character_id)
-        provider = pack.provider if pack else {}
-        label = provider.get('label', '默认模型')
-        if self.settings.llm_provider == 'mock' or not provider.get('host'):
-            return default_client, f'{label} · {self.settings.llm_model}' if self.settings.llm_provider != 'mock' else '离线模拟模型'
-        key = self.environ.get(provider.get('key_env', ''), '').strip() if provider.get('key_env') else ''
-        base = (self.environ.get(provider.get('base_url_env', ''), '') if provider.get('base_url_env') else '') or provider.get('base_url', '')
-        model = (self.environ.get(provider.get('model_env', ''), '') if provider.get('model_env') else '') or provider.get('default_model', '')
-        if key and base and model:
-            cache_key = (character_id, base, model)
-            if cache_key not in self._clients:
-                from aicompanion.llm.openai_compatible_client import OpenAICompatibleClient
-                self._clients[cache_key] = OpenAICompatibleClient(base_url=base.strip(), api_key=key, model=model.strip(),
-                    temperature=self.settings.llm_temperature, timeout_seconds=self.settings.llm_timeout_seconds)
-            return self._clients[cache_key], f'{label} · {model.strip()}'
-        if urlsplit(self.settings.llm_base_url).hostname == provider['host']:
-            return default_client, f'{label} · {self.settings.llm_model}'
-        return default_client, f'默认模型 · {self.settings.llm_model}（未配置 {label} 专属密钥）'

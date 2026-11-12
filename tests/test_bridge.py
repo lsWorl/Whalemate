@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+from aicompanion.storage.schema import SCHEMA_VERSION
 import unittest
 import urllib.error
 import urllib.request
@@ -141,13 +142,13 @@ class MemorySharingTests(BridgeTests.__base__):
         class Analyzer:
             def generate_reply_stream(self_, history, prompt, cancellation=None):
                 seen.append(prompt); yield json.dumps(analysis, ensure_ascii=False)
-        self.controller.llm_client = Analyzer()
+        self.controller.use_client(Analyzer())
         self.assertFalse(self.service.maybe_remember(self.cid, channel, background=False))   # 关着时不整理
         self.db.set_setting('bridge_memory_every', 2)
         self.assertTrue(self.service.maybe_remember(self.cid, channel, background=False))
         memory = next((m for m in self.db.recent_memories(character_id=self.cid) if m['fact_key'] == 'qq#1:job'), None)
         self.assertIsNotNone(memory); self.assertEqual(memory['scope'], 'qq')
-        self.assertIn('不要把群友的事记成爹的', seen[-1])
+        self.assertIn('不要把群友的事记成用户的', seen[-1])
         self.assertEqual(self.db.load_summary(self.cid), '')                # 群聊不写对话摘要
         self.assertEqual(memory_service.pending(self.cid, channel), 0)
         history, prompt = self.controller.context.build(self.controller.character, '大壮')   # 桌面上她也知道
@@ -353,6 +354,28 @@ class ConcurrencyTests(BridgeTests.__base__):
         self.assertEqual(result['reason'], 'closed'); self.assertEqual(self.client.calls, [])
 
 
+class SegmentReplyTests(unittest.TestCase):
+    """多段回复：响应里带 segments，插件分条发；单段时 reply 是整理后的写法（旧插件只看 reply）。"""
+    def test_segments_only_for_multi_part_replies(self):
+        case = BridgeTests('test_owner_private_chat_is_the_same_relationship_as_desktop'); case.setUp()
+        try:
+            class Two:
+                model = 'mock'
+                def generate_reply_stream(self_, history, prompt, cancellation=None): yield '哇！\n\n恭喜爹'
+            case.controller.use_client(Two())
+            result = case.ask(OWNER, '我面试过了')
+            self.assertEqual((result['reply'], result.get('segments')), ('哇！\n\n恭喜爹', ['哇！', '恭喜爹']))
+            # 只有一条时 reply 也换成整理后的写法（QQ 保留逗号、去掉句末句号），旧插件只看 reply 也能拿到
+            class One:
+                model = 'mock'
+                def generate_reply_stream(self_, history, prompt, cancellation=None): yield '在呢，刚摸完鱼。'
+            case.controller.use_client(One())
+            result = case.ask(OWNER, '在吗')
+            self.assertEqual((result['reply'], result.get('segments')), ('在呢，刚摸完鱼', None))
+        finally:
+            case.tearDown()
+
+
 class GroupChimeTests(BridgeTests.__base__):
     """群里没叫她的消息：旁听（记进群聊记录），按活跃度插话；可以选择不说。"""
     setUp = BridgeTests.setUp; tearDown = BridgeTests.tearDown; ask = BridgeTests.ask
@@ -361,6 +384,7 @@ class GroupChimeTests(BridgeTests.__base__):
         return self.service.handle({'platform': 'qq', 'sender_id': sender, 'sender_name': name, 'group_id': GROUP, 'text': text, 'called': False})
 
     def setUp_rolls(self, rolls, now=1000.0):
+        self.db.set_setting('relationship_learning', False)   # 这里只数插话的模型调用；关系事件的后台理解另有测试（test_relationship.py）
         self.rolls = list(rolls); self.now = [now]
         self.service.chance = lambda: self.rolls.pop(0) if self.rolls else 0.99
         self.service.clock = lambda: self.now[0]
@@ -393,7 +417,7 @@ class GroupChimeTests(BridgeTests.__base__):
         result = self.hear(STRANGER, '第二条')
         self.assertEqual((result['reason'], result['reply']), ('chime', '好呀'))
         self.assertIn('没有叫你', self.client.calls[-1][1]); self.assertIn('【不说】', self.client.calls[-1][1])
-        self.hear(STRANGER, '第三条'); self.hear(STRANGER, '第四条')
+        self.hear('40004', '第三条', name='路人'); self.hear('40004', '第四条', name='路人')   # 别人说的、没在跟她说话
         self.assertEqual(len(self.client.calls), 1)                              # 冷却中
         self.now[0] += 100
         self.assertEqual(self.hear(STRANGER, '第五条')['reason'], 'observed')   # 掷到 0.9，没插
@@ -401,6 +425,45 @@ class GroupChimeTests(BridgeTests.__base__):
         self.db.set_setting('bridge_chime', 'off'); self.now[0] += 1000
         self.hear(STRANGER, 'a'); self.hear(STRANGER, 'b')
         self.assertEqual(len(self.client.calls), 2)
+
+    def test_follow_up_without_at_is_judged_by_context(self):
+        """负责人 2026-11-09 22:32：不是只有 @ 了才说话。她刚在群里和谁聊过，对方接着说的话不 @ 也交给她判断是不是在跟她说。"""
+        self.setUp_rolls([0.0])
+        self.ask(STRANGER, '你会画画吗', group=GROUP, name='大壮')                    # 被 @，她回了
+        calls = len(self.client.calls)
+        result = self.hear(STRANGER, '那你画一个看看')                               # 没 @，但接着她的话
+        self.assertEqual(result['reason'], 'addressed'); self.assertEqual(len(self.client.calls), calls+1)
+        self.assertIn('像是接着你们的话', self.client.calls[-1][1]); self.assertIn('【不说】', self.client.calls[-1][1])
+        self.now[0] += 10
+        self.assertEqual(self.hear('40004', '今天吃啥', name='路人')['reason'], 'observed')   # 别人、和她无关：不当成在叫她
+        self.assertIn(self.hear('40004', '你们这 AI 会画画？', name='路人')['reason'], ('addressed',))   # 刚说完话就有人在说她
+        self.now[0] += 400
+        self.db.set_setting('bridge_chime', 'off')
+        self.assertEqual(self.hear(STRANGER, '你还在吗')['reason'], 'observed')            # 过了好几分钟：不再留意
+
+    def test_follow_up_uses_the_daily_public_reply_budget(self):
+        """Codex 审查 a53b506 P2：上下文接话绕过了每日公开回复上限。"""
+        self.setUp_rolls([0.9]*10)
+        day = self.service.today().isoformat()
+        self.db.set_setting('bridge_public_daily', 2)
+        self.ask(STRANGER, '你会画画吗', group=GROUP, name='大壮')                    # 被 @：占 1 条
+        self.assertEqual(self.db.get_setting('bridge_public_count:'+day), 1)
+        calls = len(self.client.calls)
+        self.assertEqual(self.hear(STRANGER, '那你画一个看看')['reason'], 'addressed')   # 有余额：接话，占 1 条
+        self.assertEqual(self.db.get_setting('bridge_public_count:'+day), 2); self.assertEqual(len(self.client.calls), calls+1)
+        for n in range(3):                                                          # 额度用完：只旁听，不调用模型
+            self.now[0] += 6
+            self.assertEqual(self.hear(STRANGER, f'你画呀{n}')['reason'], 'observed')
+        self.assertEqual(len(self.client.calls), calls+1); self.assertEqual(self.db.get_setting('bridge_public_count:'+day), 2)
+        self.assertIn('你画呀2', ' '.join(r['content'] for r in self.group_rows()))     # 旁听照常记下
+        self.assertEqual(self.ask(STRANGER, '你画呀', group=GROUP, name='大壮')['reason'], 'daily_limit')
+
+    def test_busy_group_replies_quote_the_message(self):
+        self.setUp_rolls([0.9])
+        self.assertNotIn('quote', self.ask(STRANGER, '在吗', group=GROUP, name='大壮'))
+        self.hear('40004', '我也来', name='路人')
+        self.assertIs(self.ask(STRANGER, '你好', group=GROUP, name='大壮').get('quote'), True)   # 两个人在说话：引用对方那条
+        self.assertNotIn('quote', self.ask(STRANGER, '在吗'))                                     # 私聊不引用
 
     def test_silence_marker_sends_nothing_and_leaves_no_trace(self):
         self.setUp_rolls([0.0])
@@ -533,17 +596,17 @@ class MigrationTests(unittest.TestCase):
                 conn.executescript("""CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
                     speaking_style TEXT NOT NULL, model_path TEXT NOT NULL DEFAULT '', voice TEXT NOT NULL DEFAULT '');
                     CREATE TABLE chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, character_id TEXT NOT NULL DEFAULT 'emilia',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, character_id TEXT NOT NULL DEFAULT 'deepseek-whale',
                     turn_id TEXT, status TEXT NOT NULL DEFAULT 'complete', source TEXT NOT NULL DEFAULT 'text');
                     CREATE TABLE memories (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    character_id TEXT NOT NULL DEFAULT 'emilia', category TEXT NOT NULL DEFAULT 'legacy', fact_key TEXT NOT NULL DEFAULT '',
+                    character_id TEXT NOT NULL DEFAULT 'deepseek-whale', category TEXT NOT NULL DEFAULT 'legacy', fact_key TEXT NOT NULL DEFAULT '',
                     confidence REAL NOT NULL DEFAULT 1, source_ids TEXT NOT NULL DEFAULT '[]', clarity REAL NOT NULL DEFAULT 1,
                     recalled_at TEXT, scope TEXT NOT NULL DEFAULT 'pet');
-                    INSERT INTO chat_messages(role,content,character_id) VALUES ('user','旧消息','emilia');
+                    INSERT INTO chat_messages(role,content,character_id) VALUES ('user','旧消息','deepseek-whale');
                     PRAGMA user_version=3;""")
             db = Database(path); db.initialize()
-            rows = db.recent_messages(5, 'emilia')
+            rows = db.recent_messages(5, 'deepseek-whale')
             self.assertEqual([(r['content'], r['channel'], r['sender']) for r in rows], [('旧消息', 'desktop', '')])
             self.assertTrue(list(Path(tmp).glob('old.backup-*.sqlite3')))   # 升级前自动备份
 
@@ -554,18 +617,18 @@ class EarlyV4Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'early.sqlite3'
             db = Database(path); db.initialize()
-            db.add_message('user', '旧的群消息', 'emilia', channel='qq:group:30003')
+            db.add_message('user', '旧的群消息', 'deepseek-whale', channel='qq:group:30003')
             with closing(sqlite3.connect(path)) as conn:
                 conn.execute('ALTER TABLE chat_messages DROP COLUMN sender'); conn.execute('PRAGMA user_version=4'); conn.commit()
             for backup in Path(tmp).glob('*.backup-*'): backup.unlink()
             db = Database(path); db.initialize()
             self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
-            rows = db.recent_messages(5, 'emilia', channel='qq:group:30003')
+            rows = db.recent_messages(5, 'deepseek-whale', channel='qq:group:30003')
             self.assertEqual([(r['content'], r['sender']) for r in rows], [('旧的群消息', '')])
-            db.add_message('user', '新消息', 'emilia', channel='qq:group:30003', sender='qq:1')
+            db.add_message('user', '新消息', 'deepseek-whale', channel='qq:group:30003', sender='qq:1')
             Database(path).initialize()                                      # 重复打开
             self.assertEqual(len(list(Path(tmp).glob('early.backup-*.sqlite3'))), 1)
-            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 6)
+            with closing(sqlite3.connect(path)) as conn: self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
 
 
 class ServerTests(unittest.TestCase):

@@ -1,22 +1,24 @@
 """常驻桌面的角色窗口：应用启动即显示，聊天面板按需从角色身上打开。
 
-- 鲸娘等立绘角色使用原生 SpriteAvatar；艾米莉娅和外部 Cubism 模型沿用 WebEngine 视图。
+- 鲸娘等立绘角色使用原生 SpriteAvatar；用户导入的 Cubism 模型沿用 WebEngine 视图。
 - 状态由 pet.state 的状态机决定，本窗口只负责显示、交互、气泡和桌面集成。
 """
 from __future__ import annotations
 
 import random
+import math
 import time
 from dataclasses import replace
 from datetime import datetime
 
 from PySide6.QtCore import QPoint, QTimer, Qt, Signal
-from PySide6.QtGui import QAction, QCursor, QGuiApplication, QRegion
+from PySide6.QtGui import QAction, QActionGroup, QCursor, QGuiApplication, QRegion
 from PySide6.QtWidgets import QApplication, QMenu, QVBoxLayout, QWidget
 
 from aicompanion.brain.focus import focus_until, in_quiet_hours, is_focused, set_focus
 from aicompanion.pet.behavior import LinePacer, greeting_key
 from aicompanion.pet.state import PetStateMachine
+from aicompanion.pet.locomotion import advance_walk,clamp_target,braking_step
 from aicompanion.ui import desktop_integration as desktop
 from aicompanion.ui.pet_bubble import ACTIVITY, BubbleStack, QuickInput
 from aicompanion.ui.pet_geometry import fit_pet_geometry
@@ -60,7 +62,7 @@ class DesktopPetWindow(QWidget):
         self._walk_timer = QTimer(self); self._walk_timer.setInterval(16); self._walk_timer.timeout.connect(self._walk_step)
         self._fall_timer = QTimer(self); self._fall_timer.setInterval(16); self._fall_timer.timeout.connect(self._fall_step)
         self._velocity = [0.0, 0.0]; self._fall_last = 0.0; self._thrown = False; self._greet_on_land = False
-        self._walk_target = None; self._walk_last = 0.0; self._next_wander = time.monotonic()+self.rng.uniform(60, 150)
+        self._walk_target = None; self._walk_speed=0.; self._walk_position = None; self._walk_last = 0.0; self._next_wander = time.monotonic()+self.rng.uniform(60, 150)
         # 骨骼形象：不裁剪窗口，按光标是否在角色身上切换"是否接收鼠标"（与 Coopanion 相同思路）
         self._input_transparent = None
         self._input_timer = QTimer(self); self._input_timer.setInterval(30); self._input_timer.timeout.connect(self._update_input)
@@ -74,10 +76,11 @@ class DesktopPetWindow(QWidget):
 
     # ---- 视图 --------------------------------------------------------------------
     def set_view(self, view, kind, pack=None):
-        """kind: 'sprites' | 'webengine' | 'placeholder'。旧视图由调用方负责回收。"""
+        """kind: 'spritesheet' | 'sprites' | 'rig' | 'webengine' | 'placeholder'。旧视图由调用方负责回收。"""
         old = self.view
         if old is view and kind == self.view_kind: self.pack = pack; return
         if old is not None:
+            self.stop_walking()
             self.layout_.removeWidget(old)
             if self.view_kind == 'webengine':
                 try:
@@ -89,6 +92,9 @@ class DesktopPetWindow(QWidget):
                 except (RuntimeError, TypeError): pass
             old.hide()
         self.view, self.view_kind, self.pack = view, kind, pack
+        if getattr(view,'has_animation_variants',False):
+            identity=pack.id if pack is not None else self.active_id
+            view.set_animation_variant(self.database.get_setting(f'pet_reference_animation:{identity}',True))
         view.setParent(self)
         if kind == 'webengine':
             # WebEngine 必须在第一次显示前声明透明，否则 Windows 合成时会出现黑底。
@@ -105,6 +111,10 @@ class DesktopPetWindow(QWidget):
         self._apply_size(); self._update_mask()
 
     def _base_size(self):
+        if self.view_kind == 'spritesheet' and self.view is not None:
+            w,h=self.view.native_size
+            height=(self.pack.display_height if self.pack else 300)*self.scale
+            return round(height*w/h),round(height)
         if self.view_kind == 'rig':
             # 骨骼视口是正方形；左右已含张开手臂、尾巴和拎起摆动的余量。
             height = (self.pack.display_height if self.pack else 300)*self.scale*1.05
@@ -139,6 +149,8 @@ class DesktopPetWindow(QWidget):
     def set_identity(self, name, model_label, characters, active_id):
         self.character_name, self.model_label = name, model_label
         self.characters, self.active_id = list(characters), active_id
+        if getattr(self.view,'has_animation_variants',False):
+            self.view.set_animation_variant(self.database.get_setting(f'pet_reference_animation:{active_id}',True))
 
     # ---- 状态与台词 ----------------------------------------------------------------
     def dispatch(self, event, **data):
@@ -147,6 +159,9 @@ class DesktopPetWindow(QWidget):
         for key in effects:
             if key in ('poke', 'poke_angry', 'pat', 'thrown', 'dizzy'): self.interacted.emit('poke' if key == 'poke_angry' else key)
             self.say_line(key)
+        if getattr(self.view,'using_reference',False) or getattr(self.view,'using_aboutme',False):
+            key='pout_stomp' if 'poke_angry' in effects else ('click_wave' if 'poke' in effects else ('happy_hops' if 'pat' in effects else None))
+            if key:self.view.play_action(self.view.pack.poses.get(key,key))
         self._apply_state()
 
     def say_line(self, key, force=False):
@@ -218,13 +233,15 @@ class DesktopPetWindow(QWidget):
             if pose: self.dispatch('force_pose', pose=pose, seconds=1.8)
 
     def _head_point(self):
+        if self.view is not None and hasattr(self.view,'head_point'):
+            return self.view.mapToGlobal(self.view.head_point())
         if self.view is not None and hasattr(self.view, 'content_rect'):
             rect = self.view.content_rect()
             return self.mapToGlobal(QPoint(round(rect.center().x()), round(rect.top()+rect.height()*0.04)))
         return self.mapToGlobal(QPoint(self.width()//2, 10))
 
     def _apply_state(self):
-        if self.view_kind not in ('sprites', 'rig') or self.view is None: return
+        if self.view_kind not in ('sprites', 'rig', 'spritesheet', 'placeholder') or self.view is None: return
         self.view.set_pose(self.machine.current(time.monotonic()))
         if hasattr(self.view, 'set_gaze') and self.isVisible():
             # 眼神跟着鼠标：离得近才看，太远就自己东张西望。
@@ -246,7 +263,7 @@ class DesktopPetWindow(QWidget):
         self._guard_desktop()
         self._maybe_wander()
 
-    # ---- 走动：闲着时偶尔沿屏幕底边走几步 ---------------------------------------------
+    # ---- 走动：有支撑脚的二维桌面散步 ---------------------------------------------
     def _maybe_wander(self):
         if not hasattr(self.view, 'set_walking') or self._walk_target is not None or not self.isVisible(): return
         if not self.database.get_setting('pet_wander', True) or self.database.get_setting('pet_quiet_mode', False) or is_focused(self.database): return
@@ -256,30 +273,62 @@ class DesktopPetWindow(QWidget):
         if self.machine.shown != 'idle' or self._press_pos is not None: return
         screen = self.screen().availableGeometry() if self.screen() else None
         if screen is None: return
-        distance = self.rng.choice([-1, 1])*self.rng.uniform(80, 260)
-        target = max(screen.left(), min(self.x()+distance, screen.right()-self.width()))
-        if abs(target-self.x()) < 40: return
-        self.walk_to(target)
+        dx = self.rng.choice([-1, 1])*self.rng.uniform(80, 220)
+        dy = self.rng.choice([-1, 1])*self.rng.uniform(45, 110) if getattr(self.view,'supports_vertical_walk',hasattr(self.view,'set_walking_vector')) else 0
+        target = clamp_target((self.x()+dx,self.y()+dy),
+                              (screen.x(),screen.y(),screen.width(),screen.height()),(self.width(),self.height()))
+        if abs(target[0]-self.x())+abs(target[1]-self.y()) < 40: return
+        self.walk_to(*target)
 
-    def walk_to(self, x):
-        self._walk_target = int(x); self._walk_last = time.monotonic()
-        self.view.set_walking(1 if x > self.x() else -1); self._walk_timer.start()
+    def walk_to(self, x, y=None):
+        if self.view is None or not hasattr(self.view,'set_walking') or self._fall_timer.isActive():return
+        screen=self.screen().availableGeometry() if self.screen() else None
+        if screen is None:return
+        if not getattr(self.view,'supports_vertical_walk',True):y=self.y()
+        self._walk_target=clamp_target((x,self.y() if y is None else y),
+            (screen.x(),screen.y(),screen.width(),screen.height()),(self.width(),self.height()))
+        self._walk_position=(float(self.x()),float(self.y()));self._walk_last=time.monotonic();self._walk_speed=0.
+        dx,dy=self._walk_target[0]-self.x(),self._walk_target[1]-self.y()
+        if abs(dx)+abs(dy)<.5:self.stop_walking();return
+        if hasattr(self.view,'set_walking_vector'):self.view.set_walking_vector(dx,dy)
+        else:self.view.set_walking(1 if dx>=0 else -1)
+        if hasattr(self.view,'plan_walking'):self.view.plan_walking(math.hypot(dx,dy)/self.scale)
+        self._walk_timer.start()
 
     def stop_walking(self):
         if self._walk_target is None: return
-        self._walk_target = None; self._walk_timer.stop()
+        self._walk_target = None; self._walk_position=None; self._walk_speed=0.; self._walk_timer.stop()
         if hasattr(self.view, 'set_walking'): self.view.set_walking(0)
         self.save_geometry()
 
     def _walk_step(self):
-        if self._walk_target is None or self._press_pos is not None or self._fall_timer.isActive() or self.machine.shown not in ('idle', 'talking'):
+        if (self._walk_target is None or self._press_pos is not None or self._fall_timer.isActive()
+                or self.machine.shown!='idle' or self.machine.snapshot.pose(time.monotonic())!='idle' or not self.isVisible()):
             self.stop_walking(); return
-        now = time.monotonic(); dt = min(0.05, now-self._walk_last); self._walk_last = now
-        step = 70*dt*self.scale   # 每秒约 70 像素
-        remaining = self._walk_target-self.x()
-        if abs(remaining) <= step: self.move(self._walk_target, self.y()); self.stop_walking(); return
-        self.move(self.x()+round(step if remaining > 0 else -step), self.y())
-        self.bubble.move_anchor(self._head_point())
+        now=time.monotonic();dt=max(0.,min(.05,now-self._walk_last));self._walk_last=now
+        # 开始 / 转身的过渡还没播完就先停脚，避免窗口已经滑走而角色还站着。
+        if hasattr(self.view,'walking_ready') and not self.view.walking_ready:self._walk_speed=0.;return
+        screen=self.screen().availableGeometry() if self.screen() else None
+        if screen is not None:
+            bounds=(screen.x(),screen.y(),screen.width(),screen.height());size=(self.width(),self.height())
+            self._walk_target=clamp_target(self._walk_target,bounds,size)
+            self._walk_position=clamp_target(self._walk_position,bounds,size)
+        remaining=math.hypot(self._walk_target[0]-self._walk_position[0],self._walk_target[1]-self._walk_position[1])
+        pace=42.
+        if getattr(self.view,'using_reference',False) or getattr(self.view,'using_aboutme',False):
+            clip=self.view.pack.actions.get('walking_right')
+            if clip:pace=clip.cycle_distance*clip.fps/clip.count
+        distance,self._walk_speed=braking_step(self._walk_speed,remaining,dt,self.scale,pace)
+        position,distance,arrived=advance_walk(self._walk_position,self._walk_target,distance)
+        self._walk_position=position
+        if hasattr(self.view,'step_walking'):self.view.step_walking(distance/self.scale)
+        self.move(round(position[0]),round(position[1]));self.bubble.move_anchor(self._head_point())
+        if arrived:self.stop_walking()
+
+    def _animation_variant(self,reference):
+        self.stop_walking();self.view.set_animation_variant(reference)
+        self.database.set_setting(f'pet_reference_animation:{self.active_id}',reference)
+        self._mask_key=None;self._apply_state()
 
     def set_focus(self, minutes):
         """专注模式：不主动说话、不走动、不主动搭话；你找她时照常回应。"""
@@ -446,12 +495,14 @@ class DesktopPetWindow(QWidget):
         self.scale = scale; self.database.set_setting('desktop_pet_scale', scale); self._apply_size(); self._update_mask()
 
     def _update_input(self):
-        if self.view_kind != 'rig' or self.view is None or not self.isVisible() or self.windowHandle() is None:
+        if self.view_kind not in ('rig','spritesheet') or self.view is None or not self.isVisible() or self.windowHandle() is None:
             if self._input_transparent: self._set_input_transparent(False)
             return
         # 按住、拖动、菜单打开时保持接收鼠标；否则光标在角色身上才接收
         if getattr(self, 'input_locked', False):   # 自检期间完全不接收鼠标，避免手动操作干扰结果
             self._set_input_transparent(True); return
+        if not self.database.get_setting('pet_click_through',True):
+            self._set_input_transparent(False); return
         busy = self._press_pos is not None or self._dragging or QApplication.activePopupWidget() is not None
         self._set_input_transparent(not (busy or self.view.cursor_hit))
 
@@ -462,7 +513,7 @@ class DesktopPetWindow(QWidget):
         self.windowHandle().setFlag(Qt.WindowType.WindowTransparentForInput, transparent)
 
     def _update_mask(self, *args):
-        if self.view_kind == 'rig':
+        if self.view_kind in ('rig','spritesheet'):
             self.clearMask(); return
         if self.view_kind in ('sprites', 'placeholder') and self.database.get_setting('pet_click_through', True) and self.view is not None:
             region = self.view.mask_region()
@@ -490,6 +541,7 @@ class DesktopPetWindow(QWidget):
         QTimer.singleShot(1200, self._hide_by_user)
 
     def _hide_by_user(self):
+        self.stop_walking()
         self._user_hidden = True; self.bubble.fade_out(); self.quick.hide(); self.hide(); self.visibility_changed.emit(False)
 
     def showEvent(self, event):
@@ -502,14 +554,15 @@ class DesktopPetWindow(QWidget):
     def moveEvent(self, event):
         super().moveEvent(event)
         # winId() 在构造早期就可能触发移动/缩放事件，此时计时器还没创建。
-        if hasattr(self, '_save_timer'): self._save_timer.start(400)
+        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400)
         self._move_confirm()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, '_save_timer'): self._save_timer.start(400); QTimer.singleShot(0, self._update_mask)
+        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400); QTimer.singleShot(0, self._update_mask)
 
     def save_geometry(self):
+        if self._shutting_down:return
         rect = self.geometry()
         self.database.set_setting('desktop_pet_geometry', [rect.x(), rect.y(), rect.width(), rect.height()])
 
@@ -537,14 +590,10 @@ class DesktopPetWindow(QWidget):
             for character_id, name in self.characters:
                 action = roles.addAction(name, lambda checked=False, cid=character_id: self.character_requested.emit(cid))
                 action.setCheckable(True); action.setChecked(character_id == self.active_id)
-        if self.view_kind in ('sprites', 'rig'):
+        if self.view_kind in ('sprites', 'rig', 'spritesheet'):
             poses = menu.addMenu('做个动作')
             for label, pose in DEMO_POSES:
                 poses.addAction(label, lambda checked=False, p=pose: self.dispatch('force_pose', pose=p, seconds=2.5))
-        elif self.view_kind == 'webengine' and hasattr(self.view, 'play_motion') and self.view.bridge.path.name.endswith('.animation.json'):
-            actions = menu.addMenu('做个动作')
-            for label, name in [('轻轻问候', 'greet'), ('点头', 'nod'), ('轻轻摇头', 'shake'), ('歪头', 'tilt'), ('害羞低头', 'shy'), ('轻摆手', 'wave')]:
-                actions.addAction(label, lambda checked=False, motion=name: self.view.play_motion(motion))
         size = menu.addMenu('大小')
         for scale in SCALES:
             action = size.addAction(f'{int(scale*100)}%', lambda checked=False, s=scale: self.set_scale(s))
@@ -558,25 +607,60 @@ class DesktopPetWindow(QWidget):
         if desktop.IS_WINDOWS:
             autostart = options.addAction('开机自动启动'); autostart.setCheckable(True); autostart.setChecked(desktop.autostart_enabled())
             autostart.toggled.connect(desktop.set_autostart)
-        if self.pack is not None and self.pack.renderer.get('rig'):
-            looks = menu.addMenu('形象')
-            rig_on = looks.addAction('分层骨骼（会动的大肥鱼）'); rig_on.setCheckable(True)
-            rig_on.setChecked(bool(self.database.get_setting('rig_enabled', True)))
-            rig_on.toggled.connect(lambda on: (self.database.set_setting('rig_enabled', bool(on)), self.appearance_changed.emit()))
-            if self.view_kind == 'rig':
+        if self.view_kind=='spritesheet':
+            if getattr(self.view,'has_animation_variants',False):
+                versions=menu.addMenu('动画版本')
+                for label,reference in [('参考图十动作',True),('旧版动画（回退）',False)]:
+                    action=versions.addAction(label);action.setCheckable(True);action.setChecked(self.view.using_reference==reference)
+                    action.triggered.connect(lambda checked=False,r=reference:self._animation_variant(r))
+            walk=menu.addMenu('走几步')
+            for label,dx,dy in [('向左',-1,0),('向右',1,0),('向上',0,-1),('向下',0,1),
+                                ('左上',-1,-1),('右上',1,-1),('左下',-1,1),('右下',1,1)]:
+                if dy and not getattr(self.view,'supports_vertical_walk',True):continue
+                walk.addAction(label,lambda checked=False,x=dx,y=dy:self.walk_to(self.x()+x*120*self.scale,self.y()+y*90*self.scale))
+            walk.addSeparator();walk.addAction('停下来',self.stop_walking)
+            actions=menu.addMenu('动画动作')
+            preferred=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle'] if getattr(self.view,'using_reference',False) else []
+            seen=set()
+            for key in preferred+[k for k in self.view.pack.actions if k not in preferred]:
+                entry=self.view.pack.actions[key]
+                identity=(entry.path,key if key in ('walking_left','walking_right') else '')
+                if identity in seen:continue
+                seen.add(identity)
+                label=entry.name+({'walking_left':'（向左）','walking_right':'（向右，镜像）'}.get(key,''))
+                actions.addAction(label,lambda checked=False,k=key:self.view.play_action(k))
+        # 选装动画使用角色包的默认顺序；只在显示内置鲸娘时切换骨骼与立绘。
+        if (self.pack is not None and self.pack.renderer.get('rig')
+                and (self.pack.renderer_kind != 'spritesheet' or self.view_kind in ('rig', 'sprites'))):
+            looks = menu.addMenu('形象'); group=QActionGroup(looks)
+            choices=[('rig','原分层骨骼'),('sprites','原立绘')]
+            if self.pack.renderer_kind != 'spritesheet' and self.pack.renderer.get('animation'):
+                label = 'Aboutme 大肥鱼' if self.pack.renderer.get('animation_optional') else '逐帧动画'
+                choices.insert(0, ('spritesheet', label))
+            for kind,label in choices:
+                action=looks.addAction(label); action.setCheckable(True); group.addAction(action)
+                action.setChecked(self.view_kind==kind)
+                action.triggered.connect(lambda checked=False,k=kind:self.set_appearance(k))
+            if self.view_kind == 'rig' and self.pack.renderer['rig'].get('source') != 'pack':
                 schemes = looks.addMenu('配色')
                 current = self.database.get_setting('rig_scheme', 'deepseek')
                 for scheme, label in [('deepseek', 'DeepSeek 原版'), ('claude', 'Claude 赤陶'), ('chatgpt', 'ChatGPT 银白'), ('gemini', 'Gemini 四色'),
                                       ('qwen', '千问 紫'), ('kimi', 'Kimi 黑蓝'), ('minimax', 'MiniMax 玫红橙'), ('harness', 'Harness 纯黑')]:
                     action = schemes.addAction(label, lambda checked=False, sc=scheme: (self.database.set_setting('rig_scheme', sc), self.appearance_changed.emit()))
                     action.setCheckable(True); action.setChecked(scheme == current)
-            self._toggle(looks, '闲着时到处走走', 'pet_wander', True, lambda on: on or self.stop_walking())
-            self._toggle(looks, '松手后落到屏幕底边（重力）', 'pet_gravity', True)
+        if self.view_kind in ('spritesheet','rig'):
+            self._toggle(options, '闲着时到处走走', 'pet_wander', True, lambda on: on or self.stop_walking())
+        self._toggle(options, '松手后落到屏幕底边（重力）', 'pet_gravity', True)
         menu.addAction('设置…', self.settings_requested.emit)
         menu.addSeparator()
         menu.addAction('让她休息（隐藏到托盘）', self.rest)
         menu.addAction('退出应用', self.quit_requested.emit)
         menu.exec(QCursor.pos())
+
+    def set_appearance(self,kind):
+        self.database.set_setting(f'pet_animation_enabled:{self.active_id}',kind=='spritesheet')
+        if kind!='spritesheet': self.database.set_setting('rig_enabled',kind=='rig')
+        self.appearance_changed.emit()
 
     def _toggle(self, menu, label, key, default, callback=None):
         action = QAction(label, menu); action.setCheckable(True); action.setChecked(bool(self.database.get_setting(key, default)))
@@ -591,9 +675,10 @@ class DesktopPetWindow(QWidget):
 
     # ---- 生命周期 ------------------------------------------------------------------
     def shutdown(self):
+        if self._shutting_down:return
         self.close_confirm()
-        self._shutting_down = True; self._save_timer.stop(); self._state_timer.stop(); self._life_timer.stop(); self._walk_timer.stop(); self._input_timer.stop(); self._fall_timer.stop()
         if self.isVisible(): self.save_geometry()
+        self._shutting_down = True; self._save_timer.stop(); self._state_timer.stop(); self._life_timer.stop(); self._walk_timer.stop(); self._input_timer.stop(); self._fall_timer.stop()
         self.bubble.close(); self.quick.close()
         if self.view_kind == 'webengine' and self.view is not None:
             try:

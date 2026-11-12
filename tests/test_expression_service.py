@@ -25,12 +25,12 @@ class ServiceTests(unittest.TestCase):
         self.assertNotIn(items[0].asset_id,prompt);self.assertNotIn(str(self.library),prompt)
         self.assertEqual(self.service.legacy_map(items)['happy'],items[0].asset_id)
     def test_unknown_and_missing_are_filtered(self):
-        self.cat.scan();self.assertEqual(self.service.prepare(self.ctx,self.character),())
-        aid=self.cat.rows()[0]['asset_id'];self.cat.review(aid,**{k:self.meta[k] for k in ('author','source','license')})
+        aid,_=self.cat.register(self.path,self.library,{'from_pack':True});self.assertEqual(self.service.prepare(self.ctx,self.character),())   # 清单导入、许可不明
+        self.cat.review(aid,**{k:self.meta[k] for k in ('author','source','license')})
         self.path.unlink();self.assertEqual(self.service.prepare(self.ctx,self.character),())
     def test_role_serious_and_no_memes(self):
         self.asset()
-        self.assertEqual(self.service.prepare(self.ctx,DEFAULT_CHARACTER),())
+        self.assertEqual(self.service.prepare(self.ctx,replace(DEFAULT_CHARACTER,id='other-role')),())
         self.assertEqual(self.service.prepare(replace(self.ctx,scene='emergency'),self.character,'需要帮助'),())
         self.assertEqual(self.service.prepare(replace(self.ctx,no_memes=True),self.character),())
     def test_unknown_relation_does_not_get_intimate(self):

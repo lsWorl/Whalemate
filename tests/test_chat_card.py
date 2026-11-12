@@ -16,18 +16,18 @@ class CardTests(unittest.TestCase):
 
     def test_builtin_keeps_whale_identity_and_reacts_to_stickers(self):
         card = cards.builtin()
-        self.assertIn('鲸娘', card['name'])
+        self.assertIn('鲸鲸', card['name'])
         self.assertIn('不描述、不鉴赏', card['style'])
         self.assertTrue(any('表情包' in e['user'] for e in card['samples']))
         prompt = cards.prompt(self.db, 'deepseek-whale', '[收到图片]', owner=True)
-        self.assertIn('当前说话人是爹', prompt)
+        self.assertIn('当前说话人是⟨指代⟩', prompt)                                  # 拼好整段提示词后按关系设定替换
         self.assertIn('示例不是已发生', prompt)
         self.assertNotIn('社区世界书', prompt)
 
     def test_ordinary_user_is_never_given_parent_relationship(self):
         prompt = cards.prompt(self.db, 'deepseek-whale', '你好', owner=False, group='30003')
-        self.assertIn('不叫爹、不冒充亲密关系', prompt)
-        self.assertNotIn('当前说话人是爹', prompt)
+        self.assertIn('不冒充亲密关系', prompt)
+        self.assertNotIn('当前说话人是⟨指代⟩', prompt)
 
     def test_builtin_knowledge_only_matches_selected_community_and_actual_message(self):
         self.db.set_setting('qq_community', 'bilibili')
@@ -74,7 +74,7 @@ class CardTests(unittest.TestCase):
         self.assertEqual(cards.prompt(self.db, 'deepseek-whale', '在吗'), '')
         self.db.set_setting('qq_chat_card_enabled', True)
         self.db.set_setting('qq_chat_card:deepseek-whale', None)
-        self.assertIn('鲸娘', cards.current(self.db, 'deepseek-whale')['name'])
+        self.assertIn('鲸鲸', cards.current(self.db, 'deepseek-whale')['name'])
 
     def test_selective_worldbook_does_not_apply_game_meaning_to_real_cat(self):
         book = cards.normalize_book({'entries': [{'keys': ['猫猫'], 'content': '某游戏里的角色简称',

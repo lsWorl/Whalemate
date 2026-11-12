@@ -75,7 +75,7 @@ class BridgePageFlowTest(unittest.TestCase):
         self.assertTrue(page.chat_card_enabled.isChecked())
         page.vision_enabled.setChecked(False); page.memes_enabled.setChecked(False)
         page.meme_root.setText(str(Path(self.tmp.name)/'memes'))
-        page.vision_model.setText('deepseek-flash'); page.meme_cooldown.setValue(120)
+        page.meme_cooldown.setValue(120)
         page.avatar_enabled.setChecked(False); page.learning.setChecked(False)
         page.chat_card_enabled.setChecked(False)
         page.community_source.setCurrentIndex(page.community_source.findData('bilibili'))
@@ -165,8 +165,10 @@ class BridgePageFlowTest(unittest.TestCase):
         with mock.patch.object(page.qq, 'ready', return_value=[]), \
              mock.patch.object(page.qq.supervisor, 'running', return_value=False), \
              mock.patch.object(page.qq, 'configure', side_effect=PermissionError(f'同步配置失败 {secret}')):
-            page.port.setValue(page.port.value()+1)
+            # 原端口旁边不保证空闲；本用例验证配置失败保留，不能被随机绑定失败抢先覆盖。
+            page.port.setValue(free_port())
             page.save(); self.wait(page)  # 未运行时保存端口会直接同步 configure，不启动组件
+            self.assertIsNotNone(self.runtime.server, self.runtime.problem)
             for _ in range(3):
                 page.refresh(); self.wait(page)
                 self.assertEqual(page.status.code, 'start_failed')

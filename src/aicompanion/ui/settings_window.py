@@ -3,66 +3,89 @@ from uuid import uuid4
 from datetime import timezone
 from PySide6.QtCore import Qt,QDateTime,QTimeZone
 from PySide6.QtMultimedia import QMediaDevices
-from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QTabWidget,QWidget,QFormLayout,QLineEdit,
+from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
     QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
-from aicompanion.avatar.model_package import validate_model_package, ModelPackageError
+from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
 
 class SettingsWindow(QDialog):
-    def __init__(self,controller,settings,parent=None,speech_output=None):
+    """设置窗口。左侧按“她 / 能力 / 连接 / 系统”分组，第一页“概览”告诉用户还差哪几步、去哪里设置。
+
+    页面键（open_page 参数、概览里的“去设置”按钮都用它）：overview、persona、memory、relationship、proactive、
+    models、voice、agent、library、platforms、storage、usage。
+    """
+    PAGES = ('overview', 'persona', 'memory', 'relationship', 'proactive', 'models', 'voice', 'agent', 'library',
+             'platforms', 'storage', 'usage')
+
+    def __init__(self,controller,settings,parent=None,speech_output=None,page=None):
         super().__init__(parent)
+        from aicompanion.ui.settings_layout import ComingSoon, Page, Section, SettingsNav, scrolled, tabs
         self.controller=controller; self.database=controller.database; self.settings=settings
         self.speech_output=speech_output
-        self.setWindowTitle('设置'); self.resize(780,640)
+        self.setWindowTitle('设置'); self.resize(980,700); self.setMinimumSize(820,560)
         from aicompanion.ui import theme; self.setStyleSheet(theme.DIALOG)
-        layout=QVBoxLayout(self); self.tabs=QTabWidget(); layout.addWidget(self.tabs)
-        role=QWidget(); form=QFormLayout(role)
+        layout=QVBoxLayout(self); layout.setContentsMargins(0,0,0,0); layout.setSpacing(0)
+        self.nav=SettingsNav(); layout.addWidget(self.nav,1)
+        cid=controller.character.id
+
+        # ---- 角色与形象 ---------------------------------------------------------------------
         self.name=QLineEdit(controller.character.name)
-        self.description=QPlainTextEdit(controller.character.description)
-        self.style=QPlainTextEdit(controller.character.speaking_style)
+        # 计划书 v4 功能二：设定和说话风格属于“人格”，在人格编辑器里改；这里的 description / style 指向编辑器的输入框
+        from aicompanion.ui.persona_page import PersonaEditor
+        registry=getattr(parent,'registry',None); pack=registry.pack(cid) if registry is not None else None
+        self.persona_editor=PersonaEditor(controller,pack.persona if pack else None,self)
+        self.description=self.persona_editor.description; self.style=self.persona_editor.style
         self.model=QLineEdit(controller.character.model_path)
         self.avatar_mode=QComboBox()
         self.avatar_mode.addItem('角色包默认形象','sprites')
         self.avatar_mode.addItem('导入的 Live2D 模型','live2d')
-        self.avatar_mode.addItem('艾米莉娅同人立绘预览（未绑定）','illustration')
-        self.avatar_mode.addItem('艾米莉娅 2D 网格动画（非 Cubism）','animated-illustration')
-        self.avatar_mode.setCurrentIndex(max(0,self.avatar_mode.findData(self.database.get_setting(f'avatar_mode:{controller.character.id}','sprites'))))
-        choose=QPushButton('选择 Live2D 模型'); choose.clicked.connect(self.choose_model)
-        form.addRow('角色名字',self.name); form.addRow('角色设定',self.description); form.addRow('说话习惯',self.style)
-        form.addRow('角色显示',self.avatar_mode); form.addRow('model3.json',self.model); form.addRow('',choose)
-        new=QPushButton('创建独立角色'); new.clicked.connect(self.create_character); form.addRow('',new)
-        # 聊天面板外观：半透明背景立绘（本机图片，不随项目分发）
+        self.avatar_mode.setCurrentIndex(max(0,self.avatar_mode.findData(self.database.get_setting(f'avatar_mode:{cid}','sprites'))))
+        choose=QPushButton('选择 Live2D 模型…'); choose.clicked.connect(self.choose_model)
+        new=QPushButton('用当前编辑的人格新建一个独立角色（不共享记忆）'); new.clicked.connect(self.create_character)
         self.panel_background=QLineEdit(self.database.get_setting('panel_background',''))
         self.panel_background.setPlaceholderText('留空 = data/private-art/panel-background.png')
-        pick_bg=QPushButton('选择图片'); pick_bg.clicked.connect(self._pick_background)
+        pick_bg=QPushButton('选择图片…'); pick_bg.clicked.connect(self._pick_background)
         bg_row=QHBoxLayout(); bg_row.addWidget(self.panel_background,1); bg_row.addWidget(pick_bg)
-        form.addRow('面板背景图',bg_row)
         self.panel_opacity=QSpinBox(); self.panel_opacity.setRange(0,100); self.panel_opacity.setSuffix(' %')
         self.panel_opacity.setValue(int(round(float(self.database.get_setting('panel_background_opacity',0.16) or 0)*100)))
-        form.addRow('背景不透明度',self.panel_opacity)
-        role_scroll=QScrollArea(); role_scroll.setWidgetResizable(True); role_scroll.setWidget(role)
-        self.tabs.addTab(role_scroll,'角色')
-        voice=QWidget(); voice_form=QFormLayout(voice)
+        persona=Page('角色与形象','她是谁、怎么想怎么说、长什么样。换人格、改名字都不会影响记忆和关系。')
+        who=QFormLayout(); who.addRow('名字',self.name)
+        identity=persona.add(Section('她是谁','名字属于她自己，换人格也不会变。',who)); identity.add(new)
+        persona.add(Section('人格','同一个她可以有几种性格：新建、复制、切换、导入 SillyTavern 角色卡，每次保存都留一个版本可以回退。'
+                                  '“设为当前”后下一句话就用新人格。',self.persona_editor))
+        looks=QFormLayout(); looks.addRow('桌面形象',self.avatar_mode); looks.addRow('Live2D 模型',self.model); looks.addRow('',choose)
+        persona.add(Section('桌面形象','鲸鲸优先使用本机安装的 Aboutme 大肥鱼动画，未安装时显示内置的自绘鲸娘。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
+        panel=QFormLayout(); panel.addRow('背景图',bg_row); panel.addRow('背景不透明度',self.panel_opacity)
+        persona.add(Section('聊天面板外观','背景图只在本机使用，不会上传或随项目分发。',panel))
+        persona.finish()
+
+        # ---- 声音与通话 ---------------------------------------------------------------------
         self.provider=QComboBox()
-        for label,value in [('本地朗读','system'),('智谱语音','cloud'),('千问动漫声线','qwen')]: self.provider.addItem(label,value)
-        self.provider.setCurrentIndex(max(0,self.provider.findData(self.database.get_setting('tts_provider',settings.tts_provider))))
+        for label,value in [('本地朗读（系统自带，不计费）','system'),('智谱语音','cloud'),('千问动漫声线','qwen'),('云端声线（鲸鲸默认：MiniMax 有感情的少女音；也可在“模型与 Key”页换 Breeze Blue）','breeze')]: self.provider.addItem(label,value)
+        # 记下打开时库里是否存过朗读方式：没存过且用户没改时保存不写入，否则“没选过”会被保存成“明确选了本地朗读”，
+        # 之后添加 MiniMax 账户也不会自动用上默认声线（Codex PR #41 审查 2）
+        self.stored_tts_provider=self.database.get_setting('tts_provider')
+        self.provider.setCurrentIndex(max(0,self.provider.findData(self.stored_tts_provider or settings.tts_provider)))
+        # 用户只要在窗口里动过朗读方式（哪怕最后又选回本地朗读），就是明确选择，保存时要落库（Codex PR #41 复核）
+        self.tts_provider_touched=False
         self.voice=QComboBox(); self.voice.setEditable(True)
         self._voice_provider_changed()
         self.provider.currentIndexChanged.connect(self._voice_provider_changed)
-        self.voice_style=QPlainTextEdit(self.database.get_setting(f'qwen_style:{controller.character.id}',DEFAULT_STYLE))
+        self.provider.currentIndexChanged.connect(self._tts_provider_touched)
+        self.voice_style=QPlainTextEdit(self.database.get_setting(f'qwen_style:{cid}',DEFAULT_STYLE))
         self.voice_style.setMaximumHeight(74)
         self.voice_mood=QComboBox()
         for label,value in [('跟随角色情绪','auto'),('温柔平静','calm'),('轻快开心','happy'),('含蓄害羞','shy'),('低缓失落','sad'),('轻微生气','angry')]: self.voice_mood.addItem(label,value)
-        self.voice_mood.setCurrentIndex(max(0,self.voice_mood.findData(self.database.get_setting(f'qwen_mood:{controller.character.id}','auto'))))
+        self.voice_mood.setCurrentIndex(max(0,self.voice_mood.findData(self.database.get_setting(f'qwen_mood:{cid}','auto'))))
         self.speech_language=QComboBox()
         self.speech_language.addItem('中文配音 / 中文字幕','zh')
         self.speech_language.addItem('日语配音 / 中文字幕','ja')
-        self.speech_language.setCurrentIndex(max(0,self.speech_language.findData(self.database.get_setting(f'speech_language:{controller.character.id}',settings.speech_language))))
-        self.japanese_style=QPlainTextEdit(self.database.get_setting(f'japanese_style:{controller.character.id}',''))
+        self.speech_language.setCurrentIndex(max(0,self.speech_language.findData(self.database.get_setting(f'speech_language:{cid}',settings.speech_language))))
+        self.japanese_style=QPlainTextEdit(self.database.get_setting(f'japanese_style:{cid}',''))
         self.japanese_style.setMaximumHeight(74)
         preview=QPushButton('试听声线'); preview.clicked.connect(self.preview_voice); preview.setEnabled(speech_output is not None)
-        self.preview_status=QLabel(''); self.preview_status.setWordWrap(True)
+        self.preview_status=QLabel(''); self.preview_status.setWordWrap(True); self.preview_status.setObjectName('Hint')
         if speech_output:
             speech_output.error.connect(self.preview_status.setText)
             speech_output.speaking.connect(self._preview_started)
@@ -73,11 +96,11 @@ class SettingsWindow(QDialog):
         self.asr_provider=QComboBox()
         self.asr_provider.addItem('千问识别','qwen'); self.asr_provider.addItem('智谱识别','zhipu')
         self.asr_provider.addItem('本地识别（SenseVoice，离线、不计费）','local')
-        # P4：收音方式、收音键、外放回声处理
         from aicompanion.voice.hotkey import KEYS, DEFAULT_KEY
+        from aicompanion.voice.turns import DEFAULT_MODE
         self.voice_mode=QComboBox()
-        for text,value in [('持续通话：直接开口，可随时打断她','continuous'),('按住说话：按住收音键说，松开发送','ptt'),('切换式：按一下开始，再按一下结束','toggle')]: self.voice_mode.addItem(text,value)
-        self.voice_mode.setCurrentIndex(max(0,self.voice_mode.findData(self.database.get_setting('voice_mode','continuous'))))
+        for text,value in [('按住说话：按住收音键说，松开发送（默认）','ptt'),('切换式：按一下开始，再按一下结束','toggle'),('持续通话：直接开口，可随时打断她','continuous')]: self.voice_mode.addItem(text,value)
+        self.voice_mode.setCurrentIndex(max(0,self.voice_mode.findData(self.database.get_setting('voice_mode',DEFAULT_MODE))))
         self.ptt_key=QComboBox()
         for value,(text,_code) in KEYS.items(): self.ptt_key.addItem(text,value)
         self.ptt_key.setCurrentIndex(max(0,self.ptt_key.findData(self.database.get_setting('ptt_key',DEFAULT_KEY))))
@@ -86,87 +109,207 @@ class SettingsWindow(QDialog):
         self.echo_backend.addItem('浏览器回声消除（Chromium AEC3，播放也走网页）','web')
         self.echo_backend.setCurrentIndex(max(0,self.echo_backend.findData(self.database.get_setting('echo_backend','qt'))))
         self.asr_provider.setCurrentIndex(max(0,self.asr_provider.findData(self.database.get_setting('asr_provider',settings.asr_provider))))
-        self.proactive=QCheckBox('允许早晚问候与主动聊天'); self.proactive.setChecked(self.database.get_setting('proactive_enabled',True))
-        self.analysis=QCheckBox('自动分析长期记忆（会产生模型用量）'); self.analysis.setChecked(self.database.get_setting('memory_analysis',True))
-        self.quiet_start=QSpinBox(); self.quiet_start.setRange(0,23); self.quiet_start.setValue(self.database.get_setting('quiet_start',23))
-        self.quiet_end=QSpinBox(); self.quiet_end.setRange(0,23); self.quiet_end.setValue(self.database.get_setting('quiet_end',8))
         self.speech_style=QComboBox()
-        for text,value in [('只说语气词（嘿嘿、诶？），文字看气泡','interjection'),('语气词 + 第一句短话','brief'),('完整朗读每一句','full')]: self.speech_style.addItem(text,value)
-        self.speech_style.setCurrentIndex(max(0,self.speech_style.findData(self.database.get_setting('speech_style','interjection'))))
-        voice_form.addRow('说话方式',self.speech_style)
-        voice_form.addRow('朗读方式',self.provider); voice_form.addRow('声线',self.voice)
-        voice_form.addRow('配音语言',self.speech_language)
-        voice_form.addRow('日语口吻',self.japanese_style)
-        voice_form.addRow('语气',self.voice_mood); voice_form.addRow('表达风格',self.voice_style)
-        voice_form.addRow('',preview); voice_form.addRow('',self.preview_status); voice_form.addRow('麦克风',self.input)
-        voice_form.addRow('语音识别服务',self.asr_provider)
-        voice_form.addRow('收音方式',self.voice_mode); voice_form.addRow('收音键',self.ptt_key)
-        voice_form.addRow('外放回声',self.echo_backend)
-        self.voice_hint=QLabel(''); self.voice_hint.setWordWrap(True); voice_form.addRow('',self.voice_hint)
-        voice_form.addRow('',self.proactive); voice_form.addRow('',self.analysis)
-        voice_form.addRow('免打扰开始（小时）',self.quiet_start); voice_form.addRow('免打扰结束（小时）',self.quiet_end)
-        voice_form.addRow('模型',QLabel(f'{settings.llm_provider} / {settings.llm_model}'))
-        voice_form.addRow('千问合成',QLabel(settings.qwen_tts_model))
-        self.asr_model=QLabel(''); self.asr_model.setWordWrap(True)
+        for text,value in [('智能朗读：短回复全念，长回复挑重点分段念（默认）','smart'),('只说语气词（嘿嘿、诶？），文字看气泡','interjection'),
+                           ('语气词 + 第一句短话','brief'),('完整朗读每一句','full')]: self.speech_style.addItem(text,value)
+        from aicompanion.pet.interjection import DEFAULT_STYLE as DEFAULT_SPEECH_STYLE   # 不和千问语气的 DEFAULT_STYLE 重名
+        self.speech_style.setCurrentIndex(max(0,self.speech_style.findData(self.database.get_setting('speech_style',DEFAULT_SPEECH_STYLE))))
+        voice_page=Page('声音与通话','她默认会把回复念出来（智能朗读：长回复只念重点）；不想听就点聊天面板上的“朗读”关掉。点“通话”后按住收音键（默认右 Ctrl）和她说话。')
+        speak=QFormLayout(); speak.addRow('说多少',self.speech_style); speak.addRow('朗读方式',self.provider); speak.addRow('声线',self.voice)
+        speak.addRow('配音语言',self.speech_language)
+        tryit=QHBoxLayout(); tryit.addWidget(preview); tryit.addWidget(self.preview_status,1); speak.addRow('',tryit)
+        voice_page.add(Section('她怎么说','试听会用下面的设置合成一句话（云端声线会产生少量用量）。',speak))
+        tone=QFormLayout(); tone.addRow('语气',self.voice_mood); tone.addRow('表达风格',self.voice_style); tone.addRow('日语口吻',self.japanese_style)
+        voice_page.add(Section('语气与风格','只对千问动漫声线和日语配音生效。',tone))
+        listen=QFormLayout(); listen.addRow('麦克风',self.input); listen.addRow('收音方式',self.voice_mode); listen.addRow('收音键',self.ptt_key)
+        listen.addRow('语音识别',self.asr_provider)
+        self.asr_model=QLabel(''); self.asr_model.setWordWrap(True); self.asr_model.setObjectName('Hint'); listen.addRow('识别模型',self.asr_model)
+        listen.addRow('外放回声',self.echo_backend)
+        self.voice_hint=QLabel(''); self.voice_hint.setWordWrap(True); self.voice_hint.setObjectName('Hint'); listen.addRow('',self.voice_hint)
+        voice_page.add(Section('你怎么说','通话中改了这里的设置，保存后只重启收音，不会打断她。',listen))
+        voice_page.add(ComingSoon('回复默认带语音','用大肥鱼的声线把回复说出来；长回复挑重点分几段念，代码和清单不照着念。'))
+        voice_page.finish()
         self.asr_provider.currentIndexChanged.connect(self._recognition_provider_changed)
         self._recognition_provider_changed()
-        voice_form.addRow('识别模型',self.asr_model)
-        voice_scroll=QScrollArea(); voice_scroll.setWidgetResizable(True); voice_scroll.setWidget(voice)
-        self.tabs.addTab(voice_scroll,'语音与互动')
-        memories=QWidget(); ml=QVBoxLayout(memories)
+
+        # ---- 记忆与心事 ---------------------------------------------------------------------
+        self.analysis=QCheckBox('聊天后自动整理长期记忆（会产生少量模型用量）'); self.analysis.setChecked(self.database.get_setting('memory_analysis',True))
         self.table=QTableWidget(0,5); self.table.setHorizontalHeaderLabels(['类型','记忆','清晰度','范围','更新于'])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.horizontalHeader().setStretchLastSection(True); self.table.setColumnWidth(1,420)
-        ml.addWidget(self.table)
+        self.table.horizontalHeader().setStretchLastSection(True); self.table.setColumnWidth(1,380); self.table.setMinimumHeight(260)
         buttons=QHBoxLayout(); refresh=QPushButton('刷新'); refresh.clicked.connect(self.refresh)
-        delete=QPushButton('删除选中记忆'); delete.clicked.connect(self.delete_memory)
+        delete=QPushButton('删除选中（真的忘掉）'); delete.clicked.connect(self.delete_memory)
         private=QPushButton('设为只在私下用'); private.clicked.connect(lambda:self.set_memory_scope('private'))
         shared=QPushButton('设为共享'); shared.clicked.connect(lambda:self.set_memory_scope('pet'))
-        buttons.addWidget(refresh); buttons.addWidget(delete); buttons.addWidget(private); buttons.addWidget(shared); ml.addLayout(buttons)
-        self.archive_label=QLabel(''); ml.addWidget(self.archive_label)
-        ml.addWidget(QLabel('记忆会随时间变模糊，低于 30% 就从记忆卡移出（全量存档仍保留，再提到会重新记住）。\n'
-                            '手动删除 = 真的忘掉：存档里的同一事实也会删除，以后不会再被记住；聊天正文不受影响。\n'
-                            '记忆在桌面和 QQ 之间共享（群里听来的事她在桌面上也记得）；标成"只在私下用"的，她不会在群聊和陌生人私聊里用。'))
-        self.tabs.addTab(memories,'记忆')
-        purposes=QWidget(); pl=QVBoxLayout(purposes)
+        for button in (refresh,delete,private,shared): buttons.addWidget(button)
+        buttons.addStretch(1)
+        self.archive_label=QLabel(''); self.archive_label.setObjectName('Hint')
+        memory_page=Page('记忆与心事','她记得的事和心里惦记的事。记忆在桌面和 QQ 之间共享。')
+        cards=Section('记忆卡','记忆会随时间变模糊，低于 30% 移出记忆卡（存档仍保留，再提到会重新记住）。删除 = 真的忘掉，以后不会再被记住；'
+                      '标成“只在私下用”的，她不会在群聊和陌生人私聊里用。')
+        cards.add(self.analysis); cards.add(self.table); cards.add(buttons); cards.add(self.archive_label); memory_page.add(cards)
         self.purpose_table=QTableWidget(0,4); self.purpose_table.setHorizontalHeaderLabels(['状态','类型','心里惦记的事','计划时间'])
         self.purpose_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.purpose_table.horizontalHeader().setStretchLastSection(True); self.purpose_table.setColumnWidth(2,380)
-        pl.addWidget(self.purpose_table)
-        pl.addWidget(QLabel('她会从清楚的记忆里想出想聊的事，在你在电脑前、不忙、非深夜时主动开口；每天最多 3 次，专注模式下暂停。'))
-        self.tabs.addTab(purposes,'心事')
-        reminders=QWidget(); rl=QVBoxLayout(reminders)
+        self.purpose_table.horizontalHeader().setStretchLastSection(True); self.purpose_table.setColumnWidth(2,360); self.purpose_table.setMinimumHeight(180)
+        memory_page.add(Section('心事','她会从清楚的记忆里想出想聊的事，在你不忙、非深夜时主动开口；每天最多 3 次。',self.purpose_table))
+        # 计划书 v4 功能六（阶段二）：召回与整份请求预算已接入；语义检索和有来源的摘要在阶段四
+        from aicompanion.services import budget
+        self.context_report=QLabel(budget.describe(self.database.get_setting(f'context_report:{cid}')))
+        self.context_report.setWordWrap(True); self.context_report.setObjectName('Hint')
+        memory_page.add(Section('想得起旧事','聊到相关的事时，她会想起淡忘的旧记忆、30 条之外更早的聊天、以前帮你办过的事；'
+                                '你删掉的记忆不会再想起来，群里的聊天也不会出现在桌面上。每次请求有字数预算，超了先丢最早的聊天记录，'
+                                '人格和你刚说的话不会被丢。',self.context_report))
+        memory_page.add(ComingSoon('换个说法也想得起','同义词和省略说法也能对上（语义检索）；很早以前的聊天用有来源的摘要代替，需要时能查回原话。'))
+        memory_page.finish()
+
+        # ---- 主动与提醒 ---------------------------------------------------------------------
+        self.proactive=QCheckBox('允许她早晚问候、主动找你聊天'); self.proactive.setChecked(self.database.get_setting('proactive_enabled',True))
+        self.quiet_start=QSpinBox(); self.quiet_start.setRange(0,23); self.quiet_start.setValue(self.database.get_setting('quiet_start',23)); self.quiet_start.setSuffix(' 点')
+        self.quiet_end=QSpinBox(); self.quiet_end.setRange(0,23); self.quiet_end.setValue(self.database.get_setting('quiet_end',8)); self.quiet_end.setSuffix(' 点')
+        quiet=QHBoxLayout(); quiet.addWidget(QLabel('从')); quiet.addWidget(self.quiet_start); quiet.addWidget(QLabel('到')); quiet.addWidget(self.quiet_end)
+        quiet.addWidget(QLabel('不主动打扰')); quiet.addStretch(1)
+        proactive_page=Page('主动与提醒','她什么时候可以主动开口，以及你交代给她的提醒。')
+        talk=Section('主动聊天',''); talk.add(self.proactive); talk.add(quiet); proactive_page.add(talk)
         self.reminder_table=QTableWidget(0,3); self.reminder_table.setHorizontalHeaderLabels(['内容','时间（UTC）','状态'])
         self.reminder_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.reminder_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.reminder_table.itemSelectionChanged.connect(self.select_reminder); rl.addWidget(self.reminder_table)
-        self.reminder_title=QLineEdit(); self.reminder_date=QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600)); self.reminder_date.setCalendarPopup(True)
+        self.reminder_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows); self.reminder_table.setMinimumHeight(160)
+        self.reminder_table.itemSelectionChanged.connect(self.select_reminder)
+        self.reminder_title=QLineEdit(); self.reminder_title.setPlaceholderText('例如：提醒我交周报')
+        self.reminder_date=QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600)); self.reminder_date.setCalendarPopup(True)
         self.reminder_date.setDisplayFormat('yyyy-MM-dd HH:mm'); rf=QFormLayout()
-        rf.addRow('提醒内容',self.reminder_title); rf.addRow('本地时间',self.reminder_date); rl.addLayout(rf)
+        rf.addRow('提醒内容',self.reminder_title); rf.addRow('本地时间',self.reminder_date)
         rb=QHBoxLayout(); add=QPushButton('新增'); add.clicked.connect(lambda:self.save_reminder(False)); rb.addWidget(add)
         update=QPushButton('更新选中'); update.clicked.connect(lambda:self.save_reminder(True)); rb.addWidget(update)
-        remove=QPushButton('删除选中'); remove.clicked.connect(self.delete_reminder); rb.addWidget(remove); rl.addLayout(rb)
-        self.tabs.addTab(reminders,'提醒'); self.refresh_reminders()
+        remove=QPushButton('删除选中'); remove.clicked.connect(self.delete_reminder); rb.addWidget(remove); rb.addStretch(1)
+        reminders=Section('提醒','也可以直接在聊天里说“明天九点提醒我……”。'); reminders.add(self.reminder_table); reminders.add(rf); reminders.add(rb)
+        proactive_page.add(reminders)
+        proactive_page.add(ComingSoon('自己的生活','她会按兴趣去看、去做点什么，遇到趣事来找你分享，并等你回应；每天主动发言的次数可以在这里调。'))
+        proactive_page.add(ComingSoon('允许她自己退出','情绪和情境合适时，她会告别并真的关掉自己；关掉这个开关后她只会表示不想说话。'))
+        proactive_page.finish()
+        self.refresh_reminders()
+
+        # ---- 模型与 Key（正式的模型解析器才有配置可改；测试里的固定客户端没有） -----------------------
+        self.model_page=None
+        models_page=Page('模型与 Key','为聊天、识图、搜索、办事、语音合成分别选服务和模型；可以给某个角色单独指定。这一页的改动选了就生效。')
+        if hasattr(controller.router,'store'):
+            from aicompanion.ui.model_page import ModelPage
+            self.model_page=ModelPage(controller.router,[(c.id,c.name) for c in self.database.characters()],cid,self,speech_output=speech_output)
+            models_page.add(self.model_page)
+        else:
+            models_page.add(QLabel('当前是测试用的固定模型，没有可修改的配置。'))
+        models_page.finish()
+
+        # ---- 其余页面（各自原有的控件，按用途归组） -----------------------------------------------
         from aicompanion.ui.agent_pages import AgentPage, AuditPage, UsagePage
-        self.agent_page=AgentPage(self.database); self.tabs.addTab(self.agent_page,'干活')
-        self.audit_page=AuditPage(self.database); self.tabs.addTab(self.audit_page,'操作日志')
         from aicompanion.ui.bridge_page import BridgePage
-        self.bridge_page=BridgePage(self.database); self.tabs.addTab(self.bridge_page,'聊天平台')
         from aicompanion.ui.library_page import LibraryPage
-        self.library_page=LibraryPage(self.database,controller.character.id,self); self.tabs.addTab(self.library_page,'表情图库')
+        from aicompanion.ui.relationship_page import RelationshipPage   # T15
+        from aicompanion.ui.community_page import CommunityPage           # T18
+        from aicompanion.ui.storage_page import StoragePage
+        self.agent_page=AgentPage(self.database); self.audit_page=AuditPage(self.database)
+        agent_page=Page('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
+        agent_settings=QWidget(); agent_box=QVBoxLayout(agent_settings); agent_box.setContentsMargins(0,6,0,0)
+        agent_box.addWidget(self.agent_page)
+        agent_box.addWidget(ComingSoon('把文件交给她','在聊天面板附上或拖入文件，让她读、整理或改写；文件先复制到工作区，原件不动。'))
+        agent_box.addWidget(ComingSoon('跨天的任务','任务有进度和检查点，重启后从断点继续；你也可以在 QQ 私聊里交办，审批发到你那里确认。'))
+        agent_box.addStretch(1)
+        agent_page.add(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
+        self.library_page=LibraryPage(self.database,cid,self,controller=controller)
+        library_page=Page('表情图库','她能发的表情包。自己的图放进目录就能用，含义由识图模型自动识别。'); library_page.add(self.library_page)
+        self.relationship_page=RelationshipPage(self.database,cid,self)
+        relation_page=Page('关系与心情','她现在的心情，以及她和每个人的关系（桌面主人、QQ 上的朋友）。')
+        from aicompanion.ui.mood_card import MoodCard
+        self.mood_card=MoodCard(self.database,cid,self)
+        relation_page.add(Section('她现在的心情','心情会延续一段时间、慢慢回落：被冷落会委屈、被欺负会生气、被哄会消气。'
+                                  '容不容易生气、消气快慢在“角色与形象 → 人格 → 情绪倾向”里调。心情不改好感，也不影响办事。',self.mood_card))
+        relation_page.add(self.relationship_page)
+        from aicompanion.ui.dates_card import DatesCard
+        self.dates_card=DatesCard(self.database,cid,self)
+        relation_page.add(Section('我们的日子','她记得你们认识了多少天、哪些日子值得纪念；到了那天她会在和你聊天时自然提一句，一天只提一次。',self.dates_card))
+        relation_page.finish()
+        self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
+        platforms_page=Page('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')
+        platforms_page.add(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话')),1)
+        self.storage_page=StoragePage(self.database,settings)
+        storage_page=Page('存储位置','聊天记录、记忆和表情图库放在哪里。'); storage_page.add(self.storage_page); storage_page.finish()
         self.usage_page=UsagePage(self.database)
         rows=self.database.usage_summary()
-        other=QLabel('本月其他用量：'+'；'.join(f"{r['kind']} {r['amount']}" for r in rows)+'\nAPI 凭据在 .env 配置，不写入 SQLite。'); other.setWordWrap(True)
-        self.usage_page.layout().addWidget(other)
-        usage_scroll=QScrollArea(); usage_scroll.setWidgetResizable(True); usage_scroll.setWidget(self.usage_page)
-        self.tabs.addTab(usage_scroll,'用量')
-        save=QPushButton('保存'); save.clicked.connect(self.save); layout.addWidget(save)
+        other=QLabel('本月其他用量：'+('；'.join(f"{r['kind']} {r['amount']}" for r in rows) or '暂无')+'\nKey 在“模型与 Key”页加密保存（Windows DPAPI），不以明文写入数据库。')
+        other.setWordWrap(True); other.setObjectName('Hint')
+        usage_page=Page('用量','每天的模型和语音用量，以及额度上限。'); usage_page.add(self.usage_page); usage_page.add(other); usage_page.finish()
+
+        # ---- 概览（最后建：要读上面各页的状态） ------------------------------------------------------
+        overview=self._overview_page(Page, Section, ComingSoon)
+
+        nav=self.nav
+        nav.add_page('overview','概览',overview,'还差哪几步、常用操作在哪里')
+        nav.add_group('她')
+        nav.add_page('persona','角色与形象',persona); nav.add_page('relationship','关系与心情',relation_page)
+        nav.add_page('memory','记忆与心事',memory_page); nav.add_page('proactive','主动与提醒',proactive_page)
+        nav.add_group('能力')
+        nav.add_page('models','模型与 Key',models_page); nav.add_page('voice','声音与通话',voice_page)
+        nav.add_page('agent','办事',agent_page); nav.add_page('library','表情图库',library_page)
+        nav.add_group('连接')
+        nav.add_page('platforms','QQ 与社区',platforms_page)
+        nav.add_group('系统')
+        nav.add_page('storage','存储位置',storage_page); nav.add_page('usage','用量',usage_page)
+
+        footer=QWidget(); footer.setObjectName('Footer'); bar=QHBoxLayout(footer); bar.setContentsMargins(18,10,18,10)
+        tip=QLabel('“模型与 Key”“表情图库”里的改动立即生效；其他页改完点“保存”。'); tip.setObjectName('Hint'); bar.addWidget(tip,1)
+        cancel=QPushButton('取消'); cancel.clicked.connect(self.reject); bar.addWidget(cancel)
+        save=QPushButton('保存'); save.setObjectName('Primary'); save.setDefault(True); save.clicked.connect(self.save); bar.addWidget(save)
+        layout.addWidget(footer)
         self.refresh()
+        self.open_page(page or 'overview')
+
+    def open_page(self,key):
+        """跳到某一页（概览的“去设置”、聊天面板的引导条都用它）。"""
+        return self.nav.show_page(key)
+
+    def _overview_page(self,Page,Section,ComingSoon):
+        """概览：几项关键设置的状态 + 一键跳转，再列出常用操作和即将推出的功能。"""
+        cid=self.controller.character.id; router=self.controller.router
+        page=Page(f'你好，这里是{self.controller.character.name}的设置','先把下面几项看一遍；带 ✓ 的已经可以用了。')
+        steps=Section('准备情况','')
+        from PySide6.QtWidgets import QGridLayout
+        grid=QGridLayout(); grid.setHorizontalSpacing(14); grid.setVerticalSpacing(10); grid.setColumnStretch(1,1)
+        def row(title,ok,text,key,action='去设置'):
+            n=grid.rowCount(); name=QLabel(title); name.setObjectName('CardTitle')
+            state=QLabel(('✓ ' if ok else '○ ')+text); state.setObjectName('Good' if ok else 'Warn'); state.setWordWrap(True)
+            go=QPushButton(action); go.setObjectName('Link'); go.clicked.connect(lambda _=False,k=key:self.open_page(k))
+            top=Qt.AlignmentFlag.AlignTop
+            grid.addWidget(name,n,0,top); grid.addWidget(state,n,1,top); grid.addWidget(go,n,2,top)
+        try: chat_ok=bool(router.configured('chat',cid))
+        except Exception: chat_ok=False
+        row('聊天模型',chat_ok,('现在用：'+router.label(cid)) if chat_ok else '还没有配置，现在是离线模拟回复。先添加一个账户并选聊天模型','models')
+        try: target=router.agent_target(cid); problem='' if target else router.agent_problem(cid)
+        except Exception: target,problem=None,''
+        if not target and (not problem or problem.startswith('还没有配置')): problem='还没有选办事模型（可选，在“模型与 Key”页的“办事”里选）'
+        row('办事',target is not None,('办事模型：'+target.label) if target else problem,'models')
+        providers={'system':'本地朗读','cloud':'智谱语音','qwen':'千问动漫声线','breeze':'云端声线'}
+        tts=self.database.get_setting('tts_provider',self.settings.tts_provider)
+        row('声音',True,f'朗读方式：{providers.get(tts,tts)}；默认开着，聊天面板上的“朗读”可以关掉','voice')
+        from aicompanion.bridge.service import setting as bridge_setting
+        bridge=bool(bridge_setting(self.database,'bridge_enabled'))
+        row('QQ',bridge,'QQ 桥接已打开' if bridge else '没有接 QQ（可选）','platforms')
+        meme=str(self.database.get_setting('qq_meme_root','') or '')
+        row('表情图库',bool(meme),f'图库目录：{meme}' if meme else '还没选表情包目录（可选）','library')
+        steps.add(grid); page.add(steps)
+        tips=QLabel('· 在聊天面板直接打字和她聊天；点输入框左边的“办事”，这句话就交给她动手做。\n'
+                    '· 点“通话”后按住右 Ctrl 说话，松开发送；她说话时你开口也能打断她。\n'
+                    '· 右键桌面上的她：打开聊天、切换角色、让她办事、退出。\n'
+                    '· 单击托盘图标召回她，双击打开聊天面板。')
+        tips.setWordWrap(True); page.add(Section('常用操作','',tips))
+        page.add(ComingSoon('接下来会有','人格包与版本 · 持续的心情与小脾气 · 她自己的生活和趣事分享 · 想得起更久以前的事 · '
+                                  '圈子话题与约定 · 把文件交给她办事 · 跨天任务与 QQ 交办 · 自己告别退出。具体见项目计划书 v4。'))
+        return page.finish()
 
     def _pick_background(self):
         path,_=QFileDialog.getOpenFileName(self,'选择背景图','', '图片 (*.png *.jpg *.jpeg *.webp)')
         if path: self.panel_background.setText(path)
+
+    def _tts_provider_touched(self,*args): self.tts_provider_touched=True
 
     def _voice_provider_changed(self,*args):
         self.voice.clear()
@@ -177,13 +320,25 @@ class SettingsWindow(QDialog):
                 self.voice.addItem('原创动漫女声（备选）',self.settings.qwen_original_tts_voice)
             self.voice.addItem('灵希：可爱甜美','longanlingxi')
             self.voice.addItem('风悦：自然亲切','longanfengyue')
+        elif self.provider.currentData()=='breeze':
+            # 音色在“模型与 Key”页的“语音合成”里按角色设置；没设置时用角色自己的默认声线（MiniMax），可以在这里从候选里换
+            cid=self.controller.character.id
+            target=self.controller.router.tts_target(cid)
+            from aicompanion.domain.voice_profile import profile_for
+            profile=profile_for(cid)
+            if target and target.label.endswith('（默认声线）') and profile:
+                for voice,label in profile.minimax_candidates: self.voice.addItem(label,'choice:'+voice)
+                current='choice:'+target.voice
+            else:
+                current=target.cache_id if target else ''
+                self.voice.addItem(target.label if target else '未配置：在“模型与 Key”页添加 MiniMax 账户（鲸鲸默认声线）或设置 Breeze Blue 音色',current)
         else:
             current=self.controller.character.voice or self.database.get_setting('tts_voice','tongtong')
             self.voice.addItem('彤彤','tongtong')
         index=self.voice.findData(current)
         if index>=0: self.voice.setCurrentIndex(index)
         else: self.voice.setEditText(current)
-        self.voice.setEnabled(self.provider.currentData()!='system')
+        self.voice.setEnabled(self.provider.currentData()!='system' and (self.provider.currentData()!='breeze' or str(current).startswith('choice:')))
 
     def _recognition_provider_changed(self,*args):
         provider=self.asr_provider.currentData()
@@ -204,10 +359,25 @@ class SettingsWindow(QDialog):
             return self.voice.itemData(index)
         return self.voice.currentText().strip()
 
+    def _voice_choice(self):
+        """界面上选中的默认声线候选音色 ID（choice:<音色 ID>）；不是候选时返回 None。"""
+        value=str(self.voice.currentData() or '') if self.provider.currentData()=='breeze' else ''
+        return value[len('choice:'):] if value.startswith('choice:') else None
+
+    def _save_voice_choice(self,cid):
+        """默认声线的候选音色存成 voice_choice:<角色>，路由按它选 MiniMax 音色。只在点“保存”时调用。"""
+        choice=self._voice_choice()
+        if choice is not None: self.database.set_setting(f'voice_choice:{cid}',choice)
+
     def preview_voice(self):
         if not self.speech_output: return
         speech=self.speech_output; speech.stop(); speech.enabled=True
         speech.provider=self.provider.currentData(); speech.voice=self.selected_voice()
+        # 试听当前选中的候选音色：临时取一份合成配置交给这一句，不写数据库；点“取消”后仍是原来的音色（Codex PR #41 审查 3）
+        target=None
+        if speech.provider=='breeze':
+            target=self.controller.router.tts_target(self.controller.character.id,voice_choice=self._voice_choice())
+            if target: speech.voice=target.cache_id
         speech.language=self.speech_language.currentData()
         speech.role_style=self.japanese_style.toPlainText()
         mood=self.voice_mood.currentData()
@@ -215,7 +385,7 @@ class SettingsWindow(QDialog):
         speech.style=self.voice_style.toPlainText()
         # 系统朗读可能同步触发开始信号，先显示准备状态，避免覆盖正在试听的提示。
         self.preview_status.setText('正在准备试听，云端合成会产生少量用量。')
-        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex)
+        speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。',uuid4().hex,target=target)
 
     def _preview_started(self,active):
         if active: self.preview_status.setText('正在试听')
@@ -228,7 +398,7 @@ class SettingsWindow(QDialog):
     def choose_model(self):
         path,_=QFileDialog.getOpenFileName(self,'选择模型','','Live2D model (*.model3.json)')
         if path:
-            try: validate_model_package(path)
+            try: validate_model_package(path); require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 QMessageBox.warning(self,'模型包无效',str(error)); return
             self.model.setText(path)
@@ -239,7 +409,7 @@ class SettingsWindow(QDialog):
         name=self.name.text().strip()
         if not name or not self._validate_model_input(): return
         character=CharacterProfile(name,self.description.toPlainText(),self.style.toPlainText(),uuid4().hex,self.model.text().strip(),
-            '' if self.provider.currentData()=='qwen' else self.selected_voice())
+            '' if self.provider.currentData() in ('qwen','breeze') else self.selected_voice())
         self.database.add_character(character)
         if self.provider.currentData()=='qwen':
             self.database.set_setting(f'qwen_voice:{character.id}',self.selected_voice())
@@ -284,19 +454,26 @@ class SettingsWindow(QDialog):
         self.refresh()
 
     def save(self):
+        if self.model_page is not None and not self.model_page.save(): return
         if not self.name.text().strip() or not self._validate_model_input(): return
-        character=replace(self.controller.character,name=self.name.text().strip(),description=self.description.toPlainText(),
-                          speaking_style=self.style.toPlainText(),model_path=self.model.text().strip(),
-                          voice=self.controller.character.voice if self.provider.currentData()=='qwen' else self.selected_voice())
+        if not self.persona_editor.save(): return
+        # 设定和说话风格以当前人格为准（人格编辑器保存时已写回角色表）；这里只改名字、形象和声音
+        current=next((c for c in self.database.characters() if c.id==self.controller.character.id),self.controller.character)
+        character=replace(current,name=self.name.text().strip(),model_path=self.model.text().strip(),
+                          voice=self.controller.character.voice if self.provider.currentData() in ('qwen','breeze') else self.selected_voice())
         self.database.update_character(character); self.controller.character=character
         if self.provider.currentData()=='qwen':
             self.database.set_setting(f'qwen_voice:{character.id}',self.selected_voice())
+        self._save_voice_choice(character.id)
         self.database.set_setting(f'qwen_style:{character.id}',self.voice_style.toPlainText())
         self.database.set_setting(f'qwen_mood:{character.id}',self.voice_mood.currentData())
         self.database.set_setting(f'speech_language:{character.id}',self.speech_language.currentData())
         self.database.set_setting(f'avatar_mode:{character.id}',self.avatar_mode.currentData())
         self.database.set_setting(f'japanese_style:{character.id}',self.japanese_style.toPlainText())
-        for key,value in [('tts_provider',self.provider.currentData()),('input_device',self.input.currentData()),
+        tts_provider=self.provider.currentData()
+        if self.stored_tts_provider is not None or self.tts_provider_touched:
+            self.database.set_setting('tts_provider',tts_provider)
+        for key,value in [('input_device',self.input.currentData()),
                           ('asr_provider',self.asr_provider.currentData()),('voice_mode',self.voice_mode.currentData()),
                           ('speech_style',self.speech_style.currentData()),
                           ('panel_background',self.panel_background.text().strip()),('panel_background_opacity',self.panel_opacity.value()/100),
@@ -304,12 +481,15 @@ class SettingsWindow(QDialog):
                           ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
                           ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value())]: self.database.set_setting(key,value)
         self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
+        try: self.storage_page.save()
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, '存储位置没有保存', str(error)); return
         self.accept()
 
     def _validate_model_input(self):
         # 手动输入路径也要检查，不能只在文件选择器里拦截损坏的模型包。
         if self.avatar_mode.currentData()=='live2d' and self.model.text().strip():
-            try: validate_model_package(self.model.text().strip())
+            try: validate_model_package(self.model.text().strip()); require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 QMessageBox.warning(self,'模型包无效',str(error)); return False
         return True

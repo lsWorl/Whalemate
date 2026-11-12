@@ -4,7 +4,9 @@ import io
 import json
 from uuid import uuid4
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from aicompanion.net import open_url as urlopen  # 不跟随跳转，密钥不外泄
 import wave
 
 from aicompanion.domain.cancellation import CancellationToken
@@ -15,10 +17,16 @@ from aicompanion.speech.translation import JapaneseSpeechTranslator
 class SpeechClient:
     """识别和合成各自分流，千问、智谱与聊天服务的凭据不会混用。"""
 
-    def __init__(self,settings):
+    def __init__(self,settings,translation_source=None,tts_source=None):
         self.settings = settings
         self.qwen = QwenSpeechClient(settings)
-        self.translator = JapaneseSpeechTranslator(settings)
+        # Breeze Blue 等在“模型与 Key”页配置的语音合成：tts_source() 返回当前角色的 TtsTarget（含音色），没配置返回 None
+        from aicompanion.speech.breeze_client import BreezeSpeechClient
+        from aicompanion.speech.minimax_client import MiniMaxSpeechClient
+        self.breeze = BreezeSpeechClient(); self.minimax = MiniMaxSpeechClient()
+        self.tts_source = tts_source
+        # 日语配音的翻译跟随当前角色的聊天模型（由界面提供，计划书 v4 功能一）
+        self.translator = JapaneseSpeechTranslator(settings,source=translation_source)
         self.asr_provider = getattr(settings, 'asr_provider', 'zhipu')
 
     def ensure_recognition_ready(self):
@@ -80,12 +88,25 @@ class SpeechClient:
             raise RuntimeError('语音识别返回格式无效。')
         return text.strip()
 
-    def synthesize(self,text,voice,cancellation,provider='cloud',mood='calm',style='',language='zh',role_style=''):
+    def synthesize(self,text,voice,cancellation,provider='cloud',mood='calm',style='',language='zh',role_style='',target=None):
         if language not in ('zh','ja'):
             raise ValueError('不支持的朗读语言。')
+        if provider == 'breeze':
+            # 优先用入队时取好的快照；没有快照（例如直接调用）才取当前配置
+            if target is None: target = self.tts_source() if self.tts_source else None
+            if target is None:
+                raise ValueError('还没有在“模型与 Key”页配置语音合成（Breeze Blue 或 MiniMax 的音色和 Key）。')
+            # 日语台词：先翻译；Breeze 多语言模型、MiniMax 都能直接读日文
+            if language=='ja':
+                text=self.translator.translate(text,cancellation,role_style)
+                cancellation.check()
+            if target.provider_kind=='minimax':
+                from dataclasses import replace
+                return self.minimax.synthesize(replace(target,language='ja') if language=='ja' else target,text,cancellation,mood,style)
+            return self.breeze.synthesize(target,text,cancellation,mood,style)
         if language=='ja':
             if provider!='qwen':
-                raise ValueError('日语配音请使用千问语音，避免中文引擎误读日文。')
+                raise ValueError('日语配音请使用千问或 Breeze Blue 语音，避免中文引擎误读日文。')
             # 翻译和合成使用同一取消令牌；打断后不能继续把过期译文送去合成。
             text=self.translator.translate(text,cancellation,role_style)
             cancellation.check()

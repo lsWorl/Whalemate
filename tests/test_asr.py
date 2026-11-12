@@ -16,8 +16,7 @@ from aicompanion.ui.main_window import MainWindow
 
 class RecognitionTests(unittest.TestCase):
     def setUp(self):
-        self.settings = Settings('test', Path('unused'), 'mock', 'https://example.invalid',
-            'dummy-chat', 'mock', .8, 10, speech_api_key='dummy-zhipu',
+        self.settings = Settings('test', Path('unused'), offline=True, speech_api_key='dummy-zhipu',
             qwen_api_key='dummy-qwen', asr_provider='qwen')
         self.client = SpeechClient(self.settings)
         self.token = CancellationToken()

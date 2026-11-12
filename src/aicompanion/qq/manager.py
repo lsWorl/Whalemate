@@ -25,6 +25,7 @@ import time
 from aicompanion.qq import configure, specs
 from aicompanion.qq.fetch import fetch
 from aicompanion.qq.layout import Layout, default_root, install_archive
+from aicompanion.qq.launch import astrbot_command
 from aicompanion.qq.napcat_webui import NapCatWebUI, WebUIError
 from aicompanion.qq.supervisor import Supervisor
 
@@ -253,7 +254,8 @@ class QQManager:
         self.configure()   # 每次启动前同步一次配置（端口冲突、令牌、插件更新）
         keys, layout = self.secrets(), self.layout
         astrbot = layout.current('astrbot')
-        self.supervisor.start('astrbot', [astrbot/'Scripts'/'astrbot.exe', 'run'], layout.astrbot_home,
+        # 用基础解释器直接运行，避开被 Windows 智能应用控制拦截的虚拟环境启动器（见 qq/launch.py）
+        self.supervisor.start('astrbot', astrbot_command(astrbot, layout, 'run'), layout.astrbot_home,
                               child_env({'ASTRBOT_ROOT': layout.astrbot_home, 'ASTRBOT_DASHBOARD_INITIAL_PASSWORD': keys['dashboard'],
                                          'ASTRBOT_DISABLE_METRICS': '1', 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1'}))
         napcat = layout.current('napcat'); uin = str(self.db.get_setting('qq_bot_uin', '') or '')
@@ -296,8 +298,13 @@ class QQManager:
             for name, label in (('astrbot', 'AstrBot'), ('napcat', 'NapCat')):
                 code = self.supervisor.exited_with(name)
                 if code is not None:
-                    return Status('start_failed', f'{label} 启动后退出了（代码 {code}）', '重试',
-                                  self.supervisor.tail(name, secrets=self.known_secrets()))
+                    detail = self.supervisor.tail(name, secrets=self.known_secrets())
+                    if 'os error 4551' in detail or 'WinError 4551' in detail:
+                        detail = ('Windows 应用控制阻止了组件运行（4551），不是 QQ 登录或插件连接错误。'
+                                  '请在 Windows 安全中心及代码完整性事件中确认被阻止的文件，使用符合系统信任要求的运行环境；'
+                                  '重复启动或重置账号配置不能解除此拦截。\n'+detail)
+                        return Status('start_failed', f'{label} 被 Windows 应用控制阻止', '重试', detail)
+                    return Status('start_failed', f'{label} 启动后退出了（代码 {code}）', '重试', detail)
                 if not self.supervisor.running(name):
                     return Status('stopped', 'QQ 服务没有在运行', '启动')
             try:
@@ -323,7 +330,7 @@ class QQManager:
             return Status('onebot_down', 'QQ 登录了，但还没连上 AstrBot', '重试', hint or str(onebot.get('error') or ''), groups=groups)
         bot = str(onebot.get('self_id') or '')
         if not self.owner_bound():
-            return Status('need_owner', '已连接。请填写你自己的 QQ 号（她管你叫爹）', '保存', groups=groups, bot=bot)
+            return Status('need_owner', '已连接。请填写你自己的 QQ 号（绑定后她认得你）', '保存', groups=groups, bot=bot)
         return Status('connected', '已连接', '', groups=groups, bot=bot)
 
     def _remember_bot(self):

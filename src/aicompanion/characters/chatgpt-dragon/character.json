@@ -7,15 +7,6 @@
   "order": 30,
   "theme": "ChatGPT 二创萌化角色",
   "renderer": {"kind": "sprites", "path": "sprites/sprites.json", "display_height": 300},
-  "provider": {
-    "label": "ChatGPT",
-    "host": "api.openai.com",
-    "base_url": "https://api.openai.com/v1",
-    "key_env": "OPENAI_API_KEY",
-    "model_env": "OPENAI_MODEL",
-    "default_model": "",
-    "supports_tools": true
-  },
   "voice": {"language": "zh"},
   "lines": "lines.json",
   "persona": {

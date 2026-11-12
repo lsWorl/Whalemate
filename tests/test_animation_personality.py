@@ -1,0 +1,121 @@
+"""性格动作不能全部退化为同一表情；步态跟实际距离而非时间走。"""
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+from aicompanion.characters import PACKS_DIR,load_pack
+from aicompanion.pet.script import Vocab
+from aicompanion.ui.animation_view import AnimationAvatar
+from test_animation_pack import make_pack
+
+
+class PersonalityViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();path,data=make_pack(Path(self.temp.name))
+        for key in ('patted','poked','smug','pout','shy','surprised','milk_tea','stretch','walking','walking_back','walking_front','walking_front_diagonal','walking_back_diagonal'):
+            data['actions'][key]=dict(data['actions']['idle']);data['poses'][key]=key
+        for key,entry in data['actions'].items():
+            if not key.startswith('walking'):entry['blendGroup']='standing'
+        path.write_text(json.dumps(data),encoding='utf-8')
+        self.view=AnimationAvatar(path);self.addCleanup(self.cleanup)
+
+    def cleanup(self):
+        self.view.shutdown();self.view.close();self.view.deleteLater();self.app.processEvents();self.temp.cleanup()
+
+    def test_compatible_stances_skip_idle_and_keep_outgoing_motion_and_phase(self):
+        self.assertEqual(self.view.pack.transition_route('smug','shy'),[])
+        old=self.view.pack.actions['idle'];new=self.view.pack.actions['smug']
+        self.view._loaded='idle';self.view._sheet=QImage(str(old.path))
+        self.view._started=100.;self.view._frame=self.view._sheet.copy(0,0,64,64)
+        self.view._display=self.view._frame;self.view._previous=QImage()
+        target=QImage(self.view._sheet.size(),self.view._sheet.format());target.fill('green')
+        self.view._ready_next=((new,None),target)
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100.10):
+            self.view._consume_ready(100.10)
+        self.assertAlmostEqual(self.view._started,100.)
+        self.assertIsNotNone(self.view._outgoing)
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100.21):
+            self.view.advance()
+        pixel=self.view._display.pixelColor(32,32)
+        # 旧片段已从蓝色帧继续走到红色帧；冻结旧截图会留下蓝色分量。
+        self.assertGreater(pixel.red(),30);self.assertLess(pixel.blue(),5)
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100.5):self.view.advance()
+        self.assertIsNone(self.view._outgoing)
+
+    def test_expression_and_daily_actions_select_distinct_clips(self):
+        for kind,key in [('expression','smug'),('expression','pout'),('expression','shy'),
+                         ('expression','surprised'),('motion','milk_tea'),('motion','stretch')]:
+            self.view.perform(kind,key);self.assertEqual(self.view.action,key)
+        self.view.perform('expression','neutral');self.assertEqual(self.view.action,'idle')
+
+    def test_direction_selects_rear_gait_only_for_upward_routes(self):
+        for vector,key,direction in [((1,-1),'walking_back_diagonal',1),((-1,-1),'walking_back_diagonal',-1),
+                                     ((0,-1),'walking_back',-1),((0,1),'walking_front',-1),((1,0),'walking',1)]:
+            self.view.set_walking_vector(*vector);self.assertEqual(self.view.action,key)
+            self.assertEqual(self.view.direction,direction)
+        self.view.set_walking(0);self.assertEqual(self.view.action,'idle')
+
+    def test_walk_frames_advance_with_distance_and_stay_still_without_steps(self):
+        self.view.set_walking_vector(1,0)
+        clip=self.view.pack.actions['walking']
+        sheet=QImage(str(clip.path))
+        self.view._loaded='walking';self.view._sheet=sheet;self.view._previous=QImage()
+        self.view._queue=[];self.view._index=-1
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100):
+            self.view.advance();self.assertEqual(self.view._index,0)
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=200):
+            self.view.advance();self.assertEqual(self.view._index,0)
+            self.view.step_walking(70/2);self.assertEqual(self.view._index,1)
+            self.view.step_walking(70/2);self.assertEqual(self.view._index,0)
+
+    def test_turn_keeps_previous_picture_in_screen_coordinates(self):
+        self.view.direction=1
+        picture=QImage(64,64,QImage.Format.Format_ARGB32_Premultiplied);picture.fill('red')
+        picture.setPixelColor(5,10,'blue');self.view._display=picture
+        self.view.set_walking_vector(-100,0)
+        self.assertEqual(self.view.direction,-1)
+        self.assertEqual(self.view._display.mirrored(True,False),picture)
+        self.assertFalse(self.view.walking_ready)
+
+    def test_retarget_keeps_old_foot_position_until_new_gait_is_ready(self):
+        self.view.set_walking_vector(100,0)
+        clip=self.view.pack.actions['walking']
+        self.view._loaded='walking';self.view._sheet=QImage(str(clip.path))
+        self.view._gait_loaded=True;self.view._previous=QImage();self.view._gait_distance=35
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100):self.view.advance()
+        picture=self.view._display.copy()
+        self.view.set_walking_vector(100,-100);self.view.plan_walking(140)
+        with patch('aicompanion.ui.animation_view.time.monotonic',return_value=100.1):self.view.advance()
+        self.assertEqual(self.view._display,picture)
+        self.assertFalse(self.view.walking_ready)
+
+    def test_route_plan_finishes_with_both_feet_down(self):
+        self.view.set_walking_vector(100,0)
+        self.view.plan_walking(93)
+        clip=self.view.pack.actions['walking']
+        self.view._gait_distance=93
+        cycles=self.view._gait_elapsed(clip)*clip.fps/clip.count
+        self.assertAlmostEqual(cycles*2,round(cycles*2))
+
+    def test_expression_interrupts_walking_then_drag_interrupts_expression(self):
+        self.view.set_walking_vector(1,1);self.view.perform('expression','shy')
+        self.assertEqual(self.view.action,'shy')
+        self.view.set_drag(True);self.assertEqual(self.view.action,'idle') # 合成包的 grabbed 指向 idle
+        self.assertFalse(self.view.walking_ready)
+
+    def test_new_cues_are_available_without_changing_persona(self):
+        vocab=Vocab.from_pack(load_pack(PACKS_DIR/'deepseek-whale'))
+        for text,name in [('得意','smug'),('气鼓鼓','pout'),('害羞','shy'),('惊讶','surprised'),
+                          ('喝奶茶','milk_tea'),('伸懒腰','stretch')]:
+            self.assertEqual(vocab.lookup(text).name,name)
+
+
+if __name__=='__main__':unittest.main()

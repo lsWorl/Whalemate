@@ -262,9 +262,10 @@
     {
       "id": "grp-tech",
       "group": "QQ 群",
-      "expect": "text",
+      "expect": "either",
       "scene": "qq_group",
-      "query": "小李#3：@鲸娘 git rebase 冲突了怎么继续？"
+      "query": "小李#3：@鲸娘 git rebase 冲突了怎么继续？",
+      "note": "负责人 2026-11-09：QQ 里聊技术也可以配图，不懂可以发可爱图说不太懂；发不发都合理"
     },
     {
       "id": "chain-evening",

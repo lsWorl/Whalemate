@@ -175,8 +175,8 @@ class StrayEmotionTagTests(unittest.TestCase):
         self.assertEqual(stream.feed('【委屈】')+stream.finish(), '【委屈】')
 
     def test_rejected_handle_recorded_for_observability(self):
-        _, stream = self.parse('好<sticker id="s12"/>')
-        self.assertEqual(stream.rejected, ['s12'])
+        _, stream = self.parse('好<sticker id="s12"/><sticker id="编号"/><sticker id="合成住院细节"/>')
+        self.assertEqual(stream.rejected, ['handle_out_of_range', 'placeholder', 'free_text'])
 
 
 class MeaningAsIdTests(unittest.TestCase):
@@ -187,4 +187,60 @@ class MeaningAsIdTests(unittest.TestCase):
         self.assertEqual(stream.selection, (ID, 'after_text')); self.assertIn('meaning_as_id', stream.diagnostics)
         stream = ExpressionStream([ID, other], {}, {'s1': ID, 's2': other}, {'开心到转圈': ID, '开心到跳': other})
         stream.feed('<sticker id="开心"/>'); stream.finish()
-        self.assertIsNone(stream.selection); self.assertEqual(stream.rejected, ['开心'])   # 对得上两张：不猜
+        self.assertIsNone(stream.selection); self.assertEqual(stream.rejected, ['free_text'])   # 对得上两张：不猜；只记形态
+
+
+class HtmlImgTagTests(unittest.TestCase):
+    """第八轮验收：模型写了 `<img src="">` 想贴图，原样露在正文里。隐藏它；代码块、行内代码和普通的 <in…> 文字不受影响。"""
+    def parse(self, raw, chunks=None):
+        stream = ExpressionStream([ID], {}, {'s1': ID}, {})
+        text = ''.join(stream.feed(c) for c in (chunks if chunks is not None else [raw]))+stream.finish()
+        return text, stream
+
+    def test_img_tags_hidden_at_every_split(self):
+        raw = '烤红薯 <img src=""> 你就不想着给我留一口'
+        for n in range(len(raw)+1):
+            text, stream = self.parse(raw, [raw[:n], raw[n:]])
+            self.assertEqual(text, '烤红薯  你就不想着给我留一口'); self.assertIn('html_img_tag', stream.diagnostics)
+        self.assertEqual(self.parse('好<img/>')[0], '好'); self.assertEqual(self.parse('好<img>')[0], '好')
+
+    def test_whitespace_variants_and_multiline_attributes_at_every_split(self):
+        # Codex 审计：制表符 / 换行 / CRLF 跟在 img 后面也要隐藏，属性跨行时整段去掉，不能把 src 吐成正文
+        for raw in ('你好<img\tsrc="合成地址">晚安', '你好<img\nsrc="合成地址">晚安', '你好<img\r\nsrc="合成地址"\r\nalt="x">晚安',
+                    '你好<img src="a>b">晚安', '你好<IMG\n  src=x\n/>晚安'):
+            for n in range(len(raw)+1):
+                text, stream = self.parse(raw, [raw[:n], raw[n:]])
+                self.assertEqual(text, '你好晚安', (raw, n)); self.assertIn('html_img_tag', stream.diagnostics)
+        text, stream = self.parse('你好<img\nsrc="没闭合')
+        self.assertEqual(text, '你好'); self.assertIn('html_img_tag', stream.diagnostics)
+
+    def test_overlong_img_is_dropped_never_echoed(self):
+        # Codex 审计（e28c1ac）：认出 <img 后超长也只丢弃，不能把标签前缀或 src 还回正文
+        from aicompanion.expression.stream import IMG_LIMIT
+        cases = []
+        for n in (IMG_LIMIT-10, IMG_LIMIT, IMG_LIMIT+1, IMG_LIMIT+100):
+            cases += ['你好<img src='+'x'*n+'>晚安', '你好<img src="'+'x'*n+'">晚安', "你好<img\r\nalt='"+'y'*n+"'\nsrc=z>晚安"]
+        for raw in cases:
+            text, stream = self.parse(raw)
+            self.assertEqual(text, '你好晚安', len(raw)); self.assertIn('html_img_tag', stream.diagnostics)
+        raw = '你好<img src="'+'x'*(IMG_LIMIT+50)+'">晚安'
+        for n in (0, 3, 5, 8, 200, IMG_LIMIT, IMG_LIMIT+40, len(raw)-4, len(raw)-2, len(raw)):
+            self.assertEqual(self.parse(raw, [raw[:n], raw[n:]])[0], '你好晚安', n)
+        chunks = [raw[i:i+7] for i in range(0, len(raw), 7)]
+        self.assertEqual(self.parse(raw, chunks)[0], '你好晚安')
+
+    def test_unclosed_quote_in_img_does_not_swallow_everything(self):
+        # 落单的引号：超过上限后不再认这个引号，遇到下一个 > 就结束，后面的正常文字保留
+        from aicompanion.expression.stream import IMG_LIMIT
+        raw = '你好<img src="'+'x'*(IMG_LIMIT+20)+'>晚安'
+        text, stream = self.parse(raw)
+        self.assertEqual(text, '你好晚安'); self.assertIn('html_img_overlong', stream.diagnostics)
+
+    def test_code_and_ordinary_angle_text_kept(self):
+        for raw in ('`<img src="a.png">`', '```html\n<img src="a.png">\n```', '```\n<img\tsrc="a">\n```', '<input> 和 <imgs> 都是普通文字', '1<img', 'a<i',
+                    '{"html": "<img src=1>"}'):
+            self.assertEqual(self.parse(raw)[0], raw, raw)
+
+    def test_img_does_not_block_real_sticker(self):
+        text, stream = self.parse('<img src="">好耶<sticker id="s1"/>')
+        self.assertEqual((text, stream.selection), ('好耶', (ID, 'after_text')))
