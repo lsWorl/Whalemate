@@ -82,7 +82,7 @@ def icon_button(name, label, primary=False):
     button = QPushButton()
     button.setIcon(line_icon(name, '#FFFFFF' if primary else '#4B587A'))
     button.setIconSize(QSize(20, 20))
-    button.setFixedSize(40, 40)
+    button.setFixedSize(36, 36)
     button.setObjectName('Send' if primary else 'Round')
     button.setAccessibleName(label)
     button.setToolTip(label)

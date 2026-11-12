@@ -563,7 +563,7 @@ class DesktopPetWindow(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400); QTimer.singleShot(0, self._update_mask)
+        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400); QTimer.singleShot(0, self, self._update_mask)
 
     def save_geometry(self):
         if self._shutting_down:return

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 
 from PySide6.QtCore import Signal, QTimer
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
@@ -98,7 +98,8 @@ class ModelPage(QWidget):
         self.speech_output = speech_output; self.run = run or self._run_in_background; self.workers = set()
         layout = QVBoxLayout(self)
 
-        accounts = QGroupBox('账户与 Key'); a = QVBoxLayout(accounts)
+        from aicompanion.ui.settings_layout import Section
+        accounts = Section('账户与 Key'); a = accounts.box
         self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(['名称', '服务', '地址', 'Key'])
         from PySide6.QtWidgets import QHeaderView
         header = self.table.horizontalHeader()
@@ -110,10 +111,13 @@ class ModelPage(QWidget):
         row = QHBoxLayout()
         for text, slot in (('添加账户', self.add_account), ('修改 / 换 Key', self.edit_account), ('删除账户', self.remove_account),
                            ('添加模型', self.add_model)):
-            button = QPushButton(text); button.clicked.connect(slot); row.addWidget(button)
+            button = QPushButton(text)
+            if text == '删除账户': button.setObjectName('Danger')
+            button.clicked.connect(slot); row.addWidget(button)
+        row.addStretch()
         a.addLayout(row); layout.addWidget(accounts)
 
-        choose = QGroupBox('每种能力用哪个模型'); c = QFormLayout(choose)
+        choose = Section('每种能力用哪个模型'); c = QFormLayout(); choose.add(c)
         self.scope = QComboBox(); self.scope.addItem('全局默认', None)
         for cid, name in self.characters: self.scope.addItem(f'角色：{name}', cid)
         self.scope.currentIndexChanged.connect(self._scope_changed); self._scope = None

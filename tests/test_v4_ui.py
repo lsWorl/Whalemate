@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt
+from PySide6.QtGui import QAction
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QWidget
 
@@ -42,8 +44,17 @@ class RedesignTests(unittest.TestCase):
         speech.workers = ()
         # QQ 后台轮询由 test_bridge_page 覆盖，不能让它在临时库释放后再回调。
         self.enterContext(patch('aicompanion.ui.bridge_page.BridgePage.refresh', lambda page: None))
+        from types import SimpleNamespace
+        from aicompanion.ui.sprite_view import PlaceholderAvatar
+        self.enterContext(patch.object(MainWindow, '_apply_avatar',
+            lambda window: window.pet.set_view(PlaceholderAvatar('测试'), 'placeholder')))
+        def fake_tray(window):
+            window.tray = SimpleNamespace(hide=lambda: None, isVisible=lambda: False)
+            window.pet_action = QAction(window)
+        self.enterContext(patch.object(MainWindow, '_build_tray', fake_tray))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(QCoreApplication.sendPostedEvents, None, QEvent.Type.DeferredDelete)
         root = Path(self.temp.name)
         self.db = Database(root / 'test.sqlite3')
         self.db.initialize()
@@ -118,6 +129,64 @@ class RedesignTests(unittest.TestCase):
         self.assertFalse(dialog.model_error.isHidden())
         dialog.reject()
 
+    def test_voice_card_and_checkbox_row_are_clickable(self):
+        wizard = Onboarding(self.host)
+        wizard.show_step(2)
+        wizard.show()
+        self.app.processEvents()
+        card = wizard.voice_cards[1]
+        hint = card.findChild(QLabel)
+        QTest.mouseClick(hint, Qt.MouseButton.LeftButton)
+        self.assertTrue(card.property('selected'))
+        self.assertEqual(wizard.voices.checkedId(), 1)
+        self.assertTrue(card.isAncestorOf(wizard.listen))
+        self.assertEqual(wizard.pages.currentWidget().verticalScrollBar().maximum(), 0)
+        smart = wizard.smart
+        before = smart.isChecked()
+        QTest.mouseClick(smart, Qt.MouseButton.LeftButton, pos=QPoint(smart.width()-2, smart.height()//2))
+        self.assertNotEqual(smart.isChecked(), before)
+        wizard.reject()
+
+    def test_storage_drafts_do_not_touch_disk_until_confirmed(self):
+        import os
+        from PySide6.QtWidgets import QMessageBox
+        from aicompanion.storage.locations import read_record
+        self.enterContext(patch.dict(os.environ, {'SystemDrive': 'Z:'}))
+        dialog = SettingsWindow(self.controller, self.settings)
+        self.addCleanup(dialog.deleteLater)
+        page = dialog.storage_page
+        root = Path(self.temp.name)
+        record = self.settings.storage_paths_file
+        directories = []
+        for suffix in ('part', 'final'):
+            memory, memes = root / ('memory-' + suffix), root / ('memes-' + suffix)
+            directories.extend((memory, memes))
+            page.memory.setText(str(memory))
+            page.memes.setText(str(memes))
+            QTest.qWait(650)
+            self.assertTrue(dialog.save())
+            self.assertFalse(any(path.exists() for path in directories))
+            self.assertFalse(record.exists())
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.No) as confirm:
+            page.apply_button.click()
+            confirm.assert_called_once()
+            self.assertEqual(confirm.call_args.args[2].splitlines()[:2],
+                             [f'记忆和聊天目录：{memory}', f'表情包目录：{memes}'])
+        self.assertFalse(record.exists())
+        self.assertFalse(any(path.exists() for path in directories))
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes) as confirm:
+            page.apply_button.click()
+            page.apply_button.click()
+            confirm.assert_called_once()
+        self.assertEqual(Path(read_record(record)['migration']['target']).parent, memory)
+        self.assertTrue(any(memes.iterdir()))
+        self.assertFalse(any(path.exists() for path in directories[:2]))
+        self.assertEqual(dialog.bridge_page.meme_root.text(), str(memes))
+        page.memory.setText(str(root / 'discarded'))
+        dialog.reject()
+        self.assertFalse((root / 'discarded').exists())
+        self.assertEqual(Path(read_record(record)['migration']['target']).parent, memory)
+
     def test_connection_drafts_are_only_applied_together(self):
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.service import setting
@@ -176,6 +245,8 @@ class RedesignTests(unittest.TestCase):
 
     def test_header_and_conditional_actions(self):
         win = MainWindow(self.controller, self.settings, self.registry)
+        win.scheduler.stop()
+        win.pump.stop()
         try:
             header = win.findChild(QWidget, 'Header')
             self.assertNotIn(self.router.label(self.controller.character.id),
@@ -199,6 +270,7 @@ class RedesignTests(unittest.TestCase):
                 self.assertIn(action, actions)
         finally:
             win.pet.shutdown()
+            win.pet.deleteLater()
             win.tray.hide()
             win.agent.shutdown()
             win.deleteLater()
@@ -241,6 +313,8 @@ class RedesignTests(unittest.TestCase):
     def test_task_card_and_pet_share_one_approval(self):
         import threading
         win = MainWindow(self.controller, self.settings, self.registry)
+        win.scheduler.stop()
+        win.pump.stop()
         try:
             box = {'event': threading.Event(), 'answer': 'timeout'}
             spec = {'text': '允许移动测试文件吗？', 'details': '源文件 → 目标目录',
@@ -260,6 +334,7 @@ class RedesignTests(unittest.TestCase):
             self.assertEqual(second['answer'], 'timeout')
         finally:
             win.pet.shutdown()
+            win.pet.deleteLater()
             win.tray.hide()
             win.agent.shutdown()
             win.deleteLater()

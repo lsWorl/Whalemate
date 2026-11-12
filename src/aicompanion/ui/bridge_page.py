@@ -10,11 +10,13 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSpinBox, QVBoxLayout,
                                QPlainTextEdit, QWidget)
 
 from aicompanion.bridge.service import CHIME, setting
+from aicompanion.ui import theme
+from aicompanion.ui.settings_layout import FoldSection, Section
 
 CHIME_TEXT = {'off': '只在被叫时说话（@ 她或提到她名字）', 'sometimes': '偶尔插句话', 'often': '爱聊天，常插话'}
 
@@ -47,7 +49,7 @@ class BridgePage(QWidget):
         body = QWidget(); layout = QVBoxLayout(body); scroll.setWidget(body); shell.addWidget(scroll)
 
         # ---- 状态卡片 ----
-        card = QGroupBox('QQ'); cl = QVBoxLayout(card)
+        card = Section('QQ'); cl = card.box
         self.title = QLabel('正在检查…'); self.title.setStyleSheet('font-size:16px;font-weight:600'); self.title.setWordWrap(True)
         self.detail = QLabel(''); self.detail.setWordWrap(True); self.detail.setStyleSheet('color:#666')
         self.qrcode = QLabel(); self.qrcode.setAlignment(Qt.AlignmentFlag.AlignCenter); self.qrcode.hide()
@@ -63,10 +65,11 @@ class BridgePage(QWidget):
         cl.addLayout(buttons); layout.addWidget(card)
 
         # ---- 爹和群 ----
-        people = QGroupBox('谁能和她说话'); pl = QFormLayout(people)
+        people = Section('谁能和她说话'); pl = QFormLayout(); people.add(pl)
+        pl.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.owner = QLineEdit(str(database.get_setting('bridge_owner:qq', '') or ''))
         self.owner.setPlaceholderText('你自己的 QQ 号（不是机器人的）')
-        self.groups = QListWidget(); self.groups.setMaximumHeight(140)
+        self.groups = QListWidget(); self.groups.setObjectName('GroupList'); self.groups.setMaximumHeight(140)
         self.groups_hint = QLabel('机器人登录并连上后，这里会列出它所在的群，勾选允许她说话的群。'); self.groups_hint.setWordWrap(True)
         self.strangers = QCheckBox('也回复陌生人的私聊'); self.strangers.setChecked(bool(setting(database, 'bridge_strangers')))
         self.chime = QComboBox()
@@ -90,10 +93,10 @@ class BridgePage(QWidget):
         choose_memes = QPushButton('选择图库…'); choose_memes.clicked.connect(self._choose_memes)
         meme_row = QHBoxLayout(); meme_row.addWidget(self.meme_root, 1); meme_row.addWidget(choose_memes)
         pl.addRow('', self.vision_enabled); pl.addRow('', self.memes_enabled); pl.addRow('表情图库', meme_row)
-        self.social_group = QGroupBox('聊天习惯与社区'); self.social_group.setCheckable(True); self.social_group.setChecked(False)
-        social_inner = QWidget(); social_form = QFormLayout(social_inner)
-        social_layout = QVBoxLayout(self.social_group); social_layout.addWidget(social_inner)
-        social_inner.hide(); self.social_group.toggled.connect(social_inner.setVisible)
+        social_inner = QWidget()
+        social_form = QFormLayout(social_inner)
+        social_card = FoldSection('聊天习惯与社区', social_inner)
+        self.social_group = social_card.toggle
         self.avatar_enabled = QCheckBox('认识对话者的头像（只记画面印象，每天最多更新一次）')
         self.avatar_enabled.setChecked(bool(database.get_setting('qq_avatars_enabled', True)))
         self.learning = QCheckBox('从聊天和反馈中记住表达习惯')
@@ -115,16 +118,20 @@ class BridgePage(QWidget):
         self.community_status = QLabel('读取公开话题及受限社区词义，不上传聊天；相关时只供理解，不向群友科普。'); self.community_status.setWordWrap(True)
         social_form.addRow('社区语境', self.community_source); social_form.addRow('', self.community_groups)
         social_form.addRow('', self.community_auto); social_form.addRow('', refresh_community); social_form.addRow('', self.community_status)
-        self.owner_error = QLabel(); self.owner_error.setObjectName('Warn'); self.owner_error.hide()
+        self.owner_error = QLabel(); self.owner_error.setObjectName('FieldError'); self.owner_error.hide()
         pl.insertRow(1, '', self.owner_error)
         layout.addWidget(people)
         self._fill_groups([])
-        layout.addWidget(self.social_group)
+        layout.addWidget(social_card)
 
         # ---- 高级设置 ----
-        self.advanced = QGroupBox('高级设置'); self.advanced.setCheckable(True); self.advanced.setChecked(False)
-        inner = QWidget(); form = QFormLayout(inner)
+        inner = QWidget()
+        form = QFormLayout(inner)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        advanced_card = FoldSection('高级设置', inner)
+        self.advanced = advanced_card.toggle
         self.enabled = QCheckBox('打开桌宠的本机接口（插件通过它把消息交给她）'); self.enabled.setChecked(bool(setting(database, 'bridge_enabled')))
+        self.enabled.setObjectName('Switch')
         self.port = QSpinBox(); self.port.setRange(1024, 65535); self.port.setValue(int(setting(database, 'bridge_port')))
         self.token = QLineEdit(setting(database, 'bridge_token')); self.token.setReadOnly(True); self.token.setEchoMode(QLineEdit.EchoMode.Password)
         copy = QPushButton('复制'); copy.clicked.connect(lambda: QApplication.clipboard().setText(self.token.text()))
@@ -154,9 +161,7 @@ class BridgePage(QWidget):
         form.addRow('群和陌生人每天最多回复', self.daily); form.addRow('', self.autostart); form.addRow('Python 包镜像', self.index)
         form.addRow('识图模型', QLabel('在“模型与 Key”页的“识图”一项里选择')); form.addRow('同一会话发表情的最短间隔', self.meme_cooldown)
         form.addRow('组件目录', self.root); form.addRow('', open_logs); form.addRow('', existing); form.addRow('组件版本', self.versions)
-        al = QVBoxLayout(self.advanced); al.addWidget(inner); inner.setVisible(False)
-        self.advanced.toggled.connect(inner.setVisible)
-        layout.addWidget(self.advanced)
+        layout.addWidget(advanced_card)
         note = QLabel('桌宠会从 NapCat 和 AstrBot 的官方发布地址下载原版组件，放在上面的组件目录里，不改你电脑上的 QQ。'
                       '扫码登录和账号验证需要你自己完成。你的 QQ 私聊和桌面是同一段相处；记忆在桌面和 QQ 之间共享，'
                       '不想在群里被提到的记忆，到"记忆"页标成"只在私下用"。聊天平台上她不会动手干活。')
@@ -425,7 +430,9 @@ class BridgePage(QWidget):
     def save_people(self):
         db = self.database
         owner = self.owner.text().strip()
-        if owner and not re.fullmatch(r'[0-9]{5,12}', owner):
+        invalid = bool(owner and not re.fullmatch(r'[0-9]{5,12}', owner))
+        theme.set_state(self.owner, 'invalid', invalid)
+        if invalid:
             self.owner_error.setText('QQ 号应该是 5 到 12 位数字。'); self.owner_error.show()
             return False
         self.owner_error.hide()

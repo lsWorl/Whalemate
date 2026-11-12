@@ -1982,3 +1982,12 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 修正下拉箭头、概览左对齐与等宽状态列、禁用菜单标题的头像着色，以及竖向滚动条。两档缩放各核对 19 张标准截图，另在各自目录生成 `audit-qq-connection.png` 和 `audit-wizard-voice-scroll.png`，使用临时配置。
 - V4-UI 测试使用空输入设备和语音输出替身。Windows Qt 离屏运行 `test_v4_ui`、`test_ui_refresh` 和 `test_bridge_page` 共 23 项通过（11.223 秒）。在独立 worktree 运行 `tools\run_checks.bat`，退出码 0，1,223 项单测通过检查（221.501 秒，跳过 7 项），桌宠 smoke 返回 `"passed": true`，剩余工作线程为 0。
 - 本机未运行 Linux 容器引擎，尚待在 Claude 的无音频 Linux 环境复跑。真实 QQ 重连和实体显示器 DPI 验收仍待实测。
+
+### 2026-11-12 · PR #51 第二轮审计修复（待 Claude 复审）
+
+- 存储页的记忆目录和表情目录改为草稿。“应用新目录”先列出两个最终路径并说明下次启动复制记忆，默认选“否”。用临时目录重现旧版的半截路径问题，再验证连续输入停顿超过 500 毫秒、刷新普通设置、拒绝确认与关闭窗口都不会创建目录或改写迁移记录。确认后只准备最终目录与内置表情，重复点击只提交一次。
+- 三个窗口共用 `theme.py` 的按钮、输入、下拉、数字框、复选、单选、开关、标签与滚动条样式。向导的试听和安装放入各自卡片，声线整张卡片可点。QQ 分组标题移入卡片，QQ 与办事的子标签固定在可滚动内容上方。顶栏测试替换形象加载和系统托盘，避免启动 WebEngine。
+- 用 Windows 临时配置分别运行 `.venv\Scripts\python.exe tools\capture_v4_ui.py --scale 1` 和 `--scale 1.5`。每档 19 张界面图加 1 张 `controls.png`，路径为 `output/v4-ui/100pct/` 和 `output/v4-ui/150pct/`。两档下五步向导及概览的默认垂直滚动范围均为 0；控件图逐档核对了选中、禁用、错误、焦点和悬停状态。
+- Windows 定向运行 `test_v4_ui`、`test_storage_locations`、`test_ui_refresh`、`test_model_page`、`test_bridge_page` 共 60 项通过。清除 WebEngine 免沙箱参数后，11 项 V4-UI 测试单独通过。
+- 独立 worktree 运行 `tools\run_checks.bat`，退出码 0。共 1225 项单测，跳过 7 项，耗时 272.161 秒。桌宠 smoke 返回 `passed: true`、`failed_checks: []`、`remaining_workers: 0`。
+- 本轮验证使用临时数据库和离屏窗口。真实用户数据迁移、实体屏幕 DPI 和 Linux root 容器尚待实测。

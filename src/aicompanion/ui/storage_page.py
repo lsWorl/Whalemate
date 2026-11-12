@@ -1,12 +1,15 @@
 """可选择磁盘的记忆 / 表情位置，记忆迁移留到旧实例退出后的下一次启动。"""
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QFileDialog
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QMessageBox, QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QFileDialog
 
-from aicompanion.storage.locations import default_data_root, record_path, plan_change, seed_memes, read_record, write_record
+from aicompanion.storage.locations import directory, default_data_root, record_path, plan_change, seed_memes, read_record, write_record
 
 
 class StoragePage(QWidget):
+    applied = Signal()
+
     def __init__(self, database, settings, parent=None):
         super().__init__(parent)
         self.database, self.settings = database, settings
@@ -25,27 +28,56 @@ class StoragePage(QWidget):
         self.memory = QLineEdit(self.loaded[0]); self.memes = QLineEdit(self.loaded[1])
         for label, field in (('记忆和聊天目录', self.memory), ('表情包目录', self.memes)):
             row = QHBoxLayout(); row.addWidget(field, 1)
-            choose = QPushButton('选择磁盘 / 目录…')
+            choose = QPushButton('浏览…')
             choose.clicked.connect(lambda checked=False, widget=field: self._choose(widget))
             row.addWidget(choose); form.addRow(label, row)
         layout.addLayout(form)
         current = QLabel('当前数据库：'+str(self.current_database)); current.setWordWrap(True); layout.addWidget(current)
         recommendation = QPushButton('使用项目盘 / 非系统盘的推荐目录')
         recommendation.clicked.connect(lambda: (self.memory.setText(str(default)), self.memes.setText(str(default/'memes'))))
-        layout.addWidget(recommendation)
-        self.status = QLabel('选择 D 盘或其他非系统盘，自动保存后，再从托盘彻底退出并重开桌宠。表情目录可选已有分类图库；空目录会补入自带鲸娘表情。')
-        self.status.setWordWrap(True); layout.addWidget(self.status); layout.addStretch(1)
+        actions = QHBoxLayout()
+        self.apply_button = QPushButton('应用新目录')
+        self.apply_button.clicked.connect(self.confirm_change)
+        actions.addWidget(self.apply_button)
+        actions.addWidget(recommendation)
+        actions.addStretch()
+        layout.addLayout(actions)
+        self.status = QLabel('选好目录后点“应用新目录”。确认后会准备表情图库，并在下次启动时复制记忆库。')
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        layout.addStretch()
+        for field in (self.memory, self.memes):
+            field.textChanged.connect(self.update_button)
+        self.update_button()
+
+    def update_button(self):
+        self.apply_button.setEnabled((self.memory.text().strip(), self.memes.text().strip()) != self.loaded)
+
+    def _targets(self):
+        memory, memes = self.memory.text().strip(), self.memes.text().strip()
+        if memes == self.loaded[1]:
+            memes = self.database.get_setting('qq_meme_root', '') or self.default_memes
+        return memory, memes
+
+    def confirm_change(self):
+        try:
+            memory, memes = (directory(path) for path in self._targets())
+            message = (f'记忆和聊天目录：{memory}\n表情包目录：{memes}\n\n'
+                       '应用后会创建所需目录，为空图库放入自带表情。若记忆位置变更，下次启动将复制数据库并保留原件。')
+            if QMessageBox.question(self, '应用新目录？', message,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes and self.save():
+                self.applied.emit()
+        except (ValueError, OSError) as error:
+            self.status.setText('目录未应用：' + str(error))
 
     def _choose(self, field):
         folder = QFileDialog.getExistingDirectory(self, '选择非系统盘上的存放目录', field.text())
         if folder: field.setText(folder)
 
     def save(self):
-        memory, memes = self.memory.text().strip(), self.memes.text().strip()
-        actual_memes = self.database.get_setting('qq_meme_root', '') or self.default_memes
-        if (memory, memes) == self.loaded and actual_memes == self.loaded[1]: return False
-        # 聊天平台页也能选图库：若本页没有改图库，保留刚在另一页保存的选择。
-        if memes == self.loaded[1]: memes = actual_memes
+        memory, memes = self._targets()
+        if (memory, memes) == self.loaded: return False
         result = plan_change(self.current_database, memory, memes, self.path_file, persist=False)
         seed_memes(result['meme_root'])
         before = self.database.get_setting('qq_meme_root', '')
@@ -56,4 +88,6 @@ class StoragePage(QWidget):
             raise
         self.status.setText('新目录已保存。请从托盘退出并重开；下次启动复制记忆，旧数据库保留。')
         self.loaded = (memory, memes)
+        self.memes.setText(memes)
+        self.update_button()
         return True

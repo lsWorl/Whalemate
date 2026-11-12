@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt,QDateTime,QTimeZone,QTimer,Signal
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
     QFrame,QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
+from aicompanion.ui import theme
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
 from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
@@ -25,20 +26,20 @@ class SettingsWindow(QDialog):
 
     def __init__(self,controller,settings,parent=None,speech_output=None,page=None):
         super().__init__(parent)
-        from aicompanion.ui.settings_layout import ComingSoon, Page, Section, SettingsNav, scrolled, tabs
+        from aicompanion.ui.settings_layout import ComingSoon, Page, Section, SettingsNav, TabPage, scrolled, tabs
         self.controller=controller; self.database=controller.database; self.settings=settings
         self.speech_output=speech_output
         self.previewing = False
         self.reopen_wizard = False
         self.setWindowTitle(controller.character.name+'的设置'); self.resize(1100,720); self.setMinimumSize(820,560)
-        from aicompanion.ui import theme; self.setStyleSheet(theme.DIALOG)
+        self.setStyleSheet(theme.DIALOG)
         layout=QVBoxLayout(self); layout.setContentsMargins(0,0,0,0); layout.setSpacing(0)
         self.nav=SettingsNav(self.windowTitle()); layout.addWidget(self.nav,1)
         cid=controller.character.id
 
         # ---- 角色与形象 ---------------------------------------------------------------------
         self.name=QLineEdit(controller.character.name)
-        self.name_error = QLabel('名字不能为空'); self.name_error.setObjectName('Warn'); self.name_error.hide()
+        self.name_error = QLabel('名字不能为空'); self.name_error.setObjectName('FieldError'); self.name_error.hide()
         # 计划书 v4 功能二：设定和说话风格属于“人格”，在人格编辑器里改；这里的 description / style 指向编辑器的输入框
         from aicompanion.ui.persona_page import PersonaEditor
         registry=getattr(parent,'registry',None); pack=registry.pack(cid) if registry is not None else None
@@ -79,7 +80,7 @@ class SettingsWindow(QDialog):
         self.finished.connect(self.aboutme.shutdown)
         self.model_error = QLabel()
         self.model_error.setWordWrap(True)
-        self.model_error.setObjectName('Warn')
+        self.model_error.setObjectName('FieldError')
         self.model_error.hide()
         looks.insertRow(2, '', self.model_error)
         panel=QFormLayout(); panel.addRow('背景图',bg_row); panel.addRow('背景不透明度',self.panel_opacity)
@@ -246,13 +247,13 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.community_page import CommunityPage           # T18
         from aicompanion.ui.storage_page import StoragePage
         self.agent_page=AgentPage(self.database); self.audit_page=AuditPage(self.database)
-        agent_page=Page('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
+        agent_page=TabPage('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
         agent_settings=QWidget(); agent_box=QVBoxLayout(agent_settings); agent_box.setContentsMargins(0,6,0,0)
         agent_box.addWidget(self.agent_page)
         agent_box.addWidget(ComingSoon('把文件交给她','在聊天面板附上或拖入文件，让她读、整理或改写；文件先复制到工作区，原件不动。'))
         agent_box.addWidget(ComingSoon('跨天的任务','任务有进度和检查点，重启后从断点继续；你也可以在 QQ 私聊里交办，审批发到你那里确认。'))
         agent_box.addStretch(1)
-        agent_page.add(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
+        agent_page.box.addWidget(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
         self.library_page=LibraryPage(self.database,cid,self,controller=controller, defer=self.queue_setting)
         library_page=Page('表情图库','她能发的表情包。自己的图放进目录就能用，含义由识图模型自动识别。'); library_page.add(self.library_page)
         self.relationship_page=RelationshipPage(self.database,cid,self, defer=self.queue_setting)
@@ -267,8 +268,8 @@ class SettingsWindow(QDialog):
         relation_page.add(Section('我们的日子','她记得你们认识了多少天、哪些日子值得纪念；到了那天她会在和你聊天时自然提一句，一天只提一次。',self.dates_card))
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
-        platforms_page=Page('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')
-        platforms_page.add(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话')),1)
+        platforms_page=TabPage('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')
+        platforms_page.box.addWidget(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话')),1)
         self.storage_page=StoragePage(self.database,settings)
         storage_page=Page('存储位置','聊天记录、记忆和表情图库放在哪里。'); storage_page.add(self.storage_page); storage_page.finish()
         self.usage_page=UsagePage(self.database)
@@ -311,6 +312,7 @@ class SettingsWindow(QDialog):
         self.refresh()
         self.nav.page_changed.connect(lambda key: self._refresh_overview() if key == 'overview' else None)
         self.open_page(page or 'overview')
+        theme.prepare_controls(self)
 
     def open_page(self, key):
         return self.nav.show_page(key)
@@ -415,8 +417,8 @@ class SettingsWindow(QDialog):
             if ready:
                 mark.setPixmap(line_icon('check', '#16683F').pixmap(18, 18))
             else:
-                mark.setText(str(i + 1))
-            mark.setObjectName('StepReady' if ready else 'StepPending')
+                mark.setText('!' if i == 0 else str(i + 1))
+            mark.setObjectName('StepReady' if ready else ('StepRequired' if i == 0 else 'StepPending'))
             mark.style().unpolish(mark)
             mark.style().polish(mark)
             summary.setText(text)
@@ -618,6 +620,7 @@ class SettingsWindow(QDialog):
 
     def save_identity(self):
         name = self.name.text().strip()
+        theme.set_state(self.name, 'invalid', not name)
         self.name_error.setVisible(not name)
         if not name:
             raise ValueError('名字不能为空')
@@ -652,10 +655,13 @@ class SettingsWindow(QDialog):
                 if self.avatar_mode.currentData() == 'live2d': require_cubism_core()
             except (ModelPackageError,OSError) as error:
                 if inline:
+                    theme.set_state(self.model, 'invalid', True)
                     self.model_error.setText(str(error)); self.model_error.show()
                 else: QMessageBox.warning(self,'模型包无效',str(error))
                 return False
-        if inline: self.model_error.hide()
+        if inline:
+            theme.set_state(self.model, 'invalid', False)
+            self.model_error.hide()
         return True
 
     def refresh_reminders(self):

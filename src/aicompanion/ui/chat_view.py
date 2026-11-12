@@ -254,7 +254,7 @@ class ChatView(QScrollArea):
         return SegmentedReply(self, sender, self.append(sender, placeholder))
 
     def follow(self):
-        if self._stick: QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))
+        if self._stick: QTimer.singleShot(0, self, lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))
 
     def scrollToBottom(self):
         self._stick = True; self.follow()

@@ -55,6 +55,29 @@ def connection_problem(message):
     return '服务未能回复，请检查模型名称、服务地址和账户状态。'
 
 
+class VoiceCard(QFrame):
+    """卡片空白处和说明文字也选择声线，内部的试听与输入控件仍各自处理点击。"""
+    def __init__(self, title, hint):
+        super().__init__()
+        self.setObjectName('RadioCard')
+        self.box = QVBoxLayout(self)
+        self.box.setContentsMargins(12, 5, 12, 6)
+        self.box.setSpacing(3)
+        self.row = QHBoxLayout()
+        self.choice = QRadioButton(title)
+        self.row.addWidget(self.choice, 1)
+        self.box.addLayout(self.row)
+        self.box.addWidget(label(hint))
+        self.choice.toggled.connect(lambda on: theme.set_state(self, 'selected', on))
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.choice.click()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+
 class Onboarding(QDialog):
     titles = ('你好，我是鲸鲸！', '给她连上“大脑”', '选一个她说话的声音', '她在桌面上长什么样？', '都准备好了')
     poses = ('celebrate', 'thinking', 'talking', 'idle', 'celebrate')
@@ -139,6 +162,7 @@ class Onboarding(QDialog):
         right.addWidget(self.pages, 1)
         nav = QHBoxLayout()
         self.back = QPushButton('上一步')
+        self.back.setObjectName('Flat')
         self.back.clicked.connect(lambda: self.navigate(self.pages.currentIndex() - 1))
         self.skip = QPushButton()
         self.skip.setObjectName('Link')
@@ -152,6 +176,7 @@ class Onboarding(QDialog):
         nav.addWidget(self.next)
         right.addLayout(nav)
         self.show_step(0)
+        theme.prepare_controls(self)
 
     def welcome(self, box):
         box.addWidget(label('接下来大约 3 分钟，我们一起把我准备好。每一步都可以跳过，以后在设置里随时改。', 'PageIntro'))
@@ -298,27 +323,25 @@ class Onboarding(QDialog):
         self.worker = None
 
     def voice_page(self, box):
+        box.setSpacing(6)
         self.voices = QButtonGroup(self)
-        for i, (title, hint) in enumerate((('电脑自带的声音', '免费，马上能用。'),
-                                           ('鲸鲸专属声线', '软软的少女音，使用 MiniMax 语音服务，按用量付费，平时聊天花得很少。'),
-                                           ('先不出声', '只打字聊天，以后点聊天窗口的喇叭就能打开。'))):
-            card = QFrame()
-            card.setObjectName('Card')
-            content = QVBoxLayout(card)
-            content.setContentsMargins(12, 4, 12, 8)
-            choice = QRadioButton(title)
-            choice.setMinimumHeight(36)
-            self.voices.addButton(choice, i)
-            content.addWidget(choice)
-            content.addWidget(label(hint))
+        self.voice_cards = []
+        for index, (title, hint) in enumerate((('电脑自带的声音', '免费，马上能用。'),
+                                              ('鲸鲸专属声线', '软软的少女音，使用 MiniMax 语音服务，按用量付费，平时聊天花得很少。'),
+                                              ('先不出声', '只打字聊天，以后点聊天窗口的喇叭就能打开。'))):
+            card = VoiceCard(title, hint)
+            self.voices.addButton(card.choice, index)
+            self.voice_cards.append(card)
             box.addWidget(card)
         self.voice_region = QComboBox()
         self.voice_region.addItem('MiniMax 国内站', 'minimax-cn')
         self.voice_region.addItem('MiniMax 国际站', 'minimax-global')
         self.voice_key = password('语音服务密钥（已有可用声线时可留空）')
         self.voice_region.currentIndexChanged.connect(lambda: self.voice_key.clear())
-        box.addWidget(self.voice_region)
-        box.addWidget(self.voice_key)
+        cloud = QHBoxLayout()
+        cloud.addWidget(self.voice_region)
+        cloud.addWidget(self.voice_key, 1)
+        self.voice_cards[1].box.addLayout(cloud)
         self.smart = QCheckBox('长回复只念重点，代码和表格不念')
         self.smart.setChecked(self.db.get_setting('speech_style', 'smart') == 'smart')
         self.smart.toggled.connect(lambda on: self.db.set_setting('speech_style', 'smart' if on else 'full'))
@@ -328,7 +351,6 @@ class Onboarding(QDialog):
         self.voices.button(choice).setChecked(True)
         self.listen = QPushButton('试听')
         self.listen.clicked.connect(self.preview_voice)
-        box.addWidget(self.listen)
         self.voice_status = label()
         box.addWidget(self.voice_status)
         self.display_voice(choice)
@@ -337,6 +359,8 @@ class Onboarding(QDialog):
     def display_voice(self, index):
         self.voice_region.setVisible(index == 1)
         self.voice_key.setVisible(index == 1)
+        if index != 2:
+            self.voice_cards[index].row.addWidget(self.listen)
         self.listen.setVisible(index != 2)
 
     def select_voice(self, index):
@@ -421,7 +445,7 @@ class Onboarding(QDialog):
         self.install.clicked.connect(self.install_or_cancel)
         box.addWidget(self.install_status)
         box.addWidget(self.progress)
-        box.addWidget(self.install)
+        words.addWidget(self.install, 0, Qt.AlignmentFlag.AlignLeft)
         self.process = QProcess(self)
         self.process.readyReadStandardOutput.connect(self.install_progress)
         self.process.finished.connect(self.install_finished)

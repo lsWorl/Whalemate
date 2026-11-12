@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QScrollArea, QStackedWidget,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QScrollArea, QStackedWidget,
                                QTabWidget, QVBoxLayout, QWidget)
 
 
@@ -27,6 +27,40 @@ class Section(QFrame):
         else: self.box.addLayout(content)
         return content
 
+
+class FoldSection(Section):
+    """次要设置可展开，标题和展开按钮均位于卡片内。"""
+    def __init__(self, title, content):
+        super().__init__(title)
+        heading = self.box.takeAt(0).widget()
+        row = QHBoxLayout()
+        row.addWidget(heading, 1)
+        self.toggle = QPushButton('展开')
+        self.toggle.setObjectName('Link')
+        self.toggle.setCheckable(True)
+        self.toggle.setAccessibleName(title)
+        row.addWidget(self.toggle)
+        self.box.addLayout(row)
+        self.add(content)
+        content.hide()
+        self.toggle.toggled.connect(content.setVisible)
+        self.toggle.toggled.connect(lambda expanded: self.toggle.setText('收起' if expanded else '展开'))
+
+
+class TabPage(QWidget):
+    """导航标题固定，每个标签的内容负责自己的滚动。"""
+    def __init__(self, title, intro):
+        super().__init__()
+        self.box = QVBoxLayout(self)
+        self.box.setContentsMargins(22, 18, 22, 12)
+        self.box.setSpacing(10)
+        heading = QLabel(title)
+        heading.setObjectName('PageTitle')
+        hint = QLabel(intro)
+        hint.setObjectName('PageIntro')
+        hint.setWordWrap(True)
+        self.box.addWidget(heading)
+        self.box.addWidget(hint)
 
 class ComingSoon(QFrame):
     """还没做的功能：告诉用户它会出现在这里、能做什么。"""

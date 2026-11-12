@@ -38,13 +38,7 @@ class SettingsAutosave(QObject):
         self.watch('agent', agent.save, agent.enabled, agent.auto, agent.workspace, agent.blog, agent.keep_days, agent.max_mb)
         usage = d.usage_page
         self.watch('usage', usage.save, usage.total, *usage.limits.values(), usage.prices)
-        storage = d.storage_page
-        def save_storage():
-            try:
-                storage.save()
-            except (OSError, ValueError) as error:
-                storage.status.setText(str(error))
-                raise
+        def storage_applied():
             # 两个页面展示同一图库目录。同步回显时不再触发下一轮自动保存。
             bridge = d.bridge_page
             if bridge.meme_root.text().strip() == bridge.loaded_meme_root:
@@ -53,7 +47,8 @@ class SettingsAutosave(QObject):
                 bridge.meme_root.setText(path)
                 bridge.meme_root.blockSignals(False)
                 bridge.loaded_meme_root = path
-        self.watch('storage', save_storage, storage.memory, storage.memes)
+            d.saved.emit('storage')
+        d.storage_page.applied.connect(storage_applied)
         life = d.life_card
         self.watch('life', lambda: life.life.set_enabled(life.enabled.isChecked()), life.enabled)
         self.watch('life', partial(self.save_value, 'life_daily_activities', life.daily), life.daily)
