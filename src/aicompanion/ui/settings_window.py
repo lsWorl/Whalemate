@@ -194,7 +194,9 @@ class SettingsWindow(QDialog):
         remove=QPushButton('删除选中'); remove.clicked.connect(self.delete_reminder); rb.addWidget(remove); rb.addStretch(1)
         reminders=Section('提醒','也可以直接在聊天里说“明天九点提醒我……”。'); reminders.add(self.reminder_table); reminders.add(rf); reminders.add(rb)
         proactive_page.add(reminders)
-        proactive_page.add(ComingSoon('自己的生活','她会按兴趣去看、去做点什么，遇到趣事来找你分享，并等你回应。'))
+        from aicompanion.ui.life_card import LifeCard
+        self.life_card=LifeCard(self.database,cid,self)
+        proactive_page.add(Section('自己的生活','她会按兴趣去看点真实的东西，遇到趣事来找你分享，并等你回应。',self.life_card))
         proactive_page.add(ComingSoon('允许她自己退出','情绪和情境合适时，她会告别并真的关掉自己；关掉这个开关后她只会表示不想说话。'))
         proactive_page.finish()
         self.refresh_reminders()
@@ -491,6 +493,7 @@ class SettingsWindow(QDialog):
                           ('proactive_enabled',self.proactive.isChecked()),('memory_analysis',self.analysis.isChecked()),
                           ('quiet_start',self.quiet_start.value()),('quiet_end',self.quiet_end.value()),
                           ('proactive_daily_limit',self.proactive_limit.value()),('proactive_gap_minutes',self.proactive_gap.value())]: self.database.set_setting(key,value)
+        self.life_card.save()
         self.agent_page.save(); self.usage_page.save(); self.bridge_page.save()
         try: self.storage_page.save()
         except (OSError, ValueError) as error:

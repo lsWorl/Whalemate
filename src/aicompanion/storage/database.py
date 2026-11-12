@@ -77,11 +77,14 @@ class Database:
                         if name not in existing:
                             connection.execute(f"ALTER TABLE memories ADD COLUMN {name} {definition}")
                 if "outreach_log" in tables:
-                    # v13 的主动开口记录在 PR #46 审查中补了两列（插件取件时间、对应轮次）；先跑过这个分支的库按缺哪列补哪列
+                    # 早期 v13/v14 缺取件时间、对应轮次，或这次分享已结算的回执类型；按缺哪列补哪列。
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(outreach_log)")}
-                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL")):
+                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL"), ("share_delivery", "TEXT NOT NULL DEFAULT ''")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE outreach_log ADD COLUMN {name} {definition}")
+                if "qq_outbox" in tables and "guard" not in {r[1] for r in connection.execute("PRAGMA table_info(qq_outbox)")}:
+                    # 旧版没保存来源类型；领取旧条目必须能找回调度记录。
+                    connection.execute("ALTER TABLE qq_outbox ADD COLUMN guard TEXT NOT NULL DEFAULT 'scheduled'")
                 # executescript 隐式提交，固定 schema 逐条执行才保证迁移原子性。
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():
@@ -140,7 +143,9 @@ class Database:
 
     def add_message(self, role: str, content: str, character_id="deepseek-whale", turn_id=None, status="complete", source="text", channel="desktop", sender="") -> int:
         with self.transaction() as connection:
-            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel,sender) VALUES (?,?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel, sender))
+            stamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
+            cursor = connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel,sender,created_at) "
+                                        "VALUES (?,?,?,?,?,?,?,?,?)", (role, content, character_id, turn_id, status, source, channel, sender, stamp))
             return cursor.lastrowid
 
     def drop_reply(self, turn_id, character_id) -> None:

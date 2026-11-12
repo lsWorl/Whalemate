@@ -9,10 +9,11 @@ class ChatWorker(QThread):
     expression_event = Signal(str,object)
     result = Signal(str,str,str)
 
-    def __init__(self,controller,generation_id,character,query='',proactive='',parent=None):
+    def __init__(self,controller,generation_id,character,query='',proactive='',parent=None,settle_dates=True):
         super().__init__(parent)
         self.controller,self.generation_id,self.character = controller,generation_id,character
         self.query,self.proactive = query,proactive
+        self.settle_dates = settle_dates
         self.cancellation = CancellationToken()
 
     def run(self):
@@ -31,7 +32,7 @@ class ChatWorker(QThread):
                     media=self.controller.expression.catalog.resolve(attachment.asset_id,attachment.revision)
                 self.expression_event.emit(self.generation_id,('expression',event,media))
             for token in self.controller.generate(self.generation_id,self.character,self.cancellation,self.query,self.proactive,
-                                                  expression_context=context,on_expression_event=expression):
+                                                  expression_context=context,on_expression_event=expression,settle_dates=self.settle_dates):
                 self.token_received.emit(self.generation_id,token)
                 self.expression_event.emit(self.generation_id,('text',token))
             self.result.emit(self.generation_id,outcome[0] if outcome[0]!='suppressed' else 'complete','回复过滤失败' if outcome[0]=='failed' else '')

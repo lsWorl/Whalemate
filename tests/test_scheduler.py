@@ -131,7 +131,7 @@ class CodexRoundOneTests(SchedulerTests):
         window = SimpleNamespace(
             controller=SimpleNamespace(character=SimpleNamespace(id=CID)), database=self.db, outreach_scheduler=self.s,
             purposes=SimpleNamespace(delivered=lambda i: None, release=lambda i: None),
-            _proactive_on_qq=lambda intent, done, taken=None, queued=None: receipts.append(done) or True)
+            _proactive_on_qq=lambda intent, done, taken=None, queued=None, still_valid=None: receipts.append(done) or True)
         MainWindow._deliver_outreach(window, CID, self.s.next(CID, 30, 9999))
         self.later(60)
         self.assertIsNone(self.s.next(CID, 30, 9999))                                     # 回执没到：占着，不再追第二遍
@@ -175,7 +175,7 @@ class CodexRoundTwoTests(SchedulerTests):
         """真实的 MainWindow._deliver_outreach；_proactive_on_qq 换成替身：放进发件箱（qq_outbox）、按需模拟插件领取。"""
         from aicompanion.bridge.outbox import OutboxStore
         from aicompanion.ui.main_window import MainWindow
-        def on_qq(intent, done, taken=None, queued=None):
+        def on_qq(intent, done, taken=None, queued=None, still_valid=None):
             receipts.append(done)
             if hand:
                 store = OutboxStore(self.db, clock=lambda: self.now[0])
@@ -282,7 +282,7 @@ class CodexRoundTwoTests(SchedulerTests):
         import sqlite3
         from contextlib import closing
         from aicompanion.storage.schema import SCHEMA_VERSION
-        self.assertEqual(SCHEMA_VERSION, 13)
+        self.assertGreaterEqual(SCHEMA_VERSION, 13)
         path = Path(self.tmp.name)/'v12.sqlite3'
         db = Database(path); db.initialize()
         old_message = db.add_message('user', '基线里的旧消息', CID)
@@ -296,7 +296,7 @@ class CodexRoundTwoTests(SchedulerTests):
         db = Database(path); db.initialize()
         self.assertEqual(len(list(Path(self.tmp.name).glob('v12.backup-*.sqlite3'))), 1)
         with closing(sqlite3.connect(path)) as conn:
-            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 13)
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertTrue({'outreach_log', 'qq_outbox', 'companion_dates', 'companion_date_mentions'} <= tables)
         self.assertEqual([r['content'] for r in db.recent_messages(5, CID)], ['基线里的旧消息'])

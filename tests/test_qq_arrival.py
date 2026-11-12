@@ -36,8 +36,8 @@ class ArrivalTests(Base):
         self.reports = []
 
     def queue(self, choice):
-        def proactive(intent, done, taken, queued):
-            return bool(self.service.proactive_qq(intent, on_done=done, on_taken=taken, on_queued=queued))
+        def proactive(intent, done, taken, queued, valid):
+            return bool(self.service.proactive_qq(intent, on_done=done, on_taken=taken, on_queued=queued, still_valid=valid))
 
         window = SimpleNamespace(database=self.db, outreach_scheduler=self.scheduler, _proactive_on_qq=proactive)
         MainWindow._deliver_outreach(window, self.cid, choice)

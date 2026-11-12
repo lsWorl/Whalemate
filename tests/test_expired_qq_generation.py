@@ -23,9 +23,9 @@ class ExpiredGenerationTests(Base):
         scheduler = ProactiveScheduler(self.db, purposes, clock=self.service.clock, rng=lambda: 0)
         workers = []
 
-        def route(intent, done, taken, attached):
+        def route(intent, done, taken, attached, valid):
             def run():
-                turn = self.service.proactive_qq(intent, on_done=done, on_taken=taken, on_queued=attached)
+                turn = self.service.proactive_qq(intent, on_done=done, on_taken=taken, on_queued=attached, still_valid=valid)
                 if turn is None:
                     done(False)  # UI 工作线程结束信号
                 return turn

@@ -164,6 +164,7 @@ class BridgeService:
         self.lock = PROCESS_LOCK
         self.expression_bindings={}; self.expression_lock=threading.Lock()
         self.outbox=[]; self.outbox_waiting={}   # 主动发到 QQ 私聊的消息：等插件心跳取走（见 proactive_qq）
+        self.outbox_valid={}   # 轮次 → 还该不该发的检查（still_valid）；交给插件前、插件领取时各查一次
         self.outbox_taken={}   # 插件领取时通知调用方（轮次 → 回调）；投递状态本身存在库里（bridge/outbox.py）
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
         self.bursts = {}; self.burst_lock = threading.Lock(); self.sleep = time.sleep   # 连发合并（见 _gather）
@@ -991,11 +992,13 @@ class BridgeService:
                     and (beat.get('onebot') or {}).get('connected')
                     and plugin_version(beat.get('astrbot')) >= MIN_PROACTIVE_PLUGIN)
 
-    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None) -> str | None:
+    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None, still_valid=None) -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
         on_queued(轮次)：生成前绑定调度记录，显式返回 False 则取消；on_taken(轮次)：插件领取时；on_done(Delivery)：有结果时。
         回调只是快速通知，结果以 qq_outbox 为准（程序重启后调度器按它对账）。
-        这一轮带上的纪念日提醒跟着送达结果走：全部发出才算提过（bridge/outbox.py）。"""
+        这一轮带上的纪念日提醒跟着送达结果走：全部发出才算提过（bridge/outbox.py）。
+        still_valid()：交给插件之前、插件来领取时各再问一次还该不该发，返回 False 就撤回、记为没发
+        （例如分享在发件箱里等着时用户关掉了“自己的生活”，Codex PR #48 第二轮第 2 项）。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.media import inline_image
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
@@ -1018,7 +1021,10 @@ class BridgeService:
             store = OutboxStore(self.database, self.clock)
             # 生成前先记一条 generating：生成的回复已经写进聊天记录、还没放进发件箱时程序退出，启动时按它把这条回复拿掉，
             # 聊天窗不会显示一条实际没发出的祝福（Codex PR #46 第四轮 P3）
-            store.begin(turn, character.id)
+            guard = 'direct'
+            if still_valid is not None:
+                guard = 'scheduled' if on_queued is not None else 'callback'
+            store.begin(turn, character.id, guard)
             def give_up():
                 if store.settle(turn, 'failed') is None:
                     # 本轮生成期间被清理，回复和纪念日占位可能在清理之后才写入。
@@ -1063,6 +1069,7 @@ class BridgeService:
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
                 self.outbox_waiting[turn] = (on_done, character.id); self.outbox_taken[turn] = on_taken
+                if still_valid is not None: self.outbox_valid[turn] = still_valid
             return turn
 
     def take_outbox(self) -> list:
@@ -1075,23 +1082,44 @@ class BridgeService:
             items, self.outbox = self.outbox, []
         fresh = []
         for item in items:
-            if now-item['at'] > self.OUTBOX_TTL:
+            if now-item['at'] > self.OUTBOX_TTL or not self._still_valid(item['id']):
                 self._notify(item['id'], store.settle(item['id'], 'failed')); continue
             store.dequeued(item['id'])
             fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
         self._sweep(store)
         return fresh
 
+    def _callback_valid(self, turn) -> bool | None:
+        """None 表示没有内存回调（含重启），SQLite 写锁外运行回调。"""
+        with self.expression_lock:
+            check = self.outbox_valid.get(turn)
+        if check is None: return None
+        try: return bool(check())
+        except Exception: return False
+
+    def _still_valid(self, turn) -> bool:
+        from aicompanion.brain.scheduler import ProactiveScheduler
+        allowed = self._callback_valid(turn)
+        return allowed is not False and ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True)
+
     def outbox_claim(self, payload) -> dict:
-        """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。"""
+        """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。
+        交出去以后、插件领取之前不该发了（关掉了“自己的生活”）：同样拒绝并记为没发。"""
         turn = str(payload.get('id') or '') if isinstance(payload, dict) else ''
         if (not re.fullmatch(r'[a-f0-9]{32}', turn) or set(payload) != {'id', 'astrbot'}
                 or plugin_version(payload['astrbot']) < MIN_PROACTIVE_PLUGIN):
             return {'allowed': False}
         from aicompanion.bridge.outbox import OutboxStore
-        if not OutboxStore(self.database, self.clock).claim(turn): return {'allowed': False}
+        store = OutboxStore(self.database, self.clock)
+        from aicompanion.brain.scheduler import ProactiveScheduler
+        allowed = self._callback_valid(turn)
+        def valid(c):
+            return ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, connection=c)
+        if allowed is False or not store.claim(turn, valid=valid):
+            self._notify(turn, store.settle(turn, 'failed', expected='dequeued'))
+            return {'allowed': False}
         with self.expression_lock:
-            callback = self.outbox_taken.pop(turn, None)
+            callback = self.outbox_taken.pop(turn, None); self.outbox_valid.pop(turn, None)   # 已交给插件：不追回
         if callback:
             try: callback(turn)
             except Exception: pass
@@ -1152,7 +1180,7 @@ class BridgeService:
         if result is None: return
         with self.expression_lock:
             waiting = self.outbox_waiting.pop(turn, None)
-            self.outbox_taken.pop(turn, None)
+            self.outbox_taken.pop(turn, None); self.outbox_valid.pop(turn, None)
         if waiting and waiting[0]:
             try: waiting[0](result)
             except Exception: pass

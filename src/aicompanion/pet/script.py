@@ -7,11 +7,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 OPENERS = {'【': '】', '<': '>'}
 MAX_TAG = 8   # 标注内容最长字数，超过就当普通文字
 TASK_OPEN, TASK_CLOSE = '<task>', '</task>'   # P5：陪伴通路里"需要动手"的标记，界面据此问"要我动手吗"
 MAX_TASK = 1500   # 任务说明可能带一整段文字，太短会让标记解析失败、原样显示出来
+EXPRESSION_TAGS = ('<sticker', '<meme', '<expression', '<mind')
+CONTROL_TAGS = EXPRESSION_TAGS + ('<img', TASK_OPEN)
 
 
 @dataclass(frozen=True)
@@ -47,46 +50,278 @@ class Vocab:
                 '标注会被执行并从显示的文字里去掉，所以不要写成句子的一部分，也不要用其他括号描写动作。')
 
 
+class MarkdownLiterals:
+    """把展示用的代码和引用交给调用方原样输出；普通正文可以逐字处理。"""
+
+    LIST_MARKER = re.compile(r'(?:[-+*]|[0-9]{1,9}[.)])[ \t]+')
+    # 单个反引号候选最多推迟两次软换行或 256 字的动画；任务等协议仍等真正的配对结果。
+    ANIMATION_WAIT = 256
+    SPAN_SPECIAL = '`\\<{[【'
+    STREAMABLE = re.compile(
+        r'[^`\\<{\[【]+|\\[^`]|'                        # 普通文字、路径或转义字符
+        r'<(?:[^`\\<>{\[【\r\n]{9}|[^`\\<>{\[【\r\n]{0,8}[\r\n])|'  # 已超过动画长度或遇换行的比较式
+        r'\[(?!角色已发送表情[：:])[^\\`\[\]{}<【\r\n]{0,256}\]|'              # 普通链接或数组的纯文字部分
+        r'(?P<cue>【[^\s`\\<>{}\[\]【】]{1,8}】|<[^\s`\\<>{}\[\]【】/]{1,8}>)'
+    )
+
+    def __init__(self):
+        self.fence = ''
+        self.fence_indent = 0
+        self.line_kind = ''
+        self.indent = 0
+        self.list_indents = []
+        self.line_head = ''
+        self.fence_line = []
+        self.after_blank = True
+        self.after_indent = False
+        self.after_paragraph = False
+        self.after_cr = False
+        self.literal_newline = False
+        self.escaped = False
+        # 分隔符和没有控制含义的前缀直接显示；只保留从第一个歧义字符开始的后缀。
+        self.span = []
+        self.open_size = self.tick_run = self.soft_breaks = self.span_width = 0
+        self.in_opener = False
+
+    def _take_span(self):
+        raw = ''.join(self.span)
+        self.span.clear()
+        self.open_size = self.tick_run = self.soft_breaks = self.span_width = 0
+        self.in_opener = False
+        return raw
+
+    def _release_streamable(self):
+        raw = ''.join(self.span)
+        allow_cues = self.open_size == 1 and (self.soft_breaks >= 2 or self.span_width >= self.ANIMATION_WAIT)
+        i = 0
+        while match := self.STREAMABLE.match(raw, i):
+            part = match[0]
+            if part.lower().startswith(CONTROL_TAGS): break
+            if match.lastgroup == 'cue':
+                if not allow_cues: break
+                for ch in part: yield ch, False
+            else:
+                yield part, True
+            i = match.end()
+        if i: del self.span[:i]
+
+    def _finish_span(self, syntax):
+        if not self.open_size: return
+        closed = self.tick_run == self.open_size
+        raw = self._take_span()
+        if closed:
+            yield raw, True
+            return
+        # 如果最早的分隔符落单，后面的分隔符仍可彼此配对。一次反向索引，避免逐一重扫余下全文。
+        next_run = {}
+        next_by_size = {}
+        for run in reversed(list(re.finditer(r'`+', raw))):
+            size = run.end() - run.start()
+            next_run[run.start()] = (run.end(), next_by_size.get(size))
+            if size > 1:  # 反斜杠只转义第一个反引号，余下的一串仍能打开行内代码。
+                next_run[run.start() + 1] = (run.end(), next_by_size.get(size - 1))
+            next_by_size[size] = run.end()
+        i = 0
+        while i < len(raw):
+            if self.escaped:
+                self.escaped = False
+                yield raw[i], True
+            elif i in next_run and syntax():
+                end, closing = next_run[i]
+                yield raw[i:closing or end], True
+                i = closing or end
+                continue
+            else:
+                self.escaped = raw[i] == '\\' and syntax()
+                yield raw[i], False
+            i += 1
+
+    def _inline(self, text, syntax):
+        for ch in text:
+            if self.open_size:
+                if self.in_opener and ch == '`':
+                    self.open_size += 1
+                    yield ch, True
+                    continue
+                self.in_opener = False
+                if ch == '`':
+                    self.tick_run += 1
+                    self.span.append(ch)
+                    continue
+                if self.tick_run == self.open_size:
+                    yield self._take_span(), True
+                else:
+                    self.tick_run = 0
+                    self.span_width += 1
+                    if self.span or ch in self.SPAN_SPECIAL:
+                        self.span.append(ch)
+                        # 第一次到达上限时检查已积累的前缀。之后只在短前缀有新判据时检查，长协议不反复扫描。
+                        n = len(self.span)
+                        if (self.open_size == 1 and self.span_width == self.ANIMATION_WAIT
+                                or n == 2 and self.span[0] == '\\'
+                                or n <= MAX_TAG + 2 and ch in '】>\r\n'
+                                or n == MAX_TAG + 2 and self.span[0] == '<'
+                                or n <= 258 and ch == ']' and self.span[0] == '['):
+                            yield from self._release_streamable()
+                    else:
+                        yield ch, True
+                    continue
+            if self.escaped:
+                self.escaped = False
+                yield ch, True
+            elif ch == '`' and syntax():
+                self.open_size = 1
+                self.in_opener = True
+                yield ch, True
+            else:
+                self.escaped = ch == '\\' and syntax()
+                yield ch, False
+
+    def _start_line(self, ch, syntax):
+        if self.fence and self.indent < self.fence_indent:
+            self.fence = ''  # 离开列表项时其中的围栏也结束。
+        while self.list_indents and self.indent < self.list_indents[-1]:
+            self.list_indents.pop()
+        relative = self.indent - (self.list_indents[-1] if self.list_indents else 0)
+        if relative < 4 and ch in ('`', '~') and (self.fence or syntax()):
+            return 'fence_line'
+        if self.fence: return 'literal'
+        if syntax() and relative < 4 and ch in '>＞': return 'literal'
+        if syntax() and relative >= 4 and (self.after_blank or self.after_indent): return 'indent'
+        return 'text'
+
+    def _end_line(self, newline, syntax):
+        kind = self.line_kind
+        if kind == 'fence_line':
+            line = ''.join(self.fence_line)
+            self.fence_line.clear()
+            run = re.match(r'`+|~+', line)[0]
+            rest = line[len(run):]
+            if self.fence:
+                if run.startswith(self.fence) and not rest.strip(' \t'):
+                    self.fence = ''
+                kind = 'literal'
+            elif len(run) >= 3 and (run[0] == '~' or '`' not in rest):
+                self.fence = run
+                self.fence_indent = self.list_indents[-1] if self.list_indents else 0
+                kind = 'literal'
+            else:
+                kind = 'text'
+            if kind == 'literal':
+                yield from self._finish_span(syntax)
+                yield line, True
+            else:
+                yield from self._inline(line, syntax)
+        self.literal_newline = kind in ('literal', 'indent') or bool(self.fence)
+        if not kind:
+            yield from self._finish_span(syntax)
+        if self.literal_newline:
+            if newline: yield newline, True
+        else:
+            yield from self._inline(newline, syntax)
+            if newline and kind == 'text' and self.open_size:
+                self.soft_breaks += 1
+                if self.open_size == 1 and self.soft_breaks == 2 and self.span:
+                    yield from self._release_streamable()
+        if kind == 'text' and not self.after_paragraph:
+            marker = self.LIST_MARKER.fullmatch(self.line_head)
+            if marker:
+                self.list_indents.append(len((' ' * self.indent + marker[0]).expandtabs(4)))
+        self.after_blank, self.after_indent = not kind, kind == 'indent'
+        self.after_paragraph = kind == 'text' and not self.list_indents
+        self.line_head = self.line_kind = ''
+        self.indent = 0
+
+    def feed(self, text, syntax, *, final=False):
+        for ch in text:
+            if ch == '\n' and self.after_cr:
+                self.after_cr = False
+                if self.literal_newline: yield ch, True
+                else: yield from self._inline(ch, syntax)
+                continue
+            self.after_cr = ch == '\r'
+            if ch in '\r\n':
+                yield from self._end_line(ch, syntax)
+                continue
+            if (self.line_kind == 'text' and ch not in ' \t' and self.LIST_MARKER.fullmatch(self.line_head)
+                    and (not self.after_paragraph or self.line_head.startswith(('1.', '1)', '-', '+', '*')))):
+                # “1. ~~~xml” 的围栏始于项目内容的首列。后续行以同一内容列为边界。
+                yield from self._finish_span(syntax)
+                self.indent = len((' ' * self.indent + self.line_head).expandtabs(4))
+                self.list_indents.append(self.indent)
+                self.line_head = self.line_kind = ''
+            if not self.line_kind:
+                if ch in ' \t':
+                    self.indent += 1 if ch == ' ' else 4 - self.indent % 4
+                    yield from self._inline(ch, syntax)
+                    continue
+                self.line_kind = self._start_line(ch, syntax)
+                if self.line_kind in ('literal', 'indent'):
+                    yield from self._finish_span(syntax)
+            if self.line_kind == 'fence_line':
+                self.fence_line.append(ch)
+                if len(self.fence_line) <= 3 and ch not in ('`', '~'):
+                    # 单个标点开头的普通行可以立即交给正文或行内解析。
+                    prefix = ''.join(self.fence_line)
+                    self.fence_line.clear()
+                    self.line_kind = 'literal' if self.fence else 'text'
+                    if self.fence: yield prefix, True
+                    else: yield from self._inline(prefix, syntax)
+            elif self.line_kind == 'text':
+                if len(self.line_head) < 16: self.line_head += ch
+                yield from self._inline(ch, syntax)
+            else:
+                yield ch, True
+        if final:
+            yield from self._end_line('', syntax)
+            yield from self._finish_span(syntax)
+
+
 class CueStream:
     """逐 token 喂入，返回 (可显示文字, 本次解析出的标注)。"""
 
     def __init__(self, vocab: Vocab):
-        self.vocab = vocab; self.pending = ''
+        self.vocab = vocab
+        self.pending = ''
+        self.markdown = MarkdownLiterals()
 
     def feed(self, token: str, final: bool = False) -> tuple[str, list[Cue]]:
-        if not self.vocab and '<' not in token and not self.pending:
-            return token, []
         text, cues = [], []
-        data = self.pending+token; self.pending = ''
-        i = 0
-        while i < len(data):
-            ch = data[i]
-            if ch == '<':
-                rest = data[i:]
-                if rest.startswith(TASK_OPEN):
-                    close = rest.find(TASK_CLOSE)
-                    if close != -1:
-                        task = rest[len(TASK_OPEN):close].strip()
-                        if task: cues.append(Cue('task', task[:MAX_TASK]))
-                        i += close+len(TASK_CLOSE); continue
-                    if not final and len(rest) <= MAX_TASK+len(TASK_OPEN)+len(TASK_CLOSE):
-                        self.pending = rest; break
-                elif TASK_OPEN.startswith(rest) and not final:
-                    self.pending = rest; break
-            if ch in OPENERS:
-                close = data.find(OPENERS[ch], i+1)
-                if close == -1:
-                    if len(data)-i-1 <= MAX_TAG and not final:
-                        self.pending = data[i:]; break   # 等下一个 token
-                    text.append(ch); i += 1; continue
-                word = data[i+1:close]
-                cue = self.vocab.lookup(word) if len(word) <= MAX_TAG and self.vocab else None
+        # 委托正文内可以包含文件名和代码，交给下游的内容仍是原文。
+        for ch, literal in self.markdown.feed(token, lambda: not self.pending.startswith(TASK_OPEN), final=final):
+            if literal:
+                if self.pending:
+                    text.append(self.pending)
+                    self.pending = ''
+                text.append(ch)
+                continue
+            if not self.pending:
+                if ch in OPENERS:
+                    self.pending = ch
+                else:
+                    text.append(ch)
+                continue
+            self.pending += ch
+            if self.pending.startswith(TASK_OPEN):
+                if self.pending.endswith(TASK_CLOSE):
+                    task = self.pending[len(TASK_OPEN):-len(TASK_CLOSE)].strip()
+                    if task: cues.append(Cue('task', task[:MAX_TASK]))
+                    self.pending = ''
+                elif len(self.pending) > MAX_TASK + len(TASK_OPEN) + len(TASK_CLOSE):
+                    text.append(self.pending)
+                    self.pending = ''
+                continue
+            if ch == OPENERS[self.pending[0]]:
+                cue = self.vocab.lookup(self.pending[1:-1]) if len(self.pending) <= MAX_TAG + 2 else None
                 if cue: cues.append(cue)
-                else: text.append(data[i:close+1])
-                i = close+1; continue
-            text.append(ch); i += 1
+                else: text.append(self.pending)
+                self.pending = ''
+            elif len(self.pending) > MAX_TAG + 1 or ch in '\r\n':
+                text.append(self.pending)
+                self.pending = ''
         if final and self.pending:
-            text.append(self.pending); self.pending = ''
+            text.append(self.pending)
+            self.pending = ''
         return ''.join(text), cues
 
     def flush(self) -> tuple[str, list[Cue]]:

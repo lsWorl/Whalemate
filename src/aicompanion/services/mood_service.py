@@ -98,7 +98,7 @@ class MoodService:
 
     # ---- 事件 ------------------------------------------------------------------------------
     def event(self, character_id: str, kind: str, *, reason: str = '', scale: float = 1.0, channel: str = 'desktop',
-              extra: dict | None = None) -> Mood:
+              extra: dict | None = None, connection=None) -> Mood:
         if kind not in EVENTS: raise ValueError(f'未知情绪事件：{kind}')
         touchy, forgiving = self.temper(character_id)
         now = self.clock()
@@ -114,6 +114,13 @@ class MoodService:
             c.execute('DELETE FROM mood_events WHERE character_id=? AND id NOT IN (SELECT id FROM mood_events WHERE character_id=? ORDER BY id DESC LIMIT ?)',
                       (character_id, character_id, KEEP_EVENTS))
             return after
+        if connection is not None:
+            # 分享的活动、回应和唯一一次开心事件随同一条投递一起提交。
+            mood = work(connection)
+            label = mood.label()
+            connection.execute("UPDATE emotion_state SET mood=?,updated_at=CURRENT_TIMESTAMP WHERE character_id=? AND mood!=?",
+                               (label, character_id, label))
+            return mood
         mood = self.db.locked(work)
         self._sync_label(character_id, mood.label())
         return mood

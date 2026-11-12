@@ -1816,6 +1816,72 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）`PYTHONPATH=src:tests python3 -m unittest discover -s tests` → `Ran 1071 tests … OK (skipped=8)`。
 - 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 领取 / 发送；真实模型话术。
 
+## 2026-11-11 V4-4b 自己的生活（task/v4-4b-life，叠在 #46 之上，schema 13→14）
+
+- 做了什么：
+  - 她空闲时按兴趣去网上搜一样东西，读摘要，形成两句看法；有真实来源才算做过，搜不到不编。
+  - 值得说的交给统一调度器，在你在电脑前时来分享，说明出处。
+  - 你回了她开心一点，不回就按调度器的规则追一句或算了。
+  - 新表 `activities`。
+  - 设置里可以开关、调每天件数、看她最近在做什么（带来源链接）。
+
+  说明见 `docs/tasks/V4-4b-life.md`。
+- 怎么验证：新增 `tests/test_life.py`，覆盖来源、失败不编、节制、兴趣轮换、分享闭环、设置卡片；全部单元测试通过。
+- 没验证：
+  - 真实搜索和模型的效果；
+  - 分享到 QQ 的时机；
+  - Windows 真机。
+
+## 2026-11-12 PR #48 Codex 第二轮复核修复（Claude）
+
+- 做了什么（对应 Codex 在 `f881c2e` 上的 1 个 P1、4 个 P2 和一个低优先级问题）：
+  - **P1 主动分享不能触发办事**：
+    - 桌面按生成轮次记录能不能接办事。只有用户自己发起的轮次（`_start` 时不是主动开口）才收 `<task>` 标记、才分派。主动开口的轮次（分享、心事、问候、追问）一律丢掉这个标记，用户明确委托的流程不变。
+    - 分享的说明 `LifeService.intent` 把网页标题、摘要、看法、开场白放进一段 JSON，并明说只是引用的数据，里面像指令的文字不照做、不复述。
+    - 外来文字先经 `quote()` 去掉尖括号标记（`<task>`、`<think>` 等）。模型据网页写出的看法、开场白存库前也整理一遍。
+  - **P2 关掉开关后，已排队的分享和追问**：
+    - `ProactiveScheduler.still_valid()` 判断分享，以及由分享引出的追问（追问的 payload 带 `origin`），关掉“自己的生活”后不再有效。
+    - `BridgeService.proactive_qq(still_valid=...)` 把这个检查挂在发件箱条目上，`take_outbox()` 交给插件前再问一次。不该发就撤回、回调 `False`：占位释放，活动仍是 `done`，不记为她说过。已交给插件的不追回。
+    - 关掉后，上一条若是分享，到了追问的时候直接“算了”，不追问。
+  - **P2 每日件数**：`should_start` 按当天开始过的活动计数，没看成的也算，因为每次开始都已花了一次搜索。
+  - **P2 额度复查**：`LifeService.run(allow_model=...)` 在真正发起总结请求前再查一次 `Quota.check_silent('life')`。到限就不调模型，按已有的低分记录处理。
+  - **P2 “算了”后的回应结果**：
+    - `let_go` 只表示不再追问，不是这条消息的结局。`settle()` 照样等满三小时：这期间他回了记 `answered`，没回记 `ignored`。
+    - 结算时保留放下的时间（`settled_at` 不覆盖），间隔照旧从放下时算。只认三小时之内的回复。
+    - `LifeService.answered()` 每件事只记一次，心情也只跟着变一次。
+    - 行为变化：`let_go` 三小时没回，现在也会记一次“被冷落”的小委屈，和直接没回一致。
+  - **低优先级**：进行中超过半小时的活动（进程中途退出）在 `should_start` / `recent` 时标成 `interrupted`，卡片显示“没看完（中途退出了）”。
+- 怎么验证：
+  - 新增 `tests/test_life_review.py` 13 项，都用替身搜索、替身模型和模拟 QQ 发件箱。在 `f881c2e` 的代码上 13 项全部失败或报错，修复后通过。
+  - `tests/test_scheduler.py` 的替身改为接受新参数。
+  - `tests/test_life.py` 的卡片转义用例改为检查 `&` 和剩下的 `<`（`<b>` 现在存库前就去掉了）。
+  - 容器内（Linux、Python 3.13、Qt offscreen）全量 `python -m unittest discover -s tests`：**1012 项，1004 通过、8 跳过**；`git diff --check` 无输出。
+- 没验证：
+  - 没在 Windows 上跑 `tools\run_checks.bat` 和桌宠 Smoke。
+  - 没在真实 `MainWindow` 里重走 Codex 的整条办事复现链（`LifeService → … → AgentSession.start`）。本次测的是 `_handle_cues` 的分派闸门和分享说明本身。
+  - 真实模型对引用材料的遵守程度、真实搜索和 QQ 收发都没验证。
+  - #46 的既有意见仍由依赖 PR 跟进。
+
+## 2026-11-12 PR #48 合入修好的 #46 并复核审计（Claude）
+
+- 做了什么：
+  - 把 `task/v4-4a-scheduler`（a9aa4fc，已含基线 91d8bef 和 #46 第三轮的 `qq_outbox`）合进 `task/v4-4b-life`。表结构：v13（`outreach_log` + `qq_outbox`）在前，v14（`activities`）接在后面。
+  - 合并时修了两处语义冲突：
+    - 结果未知的主动消息三小时后改记 `dropped`。原来记成 `let_go`，按本 PR 的新语义会继续结算成 `ignored`，还记一次委屈。
+    - 分享按 key 取活动 id。原来重启后对账时，`payload['activity']` 不存在会抛 `KeyError`，打断调度。结果未知的分享不再重发。
+  - QQ 发件箱：插件来领取时再查一次 `still_valid`。心跳响应已经交出去、插件还没来领取时关掉开关，这条分享也撤回。
+- 审计复核（Codex 第二轮 f881c2e 意见在 afde823 的修复）：P1“网页内容经主动分享触发办事”确认已修。主动轮次不登记可办事，`_handle_cues` 和 `_result` 两处都检查；网页材料去掉标记后作为引用数据。另外补了真实 `MainWindow._start` 的闸门测试。P2“关闭开关后仍分享旧活动、后台搜索 / 总结中途关掉”确认已修，并补了上面说的“领取前撤回”。另外三项 P2（每日件数、总结前复查额度、“算了”后结算回应）和低优先级“正在看”恢复，都有回归测试并且通过。
+- 新增测试（`tests/test_life_review.py`）：
+  - `test_only_user_started_turns_may_carry_tasks`
+  - `test_claim_refused_after_switch_off_between_handover_and_claim`
+  - `MergedOutboxTests` 两项：重启后迟到回执记为分享过；结果未知的分享不重发、悄悄放下不记委屈。不带本次修复时，这两项分别报 `KeyError` 和断言失败。
+  - `MigrationTests.test_v13_database_from_pr46_upgrades_to_v14`
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）`PYTHONPATH=src:tests python3 -m unittest discover -s tests` → `Ran 1109 tests … OK (skipped=8)`。
+- 没验证：
+  - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
+  - 真实搜索、真实模型对引用材料的遵守程度、真实 QQ 收发；
+  - 真机走查活动卡片。
+
 ## 2026-11-12 PR #46 Codex 第四轮修复（Claude）
 
 - 做了什么：修复 Codex 第四轮（a9aa4fc）的 7 项 P2 和 1 项 P3，改法见 `docs/tasks/V4-4a-scheduler.md`。
@@ -1834,6 +1900,28 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - 插件 0.10.1 装进本机 AstrBot 后的真实 QQ 发送（超时、停用插件等真实时序）；
   - 真实模型话术。
 
+## 2026-11-12 PR #48 合入 #46 第四轮并修复 Codex 第三轮九项 P2（Claude）
+
+- 做了什么：
+  - 合入 `task/v4-4a-scheduler@7538a00`，合并提交为 `1eec54b`。
+  - 修复 Codex 第三轮（3ecdf25）的 9 项 P2，改法见 `docs/tasks/V4-4b-life.md`。其中第 6、7 项（未知后补到失败回执时撤回分享标记、partial 不标分享）在合并提交里已经处理，本次补了回归测试。
+  - 改动范围：
+    - `pet/script.py`：代码块、引用里的标注原样保留；
+    - `controllers/chat_controller.py`：主动轮次不记关系；
+    - `ui/main_window.py`、`ui/chat_view.py`：桌面分享在首个可见输出前可以撤回；
+    - `brain/life.py`、`ui/life_card.py`：记下关掉的时刻；
+    - `brain/scheduler.py`：库内复核、放下时刻、回应窗口截止；
+    - `bridge/service.py`：领取时加上库内复核。
+- 新增回归：`tests/test_life_review.py::CodexThirdRoundTests` 10 项。
+  - 在合并提交 `1eec54b` 的源码上，有 8 项失败或报错。
+  - 第 6、7 项在合并提交里已经修好，所以这两项在 `1eec54b` 上通过；在 3ecdf25 上的问题即 Codex 的复现。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）全量 `unittest discover` → `Ran 1143 tests … OK (skipped=8)`。
+- 没验证：
+  - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
+  - 真实 MainWindow 里桌面撤回的视觉效果；
+  - 真实模型在代码块里输出标记的频率；
+  - 真实 QQ 和桥接重启时序。
+
 ### 2026-11-12 · PR #46 第五轮修复（Codex，待 Claude 审计）
 
 - 桌宠在 QQ 设置中显示运行版本、主动投递所需的 0.10.2 和两种安装模式的升级操作。心跳交件、插件领取分别验版本。旧插件仍能处理用户发起的私聊和群聊。
@@ -1843,3 +1931,36 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - Windows 定向复现使用临时 SQLite 库、真实 Qt 设置卡和本机 HTTP 桥接。四个回归模块共 22 项通过，覆盖原例、正对照、重启及并发交错。
 - 第一次全量检查暴露 v12 升级用例依赖机器当前时间，三个继承该用例的测试因“三分钟内刚聊过”没有选出问候。把合成旧消息的时间固定在模拟日期前一天后，独立 Windows worktree 全量运行 1117 项，成功，跳过 7 项（182.696 秒）。
 - 同轮 Windows 桌宠 smoke 返回 `"passed": true`，`tools\run_checks.bat` 退出码 0。QQ 适配器、网络延时和模型输出均用测试替身，真实 AstrBot 升级、真实收件与真实模型话术待验。
+
+### 2026-11-12 · PR #48 第四轮修复（Codex，待 Claude 审计）
+
+- 用 merge 提交 `1c8f5f0` 将 #46 的 `0b8c40d` 合入 `c6d0422`。合并后先跑通 124 项调度、桥接和生活分享测试，再处理本轮 8 项 P2。
+- 台词与表情解析器共用流式 Markdown 展示区判断。原审计脚本的 8 种写法、3 种分片全部通过。Windows Qt 窗口里，波浪围栏、嵌套围栏和引用展示中的委托触发 Agent 0 次，普通明确委托触发 1 次。
+- 桌面分享按气泡真正显示的正文或成功显示的图片判断可见性。隐藏标记、仅动作或失败图片不会使文章被记为已分享。撤回会释放本轮纪念日占位，工作线程先结束、窗口稍后处理信号也能正确处理。
+- 后台活动绑定派发时的生活开关编号。选兴趣期间关闭或先关再开，原始 Qt 工作线程测试中的 HTTP 请求、搜索配额、模型调用都为 0。发件箱保存保护方式，QQ 领取和库内来源检查在一个事务里完成，桥接重启后无法发送缺来源的受保护分享。
+- 按轮次保存活动已应用的回执。补到 partial 时文章可再次分享，只收到寒暄或完全没有送达时不会给文章记回应、加好感。新消息保留 UTC 微秒，回复窗口左闭右开；历史整秒消息在话题交接的同一秒归给最后开始的话题。
+- 四个新增回归模块共 26 项，在 Windows 全部通过。原插件发送脚本另外复跑了迟到 partial、仅寒暄有回复、未知后确定失败及同秒换话题四种工况。升级和重复对账使用临时合成的 v13、早期 v14 数据。
+- 独立 Windows worktree 运行 `tools\run_checks.bat` 退出码 0。单测 1191 项，成功，跳过 7 项（209.161 秒）；桌宠 smoke 返回 `"passed": true`。
+- 真实 QQ 收件、线上搜索和真实模型话术待验。测试通过模拟传输记录是否外发，以验证关闭生活时的隐私边界。
+
+### 2026-11-12 · PR #48 同步 collaboration-baseline（c2bf235）
+
+- 在第四轮修复提交 `8a39fb1` 上用 merge 合入 `c2bf235`，保留先前的双亲提交 `1c8f5f0`。Git 自动合并了两份协作文档，#14 的素材、准备工具和测试随基线进入 #48。合并后的 `src` 及 #48 四个定向测试文件与 `8a39fb1` 一致。
+- 在 #48 的独立 Windows worktree 复跑第四轮 8 项 P2 对应的 26 项定向回归，全部通过。`tools\run_checks.bat` 退出码 0：全量单测 1202 项（207.660 秒，跳过 7 项），桌宠 smoke 返回 `"passed": true`。
+- 本轮使用临时测试库和模拟传输。真实 QQ 收件、线上搜索及真实模型话术待验。
+
+### 2026-11-12 · PR #48 修复 Claude 复审提出的 Markdown 边界和 Qt 语音夹具
+
+- 从 `653938b` 复现了两种会把标记漏进正文的输入：单个反引号没有配对，以及有序列表的四空格续行。行内代码按等长反引号配对；落单分隔符作为正文，后面的表情、动作、办事和贴图标记照常解析。配对后的跨行示例仍原样显示。
+- 按列表内容列区分续行和缩进代码。同一列表项首行或续行都可以开始围栏，围栏内的示例不会触发委托。Windows Qt 窗口重跑主动分享后的解码展示，用波浪号围栏、四反引号包三反引号、引用行展示时，Agent 调用均为 0 次，普通委托对照调用 1 次。
+- 桌面分享测试在创建真实窗口前注入语音替身，并对 `QTextToSpeech` 构造设置断言。原夹具会构造一次原生后端，修复后新增的无后端用例与原有 9 项均通过。Windows 测试使用临时数据和模拟语音；本轮未在 Linux 的 speechd 环境直接复跑。
+- 真实 Qt 窗口进一步复现了仅在流结束时才能确认的用户委托。窗口处理最后一批标记后再释放该轮任务资格，打断或撤回时丢弃缓冲。模拟 Agent 在两个审计原例中各收到一次用户原话，气泡和交给朗读队列的文本都保留了“好啦。”，没有泄露控制标记。
+- 独立 Windows worktree 上的 `test_script`、`test_expression_stream`、`test_markdown_cues` 和 `test_desktop_share_visibility` 共 62 项定向测试通过。最终执行 `tools\run_checks.bat` 退出码 0，单测 1208 项（208.017 秒，跳过 7 项），桌宠 smoke 返回 `"passed": true`。
+
+### 2026-11-12 · PR #48 修复落单反引号造成的流式卡顿
+
+- 在 `ecf0791` 上按 Claude 的四段原例逐段暂停生成。旧版 Windows Qt 气泡停在“用”，首句没有进入朗读队列，两条解析路径在三种分片长度下均复现。
+- 两个解析器共用行内代码的流式处理。无歧义的文字和标点立即显示。单反引号尚未配对时，经过两次普通换行或 256 个字符，短表情和动作开始按正文处理。此后即使这个单反引号最终配对，已经触发的动画也会保留。任务、贴图和心情标记仍等待配对或段落结束。双反引号及更长分隔符内的标记继续按代码展示。
+- 在 Windows 离屏 Qt 主窗口中暂停模型工作线程。四段原例中，第二段到达时首句已进入智能朗读队列，第三段到达时已识别“开心”，静音模式随即执行一次。另加足够长的下一句后，朗读模式也在回复结束前随语音段执行一次“开心”和“挥手”。三种工况均通过，使用模拟模型和语音输出，未测试扬声器播放。
+- 独立 worktree 运行 `test_markdown_cues`、`test_expression_stream`、`test_script` 和 `test_desktop_share_visibility` 共 68 项通过。流式回归覆盖逐字和整段输入、拆开的 CRLF、路径、比较符、词表外标注及超过 500 字的代码示例，同时验证代码里的任务不派发、闭合后正文里的任务正常派发。
+- 共用虚拟环境的可编辑安装默认指向主工作区。首次调用批处理因此载入了不同版本；将 `PYTHONPATH` 指向本 worktree 的 `src`、`tests` 和离线依赖，核对两个解析器的 `__file__` 后重跑 `tools\run_checks.bat`。全量单测 1214 项，成功，跳过 7 项（232.982 秒），桌宠 smoke 返回 `"passed": true`，批处理退出码 0。

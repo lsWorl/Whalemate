@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 13  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录
+SCHEMA_VERSION = 14  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -209,14 +209,24 @@ CREATE TABLE IF NOT EXISTS companion_date_mentions (
 CREATE TABLE IF NOT EXISTS outreach_log (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, source TEXT NOT NULL, key TEXT NOT NULL,
  channel TEXT NOT NULL DEFAULT 'desktop', status TEXT NOT NULL DEFAULT 'sent', parent_id INTEGER,
- sent_at REAL NOT NULL, settled_at REAL, turn_id TEXT, handed_at REAL
+ sent_at REAL NOT NULL, settled_at REAL, turn_id TEXT, handed_at REAL, share_delivery TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_parent ON outreach_log(parent_id);
 -- 主动发到 QQ 私聊的每一条投递（bridge/outbox.py）：排队 → 交出 → 插件领取 → 发出 / 部分 / 失败 / 未知。
 -- 存进库里是为了重启以后还能对上账：迟到的回执、没被取走的回复、这一轮带的纪念日（date_keys、date_day）
 CREATE TABLE IF NOT EXISTS qq_outbox (
  turn_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, status TEXT NOT NULL, date_keys TEXT NOT NULL DEFAULT '[]',
- date_day TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, dequeued_at REAL, claimed_at REAL, first_sent_at REAL, settled_at REAL
+ date_day TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, dequeued_at REAL, claimed_at REAL, first_sent_at REAL, settled_at REAL,
+ guard TEXT NOT NULL DEFAULT 'scheduled'
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
+-- v14 计划书 v4 功能四 有自己的生活：她按兴趣去看的东西。必须有真实来源（标题、链接、摘录），没做完的不算做过
+CREATE TABLE IF NOT EXISTS activities (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'read', interest TEXT NOT NULL,
+ query TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'doing', title TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',
+ site TEXT NOT NULL DEFAULT '', excerpt TEXT NOT NULL DEFAULT '', thought TEXT NOT NULL DEFAULT '', opener TEXT NOT NULL DEFAULT '',
+ worth REAL NOT NULL DEFAULT 0, started_at REAL NOT NULL, finished_at REAL, shared_at REAL, response TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_activities ON activities(character_id, status, finished_at);
 """
+
