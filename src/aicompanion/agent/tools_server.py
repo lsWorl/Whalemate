@@ -319,19 +319,25 @@ class ToolBox:
     def _check_write(self, record, path: Path, action: str):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能改（{reason}）')
-        if self.current.resuming:
-            self._ask(record, 'resume', f'继续任务，要{action}：\n{path}', '请确认这是还没做的部分。')
+        resuming = self.current.resuming
+        git_internal = any(part.lower() == '.git' for part in path.parts)
+        outside = not self._allowed(path)
+        if not (resuming or git_internal or outside):
             return
-        if any(part.lower() == '.git' for part in path.parts):
-            # .git 里的配置和钩子能让之后的 git 命令（包括只读的 status / diff）执行任意程序：放开的文件夹里也要问，且不记住
-            self._ask(record, 'write', f'要{action}，位置在 Git 仓库的内部目录里：\n{path}',
-                      '.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
-            return
-        if self._allowed(path): return
-        folder = path if path.is_dir() else path.parent
-        self._ask(record, 'write', f'要在放开的文件夹外{action}：\n{path}',
-                  f'这次任务放开的文件夹：\n' + '\n'.join(str(p) for p in self.current.allowed) + f'\n\n同意后她会{action}这个位置；选"这个文件夹本次都可以"会放开 {folder}。',
-                  remember=str(folder))
+        title = ('继续任务，' if resuming else '') + f'要{action}'
+        details = ['请确认这是还没做的部分。'] if resuming else []
+        remember = None
+        if git_internal:
+            title += '，位置在 Git 仓库的内部目录里'
+            details.append('.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
+        if outside:
+            title += '，超出这次任务放开的文件夹'
+            folders = '\n'.join(str(p) for p in self.current.allowed) or '（无）'
+            details.append(f'这次任务放开的文件夹：\n{folders}\n\n同意后她会{action}这个位置。')
+            if not (resuming or git_internal):
+                remember = str(path if path.is_dir() else path.parent)
+                details.append(f'选“这个文件夹本次都可以”会放开 {remember}。')
+        self._ask(record, 'resume' if resuming else 'write', f'{title}：\n{path}', '\n\n'.join(details), remember=remember)
 
     def _backup(self, path: Path) -> str:
         """覆盖或删除前把旧版本移 / 复制进回收区：<盘>\\.aicompanion-trash\\<时间>-<任务号>\\<原路径>。"""

@@ -89,7 +89,7 @@ class ChatController:
         context=replace(context,supports_images=context.supports_images and on_expression_event is not None,
                         early_before=context.early_before and reply_filter is None)
         # 绑定主人的 QQ 私聊也复用 desktop 历史频道，必须同时检查实际来源。
-        local_reply = (channel == 'desktop' and scene == 'pet' and source == 'text' and not proactive
+        local_reply = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice') and not proactive
                        and context.scope == 'desktop:'+character.id and context.channel == 'desktop'
                        and context.scene == 'pet' and context.trigger == 'user_reply')
         self.database.start_turn(turn_id,character.id)

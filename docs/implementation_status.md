@@ -2026,3 +2026,10 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
 - 未完成的办事保留原任务与步骤，在“办事 → 操作日志”确认剩余事项后接续。新工具调用检查已尝试的副作用指纹，并逐项确认。关闭时释放未送达的主动投递、心事及生活占位，保留已交给 QQ 的不确定投递供迟到回执核对。
 - Windows `tools\run_checks.bat` 返回 0。离线单测共 1260 项，1256 项通过、4 项跳过，用时 227.295 秒。桌宠 smoke 的 `passed` 为 true，失败项和错误列表均为空，剩余工作线程为 0。开关即时生效、流式标记不外露、关闭开关后继续驻留三项均通过。命令及本地日志见[任务说明](tasks/V4-5-self-exit.md)。
 - Windows 源码版实测用合成聊天和系统朗读，两次真实启动均以 0 退出。第一次完整播报告别，取消后台线程，MCP 和 QQ 桥关闭，进程列表中本次的 Python、QtWebEngine 和 Harness 均已结束。第二次气泡显示与离开原因对应的第一句，再次读取为空。云端模型及声线、真实 QQ 账号和负责人真机体验未验。办事脚本的真实模型阶段缺少进程环境测试 Key。
+
+## 2026-11-12 · V4-5 首轮审查修复（PR #53）
+
+- 修复正文提到 `<leave` 时后半句消失、整轮可能报空的问题。新增整段、逐字及聊天控制器回归，验证未闭合和格式错误的原文保留，换行和长度上限后继续解析。桌面语音转写可发起告别，通话期间仍会取消退出。办事接续确认框同时展示适用的 Git 内部目录和授权范围提示。
+- Windows 专项单测 14 项通过。用 `.venv\Scripts\python.exe tools\verify_self_exit.py` 从桌面提交合成转写文本，系统朗读完整告别，本次 5 个进程均已结束，后台线程、语音、MCP 和 QQ 回环桥均已关闭。两次启动退出码均为 0，重启首句接上离开原因，只出现一次。详见 `output/v2-check/self-exit.json`。
+- `tools\run_agent_checks.bat` 的离线部分通过。真实模型办事阶段因进程环境缺少测试 Key 跳过（阶段退出码 2），见 `output/dsh-live/report.json`。本轮未测真实麦克风识别、云端声线及 QQ 账号登录。
+- 首次单独运行 `tools\run_checks.bat` 时，`test_dsh.KeyRelayTest.test_token_and_path_are_checked` 的回环请求出现 WinError 10053，见 `output/v2-check/unittest-review-first.log`。同一用例独立连续运行三次均通过。原样重跑完整脚本返回 0，1264 项单测中 1260 项通过、4 项跳过，用时 212.397 秒。桌宠 smoke 的 `passed` 为 true、剩余工作线程为 0，详见 `output/v2-check/unittest.log` 和 `output/v2-check/smoke.log`。

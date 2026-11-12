@@ -25,6 +25,7 @@ STARTS = CONTROL_TAGS + HISTORY_ANNOTATIONS
 RESERVED = EXPRESSION_TAGS
 # <mind intent="…" willing="0~1"/>：T15 她对"对方请她做事"的态度，对方看不到；只记录给关系统计和观测，不决定执行与否
 IMG_LIMIT = 1024
+LEAVE_LIMIT = 128
 LEAVE = re.compile(r"""<leave[ \t]+reason[ \t]*=[ \t]*(["'])([^<>"'\x00-\x1f]{1,64})\1[ \t]*/>""", re.I)
 # 角色动画标注：给桌宠脸和动作用，屏幕上会被 CueStream 去掉，不算对方能看到的正文。
 CUE = re.compile(r'【[^】\n]{1,12}】|<[^<>\n/]{1,12}>')
@@ -52,7 +53,7 @@ class ExpressionStream:
         self.pending = ''; self.selection = None; self.reserved = False; self.diagnostics = []
         self.mind = None
         self.leave_reason = ''
-        self.leave_tag = None
+        self.leave_tag = ''
         self.leave_quote = ''
         self.markers = 0; self.visible = ''; self.has_text = False; self.cancelled = False; self.finished = False
         self.markdown = MarkdownLiterals()
@@ -159,20 +160,25 @@ class ExpressionStream:
         self.reserved = True; self.selection = (asset, actual)
 
     def _char(self, ch, out):
-        if self.leave_tag is not None:
-            # 认出标签名后一直吞到引号外的 >。超长、跨行或不完整的标签只隐藏。
-            if len(self.leave_tag) <= 128:
-                self.leave_tag += ch
-            if self.leave_quote:
+        if self.leave_tag:
+            self.leave_tag += ch
+            if ch in '\r\n' or len(self.leave_tag) > LEAVE_LIMIT:
+                # 普通正文也可能提到 <leave；到边界立即放回原文，后面的文字继续解析。
+                self._emit(self.leave_tag, out)
+                self.leave_tag = self.leave_quote = ''
+            elif self.leave_quote:
                 if ch == self.leave_quote:
                     self.leave_quote = ''
             elif ch in "\"'":
                 self.leave_quote = ch
             elif ch == '>':
                 match = LEAVE.fullmatch(self.leave_tag)
-                if match and not self.leave_reason:
-                    self.leave_reason = match[2].strip()
-                self.leave_tag = None
+                if match:
+                    if not self.leave_reason:
+                        self.leave_reason = match[2].strip()
+                else:
+                    self._emit(self.leave_tag, out)
+                self.leave_tag = ''
             return
         if self.drop_annotation:
             if ch == ']': self.drop_annotation = False
@@ -276,7 +282,7 @@ class ExpressionStream:
 
     def _markdown_enabled(self):
         in_tag = self.pending.lower().startswith(RESERVED + ('<img', '['))
-        return not (in_tag or self.leave_tag is not None or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
+        return not (in_tag or self.leave_tag or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
 
     def _read(self, chunk, out, *, final=False):
         for ch, literal in self.markdown.feed(chunk, self._markdown_enabled, final=final):
@@ -298,9 +304,11 @@ class ExpressionStream:
         if self.finished or self.cancelled: return ''
         out = []
         self._read('', out, final=True)
+        if self.leave_tag:
+            self._emit(self.leave_tag, out)
+            self.leave_tag = self.leave_quote = ''
         if self.pending:
             if any(self.pending.startswith(prefix) for prefix in HISTORY_ANNOTATIONS): self.diagnose('internal_annotation_echo')
-            elif len(self.pending) > 1 and '<leave'.startswith(self.pending.lower()): pass
             elif not self.pending.lower().startswith(RESERVED): self._emit(self.pending, out)
             else: self.markers += 1; self.diagnose('unfinished_marker')
         if self.task:
@@ -312,7 +320,7 @@ class ExpressionStream:
         return ''.join(out)
 
     def cancel(self):
-        self.leave_tag = None
+        self.leave_tag = self.leave_quote = ''
         self.leave_reason = ''
         self.markdown = MarkdownLiterals()
         self.cancelled = True; self.selection = None; self.pending = self.task = self.bracket = ''; self.img = 0; self.img_quote = ''

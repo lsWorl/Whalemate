@@ -85,7 +85,7 @@ def run_pet(root, phase):
                         return
                     (root/'ready.json').write_text(json.dumps(evidence), encoding='utf-8')
                     if (root/'observed').exists():
-                        window.submit('那你先休息吧。')
+                        window.submit('那你先休息吧。', source='voice')
                     else:
                         QTimer.singleShot(100, wait_for_observer)
                 wait_for_observer()

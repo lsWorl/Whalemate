@@ -33,12 +33,30 @@ class LeaveStreamTests(unittest.TestCase):
             self.assertEqual(parser.feed(TAG[split:]) + parser.finish(), '')
             self.assertEqual(parser.leave_reason, '想静一静')
 
-    def test_invalid_truncated_and_quoted(self):
-        for marker in ('<leav', '<leave', TAG[:-1], '<leave/>', '<leave reason="a>b"/>',
-                       '<leave reason="' + 'a'*1000 + '"/>', '<leave reason="a\nb"/>'):
-            parser = ExpressionStream()
-            self.assertEqual(parser.feed(marker)+parser.finish(), '')
-            self.assertFalse(parser.leave_reason)
+    def test_incomplete_or_invalid_leave_returns_original_text(self):
+        for raw in ('我说的是 <leave 这个词，后面还有很多话。还有一句。', '<leav', '<leave',
+                    TAG[:-1], '<leave/>', '<leave reason="a>b"/>后面的话。', '<leave reason="歇会儿">',
+                    '<leave reason="' + '长'*1000 + '"/>', '<leave reason="a\nb"/>'):
+            for chunks in ((raw,), raw):
+                with self.subTest(raw=raw[:30], chunks=len(chunks)):
+                    parser = ExpressionStream()
+                    self.assertEqual(''.join(parser.feed(c) for c in chunks) + parser.finish(), raw)
+                    self.assertFalse(parser.leave_reason)
+
+    def test_newline_and_overflow_release_text_and_resume_stream(self):
+        prefix = '<leave reason="'
+        for raw in (prefix+'未闭合\n', prefix+'未闭合\r\n', prefix.ljust(129, '长')):
+            for chunks in ((raw,), raw):
+                with self.subTest(boundary=repr(raw[-2:]), chunks=len(chunks)):
+                    parser = ExpressionStream()
+                    self.assertEqual(''.join(parser.feed(c) for c in chunks), raw)
+                    self.assertFalse(parser.leave_reason)
+                    tail = '后面的话。'+TAG+'再见。'
+                    rest = (tail,) if len(chunks) == 1 else tail
+                    self.assertEqual(''.join(parser.feed(c) for c in rest) + parser.finish(), '后面的话。再见。')
+                    self.assertEqual(parser.leave_reason, '想静一静')
+
+    def test_quoted_and_cancelled_leave_has_no_effect(self):
         for literal in ('`'+TAG+'`', '{"示例":\''+TAG+'\'}', '<leaves/>'):
             parser = ExpressionStream()
             self.assertEqual(parser.feed(literal)+parser.finish(), literal)
@@ -67,16 +85,30 @@ class SelfExitTests(unittest.TestCase):
         model = Model()
         ctl = ChatController(self.db, MemoryService(self.db), model)
         self.db.set_setting('relationship_learning', False)
-        for i, args in enumerate(({}, {'source':'qq'}, {'source':'qq', 'channel':'qq:group:42', 'scene':'qq'},
-                                  {'scene':'public'}, {'proactive':'分享外部文章'})):
+        cases = [({}, True), ({'source':'voice'}, True), ({'source':'qq'}, False), ({'source':'unknown'}, False),
+                 ({'source':'qq', 'channel':'qq:group:42', 'scene':'qq'}, False), ({'scene':'public'}, False),
+                 ({'proactive':'分享外部文章'}, False)]
+        for i, (args, local) in enumerate(cases):
             with self.subTest(args=args):
                 events = []
                 tokens = ctl.generate(str(i), ctl.character, CancellationToken(), query='你好',
                                       on_expression_event=events.append, **args)
                 self.assertEqual(''.join(tokens), '我先走啦。')
-                self.assertEqual(events[-1].leave_reason, '想静一静' if i == 0 else '')
-                self.assertEqual('<leave' in model.prompt, i == 0)
+                self.assertEqual(events[-1].leave_reason, '想静一静' if local else '')
+                self.assertEqual('<leave' in model.prompt, local)
                 self.assertNotIn('想静一静', str(events[-1].result.wire()))
+
+    def test_unclosed_leave_alone_completes_chat(self):
+        raw = '<leave 只是回复里的一个词。'
+        class Model(MockLLMClient):
+            def generate_reply_stream(self, messages, prompt, cancellation):
+                yield from raw
+        ctl = ChatController(self.db, MemoryService(self.db), Model())
+        events = []
+        stream = ctl.generate('literal', ctl.character, CancellationToken(), on_expression_event=events.append)
+        self.assertEqual(''.join(stream), raw)
+        self.assertEqual(events[-1].result.status, 'complete')
+        self.assertFalse(events[-1].leave_reason)
 
     def window(self):
         coord = ConversationCoordinator()
@@ -174,6 +206,28 @@ class SelfExitTests(unittest.TestCase):
         self.assertFalse((self.root/'two.txt').exists())
         box.approve.return_value = 'once'
         self.assertFalse(box.call('write_file', fresh)[1])
+
+    def test_resumed_writes_explain_all_applicable_risks(self):
+        allowed = self.root/'allowed'
+        box = ToolBox()
+        box.task = Task(allowed=[allowed], resuming=True)
+        for base in (allowed, self.root/'outside'):
+            for folder in (base, base/'.git'):
+                with self.subTest(folder=folder):
+                    path = folder/'新目录'
+                    box.approve = Mock(return_value='no')
+                    self.assertTrue(box.call('make_dir', {'path':str(path)})[1])
+                    self.assertFalse(path.exists())
+                    box.approve.assert_called_once()
+                    kind, title, detail = box.approve.call_args.args
+                    self.assertEqual(kind, 'resume')
+                    self.assertIn(str(path), title)
+                    self.assertIn('还没做的部分', detail)
+                    self.assertEqual('config、hooks' in detail, folder.name == '.git')
+                    self.assertEqual('超出' in title, base != allowed)
+                    if base != allowed:
+                        self.assertIn(str(allowed), detail)
+                    self.assertNotIn('本次都可以', detail)
 
     def test_exit_releases_unsent_and_preserves_uncertain_delivery(self):
         store = OutboxStore(self.db)
