@@ -6,7 +6,6 @@ import argparse
 
 from aicompanion.config import load_settings
 from aicompanion.llm.base import ChatTurn
-from aicompanion.llm.factory import create_llm_client
 
 
 def main() -> int:
@@ -40,17 +39,19 @@ def main() -> int:
     # 解析命令行参数，得到 args.message 和 args.no_stream。
     args = parser.parse_args()
 
-    settings = load_settings()
+    try:
+        from aicompanion.providers import real_chat_client
+        client, resolved = real_chat_client(settings=load_settings())   # 用设置里配置的聊天模型
+    except (ValueError, RuntimeError) as error:
+        print(f"LLM configuration failed: {error}")
+        return 1
     print("LLM diagnostics")
-    print(f"- provider: {settings.llm_provider}")
-    print(f"- base_url: {settings.llm_base_url}")
-    print(f"- model: {settings.llm_model}")
+    print(f"- model: {resolved.label}")
+    print(f"- base_url: {resolved.base_url}")
     # 打印本次是否使用流式输出；--no-stream 时这里会显示 False。
     print(f"- streaming: {not args.no_stream}")
     print()
 
-    # 根据 settings 创建实际的 LLM 客户端。
-    client = create_llm_client(settings)
     # 这里构造一个最小系统提示词，只用于诊断，不影响正式聊天窗口的角色 prompt。
     system_prompt = (
         "You are a warm AI companion. Reply naturally in Chinese, "

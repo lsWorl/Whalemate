@@ -6,10 +6,30 @@ requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.7",
     "python-dotenv>=1.0",
+    "webrtcvad-wheels==2.0.14.post1",
+    # 农历生日和春节、中秋等节日的换算（陪伴日期，计划书 v4 功能九；MIT 许可，纯 Python，负责人 2026-11-11 同意引入）
+    "lunar_python==1.4.9",
 ]
+
+[project.optional-dependencies]
+local-asr = ["sherpa-onnx>=1.12,<3", "numpy"]
+agent = ["deepseek-harness-sdk==0.2.1rc2", "mcp==2.3.0", "anyio==4.16.0", "uvicorn==0.54.0", "httpx2==2.16.0"]
+# 形象包编译与标注（tools/rig_studio.py、tests/test_rig_pack.py）；运行桌宠本身不需要
+studio = ["Pillow>=11,<13"]
+
+[tool.setuptools]
+# 发布产物只纳入下面声明的资源，用户装在角色目录里的图集不随程序分发。
+include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+aicompanion = ["assets/live2d/**/*", "assets/live2d/*.html", "assets/live2d/*.md", "characters/*/character.json", "characters/*/lines.json", "characters/*/interjections.json", "characters/*/qq-chat-card.json", "assets/expression/*.png", "assets/rig/*", "assets/voice/*", "assets/icons/*"]
+
+# Live2D Cubism Core 适用 Live2D 专有许可，本机下载后也不打进 wheel。
+[tool.setuptools.exclude-package-data]
+aicompanion = ["assets/live2d/vendor/live2dcubismcore.min.js"]
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]

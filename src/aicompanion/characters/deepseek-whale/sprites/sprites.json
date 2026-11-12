@@ -1,0 +1,127 @@
+{
+  "format": "AICompanionSpritePack",
+  "version": 1,
+  "size": [
+    477,
+    640
+  ],
+  "anchor": [
+    235.6,
+    609.4
+  ],
+  "source": {
+    "pack": "asset-pack-v3",
+    "canvas": [
+      1254,
+      1254
+    ],
+    "crop": [
+      196,
+      41,
+      1068,
+      1212
+    ],
+    "scale": 0.546541
+  },
+  "poses": {
+    "idle": {
+      "base": "idle.png",
+      "eyes_closed": "idle_eyes_closed.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    },
+    "talking": {
+      "base": "talking.png",
+      "eyes_closed": "talking_eyes_closed.png",
+      "mouth_closed": "talking_mouth_closed.png",
+      "eyes_closed_mouth_closed": "talking_eyes_closed_mouth_closed.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    },
+    "thinking": {
+      "base": "thinking.png",
+      "eyes_closed": "thinking_eyes_closed.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    },
+    "working": {
+      "base": "working.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    },
+    "celebrate": {
+      "base": "celebrate.png",
+      "anchor": [
+        235.6,
+        609.4
+      ],
+      "airborne": true
+    },
+    "error": {
+      "base": "error.png",
+      "anchor": [
+        235.6,
+        609.4
+      ],
+      "text_quad": [
+        [
+          154.7,
+          344.9
+        ],
+        [
+          314.8,
+          341.0
+        ],
+        [
+          315.4,
+          401.7
+        ],
+        [
+          155.8,
+          405.5
+        ]
+      ]
+    },
+    "wait": {
+      "base": "wait.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    },
+    "sleepy": {
+      "base": "sleepy.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    },
+    "grabbed": {
+      "base": "grabbed.png",
+      "anchor": [
+        288.6,
+        249.2
+      ],
+      "grab_point": [
+        288.6,
+        249.2
+      ],
+      "airborne": true
+    },
+    "poked": {
+      "base": "poked.png",
+      "anchor": [
+        235.6,
+        609.4
+      ]
+    }
+  }
+}

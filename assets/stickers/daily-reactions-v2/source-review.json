@@ -1,0 +1,35 @@
+{
+  "scope": "source-level review; no pending-source images in the formal catalog",
+  "sources": [
+    {
+      "source": "Loping151/dsh-nekowhale-stickers / kiriyuki.com",
+      "status": "selected_with_conditions",
+      "conditions": "GIF非商业署名分享；标注CC BY-NC4；基础设计署名随许可保留"
+    },
+    {
+      "source": "jdecked/twemoji",
+      "status": "selected",
+      "conditions": "图形CC BY4；代码MIT不用于推定图片许可；SVG转PNG已标明"
+    },
+    {
+      "source": "microsoft/fluentui-emoji",
+      "status": "not_selected",
+      "reason": "官方仓库MIT已查看；当前素材足够且本任务不修改运行许可枚举"
+    },
+    {
+      "source": "DuckOfDisorder/BlobCats",
+      "status": "pending_source_rights_review_no_images_imported",
+      "reason": "汇集多来源，仓库以缺少声明推定Apache不等于逐个原作者授权"
+    },
+    {
+      "source": "Volpeon/Neocat",
+      "status": "pending_source_rights_review_no_images_imported",
+      "reason": "本次原链接404，未确认当前原作者许可，不采用聚合站的转述"
+    },
+    {
+      "source": "lmy414/bluedafeiyu",
+      "status": "pending_image_rights_review_no_images_imported",
+      "reason": "代码许可不替代图片许可，本次不批量收取未核实图片"
+    }
+  ]
+}

@@ -2,37 +2,82 @@
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#edf6f3;font-family:system-ui;color:#214438}
-canvas{display:block}#status{position:absolute;left:20px;bottom:18px;font-size:13px;max-width:90%}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:system-ui;color:#214438}
+canvas{display:block;touch-action:none}#status{position:absolute;left:20px;bottom:18px;font-size:13px;max-width:90%;pointer-events:none}
+html.desktop,html.desktop body{background:transparent}html.desktop #status{display:none}
 </style></head>
 <body><canvas id="scene"></canvas><div id="status">加载 Live2D…</div>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script src="vendor/live2dcubismcore.min.js"></script>
 <script src="vendor/pixi.min.js"></script><script src="vendor/cubism4.min.js"></script>
 <script>
-let app,model,bridge,mouth=0,mood='calm';
+let app,model,bridge,mouth=0,mood='calm',presentation='live2d',loadEpoch=0,desktop=false,frames=0;
 window.avatarState=function(state){mouth=state.mouth||0;mood=state.mood||'calm';};
+function setSurface(value){desktop=value;document.documentElement.classList.toggle('desktop',value);layout();}
 function layout(){if(!model)return;const width=innerWidth,height=innerHeight;
- app.renderer.resize(width,height);const bounds=model.internalModel; 
- const scale=Math.min(width/bounds.width*.9,height/bounds.height*.96);
- model.scale.set(scale);model.anchor.set(.5,.5);model.position.set(width/2,height/2);}
+ app.renderer.resize(width,height);const bounds=model.internalModel;
+ // 为模型类型提示保留底部空间，不让文字压在角色脚部。
+ const usableHeight=Math.max(1,height-(desktop?0:44));
+ const scale=Math.min(width/bounds.width*.9,usableHeight/bounds.height*.96);
+ model.scale.set(scale);model.anchor?.set(.5,.5);model.position.set(width/2,usableHeight/2);}
 async function loadModel(url){
+ const epoch=++loadEpoch;
  if(model){app.stage.removeChild(model);model.destroy();model=null;}
- try {model=await PIXI.live2d.Live2DModel.from(url,{autoInteract:false});app.stage.addChild(model);layout();
- model.internalModel.on('beforeModelUpdate',()=>{const core=model.internalModel.coreModel;
- core.setParameterValueById('ParamMouthOpenY',mouth);
- core.setParameterValueById('ParamMouthForm',mood==='happy'?.5:mood==='sad'?-.3:0);
- core.setParameterValueById('ParamBrowLY',mood==='angry'?-.5:mood==='sad'?.3:0);
- core.setParameterValueById('ParamBrowRY',mood==='angry'?-.5:mood==='sad'?.3:0);
- core.setParameterValueById('ParamCheek',mood==='shy'?.8:0);});
- document.getElementById('status').textContent='Haru · Live2D 示例模型';
+ try {
+ const loaded=await PIXI.live2d.Live2DModel.from(url,{autoInteract:false});
+ if(epoch!==loadEpoch){loaded.destroy();return;}
+ presentation='live2d';model=loaded;app.stage.addChild(model);layout();
+ const core=model.internalModel.coreModel,supported=new Set(core._model.parameters.ids);
+ const cheekId=supported.has('ParamCheek')?'ParamCheek':supported.has('ParamTere')?'ParamTere':null;
+ let open=0;
+ model.internalModel.on('beforeModelUpdate',()=>{
+ frames++;
+ // 保留模型自身的待机、眨眼和物理更新，只驱动确实存在的标准表情参数。
+ const set=(id,value)=>{if(supported.has(id))core.setParameterValueById(id,value);};
+ open+=(mouth-open)*.4;
+ set('ParamMouthOpenY',open);
+ set('ParamMouthForm',mood==='happy'?.5:mood==='sad'?-.3:0);
+ set('ParamBrowLY',mood==='angry'?-.5:mood==='sad'?.3:0);
+ set('ParamBrowRY',mood==='angry'?-.5:mood==='sad'?.3:0);
+ if(cheekId)set(cheekId,mood==='shy'?.8:0);
+ // 渲染器在 update 后会恢复待机参数，验收必须采集真正送入网格更新前的值。
+ model.companionRig={mouth:supported.has('ParamMouthOpenY')?core.getParameterValueById('ParamMouthOpenY'):null,
+  cheek:cheekId?core.getParameterValueById(cheekId):null};});
+ document.getElementById('status').textContent='自定义 Live2D 模型';
  if(bridge)bridge.report('ready');
- }catch(error){document.getElementById('status').textContent='模型加载失败：'+error.message;if(bridge)bridge.report('error:'+error.message);}}
-try{app=new PIXI.Application({view:document.getElementById('scene'),width:innerWidth,height:innerHeight,
+ }catch(error){if(epoch!==loadEpoch)return;document.getElementById('status').textContent='角色加载失败：'+error.message;if(bridge)bridge.report('error:'+error.message);}}
+// WebChannel 只传递拖动阶段；原生窗口使用 Qt 屏幕坐标处理多屏 DPI。
+const canvas=document.getElementById('scene');let dragging=false;
+canvas.addEventListener('pointerdown',event=>{if(!desktop||event.button!==0||!bridge)return;
+ dragging=true;canvas.setPointerCapture(event.pointerId);bridge.pointer('press');});
+canvas.addEventListener('pointermove',event=>{if(dragging&&bridge)bridge.pointer('move');
+ else if(model?.setGaze)model.setGaze(event.offsetX/innerWidth*2-1,event.offsetY/innerHeight*2-1);});
+function releasePointer(){if(dragging&&bridge)bridge.pointer('release');dragging=false;}
+canvas.addEventListener('pointerup',releasePointer);canvas.addEventListener('pointercancel',releasePointer);
+canvas.addEventListener('lostpointercapture',releasePointer);
+canvas.addEventListener('contextmenu',event=>{if(desktop&&bridge){event.preventDefault();bridge.menu();}});
+window.avatarDiagnostics=function(){
+ if(!app||!model)return {ready:false};
+ const core=presentation==='live2d'?model.internalModel.coreModel:null;
+ const pixels=app.renderer.extract.pixels(app.stage);let visible=0,transparent=0,pixelHash=2166136261;
+ for(let i=3;i<pixels.length;i+=4){if(pixels[i]>20)visible++;if(pixels[i]===0)transparent++;
+  pixelHash=Math.imul(pixelHash^pixels[i-3]^pixels[i-2]^pixels[i-1]^pixels[i],16777619)>>>0;}
+ const bounds=model.getBounds();
+ return {ready:true,presentation,desktop,frames,visiblePixels:visible,transparentPixels:transparent,pixelHash,
+  width:innerWidth,height:innerHeight,bounds:{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height},
+  mouth:core?model.companionRig?.mouth:model.animationState?.mouth,
+  cheek:core?model.companionRig?.cheek:model.animationState?.cheek,
+  animation:model.animationState||null};};
+window.avatarRigTest=function(state){model?.setTestState?.(state);};
+window.avatarMotion=function(name){return model?.playAction?.(name)||false;};
+try{app=new PIXI.Application({view:canvas,width:innerWidth,height:innerHeight,
  backgroundAlpha:0,antialias:true,resolution:devicePixelRatio,autoDensity:true});
  addEventListener('resize',layout);
  new QWebChannel(qt.webChannelTransport,channel=>{bridge=channel.objects.avatar;
  bridge.stateChanged.connect(raw=>window.avatarState(JSON.parse(raw)));
- bridge.modelChanged.connect(loadModel);bridge.initialModel(url=>loadModel(url));});
+ bridge.surfaceChanged.connect(setSurface);bridge.initialSurface(setSurface);
+ bridge.initialState(raw=>window.avatarState(JSON.parse(raw)));
+ bridge.motionChanged.connect(window.avatarMotion);
+ bridge.modelChanged.connect(loadModel);bridge.initialModel(url=>{if(url)loadModel(url);});});
 }catch(error){document.getElementById('status').textContent='Live2D 渲染不可用：'+error.message;}
 </script></body></html>

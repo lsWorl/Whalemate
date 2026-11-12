@@ -1,0 +1,106 @@
+"""角色注册表：把角色包同步到数据库。用哪个模型由设置里的模型配置决定（providers 模块），与角色包无关。"""
+from __future__ import annotations
+
+import os
+
+from aicompanion.characters import CharacterPack, discover
+from aicompanion.domain.character import CharacterProfile
+
+ACTIVE_KEY = 'active_character'
+DEFAULT_KEY = 'v2_default_character'
+DEFAULT_CHARACTER_ID = 'deepseek-whale'
+
+
+class CharacterRegistry:
+    def __init__(self, database, settings, packs: list[CharacterPack] | None = None, environ=None):
+        self.database, self.settings = database, settings
+        self.environ = os.environ if environ is None else environ
+        if packs is None: packs, self.errors = discover()
+        else: self.errors = []
+        self.packs = {pack.id: pack for pack in packs}
+
+    def sync(self) -> None:
+        """为每个就绪角色包补齐数据库行和初始语音设置；已有的用户修改不覆盖。"""
+        from aicompanion.services.persona_service import PersonaService
+        personas = PersonaService(self.database)
+        existing = {character.id for character in self.database.characters()}
+        for pack in self.packs.values():
+            if not pack.ready: continue
+            if pack.persona and pack.id not in existing:
+                self.database.add_character(CharacterProfile(pack.name, pack.persona['description'], pack.persona['speaking_style'], pack.id))
+            elif pack.persona and pack.id in existing and not personas.personas(pack.id):
+                # 人格包启用之前的老库：先按原来的规则替换占位 / 升级人设，下面再从结果建人格
+                self._replace_placeholder(pack); self._upgrade_persona(pack)
+            if pack.id not in existing and pack.id not in {c.id for c in self.database.characters()}: continue
+            self._rename(pack)
+            language = pack.voice.get('language')
+            if language and self.database.get_setting(f'speech_language:{pack.id}') is None:
+                self.database.set_setting(f'speech_language:{pack.id}', language)
+            voice_env = pack.voice.get('qwen_voice_env')
+            voice = self.environ.get(voice_env, '').strip() if voice_env else ''
+            if voice and self.database.get_setting(f'qwen_voice:{pack.id}') is None:
+                self.database.set_setting(f'qwen_voice:{pack.id}', voice)
+        # 计划书 v4 功能二：每个角色至少有一个人格；角色包的人设是内置人格，包升级时只更新用户没改过的内置人格
+        for character in self.database.characters():
+            pack = self.pack(character.id)
+            try: personas.ensure(character, pack.persona if pack else None)
+            except Exception: pass   # 人格表异常不影响启动；角色表里的设定照常可用
+        # v2 首次启动默认切到鲸鲸（原名鲸娘），只做一次；之后尊重用户的选择。
+        if self.database.get_setting(DEFAULT_KEY) is None:
+            if self.pack(DEFAULT_CHARACTER_ID) and any(c.id == DEFAULT_CHARACTER_ID for c in self.database.characters()):
+                self.database.set_setting(ACTIVE_KEY, DEFAULT_CHARACTER_ID)
+            self.database.set_setting(DEFAULT_KEY, True)
+
+    def _rename(self, pack) -> None:
+        """角色包改了名字（例如鲸娘 → 鲸鲸，负责人 2026-11-11）：数据库里还是包的旧名字时换成新名字。
+        每个新名字只换一次，之后用户在设置里改回旧名字也不会再被换掉；用户自己起的名字不在旧名单里，不动。"""
+        from dataclasses import replace
+        key = f'pack_name:{pack.id}'
+        if not getattr(pack, 'previous_names', ()) or self.database.get_setting(key) == pack.name: return
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current and current.name in pack.previous_names: self.database.update_character(replace(current, name=pack.name))
+        self.database.set_setting(key, pack.name)
+
+    def _replace_placeholder(self, pack) -> None:
+        """数据库初始化写入的占位角色与角色包同 ID：还是占位文字时换成包里的名字和人设（用户改过的不动）。"""
+        from dataclasses import replace
+        from aicompanion.domain.character import DEFAULT_CHARACTER
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current and (current.description, current.speaking_style) == (DEFAULT_CHARACTER.description, DEFAULT_CHARACTER.speaking_style):
+            self.database.update_character(replace(current, name=pack.name, description=pack.persona['description'],
+                                                   speaking_style=pack.persona['speaking_style']))
+
+    def _upgrade_persona(self, pack) -> None:
+        """角色包人设升级：只在数据库里还是上一版原文（用户没改过）时替换；替换前把旧的存一份。"""
+        version = int(pack.persona.get('version') or 1)
+        key = f'persona_version:{pack.id}'
+        if int(self.database.get_setting(key, 1) or 1) >= version: return
+        current = next((c for c in self.database.characters() if c.id == pack.id), None)
+        if current is None: return
+        # 上一版和更早的原文都认（用户可能跳过了某一版）；用户自己改过的人设不在其中，保持不动
+        known = [(pack.persona.get('previous_description'), pack.persona.get('previous_speaking_style'))]
+        known += [(o.get('description'), o.get('speaking_style')) for o in pack.persona.get('older') or [] if isinstance(o, dict)]
+        if (current.description, current.speaking_style) in known:
+            self.database.set_setting(f'persona_backup:{pack.id}', {'description': current.description, 'speaking_style': current.speaking_style})
+            from dataclasses import replace
+            self.database.update_character(replace(current, description=pack.persona['description'], speaking_style=pack.persona['speaking_style']))
+        self.database.set_setting(key, version)
+
+    def pack(self, character_id: str) -> CharacterPack | None:
+        pack = self.packs.get(character_id)
+        return pack if pack and pack.ready else None
+
+    def characters(self) -> list[CharacterProfile]:
+        """可选择的角色：数据库中的角色（含用户自建），按角色包顺序在前。"""
+        order = {pack_id: pack.order for pack_id, pack in self.packs.items()}
+        rows = self.database.characters()
+        return sorted(rows, key=lambda c: (order.get(c.id, 1000), rows.index(c)))
+
+    def active(self) -> CharacterProfile:
+        characters = self.characters()
+        if not characters: raise RuntimeError('数据库中没有任何角色。')
+        wanted = self.database.get_setting(ACTIVE_KEY)
+        return next((c for c in characters if c.id == wanted), characters[0])
+
+    def set_active(self, character_id: str) -> None:
+        self.database.set_setting(ACTIVE_KEY, character_id)

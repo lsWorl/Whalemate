@@ -1,4 +1,9 @@
-"""下载真实示例资源并记录来源；不下载或伪造定制动漫角色模型。"""
+"""下载 Live2D 渲染运行库（用于导入外部 Cubism 模型）并记录来源。
+
+Live2D Cubism Core 适用 Live2D Proprietary Software License，不随本项目的仓库和打包版本分发；
+需要导入外部 Live2D 模型的用户运行本脚本，从 Live2D 官网直接下载到本机。默认角色不需要它。
+v2 起不再下载或自带 Haru 示例模型；不下载或伪造定制动漫角色模型。
+"""
 from pathlib import Path
 import json
 import io
@@ -17,6 +22,9 @@ def download(url,path):
 
 
 def main():
+    print('Live2D Cubism Core 适用 Live2D Proprietary Software License：')
+    print('https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html')
+    print('继续下载即表示你已阅读并同意该许可；下载的文件只留在本机，不会被提交或打包。')
     vendor = {
         'pixi.min.js':'https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js',
         'cubism4.min.js':'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js',
@@ -30,8 +38,6 @@ def main():
         target = None
         if name.endswith('/Core/live2dcubismcore.min.js'):
             target = ROOT/'vendor/live2dcubismcore.min.js'
-        elif '/Samples/Resources/Haru/' in name and not name.endswith('/'):
-            target = ROOT/'Haru'/name.split('/Samples/Resources/Haru/',1)[1]
         elif name.endswith(('LICENSE.md','NOTICE.md')) and name.count('/')==1:
             target = ROOT/name.rsplit('/',1)[1]
         if target:
@@ -43,22 +49,6 @@ def main():
             print(target.relative_to(ROOT))
     if not (ROOT/'vendor/live2dcubismcore.min.js').is_file():
         raise RuntimeError('Core missing from SDK archive')
-    return 0
-    base = 'https://raw.githubusercontent.com/Live2D/CubismWebSamples/develop/Samples/Resources/Haru/'
-    model_path = ROOT/'Haru/Haru.model3.json'
-    download(base+'Haru.model3.json',model_path)
-    refs = json.loads(model_path.read_text())['FileReferences']
-    files = [refs['Moc'],*refs['Textures']]
-    files += [refs[k] for k in ('Physics','Pose','DisplayInfo','UserData') if k in refs]
-    files += [r['File'] for r in refs.get('Expressions',[])]
-    files += [r['File'] for group in refs.get('Motions',{}).values() for r in group]
-    files += [r['Sound'] for group in refs.get('Motions',{}).values() for r in group if 'Sound' in r]
-    for name in sorted(set(files)):
-        target = (ROOT/'Haru'/name).resolve()
-        if not target.is_relative_to((ROOT/'Haru').resolve()):
-            raise ValueError('Unsafe asset path')
-        download(base+name,target)
-    download('https://raw.githubusercontent.com/Live2D/CubismWebSamples/develop/LICENSE.md',ROOT/'Haru/LICENSE.md')
     return 0
 
 

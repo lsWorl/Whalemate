@@ -19,17 +19,3 @@ class EmotionState:
     loneliness: int = 15
     energy: int = 80
 
-    def after_user_message(self) -> None:
-        """用户发送消息后，降低孤独感，略微增加亲密度。"""
-
-        self.loneliness = max(0, self.loneliness - 10)
-        self.affection = min(100, self.affection + 1)
-        self.energy = max(0, self.energy - 1)
-        self.mood = "happy" if self.affection >= 55 else "calm"
-
-    def after_idle_tick(self) -> None:
-        """用户长时间没回复时，提升孤独感并可能切换到 lonely。"""
-
-        self.loneliness = min(100, self.loneliness + 5)
-        if self.loneliness >= 60:
-            self.mood = "lonely"
