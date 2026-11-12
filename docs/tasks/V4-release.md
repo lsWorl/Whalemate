@@ -79,4 +79,6 @@
 
 本机包解压后的 `Whalemate/third-party/napcat/` 包含未改动的原版 ZIP、完整 LICENSE 和 NOTICE.txt。NapCat 仅限非商业用途。NapCat、腾讯 QQ 二进制和 Node.js 均适用各自的许可。面向其他用户分发 QQ 运行时的授权尚未核实。
 
+**2026-11-12 负责人决定：** v0.1.0 起 Releases 压缩包随附这份未改动的 NapCat 官方 Windows 包（含其中的腾讯 QQ 运行时文件），连同完整 LICENSE 和 NOTICE。腾讯运行时的再分发授权仍未找到书面依据；该决定由负责人作出并承担，仅限非商业用途。如上游或腾讯提出异议，撤下 Releases 中的附带包，改回由用户在“QQ → 高级设置 → 本地 NapCat 包”里指定原版 ZIP。
+
 用 `tools/verify_release.py <ZIP> --case qq` 运行联网的扫码前验收。它启动解压出的主程序，在临时用户目录里准备真实组件，检查 WebUI、二维码、AstrBot 监听和插件心跳，随后停止服务。正式账号登录由负责人扫码。[构建来源与实测记录](V4-qq-local-napcat.md)
