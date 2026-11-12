@@ -27,6 +27,7 @@ class SayTests(unittest.TestCase):
                 ('前<say>第一段</say>后<say>第二段</say>', '前后', '第一段'),
                 ('前<say> </say>中<say>第二段</say>', '前中', '第二段'),
                 ('上文<sa', '上文<sa', ''), ('上文<say>未闭合\n下文', '上文<say>未闭合\n下文', ''),
+                ('前<say>缺结尾<say>新的</say>后', '前<say>缺结尾后', '新的'),
                 ('<saying>正文', '<saying>正文', ''),
                 ('上<say>有<task>副作用</task></say>下', '上下', ''),
                 ('上<say>' + '长' * MAX_SAY + '</say>下', '上下', '长' * MAX_SAY),
@@ -49,6 +50,12 @@ class SayTests(unittest.TestCase):
             shown, summary = self.parse(raw, True)
             self.assertEqual((shown, summary), (literal + '\n正文', '简短'))
             self.assertEqual(CueStream(Vocab()).feed(shown, final=True)[0], shown)
+
+    def test_leave_and_summary_are_independent(self):
+        parser = ExpressionStream()
+        raw = '正文<say><leave reason="不执行"/></say><say>简短</say><leave reason="真正告别"/>'
+        self.assertEqual(''.join(parser.feed(ch) for ch in raw) + parser.finish(), '正文')
+        self.assertEqual((parser.say.summary, parser.leave_reason), ('简短', '真正告别'))
 
     def test_agent_chunks_ignore_thought_and_intermediate_summary(self):
         def event(kind, text): return {'sessionUpdate': kind, 'content': {'type': 'text', 'text': text}}
@@ -74,6 +81,9 @@ class SayTests(unittest.TestCase):
         # 口播没有字幕和桌宠气泡；也不能以正文轮次的身份写入已朗读历史。
         speech.current_id = queued[0][1]
         MainWindow._speech_subtitle(win, '专用口播')
+        queued.clear()
+        MainWindow.speak_reply(win, '办事正文<say>直接口播</say>')
+        self.assertEqual([s for s, _ in queued], ['直接口播'])
         queued.clear()
         MainWindow.speak_reply(win, '原规则仍念这句。')
         self.assertEqual([s for s, _ in queued], ['原规则仍念这句。'])

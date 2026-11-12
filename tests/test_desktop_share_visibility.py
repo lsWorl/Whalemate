@@ -114,6 +114,21 @@ class DesktopShareVisibilityTests(unittest.TestCase):
         self.finish(worker, resume)
         self.assert_withdrawn(turn)
 
+    def test_late_spoken_summary_replaces_speech_but_not_visible_body(self):
+        self.win.speech.enabled = True
+        body = '关于这篇报道，我把细节写在这里。'
+        summary = '听这一句就好。'
+        worker, resume = self.start(first=body, last='<say>' + summary + '</say>')
+        turn = worker.generation_id
+        self.assertEqual(self.win.items[turn].content, body)
+        self.win.speech.enqueue.assert_not_called()
+        self.finish(worker, resume)
+        self.win.speech.enqueue.assert_called_once_with(summary, 'say:' + turn)
+        self.assertEqual(self.win.items[turn].content, body)
+        with self.db.transaction() as c:
+            row = c.execute("SELECT content FROM chat_messages WHERE turn_id=? AND role='assistant'", (turn,)).fetchone()
+        self.assertEqual(row[0], body)
+
     def test_share_without_native_speech_backend(self):
         worker, resume = self.start()
         self.finish(worker, resume)
@@ -132,7 +147,7 @@ class DesktopShareVisibilityTests(unittest.TestCase):
         self.win.vocab = self.controller.vocabs[self.cid] = Vocab({'开心': 'happy'})
         self.db.set_setting('speech_style', 'full')
         self.win.speech.enabled = True
-        self.win.speech.enqueue.side_effect = lambda text, turn: self.win._sentence_started(spoken_text(text))
+        self.win.speech.enqueue.side_effect = lambda text, turn, **_: self.win._sentence_started(spoken_text(text))
         # 跳过启动 Agent 前的界面等待，调用真实 _offer_task，只替换外部执行入口。
         timer = SimpleNamespace(singleShot=lambda delay, callback: callback())
         with patch('aicompanion.ui.main_window.QTimer', timer), patch.object(self.win.agent, 'start') as start, \

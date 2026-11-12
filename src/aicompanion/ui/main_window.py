@@ -798,12 +798,18 @@ class MainWindow(QMainWindow):
             extra=interjection.brief_text(strip_cues(sentence,self.vocab))
             if extra: self.speech.enqueue(extra,'interjection:'+str(generation))
 
-    def speak_reply(self,text,expressions=(),spoken_summary=''):
+    def speak_reply(self,text,expressions=(),spoken_summary=None):
         """干活结果等一次性文字：完整朗读模式念全文，否则只发一声。"""
         if not self.speech.enabled or not text: return
         # 每份结果一个独立的朗读轮次：上一份退回本地朗读 / 出错，不影响下一份（Codex PR #39 第 2 项）
         generation='agent:'+uuid4().hex
-        segments = summary_segments(spoken_summary)
+        if spoken_summary is None:
+            from aicompanion.pet.script import SAY_OPEN
+            if SAY_OPEN in text:
+                parser = CueStream(Vocab(), summary_only=True)
+                text, _ = parser.feed(text, final=True)
+                spoken_summary = parser.say.summary
+        segments = summary_segments(spoken_summary or '')
         if segments:
             for segment in segments: self.speech.enqueue(segment, 'say:' + generation)
             return
@@ -863,7 +869,7 @@ class MainWindow(QMainWindow):
         cues=self.pending_cues.get(generation)
         if cues and self.speech.enabled:
             self.sentence_cues.setdefault(spoken_text(segment),[]).extend(cues); self.pending_cues[generation]=[]
-        self.speech.enqueue(segment,generation)
+        self.speech.enqueue(segment,generation,completed_reply=True)
 
     def _sentence_started(self,text):
         for cue in self.sentence_cues.pop(text,[]): self.pet.perform(cue)

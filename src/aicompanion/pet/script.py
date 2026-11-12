@@ -297,6 +297,10 @@ class SayBlock:
             if self.literal_tail == SAY_CLOSE: self.literal_tail = None
             return ch
         self.buffer += ch
+        if self.buffer.endswith(SAY_OPEN):
+            # 第二个起始标记说明前一段没有闭合。先还回原文，新段仍有机会成为口播。
+            raw, self.buffer = self.buffer[:-len(SAY_OPEN)], SAY_OPEN
+            return raw
         if self.buffer.endswith(SAY_CLOSE):
             raw, self.buffer = self.buffer, ''
             body = raw[len(SAY_OPEN):-len(SAY_CLOSE)]

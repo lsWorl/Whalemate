@@ -89,9 +89,9 @@ class ChatController:
         context=replace(context,supports_images=context.supports_images and on_expression_event is not None,
                         early_before=context.early_before and reply_filter is None)
         # 绑定主人的 QQ 私聊也复用 desktop 历史频道，必须同时检查实际来源。
-        local_reply = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice') and not proactive
-                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop'
-                       and context.scene == 'pet' and context.trigger == 'user_reply')
+        local_voice = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice')
+                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop' and context.scene == 'pet')
+        local_reply = local_voice and not proactive and context.trigger == 'user_reply'
         self.database.start_turn(turn_id,character.id)
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
@@ -123,7 +123,7 @@ class ChatController:
             prompt+=self._community(character,query,channel)
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
-            if channel == 'desktop' and scene == 'pet' and source != 'qq':
+            if local_voice:
                 prompt += SAY_PROMPT
             marks['other']=len(prompt)
             if self.agent_enabled and not proactive and offer_tasks:
@@ -202,7 +202,7 @@ class ChatController:
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:
                 reason = parser.leave_reason if local_reply and status == 'complete' and content and parser else ''
-                summary = parser.say.summary if parser and status == 'complete' and source != 'qq' and channel == 'desktop' and scene == 'pet' else ''
+                summary = parser.say.summary if local_voice and parser and status == 'complete' and content else ''
                 on_expression_event(ExpressionEvent('final',turn_id,result=result,leave_reason=reason,spoken_summary=summary))
             self._after_turn(character,channel,scene,person,context,parser,status,turn_id,proactive=bool(proactive))
 
