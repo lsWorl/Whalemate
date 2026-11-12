@@ -4,6 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| V4-UI | 界面重构：鲸鲸主题、聊天面板、桌宠右键菜单分组、首次启动向导、设置换装并改为自动保存（让非技术用户也能用） | Codex 实现；Claude 审计 | 进行中（`task/v4-ui-redesign`） | docs/tasks/V4-UI-redesign.md；设计稿 docs/design/v4-ui/ |
 | T20-动画 | 鲸鲸默认播放本机安装的 Aboutme 大肥鱼，缺包时使用内置自绘鲸娘；分层源稿可从 `fa54555` 找回 | Codex | 独立审查后修订，待复核（PR #25） | [任务说明](tasks/T20-original-whale-animation.md) · [安装与署名](aboutme-pet.md) |
 | OSS-文档清理 | 负责人 2026-11-12 要求删除过时文档：计划书 v1～v3、T14 原始方案、`docs/tasks/evidence/` 下的 T14 评测证据；引用处改为指向 git 历史（提交 `7ebc39c`） | Claude 文档；Codex 审查 | 已合入（PR #50，`82eaeee`） | 旧自绘鲸娘的运行素材按 #25 的回退需求保留 |
 | OSS-Live2D-Core | Live2D Cubism Core（专有许可）从仓库和打包版本中移除：用户按需运行 `tools/fetch_avatar.py` 下载；缺少时导入提示获取方法、启动退回自带形象；`.gitignore`、wheel 和 `build_windows.py` 都排除 Core | Claude 实现；Codex 审查 | 待审查（`task/oss-live2d-core`，叠在 #44 上） | 负责人 2026-11-11 要求；动到 `ui/main_window.py`、`pyproject.toml`（共享文件，改动见 PR） |

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>聊天面板</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#2F5BEA}a:hover{color:#1E3FB8}
+</style>
+</helmet>
+<div style="width: 420px; height: 760px; box-sizing: border-box; background: #FBF8F3; font-family: 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif; color: #13234A; display: flex; flex-direction: column">
+  <div style="display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px 16px; background: #FFFFFF; border-bottom: 1px solid #ECE6DC">
+    <img src="../../../src/aicompanion/assets/icons/aicompanion-256.png" alt="鲸鲸" style="width: 42px; height: 42px; border-radius: 50%">
+    <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0">
+      <div style="font-size: 16px; font-weight: 700">鲸鲸</div>
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5A6787"><span style="width: 8px; height: 8px; border-radius: 50%; background: #2FA866"></span>在线 · 心情不错</div>
+    </div>
+    <button type="button" aria-label="回复时念出来（已开）" style="width: 40px; height: 40px; border-radius: 20px; border: none; background: #E6EEFF; color: #2F5BEA; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>
+    </button>
+    <button type="button" aria-label="设置" style="width: 40px; height: 40px; border-radius: 20px; border: none; background: transparent; color: #4B587A; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+    </button>
+  </div>
+
+  <div style="flex-grow: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden">
+    <div style="align-self: center; font-size: 12px; color: #5A6787; background: #F1ECE3; padding: 4px 12px; border-radius: 12px">今天 14:20</div>
+    <div style="display: flex; justify-content: flex-end">
+      <div style="max-width: 260px; background: #2F5BEA; color: #FFFFFF; padding: 10px 14px; border-radius: 18px 18px 6px 18px; font-size: 14px; line-height: 1.6">今天有点累，想和你说说话。</div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: flex-end">
+      <img src="../../../src/aicompanion/assets/icons/aicompanion-256.png" alt="" style="width: 28px; height: 28px; border-radius: 50%">
+      <div style="max-width: 270px; background: #E6EEFF; padding: 10px 14px; border-radius: 18px 18px 18px 6px; font-size: 14px; line-height: 1.6">我在呢，慢慢说。是工作上的事，还是心里有点闷？</div>
+    </div>
+    <div style="display: flex; justify-content: flex-end">
+      <div style="max-width: 260px; background: #2F5BEA; color: #FFFFFF; padding: 10px 14px; border-radius: 18px 18px 6px 18px; font-size: 14px; line-height: 1.6">帮我把桌面上的截图整理到一个文件夹吧</div>
+    </div>
+    <div style="margin-left: 36px; background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2F5BEA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"></path></svg>
+        她正在帮你做事
+      </div>
+      <div style="font-size: 13px; color: #4B587A; line-height: 1.6">已找到 23 张截图，准备移到“桌面/截图整理”。</div>
+      <div style="height: 6px; border-radius: 3px; background: #E6EEFF"><div style="width: 60%; height: 6px; border-radius: 3px; background: #2F5BEA"></div></div>
+      <div style="display: flex; gap: 8px">
+        <button type="button" style="height: 34px; padding: 0 14px; border-radius: 17px; border: none; background: #2F5BEA; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 500">同意移动</button>
+        <button type="button" style="height: 34px; padding: 0 14px; border-radius: 17px; border: 1.5px solid #C9D5F2; background: #FFFFFF; color: #4B587A; font: inherit; font-size: 13px">让她停下</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; gap: 6px; padding: 4px; background: #F1ECE3; border-radius: 18px; align-self: flex-start">
+      <button type="button" style="height: 30px; padding: 0 14px; border-radius: 15px; border: none; background: #FFFFFF; color: #13234A; font: inherit; font-size: 13px; font-weight: 500">聊天</button>
+      <button type="button" style="height: 30px; padding: 0 14px; border-radius: 15px; border: none; background: transparent; color: #4B587A; font: inherit; font-size: 13px">帮我做事</button>
+    </div>
+    <div style="display: flex; align-items: flex-end; gap: 6px; background: #FFFFFF; border: 1.5px solid #D9E1F2; border-radius: 22px; padding: 6px 6px 6px 8px">
+      <button type="button" aria-label="添加文件" style="width: 36px; height: 36px; border-radius: 18px; border: none; background: transparent; color: #4B587A; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.6-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg>
+      </button>
+      <label style="flex-grow: 1; display: flex"><span style="position: absolute; left: -9999px">消息</span><input type="text" placeholder="和鲸鲸说点什么…" style="flex-grow: 1; border: none; outline: none; font: inherit; font-size: 14px; height: 36px; background: transparent; color: #13234A"></label>
+      <button type="button" aria-label="按住说话（语音聊天）" style="width: 36px; height: 36px; border-radius: 18px; border: none; background: #E6EEFF; color: #2F5BEA; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></svg>
+      </button>
+      <button type="button" aria-label="发送" style="width: 36px; height: 36px; border-radius: 18px; border: none; background: #2F5BEA; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+      </button>
+    </div>
+    <div style="font-size: 12px; color: #5A6787; padding-left: 8px">“帮我做事”：她会动手操作电脑，改文件前都会先问你。</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
