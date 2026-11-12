@@ -4,6 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| V4-发布 | 解压即用的 Windows 压缩包（AICompanion.exe + 卸载鲸伴.exe，卸载清除程序、数据库和全部本机数据）、上传私有仓库 Releases、README 增加下载安装与卸载说明 | Codex 实现与打包；Claude 审计、上传、README | 进行中（`task/v4-release`） | docs/tasks/V4-release.md |
 | V4-UI | 界面重构：鲸鲸主题、聊天面板、桌宠右键菜单分组、首次启动向导、设置换装并改为自动保存（让非技术用户也能用） | Codex 实现；Claude 审计 | 已处理第二轮审计，待 Claude 复审（#51，`task/v4-ui-redesign`） | docs/tasks/V4-UI-redesign.md；设计稿 docs/design/v4-ui/ |
 | T20-动画 | 鲸鲸默认播放本机安装的 Aboutme 大肥鱼，缺包时使用内置自绘鲸娘；分层源稿可从 `fa54555` 找回 | Codex | 独立审查后修订，待复核（PR #25） | [任务说明](tasks/T20-original-whale-animation.md) · [安装与署名](aboutme-pet.md) |
 | OSS-文档清理 | 负责人 2026-11-12 要求删除过时文档：计划书 v1～v3、T14 原始方案、`docs/tasks/evidence/` 下的 T14 评测证据；引用处改为指向 git 历史（提交 `7ebc39c`） | Claude 文档；Codex 审查 | 已合入（PR #50，`82eaeee`） | 旧自绘鲸娘的运行素材按 #25 的回退需求保留 |
