@@ -35,7 +35,11 @@ class Base(unittest.TestCase):
         self.service = BridgeService(self.db, self.controller)
         self.db.set_setting('relationship_learning', False)   # 不起后台关系分析线程（Windows 上会占着临时库）
         self.saved = runtime.last_heartbeat
-        runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.10.1', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
+        runtime.last_heartbeat = {'at': time.time(), 'astrbot': 'plugin-0.10.2', 'groups': [], 'onebot': {'connected': True, 'self_id': '90009', 'error': ''}}
+
+    def claim(self, turn):
+        return self.service.outbox_claim({'id': turn, 'astrbot': 'plugin-0.10.2'})
+
     def tearDown(self):
         runtime.last_heartbeat = self.saved; self.service.close(); self.temp.cleanup()
 
@@ -46,7 +50,7 @@ class ProactiveQQTests(Base):
         runtime.last_heartbeat['astrbot'] = 'plugin-0.8.0'; self.assertFalse(self.service.qq_ready())   # 旧插件不会发发件箱
         runtime.last_heartbeat['astrbot'] = 'plugin-0.9.6'; self.assertFalse(self.service.qq_ready())   # 不会先领取、回执不带实际发送时间
         runtime.last_heartbeat['astrbot'] = 'plugin-0.10.0'; self.assertFalse(self.service.qq_ready())  # 超时会报 failed、中途停用会报 sent
-        runtime.last_heartbeat['astrbot'] = 'plugin-0.10.1'; runtime.last_heartbeat['onebot']['connected'] = False
+        runtime.last_heartbeat['astrbot'] = 'plugin-0.10.2'; runtime.last_heartbeat['onebot']['connected'] = False
         self.assertFalse(self.service.qq_ready())
         runtime.last_heartbeat['onebot']['connected'] = True; runtime.last_heartbeat['at'] = time.time()-120
         self.assertFalse(self.service.qq_ready())
@@ -66,8 +70,8 @@ class ProactiveQQTests(Base):
         self.assertEqual([(i['id'], i['user_id'], i['segments']) for i in items], [(turn, '10001', ['爹，吃饭了没'])])
         self.assertEqual(items[0]['segment_delays'], [0.0])
         self.assertEqual(self.service.take_outbox(), [])                # 只取一次
-        self.assertTrue(self.service.outbox_claim({'id': turn})['allowed'])
-        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])   # 只能领取一次
+        self.assertTrue(self.claim(turn)['allowed'])
+        self.assertFalse(self.claim(turn)['allowed'])   # 只能领取一次
         self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 1.5, 'sent': 1})['ok'])
         self.assertEqual([r.status for r in results], ['sent'])
         self.assertTrue(self.service.outbox_ack({'id': turn, 'status': 'sent'})['ok'])   # 回执重发：认可但不重复处理
@@ -75,7 +79,7 @@ class ProactiveQQTests(Base):
 
     def test_failed_or_expired_delivery_is_not_counted_as_said(self):
         results = []
-        turn = self.service.proactive_qq('闲聊', on_done=results.append); self.service.take_outbox(); self.service.outbox_claim({'id': turn})
+        turn = self.service.proactive_qq('闲聊', on_done=results.append); self.service.take_outbox(); self.claim(turn)
         self.service.outbox_ack({'id': turn, 'status': 'failed'})
         self.assertEqual([r.status for r in results], ['failed']); self.assertEqual(self.db.recent_messages(5, self.character.id), [])
         now = [1000.0]; self.service.clock = lambda: now[0]
@@ -94,7 +98,7 @@ class ProactiveQQTests(Base):
         # 生成一条主动消息、插件取走并领取，再按 status 回执。返回（轮次, 收到的结果）
         results = []
         turn = self.service.proactive_qq('闲聊', on_done=results.append)
-        self.service.take_outbox(); self.assertTrue(self.service.outbox_claim({'id': turn})['allowed'])
+        self.service.take_outbox(); self.assertTrue(self.claim(turn)['allowed'])
         if status: self.service.outbox_ack(dict({'id': turn, 'status': status}, **extra))
         return turn, results
 
@@ -114,7 +118,7 @@ class ProactiveQQTests(Base):
         turn = self.service.proactive_qq('闲聊')
         self.assertIn('特别的日子', self.model.prompts[-1])
         self.assertEqual(dates.prompt(self.character.id, claim='other')[1], ())                 # 在路上：别的轮次不再提
-        self.service.take_outbox(); self.service.outbox_claim({'id': turn})
+        self.service.take_outbox(); self.claim(turn)
         self.service.outbox_ack({'id': turn, 'status': 'sent', 'first_delay': 2, 'sent': 2})
         self.assertTrue(dates.mentioned(self.character.id, key))
 
@@ -129,7 +133,7 @@ class ProactiveQQTests(Base):
         self.assertEqual([r.status for r in results], ['failed'])
         self.assertFalse(dates.mentioned(self.character.id, key))
         self.assertEqual(self.replies(turn), 0)
-        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])                   # 插件迟到的领取被拒绝，不会再发
+        self.assertFalse(self.claim(turn)['allowed'])                   # 插件迟到的领取被拒绝，不会再发
 
     def test_claimed_without_receipt_is_unknown_and_late_receipt_still_counts(self):
         # 领取了却一直没回执：结果未知（不算提过、不确认送达）；之后迟到的回执照样补记
@@ -170,7 +174,7 @@ class ProactiveQQTests(Base):
         self.assertEqual(self.replies(turn), 0)
         from aicompanion.bridge.outbox import OutboxStore
         self.assertEqual(OutboxStore(self.db).get(turn)['status'], 'failed')
-        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])
+        self.assertFalse(self.claim(turn)['allowed'])
 
     # ---- Codex PR #46 第四轮（a9aa4fc）桥接这边 ----------------------------------------------------------------
     def scheduled(self, now):
@@ -184,7 +188,7 @@ class ProactiveQQTests(Base):
         rid = s.reserve(cid, o)
         turn = self.service.proactive_qq('闲聊', on_done=lambda r: s.settle_delivery(cid, rid, o, r),
                                          on_taken=lambda t: s.handed(rid, t), on_queued=lambda t: s.attach(rid, t, 'qq'))
-        self.service.take_outbox(); self.assertTrue(self.service.outbox_claim({'id': turn})['allowed'])
+        self.service.take_outbox(); self.assertTrue(self.claim(turn)['allowed'])
         return s, turn, rid
 
     def user_says(self, at, text='在呢'):
@@ -236,7 +240,7 @@ class ProactiveQQTests(Base):
         Database(self.db.database_path).initialize()                                             # 重启
         self.assertEqual(self.replies(turn), 0)
         self.assertEqual(OutboxStore(self.db).get(turn)['status'], 'failed')
-        self.assertFalse(self.service.outbox_claim({'id': turn})['allowed'])
+        self.assertFalse(self.claim(turn)['allowed'])
 
     def test_not_ready_generates_nothing(self):
         runtime.last_heartbeat = None

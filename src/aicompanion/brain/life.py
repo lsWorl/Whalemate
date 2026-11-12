@@ -19,6 +19,7 @@ import json
 import random
 import re
 import time
+from contextlib import nullcontext
 from datetime import datetime
 
 from aicompanion.brain.focus import in_quiet_hours, is_focused
@@ -185,13 +186,13 @@ class LifeService:
                 f'材料：{material}。现在主动找他分享这件事。像发消息那样自然地说，提一句是在哪看到的；'
                 '只说材料里写到的内容，不要编造细节，也不要说是系统让你来的。说完可以问问他怎么看。')
 
-    def shared(self, activity_id: int) -> None:
-        with self.db.transaction() as c:
+    def shared(self, activity_id: int, *, connection=None) -> None:
+        with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
             c.execute("UPDATE activities SET status='shared', shared_at=? WHERE id=? AND status='done'", (self.clock(), activity_id))
 
-    def unshare(self, activity_id: int) -> None:
+    def unshare(self, activity_id: int, *, connection=None) -> None:
         """确定没发出去（含结果未知之后补到的失败回执）：撤回“分享过”的标记，卡片不再显示“跟你说了”，这件事以后还能再分享。"""
-        with self.db.transaction() as c:
+        with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
             c.execute("UPDATE activities SET status='done', shared_at=NULL, response='' WHERE id=? AND status='shared'", (activity_id,))
 
     def answered(self, activity_id: int, response: str = 'answered') -> bool:

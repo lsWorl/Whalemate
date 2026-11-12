@@ -25,7 +25,9 @@ QQ 那边每条投递的实际结果记在 qq_outbox（bridge/outbox.py），这
 from __future__ import annotations
 
 import random
+import sqlite3
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -80,11 +82,12 @@ class ProactiveScheduler:
                              (character_id, outreach.source, outreach.key, channel, 'pending', outreach.payload.get('parent_id'), now)).lastrowid
         return self.db.locked(work)
 
-    def attach(self, outreach_id: int, turn_id: str, channel: str | None = None) -> None:
+    def attach(self, outreach_id: int, turn_id: str, channel: str | None = None) -> bool:
         """记下这次主动开口对应的聊天轮次（追问时按它找回原话；QQ 按它对账投递结果）和渠道。"""
-        if not turn_id: return
+        if not turn_id: return False
         with self.db.transaction() as c:
-            c.execute('UPDATE outreach_log SET turn_id=?, channel=COALESCE(?, channel) WHERE id=?', (turn_id, channel, outreach_id))
+            return c.execute("UPDATE outreach_log SET turn_id=?, channel=COALESCE(?, channel) WHERE id=? AND status='pending' "
+                             "AND (turn_id IS NULL OR turn_id='' OR turn_id=?)", (turn_id, channel, outreach_id, turn_id)).rowcount == 1
 
     def handed(self, outreach_id: int, turn_id: str | None = None) -> None:
         """QQ 插件领取了这条、开始发送：之后不再当作没发过，等它回报结果。"""
@@ -97,81 +100,74 @@ class ProactiveScheduler:
         """真说出来了：→ sent；追问还会把它追的那条标成 followed。
         at：对方最早能看到的时刻。QQ 用插件回报的第一段实际发出时间（取件、领取都只是发送尝试的开始，Codex PR #46 第三轮）；
         桌面不传，用开始说的时间。"""
-        now = self.clock()
-        def work(c):
-            parent = outreach.payload.get('parent_id')
-            if parent: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
-            updated = c.execute("UPDATE outreach_log SET status='sent', channel=?, sent_at=COALESCE(?, sent_at), settled_at=NULL "
-                                "WHERE id=? AND status IN ('pending','delivering','unknown')", (channel, at, outreach_id)).rowcount
-            if not updated and not c.execute('SELECT 1 FROM outreach_log WHERE id=?', (outreach_id,)).fetchone():
-                # 结果来得太晚，占位已经当作没发出去撤掉了：照实补记一条
-                c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
-                          (character_id, outreach.source, outreach.key, channel, 'sent', parent, at or now))
-        self.db.locked(work)
-
-    def _unmark_shared(self, outreach: Outreach) -> None:
-        if outreach.source != 'share' or self.life is None or not outreach.key.startswith('share:'): return
-        try: self.life.unshare(int(outreach.key.split(':', 1)[1]))
-        except (TypeError, ValueError): pass
-
-    def _mark_shared(self, outreach: Outreach) -> None:
-        """分享的那件事记为“说过了”。活动 id 从 key（share:<id>）取：重启后按 qq_outbox 对账时 payload 已经没有活动内容。"""
-        if outreach.source != 'share' or self.life is None or not outreach.key.startswith('share:'): return
-        try: self.life.shared(int(outreach.key.split(':', 1)[1]))
-        except (TypeError, ValueError): pass
-
-    def unknown(self, outreach_id: int) -> None:
-        """插件领取了却一直没回执：发没发到不知道。留着防重、算今天一次，但不追问（不能拿不确定的事说他没理她）。"""
-        with self.db.transaction() as c:
-            c.execute("UPDATE outreach_log SET status='unknown', settled_at=? WHERE id=? AND status IN ('pending','delivering')",
-                      (self.clock(), outreach_id))
+        self.settle_delivery(character_id, outreach_id, outreach, True, channel, first_at=at)
 
     def release(self, outreach_id: int) -> None:
         """没说成（生成失败、被打断、QQ 确定没发出去）：撤掉占位，不算说过。"""
         with self.db.transaction() as c:
             c.execute("DELETE FROM outreach_log WHERE id=? AND status IN ('pending','delivering','unknown')", (outreach_id,))
 
-    def discard(self, outreach_id: int) -> None:
-        """确定没发出去：不管这条后来被记成什么（结果未知期间他说了话、被记成 answered 之类），都撤掉，
-        今天的次数也跟着减回去（Codex PR #46 第四轮：迟到的明确失败回执要能纠正已经变化的状态）。"""
-        with self.db.transaction() as c:
-            c.execute("DELETE FROM outreach_log WHERE id=?", (outreach_id,))
-
-    def settle_delivery(self, character_id: str, outreach_id: int, outreach: Outreach, result, channel: str = 'qq') -> None:
+    def settle_delivery(self, character_id: str, outreach_id: int, outreach: Outreach, result, channel: str = 'qq', *, first_at=None) -> None:
         """按投递结果收尾这条主动开口，以及它在心事 / 问候 / 纪念日那边的占位。
         result：bridge.outbox.Delivery（QQ），或 True / False（桌面说完没有）。
         - 发出（含只发出一部分）：记成说过，时间按第一段实际发出；心事算送到；
         - 确定没发出：撤掉，心事和问候 / 纪念日的占位放回，下次还能说；
         - 结果未知：不主动重发（心事算送到、问候 / 纪念日的占位留着），但纪念日“提没提过”不确认（bridge/outbox.py），
           他来聊天时还可能自然提起——宁可再提一次，也不能没提却当作提过。"""
-        status = getattr(result, 'status', 'sent' if result else 'failed')
-        # 先做连带的写入（心事送到 / 放回、问候和纪念日占位放回，都可以重复做），最后才改调度记录：
-        # 中途退出时调度记录还停在原来的状态，重启后按 qq_outbox 对账会把整套重放一遍，不会出现“记成说过、心事却还是待说”
-        # 这样的半截状态（Codex PR #46 第四轮）
-        purpose = outreach.key.split(':', 1)[1] if outreach.source == 'purpose' and outreach.key.startswith('purpose:') else None
-        try:
-            if purpose and self.purposes is not None:
-                if status == 'failed': self.purposes.release(int(purpose))
-                else: self.purposes.delivered(int(purpose))
-            if status == 'failed' and outreach.source in ('date', 'greeting'): self.db.release_proactive(character_id, outreach.key)
-        except Exception:
-            pass
-        # 分享的那件事：全部发出才算“文章分享过了”；结果未知时也先标上（和心事一样不拿同一件事重发）；
-        # 只发出寒暄（partial）不算分享过，这件事以后还能再说；确定没发出（含未知之后补到的失败回执）撤回标记（Codex PR #48 第三轮）
-        if status in ('sent', 'unknown'): self._mark_shared(outreach)
-        elif status == 'failed': self._unmark_shared(outreach)
-        if status in ('sent', 'partial'): self.confirm(character_id, outreach_id, outreach, channel, getattr(result, 'first_at', None))
-        elif status == 'unknown':
-            parent = outreach.payload.get('parent_id')
-            if parent:   # 追过了（到没到不知道）：这个话题不再追
-                with self.db.transaction() as c: c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
-            self.unknown(outreach_id)
-        else: self.discard(outreach_id)
+        def settle_in(c):
+            row = c.execute('SELECT * FROM outreach_log WHERE id=? AND character_id=?', (outreach_id, character_id)).fetchone()
+            if row is None: return   # 已经撤回的旧轮次不能释放后来重试拿到的占位
+            status = getattr(result, 'status', 'sent' if result else 'failed')
+            at = getattr(result, 'first_at', first_at)
+            if row['turn_id'] and channel == 'qq':
+                # 回调与对账可能同时到达。取得写锁后再核实一次，较早的 unknown 通知不能覆盖实际终局。
+                vote = c.execute("SELECT status, first_sent_at FROM qq_outbox WHERE turn_id=? AND status IN ('sent','partial','failed')",
+                                 (row['turn_id'],)).fetchone()
+                if vote:
+                    status, at = vote
+            self._settle_in(c, row, status, channel, at)
+        self.db.locked(settle_in)
+
+    def _settle_in(self, c, row, status, channel, first_at=None):
+        """心事、问候、父子追问和调度状态在同一个写事务结算。任一步被锁或中断，QQ 回执仍可完整重放。"""
+        cid, rid, parent = row['character_id'], row['id'], row['parent_id']
+        if row['source'] == 'share' and self.life is not None and row['key'].startswith('share:'):
+            # 对账时只有持久化的 key。只有实际分享过或结果仍未知才占住这件活动。
+            activity = int(row['key'].split(':', 1)[1])
+            if status in ('sent', 'unknown'): self.life.shared(activity, connection=c)
+            elif status == 'failed': self.life.unshare(activity, connection=c)
+        if row['source'] == 'purpose' and self.purposes is not None and row['key'].startswith('purpose:'):
+            pid = int(row['key'].split(':', 1)[1])
+            if status == 'failed': self.purposes.release(pid, connection=c)
+            else: self.purposes.delivered(pid, connection=c)
+        if status == 'failed':
+            if row['source'] in ('date', 'greeting'): self.db.release_proactive(cid, row['key'], connection=c)
+            c.execute('DELETE FROM outreach_log WHERE id=?', (rid,))
+            if parent:
+                c.execute("UPDATE outreach_log SET status='sent', settled_at=NULL WHERE id=? AND status='followed' "
+                          "AND NOT EXISTS (SELECT 1 FROM outreach_log WHERE parent_id=?)", (parent, parent))
+            return
+        if parent:
+            c.execute("UPDATE outreach_log SET status='followed' WHERE id=? AND status='sent'", (parent,))
+        if status == 'unknown':
+            if row['status'] in ('pending', 'delivering'):
+                c.execute("UPDATE outreach_log SET status='unknown', channel=?, sent_at=COALESCE(?,sent_at), settled_at=? WHERE id=?",
+                          (channel, first_at, self.clock(), rid))
+            else:
+                c.execute('UPDATE outreach_log SET channel=? WHERE id=?', (channel, rid))
+            return
+        # 回执暂失期间的 answered 可能来自首达前的无关消息。按真实首达重新认领，仍保留首达后的回复。
+        reopen = row['status'] == 'answered' and first_at is not None and not self._user_spoke_since(
+            cid, first_at, connection=c)
+        if row['status'] in ('pending', 'delivering', 'unknown') or reopen:
+            c.execute("UPDATE outreach_log SET status='sent', channel=?, sent_at=COALESCE(?,sent_at), settled_at=NULL WHERE id=?",
+                      (channel, first_at, rid))
+        else:
+            c.execute('UPDATE outreach_log SET channel=?, sent_at=COALESCE(?,sent_at) WHERE id=?', (channel, first_at, rid))
 
     def record(self, character_id: str, outreach: Outreach, channel: str = 'desktop') -> int:
         """占位并立刻确认（已经说出来时用）。"""
         outreach_id = self.reserve(character_id, outreach, channel)
-        self._mark_shared(outreach)
         self.confirm(character_id, outreach_id, outreach, channel)
         return outreach_id
 
@@ -188,60 +184,51 @@ class ProactiveScheduler:
 
     def reconcile(self, character_id: str) -> None:
         """按 qq_outbox 对账走 QQ 的主动开口：回调丢了（程序重启、回执晚到）也把调度记录、渠道、心事和占位补齐。"""
-        try:
-            from aicompanion.bridge.outbox import Delivery, OutboxStore
-            OutboxStore(self.db, self.clock).sweep()
-            with self.db.transaction() as c:
-                # 要对账的：还没结算的；投递确定失败的（不管调度记录后来变成了什么）；
-                # 迟到的发出回执、首达时间和记录不一致的（结果未知期间他说了话被记成 answered 等，也要按实际首达时间校正）
-                rows = c.execute("SELECT o.*, q.status AS delivery, q.first_sent_at FROM outreach_log o JOIN qq_outbox q ON q.turn_id=o.turn_id "
-                                 "WHERE o.character_id=? AND q.status IN ('sent','partial','failed','unknown') AND ("
-                                 " o.status IN ('pending','delivering') OR (o.status='unknown' AND q.status!='unknown') OR q.status='failed'"
-                                 " OR (q.status IN ('sent','partial') AND q.first_sent_at IS NOT NULL AND (o.sent_at!=q.first_sent_at OR o.channel!='qq')))",
-                                 (character_id,)).fetchall()
-        except Exception:
-            return
-        for row in rows:
-            outreach = Outreach(row['source'], row['key'], '', {'parent_id': row['parent_id']} if row['parent_id'] else {})
-            delivery = Delivery(row['delivery'], row['first_sent_at'])
-            if row['status'] in ('pending', 'delivering', 'unknown') or row['delivery'] == 'failed':
-                self.settle_delivery(character_id, row['id'], outreach, delivery)
-            else:   # 已经有了对话上的去向（answered / let_go / ignored …）：只校正首达时间和渠道，去向不动；心事照样补记送到
-                try:
-                    if row['source'] == 'purpose' and self.purposes is not None and str(row['key']).startswith('purpose:'):
-                        self.purposes.delivered(int(str(row['key']).split(':', 1)[1]))
-                except Exception:
-                    pass
-                if row['delivery'] == 'sent': self._mark_shared(outreach)
-                with self.db.transaction() as c:
-                    c.execute("UPDATE outreach_log SET sent_at=?, channel='qq' WHERE id=?", (row['first_sent_at'], row['id']))
+        from aicompanion.bridge.outbox import OutboxStore
+        OutboxStore(self.db, self.clock).sweep()
+        def reconcile_in(c):
+            # 旧版本可能已经记成 sent，而写心事时碰到锁使它仍为 pending。也按发件箱补结这类旧数据。
+            rows = c.execute("SELECT o.*, q.status AS delivery, q.first_sent_at FROM outreach_log o JOIN qq_outbox q ON q.turn_id=o.turn_id "
+                             "WHERE o.character_id=? AND q.status IN ('sent','partial','failed','unknown') AND ("
+                             " o.status IN ('pending','delivering') OR (o.status='unknown' AND q.status!='unknown') OR q.status='failed'"
+                             " OR (q.status IN ('sent','partial') AND q.first_sent_at IS NOT NULL AND (o.sent_at!=q.first_sent_at OR o.channel!='qq'))"
+                             " OR (o.status='answered' AND q.status IN ('sent','partial') AND q.first_sent_at IS NOT NULL AND NOT EXISTS ("
+                             " SELECT 1 FROM chat_messages m WHERE m.character_id=o.character_id AND m.channel='desktop' AND m.role='user'"
+                             " AND m.created_at>=strftime('%Y-%m-%d %H:%M:%S',CAST(q.first_sent_at AS INTEGER),'unixepoch')))"
+                             " OR (o.source='purpose' AND EXISTS (SELECT 1 FROM purposes p WHERE p.character_id=o.character_id "
+                             " AND o.key='purpose:'||p.id AND p.status!='delivered')))", (character_id,)).fetchall()
+            for row in rows:
+                self._settle_in(c, row, row['delivery'], 'qq', row['first_sent_at'])
+        self.db.locked(reconcile_in)
 
     def pending(self, character_id: str) -> bool:
         """有还在发送中的主动消息。先按 QQ 投递记录对账；再把超过 PENDING_STALE 还没送出去、也没进 QQ 发件箱的
         （程序在生成时退出之类）撤掉，问候 / 纪念日 / 心事的占位一起放回，下次还能说。"""
-        self.reconcile(character_id)
         now = self.clock()
-        with self.db.transaction() as c:
-            # 跑过本 PR 早期版本（e38ed29）的库：插件取走了、回执前退出，留下没有发件箱记录的 delivering，对账永远对不上。
-            # 取走超过半小时还没结果的当作“结果未知”：算今天一次、不重发、不追问，三小时后悄悄放下（Codex PR #46 第四轮）
-            c.execute("UPDATE outreach_log SET status='unknown', settled_at=? WHERE character_id=? AND status='delivering' "
-                      "AND COALESCE(handed_at, sent_at)<? AND NOT EXISTS (SELECT 1 FROM qq_outbox q WHERE q.turn_id=outreach_log.turn_id)",
-                      (now, character_id, now-PENDING_STALE))
+        def recover_in(c):
+            # e38ed29 的 QQ 取件没有发件箱，channel 也可能还写着 desktop；重启会把 delivering 心事放回 pending。
+            # 连同旧版已草率标成 unknown/answered 的行一起恢复，留下取件时间作为未知投递的最早可见时刻。
+            legacy = c.execute("SELECT * FROM outreach_log o WHERE character_id=? AND NOT EXISTS (SELECT 1 FROM qq_outbox q WHERE q.turn_id=o.turn_id)"
+                               " AND ((status='delivering' AND COALESCE(handed_at,sent_at)<?) OR "
+                               " (status NOT IN ('pending','delivering') AND handed_at IS NOT NULL AND (channel!='qq' OR "
+                               " (source='purpose' AND EXISTS (SELECT 1 FROM purposes p WHERE p.character_id=o.character_id "
+                               " AND o.key='purpose:'||p.id AND p.status!='delivered')))))",
+                               (character_id, now-PENDING_STALE)).fetchall()
+            for row in legacy:
+                self._settle_in(c, row, 'unknown', 'qq', row['handed_at'])
             stale = c.execute("SELECT * FROM outreach_log o WHERE character_id=? AND status='pending' AND sent_at<? "
                               "AND NOT EXISTS (SELECT 1 FROM qq_outbox q WHERE q.turn_id=o.turn_id)", (character_id, now-PENDING_STALE)).fetchall()
-            for row in stale: c.execute("DELETE FROM outreach_log WHERE id=? AND status='pending'", (row['id'],))
-            busy = c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND status IN ('pending','delivering') LIMIT 1",
+            for row in stale:
+                self._settle_in(c, row, 'failed', row['channel'])
+            return c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND status IN ('pending','delivering') LIMIT 1",
                              (character_id,)).fetchone() is not None
-        for row in stale: self._give_back(character_id, row['source'], row['key'])
-        return busy
-
-    def _give_back(self, character_id: str, source: str, key: str) -> None:
         try:
-            if source in ('date', 'greeting'): self.db.release_proactive(character_id, key)
-            elif source == 'purpose' and self.purposes is not None and key.startswith('purpose:'):
-                self.purposes.release(int(key.split(':', 1)[1]))
-        except Exception:
-            pass
+            self.reconcile(character_id)
+            return self.db.locked(recover_in)
+        except sqlite3.OperationalError as error:
+            if (getattr(error, 'sqlite_errorcode', 0) & 255) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                return True     # 下次 tick 重放；这次对账没有结束，不能先开一个新话题。
+            raise
 
     def seconds_since_user(self, character_id: str) -> float:
         """他最近一次说话距今多久：桌面和主人的 QQ 私聊都算（两边都记在 desktop 频道；Codex PR #46 第 2 项）。"""
@@ -253,10 +240,10 @@ class ProactiveScheduler:
         except ValueError: return float('inf')
         return max(0.0, self.clock()-when)
 
-    def _user_spoke_since(self, character_id: str, since: float, until: float | None = None) -> bool:
+    def _user_spoke_since(self, character_id: str, since: float, until: float | None = None, *, connection=None) -> bool:
         utc = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')   # chat_messages.created_at 是 UTC 文本
         stamp, end = utc(since), utc(until) if until is not None else '9999'
-        with self.db.transaction() as c:
+        with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
             return c.execute("SELECT 1 FROM chat_messages WHERE character_id=? AND channel='desktop' AND role='user' AND created_at>=? "
                              'AND created_at<=? LIMIT 1', (character_id, stamp, end)).fetchone() is not None
 
@@ -273,15 +260,15 @@ class ProactiveScheduler:
                                 (character_id,)).fetchall()
         for row in waiting:
             if self._user_spoke_since(character_id, row['sent_at'], self._window_end(character_id, row)):
-                self._set(row['id'], 'answered', now)
-                self._shared_reply(character_id, row, 'answered')
+                if self._set(row, 'answered', now):
+                    self._shared_reply(character_id, row, 'answered')
             elif row['status'] == 'unknown':
                 # 发没发到都不知道：太久没动静就悄悄放下（dropped，终态），不记委屈（不能拿不确定的事说他没理她）。
                 # 不能记成 let_go：#48 起 let_go 还会继续等到三小时结算成 ignored、记一次委屈
                 # 放下的时间记成真正放下的这一刻（不沿用进入“未知”的时间），之后照样隔满间隔才开新话题（Codex PR #48 第三轮）
-                if now-row['sent_at'] >= GIVE_UP_SECONDS: self._set(row['id'], 'dropped', now, fresh=True)
+                if now-row['sent_at'] >= GIVE_UP_SECONDS: self._set(row, 'dropped', now, fresh=True)
             elif now-row['sent_at'] >= GIVE_UP_SECONDS:
-                self._set(row['id'], 'ignored', now)
+                if not self._set(row, 'ignored', now): continue
                 # 一件事只记一次小委屈：记在最早那条上（追问那句没回不再另记）
                 if row['parent_id']: continue
                 self._shared_reply(character_id, row, 'ignored')
@@ -302,11 +289,12 @@ class ProactiveScheduler:
         except Exception:
             pass
 
-    def _set(self, outreach_id: int, status: str, now: float, fresh: bool = False) -> None:
-        # 已经记过放下的时间（let_go）就保留它：next() 的间隔从“放下”算起。fresh：这一刻才真正放下，覆盖之前的时间
+    def _set(self, row, status: str, now: float, fresh: bool = False) -> bool:
+        # 保留让话题放下的时间；另一个线程更正首达或已经更新了这条时，放弃旧时间窗的判断。
+        settled_at = now if fresh or row['settled_at'] is None else row['settled_at']
         with self.db.transaction() as c:
-            if fresh: c.execute('UPDATE outreach_log SET status=?, settled_at=? WHERE id=?', (status, now, outreach_id))
-            else: c.execute('UPDATE outreach_log SET status=?, settled_at=COALESCE(settled_at, ?) WHERE id=?', (status, now, outreach_id))
+            return c.execute('UPDATE outreach_log SET status=?, settled_at=? WHERE id=? AND status=? AND sent_at=?',
+                             (status, settled_at, row['id'], row['status'], row['sent_at'])).rowcount == 1
 
     def _window_end(self, character_id: str, row) -> float:
         """这条主动消息等回应的截止时刻：三小时，或者她之后又主动说了另一件事（不是这条的追问）的时刻，取早的。"""
@@ -342,14 +330,14 @@ class ProactiveScheduler:
         with self.db.transaction() as c:                                                 # 同一个话题已经有追问（含发送中、结果未知的）
             if c.execute('SELECT 1 FROM outreach_log WHERE parent_id=? LIMIT 1', (last['id'],)).fetchone(): return None
         if last['source'] == 'share' and not self._life_on():
-            self._set(last['id'], 'let_go', now_ts); return None                       # 关掉了“自己的生活”：分享的事不再追问
+            self._set(last, 'let_go', now_ts); return None                             # 关掉了“自己的生活”：分享的事不再追问
         if system_idle >= PRESENT_SECONDS: return None                               # 他不在电脑前，不算没理她
         rng = random.Random(f"{character_id}:{last['id']}")                           # 每条消息的“多久后追”固定，重启也一样
         # 追问也是一次主动开口，设置里的“两次之间至少隔 N 分钟”同样适用（Codex PR #46 第 3 项）；
         # 间隔设得比“没回就放下”的 3 小时还长时，就不会追问
         if now_ts-last['sent_at'] < max(rng.uniform(*FOLLOW_AFTER), self.gap_seconds(character_id)): return None
         if self.rng() >= FOLLOW_CHANCE:
-            self._set(last['id'], 'let_go', now_ts); return None                       # 自己算了
+            self._set(last, 'let_go', now_ts); return None                             # 自己算了
         said = self._said(character_id, last)
         gist = f'（你说的是：“{said[:60]}”）' if said else ''
         return Outreach('follow', f"follow:{last['id']}",

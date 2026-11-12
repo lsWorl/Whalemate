@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 
 @dataclass(frozen=True)
@@ -44,5 +45,12 @@ UV = Archive(
 ASTRBOT = PyPackage('AstrBot', '4.29.3', 'b78d8ab2d6f153c18be7162799b8589c9f5284233d557c93364c22193fe6be8e')
 
 PLUGIN_NAME = 'astrbot_plugin_aicompanion'
+MIN_PROACTIVE_PLUGIN = (0, 10, 2)
 PLATFORM_ID = 'aicompanion_qq'          # 我们在 AstrBot 里加的那个 aiocqhttp 平台
 ONEBOT_CLIENT_NAME = 'aicompanion'      # 我们在 NapCat 里加的那条 websocketClient
+
+
+def plugin_version(reported) -> tuple[int, ...]:
+    """只认插件实际运行时报告的三段版本号，缺失或格式未知时无法确认投递能力。"""
+    match = re.fullmatch(r'plugin-([0-9]{1,6})\.([0-9]{1,6})\.([0-9]{1,6})', str(reported or ''))
+    return tuple(map(int, match.groups())) if match else ()

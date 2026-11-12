@@ -210,14 +210,14 @@ class BridgeOutboxTests(unittest.TestCase):
         turn = case.service.proactive_qq('分享一件事', on_done=results.append, still_valid=lambda: wanted[0])
         self.assertEqual([i['id'] for i in case.service.take_outbox()], [turn])           # 交出去了
         wanted[0] = False
-        self.assertEqual(case.service.outbox_claim({'id': turn}), {'allowed': False})
+        self.assertFalse(case.claim(turn)['allowed'])
         self.assertEqual([r.status for r in results], ['failed'])
         self.assertEqual(OutboxStore(case.db).get(turn)['status'], 'failed')
         self.assertEqual(case.db.recent_messages(5, case.character.id), [])
         wanted[0] = True; results.clear()                                                 # 已领取的：之后再关掉也不追回
         second = case.service.proactive_qq('再分享一件', on_done=results.append, still_valid=lambda: wanted[0])
         case.service.take_outbox()
-        self.assertEqual(case.service.outbox_claim({'id': second}), {'allowed': True})
+        self.assertTrue(case.claim(second)['allowed'])
         wanted[0] = False
         self.assertEqual(case.service.outbox_ack({'id': second, 'status': 'sent', 'first_delay': 1}), {'ok': True})
         self.assertEqual([r.status for r in results], ['sent'])
@@ -458,7 +458,7 @@ class CodexThirdRoundTests(ScheduledShareTests):
         case.service.close()
         restarted = BridgeService(case.db, case.controller); restarted.clock = lambda: self.now[0]   # 同一个库，新实例：内存里的检查没了
         self.addCleanup(restarted.close)
-        self.assertEqual(restarted.outbox_claim({'id': turn}), {'allowed': False})
+        self.assertFalse(restarted.outbox_claim({'id': turn, 'astrbot': 'plugin-0.10.2'})['allowed'])
         self.assertEqual(OutboxStore(case.db).get(turn)['status'], 'failed')
         self.assertEqual(life.recent(CID)[0]['status'], 'done')
 
