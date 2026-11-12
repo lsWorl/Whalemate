@@ -45,8 +45,20 @@ class LifeService:
     def set_enabled(self, on: bool) -> None:
         """设置页保存开关。关掉时记下时刻：已经开始的活动、已经选中的分享据此知道“中途被关过”，
         之后再打开也不会把关掉前那一件恢复成可分享 / 照常发出（Codex PR #48 第三轮）。"""
-        if not on: self.db.set_setting('life_off_at', self.clock())
-        self.db.set_setting('life_enabled', bool(on))
+        def save(c):
+            if not on:
+                self.db.set_setting_in(c, 'life_off_at', self.clock())
+                epoch = self.db.setting_in(c, 'life_epoch', 0)
+                self.db.set_setting_in(c, 'life_epoch', epoch + 1)
+            self.db.set_setting_in(c, 'life_enabled', bool(on))
+        self.db.locked(save)
+
+    def epoch(self, connection=None) -> int | None:
+        """活动线程只属于派发它的那次开启。关闭再开启、甚至系统时间回拨，旧线程都不能恢复。"""
+        with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
+            row = c.execute("SELECT (SELECT value FROM app_settings WHERE key='life_enabled'), "
+                            "(SELECT value FROM app_settings WHERE key='life_epoch')").fetchone()
+            return int(row[1] or 0) if row[0] is None or json.loads(row[0]) else None
 
     def switched_off_since(self, since: float | None) -> bool:
         """现在关着，或者 since 之后关过（哪怕又打开了）。"""
@@ -101,30 +113,40 @@ class LifeService:
         return last is None or now-float(last) >= GAP_HOURS*3600
 
     # ---- 做一件事 --------------------------------------------------------------------------------
-    def run(self, character_id: str, search, client=None, cancellation=None, character_name: str = '', allow_model=None) -> int | None:
+    def run(self, character_id: str, search, client=None, cancellation=None, character_name: str = '', allow_model=None,
+            *, epoch: int | None = None) -> int | None:
         """做一件事。search：WebSearch（或测试替身，需要 search(query) → [Hit]）；client：聊天客户端，None 时按规则。返回活动 id。
         allow_model：真正发起总结请求前再问一次能不能调模型（额度）；搜索期间别的对话可能已经把额度用完了（Codex PR #48 第 4 项）。"""
+        current = self.epoch()
+        if current is None or (epoch is not None and current != epoch): return None
+        epoch = current
         interest = self.pick_interest(character_id)
         query = interest
         now = self.clock()
-        with self.db.transaction() as c:
-            activity = c.execute('INSERT INTO activities(character_id, kind, interest, query, status, started_at) VALUES (?,?,?,?,?,?)',
-                                 (character_id, 'read', interest, query, 'doing', now)).lastrowid
+        def start(c):
+            if self.epoch(c) != epoch: return None
+            return c.execute('INSERT INTO activities(character_id, kind, interest, query, status, started_at) VALUES (?,?,?,?,?,?)',
+                             (character_id, 'read', interest, query, 'doing', now)).lastrowid
+        activity = self.db.locked(start)
+        if activity is None: return None
         try:
+            if self.epoch() != epoch:
+                self._finish(activity, 'cancelled'); return activity
             hit = self._pick_hit(character_id, search.search(query, count=5) if search else [])
             if hit is None:
                 self._finish(activity, 'failed'); return activity                 # 没看到东西：不算做过，也不编
-            if self.switched_off_since(now):                                       # 搜的时候你关掉了（哪怕又打开了）：不再花一次模型调用
-                self._finish(activity, 'cancelled'); return activity
             if client is not None and allow_model is not None and not allow_model():
                 client = None                                                      # 额度到了：走没有模型时的低分记录，不再发请求
+            if self.epoch() != epoch:
+                self._finish(activity, 'cancelled'); return activity
             view = self._view(character_id, character_name, interest, hit, client, cancellation)
             # 想的时候你关掉了：看到的东西照样记下（历史），但标成 quiet，以后重新打开也不拿来分享
-            status = 'quiet' if self.switched_off_since(now) else 'done'
-            with self.db.transaction() as c:
+            def finish(c):
+                status = 'done' if self.epoch(c) == epoch else 'quiet'
                 c.execute("UPDATE activities SET status=?, title=?, url=?, site=?, excerpt=?, thought=?, opener=?, worth=?, finished_at=? WHERE id=?",
                           (status, hit.title[:80], hit.url[:500], (hit.site or '')[:30], hit.summary[:900], view['thought'], view['opener'],
                            view['worth'], self.clock(), activity))
+            self.db.locked(finish)
             return activity
         except Exception:
             self._finish(activity, 'failed')
@@ -193,11 +215,11 @@ class LifeService:
     def unshare(self, activity_id: int, *, connection=None) -> None:
         """确定没发出去（含结果未知之后补到的失败回执）：撤回“分享过”的标记，卡片不再显示“跟你说了”，这件事以后还能再分享。"""
         with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
-            c.execute("UPDATE activities SET status='done', shared_at=NULL, response='' WHERE id=? AND status='shared'", (activity_id,))
+            c.execute("UPDATE activities SET status='done', shared_at=NULL, response='' WHERE id=? AND status IN ('shared','done')", (activity_id,))
 
-    def answered(self, activity_id: int, response: str = 'answered') -> bool:
+    def answered(self, activity_id: int, response: str = 'answered', *, connection=None) -> bool:
         """记下这次分享最后有没有被接住。每件事只记一次（返回 False 表示已经记过），心情也只跟着变一次。"""
-        with self.db.transaction() as c:
+        with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
             return c.execute("UPDATE activities SET response=? WHERE id=? AND response=''", (response, activity_id)).rowcount > 0
 
     def recent(self, character_id: str, limit: int = 10) -> list[dict]:

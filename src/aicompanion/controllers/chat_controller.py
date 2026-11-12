@@ -76,7 +76,7 @@ class ChatController:
 
     def generate(self,turn_id,character,cancellation,query='',proactive='',channel='desktop',scene='pet',situation='',source='text',offer_tasks=True,purpose='companion',through_id=None,reply_filter=None,*,expression_context=None,on_expression_event=None,person=None,settle_dates=True):
         """所有自然聊天共用这一轮生成；图片控制在 yield 给 UI/TTS 之前剥离。
-        settle_dates=False：生成完还不等于送到（主动发到 QQ 要等插件回执），这一轮占住的纪念日提醒先不确认，
+        settle_dates=False：主动发到桌面要等界面显示，QQ 要等插件回执，这一轮占住的纪念日提醒先不确认，
         由调用方在送达后 confirm、没送达时 release；生成失败 / 取消照样当场释放。"""
         from dataclasses import replace
         from aicompanion.expression.domain import ExpressionContext,ExpressionEvent

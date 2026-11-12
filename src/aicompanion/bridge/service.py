@@ -1021,7 +1021,10 @@ class BridgeService:
             store = OutboxStore(self.database, self.clock)
             # 生成前先记一条 generating：生成的回复已经写进聊天记录、还没放进发件箱时程序退出，启动时按它把这条回复拿掉，
             # 聊天窗不会显示一条实际没发出的祝福（Codex PR #46 第四轮 P3）
-            store.begin(turn, character.id)
+            guard = 'direct'
+            if still_valid is not None:
+                guard = 'scheduled' if on_queued is not None else 'callback'
+            store.begin(turn, character.id, guard)
             def give_up():
                 if store.settle(turn, 'failed') is None:
                     # 本轮生成期间被清理，回复和纪念日占位可能在清理之后才写入。
@@ -1086,17 +1089,18 @@ class BridgeService:
         self._sweep(store)
         return fresh
 
-    def _still_valid(self, turn) -> bool:
-        """这条主动消息现在还该不该发：发起时留下的检查（内存里，检查出错按不该发处理），再加只凭库里记录的复核——
-        桥接重启后内存里的检查没了，关掉“自己的生活”前交出去、还没被领取的分享也得撤回（Codex PR #48 第三轮）。"""
-        from aicompanion.brain.scheduler import ProactiveScheduler
+    def _callback_valid(self, turn) -> bool | None:
+        """None 表示没有内存回调（含重启），SQLite 写锁外运行回调。"""
         with self.expression_lock:
             check = self.outbox_valid.get(turn)
-        if check is not None:
-            try:
-                if not check(): return False
-            except Exception: return False
-        return ProactiveScheduler.turn_still_valid(self.database, turn, self.clock)
+        if check is None: return None
+        try: return bool(check())
+        except Exception: return False
+
+    def _still_valid(self, turn) -> bool:
+        from aicompanion.brain.scheduler import ProactiveScheduler
+        allowed = self._callback_valid(turn)
+        return allowed is not False and ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True)
 
     def outbox_claim(self, payload) -> dict:
         """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。
@@ -1107,9 +1111,13 @@ class BridgeService:
             return {'allowed': False}
         from aicompanion.bridge.outbox import OutboxStore
         store = OutboxStore(self.database, self.clock)
-        if not self._still_valid(turn):
-            self._notify(turn, store.settle(turn, 'failed')); return {'allowed': False}
-        if not store.claim(turn): return {'allowed': False}
+        from aicompanion.brain.scheduler import ProactiveScheduler
+        allowed = self._callback_valid(turn)
+        def valid(c):
+            return ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, connection=c)
+        if allowed is False or not store.claim(turn, valid=valid):
+            self._notify(turn, store.settle(turn, 'failed', expected='dequeued'))
+            return {'allowed': False}
         with self.expression_lock:
             callback = self.outbox_taken.pop(turn, None); self.outbox_valid.pop(turn, None)   # 已交给插件：不追回
         if callback:

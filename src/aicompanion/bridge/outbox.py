@@ -53,17 +53,17 @@ class OutboxStore:
     def __init__(self, database, clock=time.time):
         self.db, self.clock = database, clock
 
-    def begin(self, turn: str, character_id: str) -> None:
+    def begin(self, turn: str, character_id: str, guard: str = 'direct') -> None:
         """开始生成前先记一条：生成出来的回复写进聊天记录后、放进发件箱前程序退出，启动时能认出这条回复没发出去。"""
         with self.db.transaction() as c:
-            c.execute('INSERT INTO qq_outbox(turn_id, character_id, status, created_at) VALUES (?,?,?,?)',
-                      (turn, character_id, 'generating', self.clock()))
+            c.execute('INSERT INTO qq_outbox(turn_id, character_id, status, created_at, guard) VALUES (?,?,?,?,?)',
+                      (turn, character_id, 'generating', self.clock(), guard))
 
     def add(self, turn: str, character_id: str, date_keys=(), day: str = '') -> bool:
         """生成完成后入队。清理器可能已判定这一轮过期，旧线程恢复时不能覆盖结果。"""
         with self.db.transaction() as c:
-            return c.execute("""INSERT INTO qq_outbox(turn_id, character_id, status, date_keys, date_day, created_at)
-                                VALUES (?,?,'queued',?,?,?)
+            return c.execute("""INSERT INTO qq_outbox(turn_id, character_id, status, date_keys, date_day, created_at, guard)
+                                VALUES (?,?,'queued',?,?,?,'direct')
                                 ON CONFLICT(turn_id) DO UPDATE SET status='queued', date_keys=excluded.date_keys,
                                     date_day=excluded.date_day, created_at=excluded.created_at
                                 WHERE qq_outbox.status='generating' AND qq_outbox.character_id=excluded.character_id""",
@@ -77,11 +77,13 @@ class OutboxStore:
         with self.db.transaction() as c:
             c.execute("UPDATE qq_outbox SET status='dequeued', dequeued_at=? WHERE turn_id=? AND status='queued'", (self.clock(), turn))
 
-    def claim(self, turn: str) -> bool:
+    def claim(self, turn: str, valid=None) -> bool:
         """插件领取：只有刚交出去、还没过期的才能领。领取成功插件才发送；失败（已作废、已有结果）插件就不发。"""
-        with self.db.transaction() as c:
+        def claim_in(c):
+            if valid is not None and not valid(c): return False
             return c.execute("UPDATE qq_outbox SET status='claimed', claimed_at=? WHERE turn_id=? AND status='dequeued' AND dequeued_at>=?",
                              (self.clock(), turn, self.clock()-CLAIM_TTL)).rowcount == 1
+        return self.db.locked(claim_in)
 
     def settle(self, turn: str, status: str, first_at: float | None = None, *, expected: str | None = None) -> Delivery | None:
         """记下结果并处理连带的事（纪念日、聊天记录）。已经有确定结果的不再改（回执重发时幂等）；返回这次新定下的结果。"""

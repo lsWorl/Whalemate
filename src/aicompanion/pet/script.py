@@ -47,64 +47,115 @@ class Vocab:
                 '标注会被执行并从显示的文字里去掉，所以不要写成句子的一部分，也不要用其他括号描写动作。')
 
 
+class MarkdownLiterals:
+    """逐字符判断 Markdown 展示区域。分隔符可以横跨任意 token，不缓存正文。"""
+
+    def __init__(self):
+        self.fence = ''
+        self.fence_size = self.inline_size = 0
+        self.run = ''
+        self.run_size = 0
+        self.at_margin = self.closing = self.literal_line = False
+        self.opening_line = False
+        self.escaped = False
+        self.indent = 0  # 行首缩进列数，遇到正文后设为 None
+
+    def protected(self, ch: str, *, syntax: bool = True) -> bool:
+        if self.run:
+            if ch == self.run:
+                self.run_size += 1
+                return True
+            if self.opening_line and self.run == self.fence == '`':
+                # 反引号围栏的语言说明不能含反引号；同一行再出现时，这里是行内代码。
+                self.fence = ''
+                self.opening_line = False
+                self.inline_size = 0 if self.run_size == self.fence_size else self.fence_size
+            elif self.fence:
+                self.closing = self.at_margin and self.run == self.fence and self.run_size >= self.fence_size
+            elif self.inline_size:
+                if self.run == '`' and self.run_size == self.inline_size:
+                    self.inline_size = 0
+            elif self.at_margin and self.run_size >= 3:
+                self.fence, self.fence_size = self.run, self.run_size
+                self.opening_line = True
+            elif self.run == '`':
+                self.inline_size = self.run_size
+            self.run = ''
+
+        escaped, self.escaped = self.escaped, False
+        if ch in '\r\n':
+            if self.closing:
+                self.fence = ''
+            self.closing = self.literal_line = self.opening_line = False
+            self.indent = 0
+            return bool(self.fence or self.inline_size)
+
+        margin = self.indent is not None and self.indent < 4
+        if ch in ' \t':
+            if self.indent is not None:
+                self.indent += 1 if ch == ' ' else 4 - self.indent % 4
+                if self.indent >= 4 and syntax and not (self.fence or self.inline_size):
+                    self.literal_line = True
+        else:
+            self.closing = False  # 围栏后的非空白字符使这一行失去闭合资格
+            self.indent = None
+            if syntax and not (self.fence or self.inline_size) and margin and ch in '>＞':
+                self.literal_line = True
+        if escaped:
+            return True
+        if syntax and not (self.fence or self.inline_size or self.literal_line) and ch == '\\':
+            self.escaped = True
+        if syntax and not self.literal_line and ch in ('`', '~'):
+            self.run, self.run_size, self.at_margin = ch, 1, margin
+            return True
+        return bool(self.literal_line or self.fence or self.inline_size)
+
+
 class CueStream:
     """逐 token 喂入，返回 (可显示文字, 本次解析出的标注)。"""
 
     def __init__(self, vocab: Vocab):
-        self.vocab = vocab; self.pending = ''
-        # 代码块（```…```）、行内代码（`…`）和引用行（行首 >）里的内容是展示给人看的文字，原样保留、不解析标注：
-        # 用户让她“把文章里的 <task> 示例展示出来”时，代码块里的字面标记不能变成办事委托（Codex PR #48 第三轮）
-        self.fence = False; self.inline = False; self.quote = False; self.line_start = True
+        self.vocab = vocab
+        self.pending = ''
+        self.markdown = MarkdownLiterals()
 
     def feed(self, token: str, final: bool = False) -> tuple[str, list[Cue]]:
         text, cues = [], []
-        data = self.pending+token; self.pending = ''
-        i = 0
-        while i < len(data):
-            ch = data[i]
-            if ch == '`':
-                run = len(data[i:]) - len(data[i:].lstrip('`'))
-                if i+run == len(data) and run < 3 and not final:
-                    self.pending = data[i:]; break                      # 可能是被拆开的 ```，等下一个 token
-                if run >= 3: self.fence = not self.fence
-                elif not self.fence: self.inline = not self.inline
-                text.append(data[i:i+run]); i += run; self.line_start = False; continue
-            if ch == '\n':
-                self.inline = False; self.quote = False; self.line_start = True
-                text.append(ch); i += 1; continue
-            if self.line_start and ch in ' \t':
-                text.append(ch); i += 1; continue
-            if self.line_start and ch in '>＞' and not self.fence:
-                self.quote = True
-            self.line_start = False
-            if self.fence or self.inline or self.quote:
-                text.append(ch); i += 1; continue                       # 代码、引用里的一律当普通文字
-            if ch == '<':
-                rest = data[i:]
-                if rest.startswith(TASK_OPEN):
-                    close = rest.find(TASK_CLOSE)
-                    if close != -1:
-                        task = rest[len(TASK_OPEN):close].strip()
-                        if task: cues.append(Cue('task', task[:MAX_TASK]))
-                        i += close+len(TASK_CLOSE); continue
-                    if not final and len(rest) <= MAX_TASK+len(TASK_OPEN)+len(TASK_CLOSE):
-                        self.pending = rest; break
-                elif TASK_OPEN.startswith(rest) and not final:
-                    self.pending = rest; break
-            if ch in OPENERS:
-                close = data.find(OPENERS[ch], i+1)
-                if close == -1:
-                    if len(data)-i-1 <= MAX_TAG and not final:
-                        self.pending = data[i:]; break   # 等下一个 token
-                    text.append(ch); i += 1; continue
-                word = data[i+1:close]
-                cue = self.vocab.lookup(word) if len(word) <= MAX_TAG and self.vocab else None
+        for ch in token:
+            # 一个从普通正文开始的委托本身可以含文件名、代码等；照原样交给下游。
+            if self.markdown.protected(ch, syntax=not self.pending.startswith(TASK_OPEN)):
+                if self.pending:
+                    text.append(self.pending)
+                    self.pending = ''
+                text.append(ch)
+                continue
+            if not self.pending:
+                if ch in OPENERS:
+                    self.pending = ch
+                else:
+                    text.append(ch)
+                continue
+            self.pending += ch
+            if self.pending.startswith(TASK_OPEN):
+                if self.pending.endswith(TASK_CLOSE):
+                    task = self.pending[len(TASK_OPEN):-len(TASK_CLOSE)].strip()
+                    if task: cues.append(Cue('task', task[:MAX_TASK]))
+                    self.pending = ''
+                elif len(self.pending) > MAX_TASK + len(TASK_OPEN) + len(TASK_CLOSE):
+                    text.append(self.pending)
+                    self.pending = ''
+                continue
+            if ch == OPENERS[self.pending[0]]:
+                cue = self.vocab.lookup(self.pending[1:-1]) if len(self.pending) <= MAX_TAG + 2 else None
                 if cue: cues.append(cue)
-                else: text.append(data[i:close+1])
-                i = close+1; continue
-            text.append(ch); i += 1
+                else: text.append(self.pending)
+                self.pending = ''
+            elif len(self.pending) > MAX_TAG + 1 or ch in '\r\n':
+                text.append(self.pending)
+                self.pending = ''
         if final and self.pending:
-            text.append(self.pending); self.pending = ''
+            text.append(self.pending)
+            self.pending = ''
         return ''.join(text), cues
 
     def flush(self) -> tuple[str, list[Cue]]:

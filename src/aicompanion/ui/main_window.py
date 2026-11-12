@@ -550,7 +550,9 @@ class MainWindow(QMainWindow):
         self.reply_expressions[generation]=[]
         # 多段回复显示成几个连续气泡、表情包单独一个气泡（见 SegmentedReply）
         self.items[generation]=self.chat_list.reply(self.controller.character.name,'正在想…')
-        worker=ChatWorker(self.controller,generation,self.controller.character,query,proactive,self)
+        # 调度器派发的桌面轮次由本窗口确认送达，普通聊天仍在生成结束时结算。
+        worker=ChatWorker(self.controller,generation,self.controller.character,query,proactive,self,
+                          generation not in getattr(self,'outreaches',{}))
         self.workers.add(worker)
         if key: self.proactive_keys[generation]=(self.controller.character.id,key)
         worker.expression_event.connect(self._expression_event); worker.result.connect(self._result)
@@ -561,10 +563,16 @@ class MainWindow(QMainWindow):
 
     def _expression_event(self,generation,payload):
         if not self.coordinator.accepts(generation) or self.closing:return
-        if not self._still_wanted(generation,visible=payload[0]=='text' or payload[1].kind=='attachment_ready'):return
-        if payload[0]=='text':self._token(generation,payload[1]);return
+        if payload[0]=='text':
+            stream=getattr(self,'cue_streams',{}).get(generation)
+            text,cues=stream.feed(payload[1]) if stream else (payload[1],[])
+            if not self._still_wanted(generation,visible=bool(text.strip())):return
+            if cues:self._handle_cues(generation,cues)
+            if text:self._token(generation,text)
+            return
         _,event,media=payload
         if event.generation_id!=generation:return
+        if not self._still_wanted(generation,visible=False):return
         if event.kind=='attachment_ready':self._display_attachment(generation,event.attachment,media)
         elif event.kind=='final':self.expression_results[generation]=(event.result,media)
 
@@ -603,6 +611,7 @@ class MainWindow(QMainWindow):
         if handle is None:return
         if handle.set_attachment(*media,attachment.placement):
             self.displayed_attachments.add(attachment.delivery_id)
+            self.outreach_valid.pop(generation,None)  # 安装到气泡成功才算可见，收到附件事件时仍可能解码失败。
             self.controller.expression.receipt(attachment.delivery_id,'displayed')
             if self.pet.isVisible() and self.database.get_setting('pet_bubble_enabled',True):
                 self.pet.bubble.say_image(*media,self.pet._head_point(),key='expression:'+generation)
@@ -613,10 +622,6 @@ class MainWindow(QMainWindow):
         if not self.coordinator.accepts(generation) or self.closing: return
         if generation not in self.first_token:
             self.first_token.add(generation); self.pet.dispatch('reply_token'); self.pet.hide_activity()
-        stream=self.cue_streams.get(generation)
-        token,cues=stream.feed(token) if stream else (token,[])
-        self._handle_cues(generation,cues)
-        if not token: return
         self.texts[generation]+=token
         self.items[generation].set_text(self.texts[generation]); self.chat_list.scrollToBottom()
         for sentence in self.sentences.feed(token): self._enqueue_sentence(sentence,generation)
@@ -626,6 +631,9 @@ class MainWindow(QMainWindow):
             self._pet_subtitle((split_segments(self.texts[generation]) or [''])[-1][-180:])
 
     def _result(self,generation,state,error):
+        # final 与 result 是两个排队的 Qt 信号，它们之间也可以关闭分享。
+        if generation in getattr(self,'outreach_valid',{}) and self.coordinator.accepts(generation):
+            self._still_wanted(generation,visible=False)
         expression,media=self.expression_results.pop(generation,(None,None))
         allowed_task=generation in getattr(self,'task_turns',()); getattr(self,'task_turns',set()).discard(generation)
         key=self.proactive_keys.pop(generation,None)
@@ -640,8 +648,11 @@ class MainWindow(QMainWindow):
             else: self.purposes.release(purpose_id)
         self.reply_status[generation]=state
         self._sync_delivery(generation); self.first_token.discard(generation)
-        if withdrawn: self.database.drop_reply(generation,self.reply_characters.get(generation,self.controller.character.id))
         if withdrawn or not self.coordinator.accepts(generation) or self.closing:
+            character_id=self.reply_characters.get(generation,self.controller.character.id)
+            if withdrawn or (outreach_done and not self.texts.get(generation,'').strip()
+                             and not self.controller.expression.history(generation,character_id)):
+                self.database.drop_reply(generation,character_id)
             if outreach_done: outreach_done(False,'desktop')
             return
         self.pet.hide_activity()
@@ -658,7 +669,13 @@ class MainWindow(QMainWindow):
                 if purpose_id:self.purposes.release(purpose_id)
                 if key:self.database.release_proactive(*key)
                 if outreach_done:outreach_done(False,'desktop');outreach_done=None
-        if outreach_done: outreach_done(state=='complete','desktop')   # 主动消息真说出来了才记进调度记录
+        if outreach_done:
+            seen=bool(self.texts[generation].strip() or (expression and any(
+                a.delivery_id in self.displayed_attachments for a in expression.attachments)))
+            outreach_done(state=='complete' and seen,'desktop')
+            if state=='complete' and not seen:
+                self.items[generation].withdraw()
+                self.database.drop_reply(generation,self.reply_characters[generation])
         if state=='complete':
             self.pet.dispatch('reply_finished',ok=True,celebrate=getattr(self,'celebrate_next',False)); self.celebrate_next=False
             for sentence in self.sentences.feed('',True): self._enqueue_sentence(sentence,generation)
@@ -851,7 +868,13 @@ class MainWindow(QMainWindow):
         if self._proactive_on_qq(outreach.intent,lambda result:done(result,'qq'),taken,queued,valid):return
         generation=self.coordinator.active=uuid4().hex
         self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
-        self.outreaches[generation]=done
+        def desktop_done(sent,channel):
+            from aicompanion.services.companion_dates import CompanionDates
+            dates=CompanionDates(self.database)
+            if sent: dates.confirm(character_id,generation)
+            else: dates.release(character_id,generation)
+            done(sent,channel)
+        self.outreaches[generation]=desktop_done
         if outreach.source=='share' or outreach.payload.get('origin')=='share': self.outreach_valid[generation]=valid
         self._start(generation,proactive=outreach.intent)
 
@@ -889,14 +912,16 @@ class MainWindow(QMainWindow):
     def _maybe_live(self):
         """空闲时按兴趣去看点东西（后台线程，不挡界面）。没配模型或额度用完：照样去看，但不调模型、只记一句（大多不会拿来说）。"""
         character=self.controller.character
-        if self.life_worker or self.closing or self.call_active or not self.life.should_start(character.id): return
+        if self.life_worker or self.closing or self.call_active: return
+        epoch=self.life.epoch()
+        if epoch is None or not self.life.should_start(character.id): return
         search=self.controller.search_factory(character.id)()
         client=None
         if self.controller.router.ready('chat',character.id) and self.quota.check_silent('life')!='stop':
             client=self.controller.client(character.id,'life')
         # 搜索要花点时间，期间别的对话可能把额度用完：真正发起总结请求前再查一次（Codex PR #48 第 4 项）
         allow=lambda:self.quota.check_silent('life')!='stop'
-        worker=TaskWorker(lambda token:self.life.run(character.id,search,client,token,character.name,allow_model=allow),self)
+        worker=TaskWorker(lambda token:self.life.run(character.id,search,client,token,character.name,allow_model=allow,epoch=epoch),self)
         self.life_worker=worker; self.tasks.add(worker)
         worker.failed.connect(lambda error:None)
         worker.finished.connect(lambda w=worker:self._task_finished(w)); worker.start()

@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 import re
+from aicompanion.pet.script import MarkdownLiterals
 from .domain import ASSET_ID
 
 ATTR = re.compile(r"""([a-z_]+)\s*=\s*(?:"([^"<>\n]*)"|'([^'<>\n]*)'|([^\s"'<>/]+))""")
@@ -50,8 +51,8 @@ class ExpressionStream:
         self.pending = ''; self.selection = None; self.reserved = False; self.diagnostics = []
         self.mind = None
         self.markers = 0; self.visible = ''; self.has_text = False; self.cancelled = False; self.finished = False
-        self.fence = 0; self.inline = False; self.ticks = ''; self.tick_start = False; self.line_start = True
-        self.quote_line = False; self.json_depth = 0; self.json_string = False; self.escape = False
+        self.markdown = MarkdownLiterals()
+        self.json_depth = 0; self.json_string = False; self.escape = False
         self.task = ''; self.drop_line = False; self.drop_annotation = False
         self.after_text_seen = False
         # 角色动画词表：传入时，词表外的短情绪方括号（【委屈】【心虚】…）不会被动画执行、只会原样露在正文里，
@@ -71,9 +72,6 @@ class ExpressionStream:
             if len(self.visible) > 200 or CUE.sub('', self.visible).strip() and not self._maybe_cue_tail():
                 self.has_text = True
         out.append(text)
-        for ch in text:
-            if ch == '\n': self.line_start = True; self.quote_line = False
-            elif not ch.isspace(): self.line_start = False
 
     def _maybe_cue_tail(self):
         """末尾是不是一个还没闭合的标注（【开 / <挥），是的话先不算正文。"""
@@ -240,17 +238,6 @@ class ExpressionStream:
                 for part in raw[1:]: self._char(part, out)
             else: self._emit(raw, out)
             return
-        if self.ticks:
-            if ch == self.ticks[0]: self.ticks += ch; return
-            run = self.ticks; self.ticks = ''
-            if self.tick_start and len(run) >= 3:
-                self.fence = 0 if self.fence else len(run)
-            elif not self.fence and run[0] == '`': self.inline = not self.inline
-            self._emit(run, out)
-        if ch in ('`', '~') and not self.json_depth:
-            self.ticks = ch; self.tick_start = self.line_start; return
-        if self.fence or self.inline or self.quote_line:
-            self._emit(ch, out); return
         if self.json_depth:
             if self.escape: self.escape = False
             elif ch == '\\' and self.json_string: self.escape = True
@@ -259,7 +246,6 @@ class ExpressionStream:
                 if ch in '{[': self.json_depth += 1
                 elif ch in '}]': self.json_depth -= 1
             self._emit(ch, out); return
-        if ch == '>' and self.line_start: self.quote_line = True
         if ch == '{': self.json_depth = 1
         if ch in '<[': self.pending = ch
         elif ch == '【' and self.cue_words is not None: self.bracket = ch
@@ -268,7 +254,17 @@ class ExpressionStream:
     def feed(self, chunk):
         if self.cancelled or self.finished: return ''
         out = []
-        for ch in str(chunk): self._char(ch, out)
+        for ch in str(chunk):
+            # 已开始的控制标记、JSON 字符串内部沿用原协议。其他字符和桌宠动作解析共用 Markdown 边界。
+            in_tag = self.pending.lower().startswith(RESERVED + ('<img', '['))
+            normal = not (in_tag or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
+            if self.markdown.protected(ch, syntax=normal):
+                if self.pending or self.bracket:
+                    self._emit(self.pending + self.bracket, out)
+                    self.pending = self.bracket = ''
+                self._emit(ch, out)
+            else:
+                self._char(ch, out)
         return ''.join(out)
 
     def finish(self):
@@ -280,15 +276,14 @@ class ExpressionStream:
             else: self.markers += 1; self.diagnose('unfinished_marker')
         if self.task:
             self._emit(re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task), out)
-        if self.ticks: self._emit(self.ticks, out)
         if self.bracket: self._emit(self.bracket, out)
         if self.img: self.markers += 1; self.diagnose('html_img_tag')   # 没闭合的 <img 标签：整段不显示
         if self.selection and self.after_text_seen: self.diagnose('mid_text_marker')
-        self.pending = self.task = self.ticks = self.bracket = ''; self.img = 0; self.img_quote = ''; self.finished = True
+        self.pending = self.task = self.bracket = ''; self.img = 0; self.img_quote = ''; self.finished = True
         return ''.join(out)
 
     def cancel(self):
-        self.cancelled = True; self.selection = None; self.pending = self.task = self.ticks = self.bracket = ''; self.img = 0; self.img_quote = ''
+        self.cancelled = True; self.selection = None; self.pending = self.task = self.bracket = ''; self.img = 0; self.img_quote = ''
 
 
 def clean_expression_history(text):
