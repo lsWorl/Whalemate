@@ -982,7 +982,7 @@ class BridgeService:
     # 投递的几个时限见 bridge/outbox.py：没被取走、取走了没来领取、领取了没回执。
     # 插件 0.10.0 起先领取再发送、回执带第一段实际发出的时间和发出了几段（Codex PR #46 第三轮），旧插件不再用来主动发
     from aicompanion.bridge.outbox import QUEUE_TTL as OUTBOX_TTL, CLAIM_TTL, ACK_TTL
-    PROACTIVE_PLUGIN = (0, 10, 0)
+    PROACTIVE_PLUGIN = (0, 10, 1)   # 0.10.1：超时只算不确定、中途停用不报 sent、首达按领取后的秒数（Codex PR #46 第四轮）
 
     def qq_ready(self) -> bool:
         """能不能主动发 QQ：接口开着、绑定了爹、插件 1 分钟内有心跳且 QQ 已连上、插件版本支持发件箱（0.9.0 起）。"""
@@ -1019,15 +1019,23 @@ class BridgeService:
             delivered = []
             def event(value):
                 if value.kind == 'final': delivered.append(value.result)
+            from aicompanion.bridge.outbox import OutboxStore
+            store = OutboxStore(self.database, self.clock)
+            # 生成前先记一条 generating：生成的回复已经写进聊天记录、还没放进发件箱时程序退出，启动时按它把这条回复拿掉，
+            # 聊天窗不会显示一条实际没发出的祝福（Codex PR #46 第四轮 P3）
+            store.begin(turn, character.id)
+            def give_up():
+                store.settle(turn, 'failed')            # 拿掉回复、放掉这一轮占住的纪念日
+                return None
             try:
                 for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
                                              situation=situation, source='qq', offer_tasks=False, purpose='companion',
                                              expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
-                return None
+                return give_up()
             if self.closed or controller.character.id != character.id or not delivered:
                 if delivered: controller.expression.cancel(turn, character.id)
-                self.database.drop_reply(turn, character.id); self._settle_dates(character.id, turn, False); return None
+                return give_up()
             expression = delivered[-1]; wire = expression.wire(); wire['attachments'] = []
             for attachment in expression.attachments:
                 media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
@@ -1037,7 +1045,7 @@ class BridgeService:
             burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
             segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
-                self.database.drop_reply(turn, character.id); self._settle_dates(character.id, turn, False); return None
+                return give_up()
             keys, day = [], ''
             try:
                 from aicompanion.services.companion_dates import CompanionDates
@@ -1045,8 +1053,7 @@ class BridgeService:
                 dates.hold(character.id, turn, self.OUTBOX_TTL+self.CLAIM_TTL+self.ACK_TTL+60)
                 keys, day = dates.held(character.id, turn)
             except Exception: pass
-            from aicompanion.bridge.outbox import OutboxStore
-            OutboxStore(self.database, self.clock).add(turn, character.id, keys, day)
+            store.add(turn, character.id, keys, day)
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
                 self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
@@ -1104,16 +1111,24 @@ class BridgeService:
     def outbox_ack(self, payload) -> dict:
         """插件回报结果：status，第一段实际发出后过了多少秒（first_delay，插件和桌宠不必对表），发出了几段（sent）。
         可以重发：已经有结果的直接认可，不重复处理；“未知”之后迟到的回执照样补记。"""
-        if not isinstance(payload, dict) or not set(payload) <= {'id', 'status', 'first_delay', 'sent'} or not {'id', 'status'} <= set(payload):
+        if not isinstance(payload, dict) or not set(payload) <= {'id', 'status', 'first_delay', 'first_after_claim', 'sent'} or not {'id', 'status'} <= set(payload):
             return {'ok': False}
         turn, status = str(payload['id']), payload['status']
-        if status not in ('sent', 'partial', 'failed') or not re.fullmatch(r'[a-f0-9]{32}', turn): return {'ok': False}
-        delay = payload.get('first_delay')
-        if delay is not None and (isinstance(delay, bool) or not isinstance(delay, (int, float)) or not 0 <= delay <= 24*3600): return {'ok': False}
+        # unknown：插件 0.10.1 起，发送超时 / 断连（可能已经送到）时如实回报“不确定”，桌宠留着防重、不重发
+        if status not in ('sent', 'partial', 'failed', 'unknown') or not re.fullmatch(r'[a-f0-9]{32}', turn): return {'ok': False}
+        seconds = lambda v: v is None or (not isinstance(v, bool) and isinstance(v, (int, float)) and 0 <= v <= 24*3600)
+        delay, after = payload.get('first_delay'), payload.get('first_after_claim')
+        if not seconds(delay) or not seconds(after): return {'ok': False}
         from aicompanion.bridge.outbox import OutboxStore
         store = OutboxStore(self.database, self.clock)
-        if store.get(turn) is None: return {'ok': False}
-        first = (self.clock()-float(delay or 0)) if status != 'failed' else None
+        row = store.get(turn)
+        if row is None: return {'ok': False}
+        first = None
+        if status in ('sent', 'partial'):
+            # 首达时间：优先用“领取时刻（桌宠自己记的）+ 领取后几秒发出”，回执 POST 在路上耽搁多久都不影响；
+            # 旧回执只有 first_delay 时退回“收到回执的时刻 − first_delay”（Codex PR #46 第四轮）
+            if after is not None and row['claimed_at']: first = min(self.clock(), float(row['claimed_at'])+float(after))
+            else: first = self.clock()-float(delay or 0)
         self._notify(turn, store.settle(turn, status, first))
         return {'ok': True}
 
@@ -1135,16 +1150,6 @@ class BridgeService:
         if waiting and waiting[0]:
             try: waiting[0](result)
             except Exception: pass
-
-    def _settle_dates(self, character_id, turn, sent) -> None:
-        """还没放进发件箱就作罢的一轮（生成失败、角色换了、没内容）：放掉它占住的纪念日提醒。"""
-        try:
-            from aicompanion.services.companion_dates import CompanionDates
-            dates = CompanionDates(self.database)
-            if sent: dates.confirm(character_id, turn)
-            else: dates.release(character_id, turn)
-        except Exception:
-            pass
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------
     def maybe_remember(self, character_id, channel, background=True):

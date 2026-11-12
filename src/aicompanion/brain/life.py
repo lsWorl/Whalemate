@@ -176,6 +176,11 @@ class LifeService:
         with self.db.transaction() as c:
             c.execute("UPDATE activities SET status='shared', shared_at=? WHERE id=? AND status='done'", (self.clock(), activity_id))
 
+    def unshare(self, activity_id: int) -> None:
+        """确定没发出去（含结果未知之后补到的失败回执）：撤回“分享过”的标记，卡片不再显示“跟你说了”，这件事以后还能再分享。"""
+        with self.db.transaction() as c:
+            c.execute("UPDATE activities SET status='done', shared_at=NULL, response='' WHERE id=? AND status='shared'", (activity_id,))
+
     def answered(self, activity_id: int, response: str = 'answered') -> bool:
         """记下这次分享最后有没有被接住。每件事只记一次（返回 False 表示已经记过），心情也只跟着变一次。"""
         with self.db.transaction() as c:

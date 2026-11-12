@@ -362,5 +362,97 @@ class CodexRoundThreeTests(CodexRoundTwoTests):
         self.assertEqual(self.rows(), []); self.assertEqual(released, [outreach.key])
 
 
+
+class CodexRoundFourTests(CodexRoundTwoTests):
+    """Codex PR #46 第四轮（a9aa4fc）调度这边的回归：迟到的明确失败要能纠正、早期 v13 遗留的 delivering 不能永远挡住、
+    已确认投递的连带写入中途退出后能重放。"""
+
+    def qq_purpose(self, turn):
+        from aicompanion.bridge.outbox import OutboxStore
+        self.purposes.rows.append({'id': 1, 'content': '想问问考试'})
+        receipts = []; cls, window = self.window(receipts, hand=turn)
+        outreach = self.s.next(CID, 0, 9999); self.assertEqual(outreach.source, 'purpose')
+        cls._deliver_outreach(window, CID, outreach)
+        return outreach, receipts, OutboxStore(self.db, clock=lambda: self.now[0])
+
+    def test_late_failure_corrects_answered_record_count_and_purpose(self):
+        """心事走 QQ，失败回执被耽搁：领取后 10 分钟没回执记为未知，主人随后说了话被记成 answered；
+        之后补到的明确失败回执要撤掉这条（当天次数回到 0），心事放回。"""
+        from aicompanion.bridge.outbox import ACK_TTL
+        self.qq_purpose('5'*32)
+        self.later(ACK_TTL+60); self.assertIsNone(self.s.next(CID, 0, 9999))
+        self.assertEqual(self.rows(), [('purpose', 'unknown', None)])
+        self.say('user', '刚在忙'); self.later(5*60); self.s.next(CID, 0, 9999)
+        self.assertEqual(self.rows(), [('purpose', 'answered', None)]); self.assertEqual(self.s.today_count(CID), 1)
+        db = Database(Path(self.tmp.name)/'s.sqlite3'); db.initialize()                    # 重启：回调没了
+        again = ProactiveScheduler(db, self.purposes, self.greet, clock=lambda: self.now[0], rng=lambda: self.roll[0])
+        from aicompanion.bridge.outbox import OutboxStore
+        self.assertIsNotNone(OutboxStore(db, clock=lambda: self.now[0]).settle('5'*32, 'failed'))   # 迟到的明确失败
+        again.next(CID, 0, 9999)
+        self.assertEqual(self.rows(), []); self.assertEqual(again.today_count(CID), 0)
+        self.assertEqual(self.purposes.log[-1], ('release', 1))
+
+    def test_late_success_corrects_first_arrival_of_answered_record(self):
+        """同样的情形换成迟到的成功回执：去向（answered）不变，首达时间和渠道按回执校正。"""
+        from aicompanion.bridge.outbox import ACK_TTL
+        _, _, store = self.qq_purpose('6'*32)
+        started = self.now[0]
+        self.later(ACK_TTL+60); self.s.next(CID, 0, 9999)
+        self.say('user', '刚在忙'); self.later(5*60); self.s.next(CID, 0, 9999)
+        store.settle('6'*32, 'sent', started+3)
+        self.s.next(CID, 0, 9999)
+        with self.db.transaction() as c:
+            row = c.execute('SELECT status, sent_at, channel FROM outreach_log').fetchone()
+        self.assertEqual(tuple(row), ('answered', started+3, 'qq'))
+
+    def test_legacy_delivering_without_outbox_does_not_block_forever(self):
+        """跑过 e38ed29 的 v13 库：插件取走了、回执前退出，留下没有发件箱记录的 delivering。半小时后当作结果未知，
+        不再挡住；三小时后放下，之后照常开口（24 小时后不会还是 None）。"""
+        with self.db.transaction() as c:
+            c.execute("INSERT INTO outreach_log(character_id, source, key, channel, status, sent_at, handed_at, turn_id) "
+                      "VALUES (?, 'greeting', 'g:old', 'qq', 'delivering', ?, ?, ?)", (CID, self.now[0], self.now[0], 'a1'*16))
+        self.assertTrue(self.s.pending(CID))
+        self.later(31*60); self.assertFalse(self.s.pending(CID))
+        self.assertEqual(self.rows(), [('greeting', 'unknown', None)])
+        for _ in range(24):                                                               # 之后每小时一次 tick，一天之内能照常开口
+            self.later(HOUR)
+            if self.s.next(CID, 0, 9999) is not None: break
+        else: self.fail('24 小时内一直不能主动开口')
+
+    def test_outbox_result_and_date_mention_commit_together(self):
+        """已收到明确的 sent：发件箱结果和“纪念日已提”在同一个事务。写纪念日时进程终止，两者都不落库；重放同一回执两者都在。"""
+        from unittest import mock
+        from aicompanion.bridge.outbox import OutboxStore
+        store = OutboxStore(self.db, clock=lambda: self.now[0])
+        store.add('7'*32, CID, ['birthday'], '2026-11-12'); store.dequeued('7'*32); store.claim('7'*32)
+        real = OutboxStore._after
+        def crash(self_, c, row, status):
+            real(self_, c, row, status); raise SystemExit
+        with mock.patch.object(OutboxStore, '_after', crash):
+            with self.assertRaises(SystemExit): store.settle('7'*32, 'sent', self.now[0])
+        mentioned = lambda: self.db.locked(lambda c: c.execute("SELECT COUNT(*) FROM companion_date_mentions WHERE key='birthday'").fetchone()[0])
+        self.assertEqual((store.get('7'*32)['status'], mentioned()), ('claimed', 0))
+        self.assertTrue(store.settle('7'*32, 'sent', self.now[0]))                           # 重启后插件重放回执
+        self.assertEqual((store.get('7'*32)['status'], mentioned()), ('sent', 1))
+
+    def test_purpose_side_effect_is_replayed_after_exit(self):
+        """已收到明确的 sent：记“心事送到”时进程终止。调度记录还停在投递中，重启对账时整套重放：心事送到、记录为 sent/qq。"""
+        from aicompanion.bridge.outbox import Delivery
+        outreach, receipts, store = self.qq_purpose('8'*32)
+        store.settle('8'*32, 'sent', self.now[0]+2)
+        calls = []
+        def delivered(pid):
+            calls.append(pid)
+            if len(calls) == 1: raise SystemExit                                              # 第一次：写到一半进程没了
+            self.purposes.log.append(('delivered', pid))
+        self.purposes.delivered = delivered
+        with self.assertRaises(SystemExit): receipts[0](Delivery('sent', self.now[0]+2))
+        db = Database(Path(self.tmp.name)/'s.sqlite3'); db.initialize()                    # 重启
+        again = ProactiveScheduler(db, self.purposes, self.greet, clock=lambda: self.now[0], rng=lambda: self.roll[0])
+        self.later(60); again.next(CID, 0, 9999)
+        self.assertEqual(self.rows(), [('purpose', 'sent', None)])
+        self.assertIn(('delivered', 1), self.purposes.log)
+
+
 if __name__ == '__main__':
     unittest.main()
