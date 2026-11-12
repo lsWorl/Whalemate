@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from contextlib import contextmanager, closing
+from contextlib import contextmanager, closing, nullcontext
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import time
 
 from aicompanion.domain.character import CharacterProfile, DEFAULT_CHARACTER
 from aicompanion.domain.emotion import EmotionState
@@ -75,6 +76,12 @@ class Database:
                     for name, definition in (("clarity", "REAL NOT NULL DEFAULT 1"), ("recalled_at", "TEXT"), ("scope", "TEXT NOT NULL DEFAULT 'pet'")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE memories ADD COLUMN {name} {definition}")
+                if "outreach_log" in tables:
+                    # v13 的主动开口记录在 PR #46 审查中补了两列（插件取件时间、对应轮次）；先跑过这个分支的库按缺哪列补哪列
+                    existing = {r[1] for r in connection.execute("PRAGMA table_info(outreach_log)")}
+                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL")):
+                        if name not in existing:
+                            connection.execute(f"ALTER TABLE outreach_log ADD COLUMN {name} {definition}")
                 # executescript 隐式提交，固定 schema 逐条执行才保证迁移原子性。
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():
@@ -92,6 +99,14 @@ class Database:
                                        "SELECT character_id,content,category,fact_key,importance,scope,source_ids,'migrated' FROM memories")
                 connection.execute("UPDATE conversation_turns SET status='interrupted' WHERE status='generating'")
                 connection.execute("UPDATE purposes SET status='pending' WHERE status='delivering'")
+                # 上次退出时还在生成、或在发件箱里没被插件领取的 QQ 主动消息：内存里的待发内容已经没了，确定发不出去。
+                # 标成失败并把那条回复从聊天记录里拿掉（插件之后再来领取也会被拒绝，不会发）。领取过的等回执或超时。
+                # generating：回复可能已经写进聊天记录、还没放进发件箱（Codex PR #46 第四轮 P3）
+                connection.execute("UPDATE qq_outbox SET status='failed', settled_at=? WHERE status IN ('generating','queued','dequeued')",
+                                   (time.time(),))
+                # 超时的旧生成线程可能刚写完回复就退出，还没来得及自行清理。
+                connection.execute("DELETE FROM chat_messages WHERE role='assistant' AND turn_id IN "
+                                   "(SELECT turn_id FROM qq_outbox WHERE status='failed')")
                 connection.execute("UPDATE agent_runs SET status='interrupted',ended_at=datetime('now','localtime') WHERE status='running'")   # 上次退出时没说完的心事放回去
                 # 重启后未确认的外部发送不能自动重发；尚未开始的待发结果作废。
                 connection.execute("UPDATE expression_deliveries SET status='unknown' WHERE status='sending'")
@@ -296,9 +311,9 @@ class Database:
                 return connection.execute("SELECT * FROM purposes WHERE character_id=? AND status=? ORDER BY due_at,id LIMIT ?", (character_id, status, limit)).fetchall()
             return connection.execute("SELECT * FROM purposes WHERE character_id=? ORDER BY id DESC LIMIT ?", (character_id, limit)).fetchall()
 
-    def update_purpose(self, purpose_id, status, delivered_at=None) -> None:
-        with self.transaction() as connection:
-            connection.execute("UPDATE purposes SET status=?,delivered_at=COALESCE(?,delivered_at) WHERE id=?", (status, delivered_at, purpose_id))
+    def update_purpose(self, purpose_id, status, delivered_at=None, *, connection=None) -> None:
+        with (self.transaction() if connection is None else nullcontext(connection)) as c:
+            c.execute("UPDATE purposes SET status=?,delivered_at=COALESCE(?,delivered_at) WHERE id=?", (status, delivered_at, purpose_id))
 
     def purposes_delivered_since(self, character_id, since_iso) -> int:
         with self.transaction() as connection:
@@ -330,9 +345,9 @@ class Database:
         with self.transaction() as connection:
             return connection.execute("INSERT OR IGNORE INTO proactive_events(character_id,event_key) VALUES (?,?)", (character_id,key)).rowcount == 1
 
-    def release_proactive(self, character_id, key) -> None:
-        with self.transaction() as connection:
-            connection.execute("DELETE FROM proactive_events WHERE character_id=? AND event_key=?", (character_id,key))
+    def release_proactive(self, character_id, key, *, connection=None) -> None:
+        with (self.transaction() if connection is None else nullcontext(connection)) as c:
+            c.execute("DELETE FROM proactive_events WHERE character_id=? AND event_key=?", (character_id,key))
 
     def record_usage(self, character_id, kind, amount) -> None:
         with self.transaction() as connection:

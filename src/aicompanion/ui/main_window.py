@@ -74,7 +74,9 @@ class MainWindow(QMainWindow):
         self.sentences=SentenceBuffer(); self.proactive=ProactiveMessageService(self.database)
         # P3：记忆整理器（衰减 / 遗忘 / 互动事件）与目的机制（心里惦记的事 → 主动开口）
         self.organizer=MemoryOrganizer(self.database); self.purposes=PurposeEngine(self.database)
-        self.purpose_ids={}; self.purpose_worker=None; self.scheduler_ticks=0
+        from aicompanion.brain.scheduler import ProactiveScheduler
+        self.outreach_scheduler=ProactiveScheduler(self.database,self.purposes,self.proactive)
+        self.purpose_ids={}; self.purpose_worker=None; self.scheduler_ticks=0; self.outreaches={}
         # P5：词元按用途记账、每日额度；干活（agent）会话
         meter.set_recorder(meter.database_recorder(self.database)); self.quota=meter.Quota(self.database)
         self.agent=AgentSession(self); self.pending_tasks={}
@@ -597,13 +599,16 @@ class MainWindow(QMainWindow):
         expression,media=self.expression_results.pop(generation,(None,None))
         key=self.proactive_keys.pop(generation,None)
         if key and state!='complete': self.database.release_proactive(*key)
+        outreach_done=self.outreaches.pop(generation,None)
         purpose_id=self.purpose_ids.pop(generation,None)
         if purpose_id:
             if state=='complete': self.purposes.delivered(purpose_id)
             else: self.purposes.release(purpose_id)
         self.reply_status[generation]=state
         self._sync_delivery(generation); self.first_token.discard(generation)
-        if not self.coordinator.accepts(generation) or self.closing: return
+        if not self.coordinator.accepts(generation) or self.closing:
+            if outreach_done: outreach_done(False,'desktop')
+            return
         self.pet.hide_activity()
         stream=self.cue_streams.pop(generation,None)
         if stream:
@@ -617,6 +622,8 @@ class MainWindow(QMainWindow):
                 state='failed';error='表情未能显示';self.reply_status[generation]='failed';self._sync_delivery(generation)
                 if purpose_id:self.purposes.release(purpose_id)
                 if key:self.database.release_proactive(*key)
+                if outreach_done:outreach_done(False,'desktop');outreach_done=None
+        if outreach_done: outreach_done(state=='complete','desktop')   # 主动消息真说出来了才记进调度记录
         if state=='complete':
             self.pet.dispatch('reply_finished',ok=True,celebrate=getattr(self,'celebrate_next',False)); self.celebrate_next=False
             for sentence in self.sentences.feed('',True): self._enqueue_sentence(sentence,generation)
@@ -784,33 +791,39 @@ class MainWindow(QMainWindow):
         if is_focused(self.database): return   # 专注模式：不主动搭话
         if self.quota.check_silent('companion')=='stop': return
         from aicompanion.ui.desktop_integration import system_idle_seconds
-        purpose=self.purposes.due(character_id,system_idle_seconds(),monotonic()-self.last_interaction)
-        if purpose:
-            # 心里惦记的事优先于固定的早晚问候
-            self.database.update_purpose(purpose['id'],'delivering')
-            intent=self.purposes.intent(purpose)
-            if self._proactive_on_qq(intent,lambda ok,pid=purpose['id']:self.purposes.delivered(pid) if ok else self.purposes.release(pid)):return
-            generation=self.coordinator.active=uuid4().hex
-            self.purpose_ids[generation]=purpose['id']
-            self._start(generation,proactive=self.purposes.intent(purpose),key=f"purpose:{purpose['id']}")
-            return
-        due=self.proactive.due(character_id,monotonic()-self.last_interaction)
-        if due:
-            key,intent=due
-            if self._proactive_on_qq(intent,lambda ok,k=key:None if ok else self.database.release_proactive(character_id,k)):return
-            self.coordinator.active=uuid4().hex
-            self._start(self.coordinator.active,proactive=intent,key=key)
+        # 计划书 v4 统一主动调度：纪念日、心事、问候、追问都由调度器决定要不要开口、说哪件（brain/scheduler.py）
+        outreach=self.outreach_scheduler.next(character_id,system_idle_seconds(),monotonic()-self.last_interaction)
+        if outreach: self._deliver_outreach(character_id,outreach)
 
-    def _proactive_on_qq(self,intent,done):
+    def _deliver_outreach(self,character_id,outreach):
+        """把调度器选中的这一件说出去：先占位，桌面说完 / QQ 回执成功再确认，没说成就撤掉、心事放回、问候和纪念日的占位放回。"""
+        purpose=outreach.payload.get('purpose')
+        if purpose: self.database.update_purpose(purpose['id'],'delivering')
+        # 选中就先占位（pending）：走 QQ 要等插件回执，期间不会再选中同一句（Codex PR #46 第 1 项）
+        reserved=self.outreach_scheduler.reserve(character_id,outreach)
+
+        def done(result,channel,o=outreach,cid=character_id,rid=reserved):
+            # 桌面传 True / False；QQ 传投递结果（发出 / 部分 / 失败 / 未知，bridge/outbox.py）。心事、问候、纪念日的占位一起收尾
+            self.outreach_scheduler.settle_delivery(cid,rid,o,result,channel)
+        # QQ：放进发件箱时记下轮次（之后按 qq_outbox 对账，重启也接得上）；插件领取、开始发送时记成 delivering
+        queued=lambda turn,rid=reserved:self.outreach_scheduler.attach(rid,turn,'qq')
+        taken=lambda turn,rid=reserved:self.outreach_scheduler.handed(rid,turn)
+        if self._proactive_on_qq(outreach.intent,lambda result:done(result,'qq'),taken,queued):return
+        generation=self.coordinator.active=uuid4().hex
+        self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
+        self.outreaches[generation]=done
+        self._start(generation,proactive=outreach.intent)
+
+    def _proactive_on_qq(self,intent,done,taken=None,queued=None):
         """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
-        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说。返回 True 表示这次走 QQ，桌面不再说。"""
+        没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说；插件取件时 taken(轮次)。返回 True 表示这次走 QQ，桌面不再说。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.services.proactive_service import choose_channel
         from aicompanion.ui.desktop_integration import system_idle_seconds
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
         if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
-        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done),self)
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken,on_queued=queued),self)
         self.tasks.add(worker)
         worker.succeeded.connect(lambda turn:None if turn else done(False))
         worker.failed.connect(lambda error:done(False))

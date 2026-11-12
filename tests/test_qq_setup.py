@@ -479,7 +479,7 @@ class DiagnoseTests(ManagerBase):
         self.assertEqual(self.db.get_setting('qq_bot_uin'), '88888888')             # 记下机器人号，下次快速登录
         self.heartbeat = {'at': self.now, 'onebot': {'connected': False, 'error': 'ApiNotAvailable'}, 'groups': []}
         self.assertEqual(self.qq.diagnose().code, 'onebot_down')
-        self.heartbeat = {'at': self.now, 'onebot': {'connected': True, 'self_id': '88888888'}, 'groups': [{'id': '30003', 'name': '测试群'}]}
+        self.heartbeat = {'at': self.now, 'astrbot': 'plugin-0.10.2', 'onebot': {'connected': True, 'self_id': '88888888'}, 'groups': [{'id': '30003', 'name': '测试群'}]}
         status = self.qq.diagnose(); self.assertEqual((status.code, status.groups[0]['id']), ('need_owner', '30003'))
         self.db.set_setting('bridge_owner:qq', '10001')
         self.assertEqual(self.qq.diagnose().code, 'connected')

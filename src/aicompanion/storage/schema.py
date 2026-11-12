@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 12  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期
+SCHEMA_VERSION = 13  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -204,4 +204,19 @@ CREATE INDEX IF NOT EXISTS ix_companion_dates ON companion_dates(character_id, k
 CREATE TABLE IF NOT EXISTS companion_date_mentions (
  character_id TEXT NOT NULL, key TEXT NOT NULL, day TEXT NOT NULL, at REAL NOT NULL, PRIMARY KEY(character_id, key, day)
 );
+-- v13 计划书 v4 统一主动调度：她每次主动开口记一条（问候、心事、纪念日、追问……都算），
+-- 用来管“今天说了几次”“上一句他回了没有”“追问过几次”，几种主动消息不再各管各的、同时冒出来
+CREATE TABLE IF NOT EXISTS outreach_log (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, source TEXT NOT NULL, key TEXT NOT NULL,
+ channel TEXT NOT NULL DEFAULT 'desktop', status TEXT NOT NULL DEFAULT 'sent', parent_id INTEGER,
+ sent_at REAL NOT NULL, settled_at REAL, turn_id TEXT, handed_at REAL
+);
+CREATE INDEX IF NOT EXISTS ix_outreach_parent ON outreach_log(parent_id);
+-- 主动发到 QQ 私聊的每一条投递（bridge/outbox.py）：排队 → 交出 → 插件领取 → 发出 / 部分 / 失败 / 未知。
+-- 存进库里是为了重启以后还能对上账：迟到的回执、没被取走的回复、这一轮带的纪念日（date_keys、date_day）
+CREATE TABLE IF NOT EXISTS qq_outbox (
+ turn_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, status TEXT NOT NULL, date_keys TEXT NOT NULL DEFAULT '[]',
+ date_day TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, dequeued_at REAL, claimed_at REAL, first_sent_at REAL, settled_at REAL
+);
+CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
 """

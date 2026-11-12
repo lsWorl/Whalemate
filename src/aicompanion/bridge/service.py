@@ -22,6 +22,7 @@ import threading
 from uuid import uuid4
 
 from aicompanion.domain.cancellation import CancellationToken
+from aicompanion.qq.specs import MIN_PROACTIVE_PLUGIN, plugin_version
 
 PLATFORM_NAMES = {'qq': 'QQ'}
 MAX_TEXT = 1500
@@ -163,6 +164,7 @@ class BridgeService:
         self.lock = PROCESS_LOCK
         self.expression_bindings={}; self.expression_lock=threading.Lock()
         self.outbox=[]; self.outbox_waiting={}   # 主动发到 QQ 私聊的消息：等插件心跳取走（见 proactive_qq）
+        self.outbox_taken={}   # 插件领取时通知调用方（轮次 → 回调）；投递状态本身存在库里（bridge/outbox.py）
         self.closed = False   # Runtime 关闭 / 重启时置真：还在排队的请求拿到锁后直接放弃，不用旧权限读新上下文
         self.bursts = {}; self.burst_lock = threading.Lock(); self.sleep = time.sleep   # 连发合并（见 _gather）
 
@@ -977,21 +979,23 @@ class BridgeService:
     # 桌面的主动问候 / 心事到点时，桌面按概率决定这次发到哪：选中 QQ 就调用 proactive_qq。
     # 生成和桌面主动消息是同一个大脑、同一段和爹的记录（desktop 频道）；生成完放进发件箱，插件下一次心跳（15 秒内）取走，
     # 用 AstrBot 的主动发送接口发到爹的 QQ 私聊，再回报发没发成。没发出去的话从记录里拿掉（不算她说过）。
-    OUTBOX_TTL = 600
+    # 投递的几个时限见 bridge/outbox.py：没被取走、取走了没来领取、领取了没回执。
+    from aicompanion.bridge.outbox import QUEUE_TTL as OUTBOX_TTL, CLAIM_TTL, ACK_TTL
 
-    def qq_ready(self) -> bool:
-        """能不能主动发 QQ：接口开着、绑定了爹、插件 1 分钟内有心跳且 QQ 已连上、插件版本支持发件箱（0.9.0 起）。"""
+    def qq_ready(self, beat=None) -> bool:
+        """生成时看最近心跳，交件时只看本次请求，避免其他客户端的版本替旧插件放行。"""
         from aicompanion.bridge.server import runtime
-        beat = runtime.last_heartbeat or {}
+        if beat is None: beat = runtime.last_heartbeat or {}
         owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
-        version = re.fullmatch(r'plugin-(\d+)\.(\d+)\.(\d+)', str(beat.get('astrbot') or ''))
         return bool(not self.closed and re.fullmatch(r'\d{5,12}', owner) and beat and time.time()-beat.get('at', 0) < 60
-                    and (beat.get('onebot') or {}).get('connected') and version
-                    and tuple(int(x) for x in version.groups()) >= (0, 9, 0))
+                    and (beat.get('onebot') or {}).get('connected')
+                    and plugin_version(beat.get('astrbot')) >= MIN_PROACTIVE_PLUGIN)
 
-    def proactive_qq(self, intent: str, on_done=None) -> str | None:
+    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None) -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
-        on_done(sent: bool) 在插件回报（或过期）时调用一次。"""
+        on_queued(轮次)：生成前绑定调度记录，显式返回 False 则取消；on_taken(轮次)：插件领取时；on_done(Delivery)：有结果时。
+        回调只是快速通知，结果以 qq_outbox 为准（程序重启后调度器按它对账）。
+        这一轮带上的纪念日提醒跟着送达结果走：全部发出才算提过（bridge/outbox.py）。"""
         from aicompanion.bridge.server import runtime
         from aicompanion.bridge.media import inline_image
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
@@ -1010,57 +1014,147 @@ class BridgeService:
             delivered = []
             def event(value):
                 if value.kind == 'final': delivered.append(value.result)
+            from aicompanion.bridge.outbox import OutboxStore
+            store = OutboxStore(self.database, self.clock)
+            # 生成前先记一条 generating：生成的回复已经写进聊天记录、还没放进发件箱时程序退出，启动时按它把这条回复拿掉，
+            # 聊天窗不会显示一条实际没发出的祝福（Codex PR #46 第四轮 P3）
+            store.begin(turn, character.id)
+            def give_up():
+                if store.settle(turn, 'failed') is None:
+                    # 本轮生成期间被清理，回复和纪念日占位可能在清理之后才写入。
+                    from aicompanion.services.companion_dates import CompanionDates
+                    self.database.drop_reply(turn, character.id)
+                    CompanionDates(self.database).release(character.id, turn)
+                controller.expression.cancel(turn, character.id)
+                return None
             try:
+                if on_queued and on_queued(turn) is False:
+                    return give_up()
                 for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
                                              situation=situation, source='qq', offer_tasks=False, purpose='companion',
-                                             expression_context=context, on_expression_event=event): pass
+                                             expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
-                return None
+                return give_up()
             if self.closed or controller.character.id != character.id or not delivered:
-                if delivered: controller.expression.cancel(turn, character.id)
-                self.database.drop_reply(turn, character.id); return None
+                return give_up()
             expression = delivered[-1]; wire = expression.wire(); wire['attachments'] = []
             for attachment in expression.attachments:
                 media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
                 if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
                 item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
-                with self.expression_lock: self.expression_bindings[attachment.delivery_id] = ('qq', owner, '', character.id)
             burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
             segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
-                self.database.drop_reply(turn, character.id); return None
+                return give_up()
+            keys, day = [], ''
+            try:
+                from aicompanion.services.companion_dates import CompanionDates
+                dates = CompanionDates(self.database)
+                dates.hold(character.id, turn, self.OUTBOX_TTL+self.CLAIM_TTL+self.ACK_TTL+60)
+                keys, day = dates.held(character.id, turn)
+            except Exception: pass
+            if not store.add(turn, character.id, keys, day):
+                return give_up()
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
+                for attachment in wire['attachments']:
+                    self.expression_bindings[attachment['delivery_id']] = ('qq', owner, '', character.id)
                 self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
-                self.outbox_waiting[turn] = on_done
+                self.outbox_waiting[turn] = (on_done, character.id); self.outbox_taken[turn] = on_taken
             return turn
 
     def take_outbox(self) -> list:
-        """插件心跳时取走待发的主动消息；超过 OUTBOX_TTL 还没取走的作废（插件掉线时不会攒一堆过期问候）。"""
+        """插件心跳时取走待发的主动消息（交出去，等插件领取）；超过时限还没取走的作废（插件掉线时不会攒一堆过期问候）。
+        顺便把卡住的投递按时限定下来（bridge/outbox.py）。"""
+        from aicompanion.bridge.outbox import OutboxStore
+        store = OutboxStore(self.database, self.clock)
+        now = self.clock()
         with self.expression_lock:
             items, self.outbox = self.outbox, []
         fresh = []
         for item in items:
-            if self.clock()-item['at'] > self.OUTBOX_TTL: self._outbox_done(item['id'], False, item.get('character'))
-            else: fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
+            if now-item['at'] > self.OUTBOX_TTL:
+                self._notify(item['id'], store.settle(item['id'], 'failed')); continue
+            store.dequeued(item['id'])
+            fresh.append({k: v for k, v in item.items() if k not in ('at', 'character')})
+        self._sweep(store)
         return fresh
 
-    def outbox_ack(self, payload) -> dict:
-        if set(payload) != {'id', 'status'} or payload.get('status') not in ('sent', 'partial', 'failed'): return {'ok': False}
+    def outbox_claim(self, payload) -> dict:
+        """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。"""
+        turn = str(payload.get('id') or '') if isinstance(payload, dict) else ''
+        if (not re.fullmatch(r'[a-f0-9]{32}', turn) or set(payload) != {'id', 'astrbot'}
+                or plugin_version(payload['astrbot']) < MIN_PROACTIVE_PLUGIN):
+            return {'allowed': False}
+        from aicompanion.bridge.outbox import OutboxStore
+        if not OutboxStore(self.database, self.clock).claim(turn): return {'allowed': False}
         with self.expression_lock:
-            known = str(payload['id']) in self.outbox_waiting
-        if not known: return {'ok': False}
-        self._outbox_done(str(payload['id']), payload['status'] != 'failed', self.controller.character.id)
+            callback = self.outbox_taken.pop(turn, None)
+        if callback:
+            try: callback(turn)
+            except Exception: pass
+        return {'allowed': True, 'arrival_clock': True}
+
+    def outbox_ack(self, payload) -> dict:
+        """插件回报平台确认的首达时刻和投递结果。回执可重发，也可以补记迟到的确定结果。"""
+        fields = {'id', 'status', 'first_delay', 'first_after_claim', 'first_wall', 'claim_round_trip', 'sent'}
+        if not isinstance(payload, dict) or not set(payload) <= fields or not {'id', 'status'} <= set(payload):
+            return {'ok': False}
+        turn, status = str(payload['id']), payload['status']
+        # unknown：插件 0.10.1 起，发送超时 / 断连（可能已经送到）时如实回报“不确定”，桌宠留着防重、不重发
+        if status not in ('sent', 'partial', 'failed', 'unknown') or not re.fullmatch(r'[a-f0-9]{32}', turn): return {'ok': False}
+        if 'sent' in payload:
+            count = payload['sent']
+            if type(count) is not int or count < 0 or (count > 0) != (status in ('sent', 'partial')):
+                return {'ok': False}
+        seconds = lambda v: v is None or (not isinstance(v, bool) and isinstance(v, (int, float)) and 0 <= v <= 24*3600)
+        delay, after = payload.get('first_delay'), payload.get('first_after_claim')
+        wall, trip = payload.get('first_wall'), payload.get('claim_round_trip')
+        if not seconds(delay) or not seconds(after) or not seconds(trip): return {'ok': False}
+        if 'first_wall' in payload or 'claim_round_trip' in payload:
+            if (type(wall) not in (int, float) or not 0 <= wall <= 253402300799
+                    or None in (trip, after, delay)):
+                return {'ok': False}
+        from aicompanion.bridge.outbox import OutboxStore
+        store = OutboxStore(self.database, self.clock)
+        row = store.get(turn)
+        if row is None: return {'ok': False}
+        first = None
+        if status in ('sent', 'partial'):
+            now = self.clock()
+            if after is not None and row['claimed_at'] is not None:
+                lower = min(now, float(row['claimed_at']) + after)
+                first = lower  # 0.10.1 的旧回执只有这个领取下界
+                if trip is not None:
+                    # 领取响应耗时介于 0 和整个领取往返之间。回执出发一定早于到达桌宠，
+                    # 两个独立上界取小值，ACK 重试或任一方向单独延迟都不会扩大另一侧的边界。
+                    upper = max(lower, min(lower + trip, now - delay))
+                    # 同机墙钟能区分两侧同时延迟。异钟落在区间外时保守取上界，避免把未见消息时的发言算作回复。
+                    first = wall if lower <= wall <= upper else upper
+            else:
+                first = now - float(delay or 0)
+        self._notify(turn, store.settle(turn, status, first))
         return {'ok': True}
 
-    def _outbox_done(self, turn, sent, character_id) -> None:
+    def _sweep(self, store) -> None:
+        for turn, _, result in store.sweep(): self._notify(turn, result)
+        with self.expression_lock:                      # 调度器那边先定下来的，也通知这里还在等的回调
+            waiting = list(self.outbox_waiting)
+        from aicompanion.bridge.outbox import FINAL, Delivery
+        for turn in waiting:
+            row = store.get(turn)
+            if row is not None and row['status'] in FINAL: self._notify(turn, Delivery(row['status'], row['first_sent_at']))
+
+    def _notify(self, turn, result) -> None:
+        """把结果交给发起这条主动消息时留下的回调（只调一次）。连带的纪念日、聊天记录已经由 OutboxStore 按发件时的角色处理。"""
+        if result is None: return
         with self.expression_lock:
-            callback = self.outbox_waiting.pop(turn, None)
-        if not sent and character_id: self.database.drop_reply(turn, character_id)   # 没发出去：不算她说过
-        if callback:
-            try: callback(sent)
+            waiting = self.outbox_waiting.pop(turn, None)
+            self.outbox_taken.pop(turn, None)
+        if waiting and waiting[0]:
+            try: waiting[0](result)
             except Exception: pass
 
     # ---- 群里听到的事整理成记忆（后台，不耽误回复） ------------------------------------------------

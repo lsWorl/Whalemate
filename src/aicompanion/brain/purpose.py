@@ -119,9 +119,9 @@ class PurposeEngine:
         return (f'你心里一直惦记着一件事（{KINDS.get(row["kind"], "想聊")}）：{row["content"]}。'
                 f'现在自然地主动提起，像发消息那样说一句或连着几句都行。{hint}不要说是系统或提醒让你来的，也不要编造记忆里没有的细节。')
 
-    def delivered(self, purpose_id: int) -> None:
-        self.database.update_purpose(purpose_id, 'delivered', self.clock().isoformat(timespec='seconds'))
+    def delivered(self, purpose_id: int, *, connection=None) -> None:
+        self.database.update_purpose(purpose_id, 'delivered', self.clock().isoformat(timespec='seconds'), connection=connection)
 
-    def release(self, purpose_id: int) -> None:
+    def release(self, purpose_id: int, *, connection=None) -> None:
         """没说成（被打断或失败）：放回待送达，稍后再试。"""
-        self.database.update_purpose(purpose_id, 'pending')
+        self.database.update_purpose(purpose_id, 'pending', connection=connection)

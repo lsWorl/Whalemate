@@ -194,10 +194,13 @@ def schedule_pet_smoke_check(window, database, output):
         from datetime import datetime
         pid = database.add_purpose(cid, 'understand', '想知道考试准备得怎么样了', '考试准备得怎么样啦？', [mid], datetime.now().isoformat(timespec='seconds'))
         state['purpose_id'] = pid
-        real_due = window.purposes.due
-        window.purposes.due = lambda *a, **k: next((r for r in database.purposes(cid, 'pending') if r['id'] == pid), None)
-        window._proactive(); window.purposes.due = real_due
-        state['purpose_started'] = pid in window.purpose_ids.values()
+        # 统一主动调度：直接让调度器给出这件心事（时间、上限这些门槛在 tests/test_scheduler.py 里测），这里看桌宠能不能接住并说出来
+        from aicompanion.brain.scheduler import Outreach
+        row = next(r for r in database.purposes(cid, 'pending') if r['id'] == pid)
+        real_next = window.outreach_scheduler.next
+        window.outreach_scheduler.next = lambda *a, **k: Outreach('purpose', f'purpose:{pid}', window.purposes.intent(row), {'purpose': row})
+        window._proactive(); window.outreach_scheduler.next = real_next
+        state['purpose_started'] = bool(window.outreaches) and any(r['id'] == pid and r['status'] == 'delivering' for r in database.purposes(cid))
     later(20500, brain)
 
     def voice():
@@ -510,6 +513,8 @@ def schedule_pet_smoke_check(window, database, output):
         if state.get('purpose_id'):
             row = next((r for r in database.purposes(window.controller.character.id) if r['id'] == state['purpose_id']), None)
             state['purpose_delivered'] = bool(row) and row['status'] == 'delivered'
+            with database.transaction() as c:
+                state['outreach_logged'] = c.execute("SELECT 1 FROM outreach_log WHERE source='purpose' AND key=?", (f"purpose:{state['purpose_id']}",)).fetchone() is not None
         assistant = [row['content'] for row in rows if row['role'] == 'assistant']
         state['reply_saved_clean'] = bool(assistant) and all('【' not in c and '<挥手>' not in c for c in assistant)
         state['cues_performed'] = 'expression:happy' in state['cues'] and 'motion:wave' in state['cues']
@@ -519,7 +524,7 @@ def schedule_pet_smoke_check(window, database, output):
         state['remaining_workers'] = len(window.workers)+len(window.tasks)+len(window.speech.workers)
         required = ['pet_visible', 'chat_hidden', 'expected_renderer_shown', 'native_view', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
-                    'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
+                    'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'outreach_logged', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
         required.append('storage_locations_ready')
         if animation:

@@ -40,7 +40,7 @@ class SetupError(RuntimeError):
 @dataclass
 class Status:
     code: str          # not_setup / not_ready / bridge_off / stopped / start_failed / starting / need_login / offline /
-                       # plugin_missing / onebot_down / need_owner / connected
+                       # plugin_missing / onebot_down / need_owner / plugin_outdated / connected
     title: str         # 给普通用户看的一句话
     action: str = ''   # 下一步按钮 / 提示
     detail: str = ''   # 诊断细节（高级）
@@ -331,6 +331,17 @@ class QQManager:
         bot = str(onebot.get('self_id') or '')
         if not self.owner_bound():
             return Status('need_owner', '已连接。请填写你自己的 QQ 号（绑定后她认得你）', '保存', groups=groups, bot=bot)
+        version = specs.plugin_version(beat.get('astrbot'))
+        if self.db.get_setting('proactive_qq_enabled', True) and version < specs.MIN_PROACTIVE_PLUGIN:
+            current = '.'.join(map(str, version)) if version else '未知'
+            minimum = '.'.join(map(str, specs.MIN_PROACTIVE_PLUGIN))
+            detail = f'运行中的桥接插件版本为 {current}，主动消息需要 {minimum} 或更高版本。普通私聊和群聊仍可回复。'
+            if mode == 'auto':
+                return Status('plugin_outdated', '已连接，QQ 主动消息暂停', '更新插件并重启',
+                              detail + ' 点击更新将安装随桌宠附带的插件并重启 QQ 服务。', groups=groups, bot=bot)
+            return Status('plugin_outdated', '已连接，QQ 主动消息暂停', '更新插件',
+                          detail + ' 点击更新后，在 AstrBot 管理面板的「插件」中重载 astrbot_plugin_aicompanion，或重启 AstrBot。',
+                          groups=groups, bot=bot)
         return Status('connected', '已连接', '', groups=groups, bot=bot)
 
     def _remember_bot(self):

@@ -1770,3 +1770,76 @@ Codex 在 Windows 上用真实 Harness 复现：llm-pi-ai 路由的打包 fetch 
   - 准备工具真实联网下载 109 张 GIF；
   - 171 张素材在真实图库导入后的效果；
   - 真实 QQ 发送。
+
+## 2026-11-11 V4-4a 统一主动调度（task/v4-4a-scheduler，schema 12→13）
+
+- 做了什么：
+  - 新增 `brain/scheduler.py`，问候、心事、纪念日、追问统一由它决定要不要开口。
+  - 节制规则：每天上限（默认 5 次）、两次间隔（默认 90 分钟 × 关系节奏）。
+  - 等回应：没回不开新话题；他在电脑前却没理时，可能追一句，也可能算了，一个话题最多追一次；3 小时没回记一点“被冷落”。
+  - 新表 `outreach_log` 记录每次主动开口。
+  - 设置里可以调每天几次、间隔多久。
+
+  说明见 `docs/tasks/V4-4a-scheduler.md`。
+- 怎么验证：新增 `tests/test_scheduler.py`（6 项，可控时钟）；全部单元测试通过（跳过 41 项）；冒烟检查加 `outreach_logged`。
+- 没验证：Windows 冒烟和真机体验；兴趣分享（下一步）；真实模型的追问语气。
+
+## 2026-11-11 PR #46 Codex 第二轮修复（Claude）
+
+- 做了什么：主动开口的记录区分“还没交出去”和“插件已取走、结果未知”，记下插件取件时间和对应轮次。
+  - 回执丢了不再重复追问，一个话题最多追问一次。
+  - 主人看到第一段就回复也算接上了。
+  - 主动发到 QQ 的那一轮，纪念日提醒要等送达才算提过。
+  - 重启后放回卡住的纪念日 / 问候占位。
+  - 设置里的间隔改成真正的下限。
+  - 追问按轮次找回上一句原话。
+  - 详见 `docs/tasks/V4-4a-scheduler.md`。
+- 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：993 项通过（跳过 8 项）。新增 8 项回归，在修复前的代码上全部失败。
+- 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（Linux 上 QtWebEngine 一启动就崩溃）；真实 QQ 回执时序；真实模型话术。
+
+## 2026-11-12 PR #46 Codex 第三轮修复（Claude）：QQ 主动消息按插件报回的事实结算
+
+- 做了什么：
+  - 新表 `qq_outbox` 和模块 `bridge/outbox.py`，记下每条 QQ 主动消息的投递状态（排队 → 交出 → 领取 → 发出 / 部分 / 失败 / 未知），以及发件时的角色、这一轮带的纪念日。
+  - 插件升到 0.10.0：领到才发；回执带第一段实际发出后的秒数和发出的段数，会重试。
+  - 调度器按 `qq_outbox` 对账。未知的结果不追问、不记委屈、也不开新话题。
+  - 纪念日只有全部发出才算提过；没被领取的回复重启时从记录里拿掉。
+  - 详见 `docs/tasks/V4-4a-scheduler.md`。
+- 怎么验证：Linux（Python 3.14.6，`QT_QPA_PLATFORM=offscreen`，装齐 `.[agent]` 锁定依赖）全量 `unittest discover`：1013 项通过（跳过 8 项）。新增回归在 e38ed29 的代码上全部失败或报错。
+- 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 发送；真实模型话术。
+
+## 2026-11-12 PR #46 合入基线 91d8bef 与审计复核（Claude）
+
+- 做了什么：把 `collaboration-baseline`（91d8bef，含 #44、#49、#50、#25）合进 `task/v4-4a-scheduler`。只有本文件冲突，两边记录都保留；`ui/main_window.py`、`ui/pet_smoke_check.py`、`ui/settings_window.py` 自动合并，主动调度和 Aboutme 形象两边功能都在。基线表结构仍是 v12，本分支的 v13（`outreach_log`、`qq_outbox`）接在其后，没有重号或覆盖基线迁移。
+- 审计复核：逐条对照 Codex 在 #46 的三轮意见（b8bee45 的 3 项 P2、22b2f18 的 5 项 P2 + 1 项 P3、e38ed29 的 5 项 P2 + 1 项 P3）。每项都有对应回归测试，在合并后的代码上通过；第三轮的新用例放回 e38ed29 的源码上全部失败或报错（22 项），说明不是空测。没有发现仍未解决的 P1 / P2。
+- 新增测试：`tests/test_scheduler.py::test_baseline_v12_database_upgrades_to_v13`（基线 v12 库升级：备份一次、旧消息和设置保留、两张新表可用、再次打开不重复备份）。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）`PYTHONPATH=src:tests python3 -m unittest discover -s tests` → `Ran 1071 tests … OK (skipped=8)`。
+- 没验证：Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；插件 0.10.0 装进本机 AstrBot 后的真实 QQ 领取 / 发送；真实模型话术。
+
+## 2026-11-12 PR #46 Codex 第四轮修复（Claude）
+
+- 做了什么：修复 Codex 第四轮（a9aa4fc）的 7 项 P2 和 1 项 P3，改法见 `docs/tasks/V4-4a-scheduler.md`。
+  - 插件升到 0.10.1：超时只算“不确定”；中途停用不报 sent；图在前也记首达时间；回执带 `first_after_claim`。桌宠要求插件 0.10.1 起才主动发消息。
+  - 桥接：接受 `unknown` 回执，首达时间按“领取时刻 + 领取后秒数”换算；生成前记 `generating`。
+  - 发件箱：结果和连带写入在同一个事务里提交。
+  - 调度：先做可重放的连带写入、最后改记录；对账时纠正迟到的失败 / 成功回执；早期 v13 遗留的 `delivering` 有界恢复。
+  - 启动：`generating` 和 `queued`、`dequeued` 一样记失败并拿掉回复。
+- 新增回归 12 项，在 a9aa4fc 的源码上全部失败或报错：
+  - `test_qq_proactive.PluginTests`：`test_send_timeout_is_unknown_not_failed`、`test_stopped_between_segments_reports_partial_not_sent`、`test_sticker_first_sets_first_arrival`。
+  - `ProactiveQQTests`：`test_unknown_receipt_keeps_topic_and_is_not_resent`、`test_first_arrival_uses_claim_offset_not_receipt_arrival`、`test_reply_committed_before_outbox_is_dropped_on_restart`，另外 `test_ready_needs_bound_owner_connected_new_plugin` 补了 0.10.0 不可用的断言。
+  - `test_scheduler.CodexRoundFourTests` 5 项。
+- 怎么验证：Linux 容器（Python 3.13，`QT_QPA_PLATFORM=offscreen`）全量 `unittest discover` → `Ran 1095 tests … OK (skipped=8)`。
+- 没验证：
+  - Windows `tools\run_checks.bat` 与桌宠 Smoke（待 Codex 审计时执行）；
+  - 插件 0.10.1 装进本机 AstrBot 后的真实 QQ 发送（超时、停用插件等真实时序）；
+  - 真实模型话术。
+
+### 2026-11-12 · PR #46 第五轮修复（Codex，待 Claude 审计）
+
+- 桌宠在 QQ 设置中显示运行版本、主动投递所需的 0.10.2 和两种安装模式的升级操作。心跳交件、插件领取分别验版本。旧插件仍能处理用户发起的私聊和群聊。
+- 0.10.2 在适配器首次确认时记录墙钟和单调时钟，桌宠用领取往返及回执耗时核对首达。纯图成功、明确失败与超时分别结算。异机时钟不同步且两个方向同时延迟时，只能把首达约束在一个区间，取可核对的较晚上界。
+- 最终回执到来后按首达时间复核主人回复。子追问最终失败会释放父话题；早期 v13 缺少发件箱的已交接心事按 QQ 未知恢复。心事、父子记录与调度状态在同一写事务中结算，遇到 SQLite 写锁可以重放。
+- 生成前绑定调度占位。超过半小时的旧生成线程恢复时，发件箱会拒绝重新入队，并清理它刚写下的回复。重试获得的心事占位只由新一轮结算。
+- Windows 定向复现使用临时 SQLite 库、真实 Qt 设置卡和本机 HTTP 桥接。四个回归模块共 22 项通过，覆盖原例、正对照、重启及并发交错。
+- 第一次全量检查暴露 v12 升级用例依赖机器当前时间，三个继承该用例的测试因“三分钟内刚聊过”没有选出问候。把合成旧消息的时间固定在模拟日期前一天后，独立 Windows worktree 全量运行 1117 项，成功，跳过 7 项（182.696 秒）。
+- 同轮 Windows 桌宠 smoke 返回 `"passed": true`，`tools\run_checks.bat` 退出码 0。QQ 适配器、网络延时和模型输出均用测试替身，真实 AstrBot 升级、真实收件与真实模型话术待验。
