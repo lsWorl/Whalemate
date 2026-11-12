@@ -44,6 +44,7 @@ class AgentSession(QObject):
         self.window = window; self.worker = None; self.goal = ''
         self.dsh = DshAgent()
         self.box = ToolBox(secrets=self._secrets())
+        self.box.reserve_effect = window.database.reserve_agent_effect
         self.box.approve = self._approve_tool; self.box.on_call = self._tool_record
         self.server = McpToolServer(self.box)
         self.run_state = {'run_id': 0, 'seq': 0}
@@ -55,11 +56,12 @@ class AgentSession(QObject):
 
     @property
     def busy(self) -> bool:
-        return self.worker is not None
+        return self.worker is not None or self.box.working
 
     # ---- 开始 / 停止 ---------------------------------------------------------------
-    def start(self, goal: str, announce: bool = True) -> bool:
+    def start(self, goal: str, announce: bool = True, *, paused_run=None) -> bool:
         w = self.window
+        if w.closing: return False
         if self.busy: w.pet.show_bubble('我手上还有活没做完，等我一下～', 5); return False
         missing = problem() or dependency_problem()
         if missing: w.pet.show_bubble(missing, 8); w._status(missing); return False
@@ -75,10 +77,17 @@ class AgentSession(QObject):
         cwd = pick_workspace(goal, database.get_setting('dsh_workspace', ''))
         model = target.model_id
         allowed = self._allowed(goal, cwd)
-        prompt = self._prompt(goal, cwd, allowed)
-        run_id = database.add_agent_run(character.id, goal)
-        state = self.run_state = {'run_id': run_id, 'seq': 0}
-        self.box.task = Task(run_id=run_id, allowed=allowed)
+        resuming = paused_run is not None
+        prompt = self._prompt(goal, cwd, allowed, resuming=resuming)
+        if resuming:
+            run_id = paused_run
+            seq = database.resume_agent_run(run_id, character.id)
+            if seq is None: return False
+        else:
+            run_id = database.add_agent_run(character.id, goal)
+            seq = 0
+        state = self.run_state = {'run_id': run_id, 'seq': seq}
+        self.box.task = Task(run_id=run_id, allowed=allowed, resuming=resuming)
 
         def on_event(kind, data):
             if kind == 'usage':
@@ -180,7 +189,7 @@ class AgentSession(QObject):
         except Exception:
             return 0, 0.0
 
-    def _prompt(self, goal: str, cwd, allowed=()) -> str:
+    def _prompt(self, goal: str, cwd, allowed=(), *, resuming=False) -> str:
         """交给 DSH 的输入：人设 + 环境说明 + 最近聊天 + 用户原话。"""
         w = self.window; character = w.controller.character; database = w.database
         blog = database.get_setting('blog_root', '')
@@ -200,7 +209,9 @@ class AgentSession(QObject):
         if blog: lines.append(f'用户的 Hexo 博客在 {blog}：草稿放 source/_drafts，本地预览用 `npx hexo server --draft -p 4000`（后台启动，别阻塞）。')
         if (project/'docs'/'implementation_status.md').exists():
             lines.append(f'AICompanion 项目在 {project}，写开发日志的素材在 docs/implementation_status.md。')
-        history = self._history(goal)
+        history = [] if resuming else self._history(goal)
+        if resuming:
+            lines.append('这是一项暂停过的任务。只处理用户刚确认的剩余事项。先检查现状，已做过或结果不明的步骤不要重试。')
         if history:
             lines.append('最近的聊天（只用来理解上下文）：\n'+'\n'.join(f'{"用户" if r["role"] == "user" else character.name}：{r["content"][:300]}' for r in history))
         lines.append(f'用户这次的原话：{goal}')

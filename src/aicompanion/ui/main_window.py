@@ -81,8 +81,14 @@ class MainWindow(QMainWindow):
         # P5：词元按用途记账、每日额度；干活（agent）会话
         meter.set_recorder(meter.database_recorder(self.database)); self.quota=meter.Quota(self.database)
         self.agent=AgentSession(self); self.pending_tasks={}
+        self.leave_reasons = {}
+        self.departure = None
+        self.exit_prepared = False
+        self.scheduled_offers = {}
+        self.open_offer = None
         self._build_layout(); self._build_tray(); self._connect_pet(); self._load_history(); self._apply_settings()
         self.pump=QTimer(self); self.pump.setInterval(100); self.pump.timeout.connect(self._pump); self.pump.timeout.connect(self._refresh_reply_actions); self.pump.start()
+        self.pump.timeout.connect(self._poll_self_exit)
         self.scheduler=QTimer(self); self.scheduler.setInterval(60000); self.scheduler.timeout.connect(self._proactive); self.scheduler.start()
         self.speech.subtitle.connect(self._speech_subtitle)
         self.speech.mouth.connect(lambda value:self.avatar.set_state(self.mood,value))
@@ -476,6 +482,7 @@ class MainWindow(QMainWindow):
         self.avatar.set_state(self.mood); self._status('正在听你说…')
 
     def interrupt(self,checked=False,clear_pending=True):
+        self.departure = None
         old=self.coordinator.active
         self.coordinator.cancel(clear_pending)
         for worker in self.workers: worker.cancellation.cancel()
@@ -548,7 +555,10 @@ class MainWindow(QMainWindow):
         if event.generation_id!=generation:return
         if not self._still_wanted(generation,visible=False):return
         if event.kind=='attachment_ready':self._display_attachment(generation,event.attachment,media)
-        elif event.kind=='final':self.expression_results[generation]=(event.result,media)
+        elif event.kind=='final':
+            self.expression_results[generation]=(event.result,media)
+            if event.leave_reason:
+                self.leave_reasons[generation] = event.leave_reason
 
     def _still_wanted(self,generation,visible):
         """桌面主动消息在第一处可见输出（第一个字、第一张图）之前，再问一次还该不该说：分享正在生成时关掉了“自己的生活”，
@@ -609,6 +619,7 @@ class MainWindow(QMainWindow):
         if generation in getattr(self,'outreach_valid',{}) and self.coordinator.accepts(generation):
             self._still_wanted(generation,visible=False)
         expression,media=self.expression_results.pop(generation,(None,None))
+        reason = getattr(self, 'leave_reasons', {}).pop(generation, '')
         task_turns=getattr(self,'task_turns',set())
         key=self.proactive_keys.pop(generation,None)
         if key and state!='complete': self.database.release_proactive(*key)
@@ -630,7 +641,8 @@ class MainWindow(QMainWindow):
             if withdrawn or (outreach_done and not self.texts.get(generation,'').strip()
                              and not self.controller.expression.history(generation,character_id)):
                 self.database.drop_reply(generation,character_id)
-            if outreach_done: outreach_done(False,'desktop')
+            # 退出事务已结算占位（含已经显示了一部分的消息）。迟到的取消不能把它改成可重发。
+            if outreach_done and not self.closing: outreach_done(False,'desktop')
             return
         self.pet.hide_activity()
         if stream and state=='complete':
@@ -662,18 +674,27 @@ class MainWindow(QMainWindow):
             # 没能挂到句子上的标注（语音关闭、或标注在最后一句之后）现在执行
             for cue in self.pending_cues.pop(generation,[]): self.pet.perform(cue)
             if not self.reply_voice.get(generation): self.pet.finish_reply()
-            if generation not in self.voiced_first and self.texts.get(generation): self._voice_reaction(generation,self.texts[generation])
+            if generation not in self.voiced_first and self.texts.get(generation) and not (reason and self.reply_voice.get(generation)):
+                self._voice_reaction(generation,self.texts[generation])
             self.voiced_first.discard(generation); self.reply_expressions.pop(generation,None)
             self.database.record_usage(self.controller.character.id,'reply_characters',len(self.texts[generation]))
             task=self.pending_tasks.pop(generation,None)
             if task and allowed_task:
                 original=getattr(self,'reply_queries',{}).get(generation,'').strip()
                 goal=original if original else task   # 用原话，不用陪伴回复里的转述（转述会丢细节、擅自加步骤）
-                QTimer.singleShot(400,lambda t=goal:self._offer_task(t))
+                self.scheduled_offers[generation] = (self.controller.character.id, goal)
+                QTimer.singleShot(400, lambda: self._dispatch_offer(generation))
             state_,note=self.quota.check('companion')
             if state_=='warn': QTimer.singleShot(2500,lambda n=note:self.pet.show_bubble('提醒一下：'+n,8))
             self._status('就绪' if not self.call_active else '通话中 · 正在听')
             if key and self.isHidden() and not self.pet.isVisible(): self.tray.showMessage(self.controller.character.name,self.texts[generation][:120])
+            if reason and not task and self._can_self_exit(generation):
+                self.departure = (generation, reason, monotonic())
+                farewell = self.texts[generation]
+                if self.pet.isVisible() and self.database.get_setting('pet_bubble_enabled', True):
+                    self.pet.show_bubble(farewell, 6, kind='reply', key='reply')
+                elif self.isHidden():
+                    self.tray.showMessage(self.controller.character.name, farewell)
         else:
             self.speech.stop()
             self.pet.finish_reply(); self.pending_cues.pop(generation,None); self.pending_tasks.pop(generation,None); self.readers.pop(generation,None)
@@ -682,13 +703,65 @@ class MainWindow(QMainWindow):
             self.items[generation].mark('[回复未完成]' if self.texts[generation] else '[未能完成回复]')
             self._status(error or '已打断')
 
+    def _can_self_exit(self, generation):
+        return (not self.closing and self.coordinator.accepts(generation) and not self.coordinator.pending
+                and self.reply_status.get(generation) == 'complete'
+                and self.reply_characters.get(generation) == self.controller.character.id
+                and not self.call_active and not self.agent.busy and not self.scheduled_offers
+                and getattr(self.pet, 'confirm', None) is None and self.database.get_setting('self_exit_enabled', True))
+
+    def _poll_self_exit(self):
+        if self.departure is None:
+            return
+        generation, reason, started = self.departure
+        if not self._can_self_exit(generation):
+            self.departure = None
+            return
+        elapsed = monotonic() - started
+        if elapsed < 1.5 or (elapsed < 5 and (self.speech.busy or self.speech.queue)):
+            return
+        self.departure = None
+        from aicompanion.brain.self_exit import remember_departure
+        try:
+            saved = remember_departure(self.database, self.controller.character.id, reason, self.outreach_scheduler)
+        except Exception:
+            self._status('没能保存这次告别，我先留在这里。')
+            return
+        if saved:
+            self.exit_prepared = True
+            self.request_exit()
+
+    def welcome_back(self):
+        from aicompanion.brain.self_exit import take_return_greeting
+        line = take_return_greeting(self.database, self.controller.character.id)
+        if line:
+            self.pet.show_bubble(line, 12, kind='reply')
+            self._append_message(self.controller.character.name, line)
+            self.speak_reply(line)
+        with self.database.transaction() as c:
+            paused = c.execute("SELECT 1 FROM agent_runs WHERE character_id=? AND status='paused' LIMIT 1",
+                               (self.controller.character.id,)).fetchone()
+        if paused:
+            self._append_message('任务', '有办事任务已暂停。打开设置里的“办事 → 操作日志”，核对做过的步骤后可以继续。')
+        return bool(line)
+
+    def _dispatch_offer(self, generation):
+        offer = self.scheduled_offers.pop(generation, None)
+        if offer and offer[0] == self.controller.character.id:
+            self._offer_task(offer[1])
+
     def _offer_task(self,task):
         if self.closing or self.agent.busy: return
         if self.database.get_setting('agent_auto',True):
             # 不用 /做：聊天里说要做什么，她直接开始；有影响的步骤再逐个征求同意
             self.agent.start(task,announce=False); return
         bubble=self.pet.ask(f'要我现在动手吗？\n「{task}」',[('动手吧','go'),('先不用','no')])
-        bubble.chosen.connect(lambda value,t=task:self.agent.start(t) if value=='go' else None)
+        self.open_offer = (self.controller.character.id, task)
+        def answer(value):
+            self.open_offer = None
+            if value == 'go' and not self.closing:
+                self.agent.start(task)
+        bubble.chosen.connect(answer)
         self._append_message('提议',task)
 
     def _handle_cues(self,generation,cues):
@@ -810,6 +883,7 @@ class MainWindow(QMainWindow):
             pcm,rate=self.asr_queue.popleft(); self._start_recognition(pcm,rate)
 
     def _proactive(self):
+        if self.closing or getattr(self, 'departure', None): return
         character_id=self.controller.character.id
         for reminder in self.database.due_reminders(character_id):
             self._append_message('提醒',reminder['title'])
@@ -1121,7 +1195,8 @@ class MainWindow(QMainWindow):
         self.controller.character=character; self.registry.set_active(character_id)
         # 被取消的旧角色任务仍可能排队发送结束信号；保留其送达文本直到收尾。
         self.items.clear(); self._refresh_roles(); self._load_history(); self._apply_settings()
-        self.pet.greet()
+        if not self.welcome_back():
+            self.pet.greet()
 
     def request_exit(self):
         self.exit_requested=True; self.close()
@@ -1133,7 +1208,24 @@ class MainWindow(QMainWindow):
             if not self.pet.isVisible() and self.tray.isVisible() and not self.tray_hint_shown:
                 self.tray_hint_shown=True; self.tray.showMessage('AICompanion','角色在托盘里休息，单击托盘图标可以叫她回来。')
             return
-        event.ignore(); self.closing=True; self.pump.stop(); self.scheduler.stop(); self._end_call()
+        event.ignore()
+        if self.closing: return
+        offers = list(self.scheduled_offers.values())
+        if self.open_offer: offers.append(self.open_offer)
+        if not self.exit_prepared:
+            def prepare(c):
+                visible = {turn for turn in self.outreaches if self.texts.get(turn, '').strip()}
+                self.outreach_scheduler.release_on_exit(c, visible)
+                self.database.pause_agent_work(self.agent.run_state['run_id'], offers, connection=c)
+            try:
+                self.database.locked(prepare)
+            except Exception:
+                self.exit_requested = False
+                self._status('未能保存退出状态，请稍后再退出。')
+                return
+        self.closing=True; self.pump.stop(); self.scheduler.stop()
+        self.scheduled_offers.clear()
+        self._end_call()
         self.pet.shutdown()
         for view in list(self.sprite_avatars.values())+list(self.rig_avatars.values())+list(self.animation_avatars.values()): view.shutdown()
         if self.web_microphone: self.web_microphone.shutdown()
@@ -1142,7 +1234,9 @@ class MainWindow(QMainWindow):
         self.tray.hide(); self._status('正在释放资源…'); self._finish_exit_if_ready()
 
     def _finish_exit_if_ready(self):
-        if self.closing and not self.workers and not self.tasks and not self.speech.workers:
+        from PySide6.QtCore import QThread
+        if (self.closing and not self.workers and not self.tasks and not self.speech.workers
+                and not self.agent.box.working and not any(t.isRunning() for t in self.findChildren(QThread))):
             from PySide6.QtWidgets import QApplication
             QApplication.instance().quit()
         elif self.closing: QTimer.singleShot(100,self._finish_exit_if_ready)

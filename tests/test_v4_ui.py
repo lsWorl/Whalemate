@@ -342,9 +342,11 @@ class RedesignTests(unittest.TestCase):
 
     def test_install_progress_and_cancel_without_network(self):
         import json
-        wizard = Onboarding(self.host)
-        wizard.show_step(3)
         folder = Path(self.temp.name)
+        # 安装流程必须从“尚未安装”的合成目录开始，与真机已有的 Aboutme 资源隔离。
+        with patch('aicompanion.ui.icons.WHALE', folder):
+            wizard = Onboarding(self.host)
+        wizard.show_step(3)
         wizard.script = folder / 'demo_installer.py'
         wizard.script.write_text("import time\nprint('已安装 idle', flush=True)\ntime.sleep(20)\n", encoding='utf-8')
         (folder / 'aboutme-pet.lock.json').write_text(json.dumps({'actions': [{}, {}]}), encoding='utf-8')

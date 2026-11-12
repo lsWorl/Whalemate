@@ -7,11 +7,11 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget, QHeaderView)
+                               QVBoxLayout, QWidget, QHeaderView, QInputDialog)
 
 from aicompanion.usage import meter
 
-STATUS = {'done': '完成', 'failed': '失败', 'cancelled': '已取消', 'stopped': '额度停止', 'limit': '超出上限', 'running': '进行中', 'interrupted': '中断'}
+STATUS = {'done': '完成', 'failed': '失败', 'cancelled': '已取消', 'stopped': '额度停止', 'limit': '超出上限', 'running': '进行中', 'interrupted': '中断', 'paused': '已暂停'}
 APPROVAL = {'auto': '自动', 'approved': '同意', 'approved_session': '本次都同意', 'denied': '拒绝', 'timeout': '超时未答'}
 
 
@@ -81,9 +81,10 @@ class AgentPage(QWidget):
 class AuditPage(QWidget):
     """每次干活的记录：任务、状态、用到的工具和审批。"""
 
-    def __init__(self, database, parent=None):
+    def __init__(self, database, parent=None, *, resume=None):
         super().__init__(parent)
         self.database = database
+        self.resume = resume
         layout = QVBoxLayout(self)
         self.runs = QTableWidget(0, 6); self.runs.setHorizontalHeaderLabels(['开始', '任务', '状态', '步数', '词元', '花费（元）'])
         self.runs.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers); self.runs.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -94,6 +95,10 @@ class AuditPage(QWidget):
         self.steps.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch); layout.addWidget(self.steps, 3)
         row = QHBoxLayout()
         refresh = QPushButton('刷新'); refresh.clicked.connect(self.refresh); row.addWidget(refresh)
+        self.resume_button = QPushButton('继续选中的暂停任务')
+        self.resume_button.clicked.connect(self._resume)
+        self.resume_button.setEnabled(False)
+        row.addWidget(self.resume_button)
         export = QPushButton('导出 JSON…'); export.clicked.connect(self._export); row.addWidget(export)
         row.addStretch(); layout.addLayout(row)
         self.refresh()
@@ -106,12 +111,24 @@ class AuditPage(QWidget):
 
     def _show_steps(self):
         row = self.runs.currentRow()
+        status = self.runs.item(row, 2)
+        self.resume_button.setEnabled(bool(self.resume and status and status.text() == STATUS['paused']))
         if row < 0 or not self.runs.item(row, 0): return
         steps = self.database.agent_steps(self.runs.item(row, 0).data(Qt.ItemDataRole.UserRole)); self.steps.setRowCount(len(steps))
         for i, s in enumerate(steps):
             result = ('✗ '+s['error']) if s['error'] else (s['result_summary'] or s['args_json'])
             for j, v in enumerate((s['seq'], s['tool'], APPROVAL.get(s['approval'], s['approval']), result)):
                 item = QTableWidgetItem(str(v)); item.setToolTip(s['args_json']); self.steps.setItem(i, j, item)
+
+    def _resume(self):
+        row = self.runs.currentRow()
+        if row < 0 or not self.resume_button.isEnabled(): return
+        run_id = self.runs.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        remaining, ok = QInputDialog.getMultiLineText(self, '接着办这件事',
+            '请核对下面的操作日志和实际结果，再填写还需要她做的部分。确认后才开始。')
+        if ok and remaining.strip():
+            self.resume(run_id, remaining.strip())
+            self.refresh()
 
     def _export(self):
         path, _ = QFileDialog.getSaveFileName(self, '导出操作日志', 'agent-audit.json', 'JSON (*.json)')

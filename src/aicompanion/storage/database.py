@@ -110,7 +110,7 @@ class Database:
                 # 超时的旧生成线程可能刚写完回复就退出，还没来得及自行清理。
                 connection.execute("DELETE FROM chat_messages WHERE role='assistant' AND turn_id IN "
                                    "(SELECT turn_id FROM qq_outbox WHERE status='failed')")
-                connection.execute("UPDATE agent_runs SET status='interrupted',ended_at=datetime('now','localtime') WHERE status='running'")   # 上次退出时没说完的心事放回去
+                connection.execute("UPDATE agent_runs SET status='paused',ended_at=datetime('now','localtime') WHERE status='running'")
                 # 重启后未确认的外部发送不能自动重发；尚未开始的待发结果作废。
                 connection.execute("UPDATE expression_deliveries SET status='unknown' WHERE status='sending'")
                 connection.execute("UPDATE expression_deliveries SET status='cancelled' WHERE status='pending'")
@@ -389,10 +389,45 @@ class Database:
         with self.transaction() as connection:
             return connection.execute("INSERT INTO agent_runs(character_id,goal) VALUES (?,?)", (character_id, goal)).lastrowid
 
+    def pause_agent_work(self, run_id, offers, *, connection=None):
+        """关窗口后仍有进行中的任务或尚未开始的提议，供用户在操作日志里接续。"""
+        with (self.transaction() if connection is None else nullcontext(connection)) as c:
+            c.execute("UPDATE agent_runs SET status='paused', steps=(SELECT COUNT(*) FROM agent_steps WHERE run_id=?) "
+                      "WHERE id=? AND status='running'", (run_id, run_id))
+            c.executemany("INSERT INTO agent_runs(character_id,goal,status) VALUES (?,?,'paused')", offers)
+
+    def resume_agent_run(self, run_id, character_id):
+        def claim(c):
+            if not c.execute("UPDATE agent_runs SET status='running', ended_at=NULL "
+                             "WHERE id=? AND character_id=? AND status='paused'", (run_id, character_id)).rowcount:
+                return None
+            return c.execute("SELECT COALESCE(MAX(seq),0) FROM agent_steps WHERE run_id=?", (run_id,)).fetchone()[0]
+        return self.locked(claim)
+
+    def reserve_agent_effect(self, run_id, signature, resuming):
+        """动手前先留指纹。即使在文件已写、工具结果尚未入审计时退出，也不能在接续时重放。"""
+        def reserve(c):
+            row = c.execute("SELECT status FROM agent_runs WHERE id=?", (run_id,)).fetchone()
+            if not row or row['status'] != 'running':
+                raise PermissionError('任务已暂停或结束')
+            key = f'agent_effects:{run_id}'
+            seen = self.setting_in(c, key, [])
+            if signature in seen:
+                if resuming:
+                    raise PermissionError('这一步在暂停前或接续时已经尝试过，请先核对结果')
+            else:
+                self.set_setting_in(c, key, [*seen, signature])
+        self.locked(reserve)
+
     def finish_agent_run(self, run_id, status, result='', error='', steps=0, tokens=0, cost=0.0):
         with self.transaction() as connection:
-            connection.execute("UPDATE agent_runs SET status=?,result=?,error=?,steps=?,tokens=?,cost=?,ended_at=datetime('now','localtime') WHERE id=?",
+            updated = connection.execute("UPDATE agent_runs SET status=?,result=?,error=?,steps=?,tokens=?,cost=?,ended_at=datetime('now','localtime') WHERE id=? AND status='running'",
                                (status, result, error, steps, tokens, cost, run_id))
+            if not updated.rowcount:
+                connection.execute("UPDATE agent_runs SET steps=MAX(steps,?),tokens=?,cost=? WHERE id=? AND status='paused'",
+                                   (steps, tokens, cost, run_id))
+            connection.execute("DELETE FROM app_settings WHERE key=? AND NOT EXISTS "
+                               "(SELECT 1 FROM agent_runs WHERE id=? AND status='paused')", (f'agent_effects:{run_id}', run_id))
 
     def add_agent_step(self, run_id, seq, tool, args_json, risk, approval):
         with self.transaction() as connection:

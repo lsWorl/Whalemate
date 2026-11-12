@@ -87,21 +87,25 @@ class OutboxStore:
 
     def settle(self, turn: str, status: str, first_at: float | None = None, *, expected: str | None = None) -> Delivery | None:
         """记下结果并处理连带的事（纪念日、聊天记录）。已经有确定结果的不再改（回执重发时幂等）；返回这次新定下的结果。"""
-        now = self.clock()
         allowed = {'sent': ('claimed', 'unknown'), 'partial': ('claimed', 'unknown'),
                    'failed': ('generating', 'queued', 'dequeued', 'claimed', 'unknown'), 'unknown': ('claimed',)}[status]
         with self.db.transaction() as c:
             row = c.execute('SELECT * FROM qq_outbox WHERE turn_id=?', (turn,)).fetchone()
             if row is None or row['status'] not in allowed or (expected and row['status'] != expected): return None
-            if not c.execute("UPDATE qq_outbox SET status=?, first_sent_at=?, settled_at=? WHERE turn_id=? AND status=?",
-                             (status, first_at, now, turn, row['status'])).rowcount: return None
-            self._after(c, row, status)                    # 同一个事务：结果和连带写入要么都在、要么都不在
+            if not self.settle_in(c, row, status, first_at): return None
         try:                                               # 这一轮在内存里的纪念日占位（重启后已经没有了）
             from aicompanion.services.companion_dates import CompanionDates
             CompanionDates(self.db, clock=self.clock).release(row['character_id'], turn)
         except Exception:
             pass
         return Delivery(status, first_at)
+
+    def settle_in(self, c, row, status, first_at=None):
+        if not c.execute("UPDATE qq_outbox SET status=?, first_sent_at=?, settled_at=? WHERE turn_id=? AND status=?",
+                         (status, first_at, self.clock(), row['turn_id'], row['status'])).rowcount:
+            return False
+        self._after(c, row, status)
+        return True
 
     def _after(self, c, row, status: str) -> None:
         cid, turn = row['character_id'], row['turn_id']

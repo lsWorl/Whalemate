@@ -141,7 +141,8 @@ def main() -> int:
         from aicompanion.ui.onboarding import needs_onboarding
         if needs_onboarding(controller):
             QTimer.singleShot(0, window.open_onboarding)
-        QTimer.singleShot(1500, window.pet.drop_in)  # 从屏幕顶部掉下来，落地后打招呼
+        if not window.welcome_back():
+            QTimer.singleShot(1500, window.pet.drop_in)  # 从屏幕顶部掉下来，落地后打招呼
     if smoke_directory:
         if '--pet-smoke-test' in sys.argv:
             from aicompanion.ui.pet_smoke_check import schedule_pet_smoke_check

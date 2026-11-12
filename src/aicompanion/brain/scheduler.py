@@ -107,6 +107,30 @@ class ProactiveScheduler:
         with self.db.transaction() as c:
             c.execute("DELETE FROM outreach_log WHERE id=? AND status IN ('pending','delivering','unknown')", (outreach_id,))
 
+    def release_on_exit(self, c, visible_turns=()) -> None:
+        """与告别记录一起提交。未领取的投递立即作废，已领取的保留回执身份，不能重发。"""
+        from aicompanion.bridge.outbox import OutboxStore
+        outbox = OutboxStore(self.db, self.clock)
+        rows = c.execute("SELECT * FROM outreach_log WHERE status IN ('pending','delivering')").fetchall()
+        for row in rows:
+            item = c.execute('SELECT * FROM qq_outbox WHERE turn_id=?', (row['turn_id'],)).fetchone()
+            handed = row['status'] == 'delivering'
+            channel = 'qq' if item or handed else row['channel']
+            shown = channel == 'desktop' and (row['turn_id'] in visible_turns or c.execute(
+                "SELECT 1 FROM expression_deliveries WHERE turn_id=? AND character_id=? AND status='displayed' LIMIT 1",
+                (row['turn_id'], row['character_id'])).fetchone())
+            status = 'unknown' if handed or shown else 'failed'
+            first_at = row['handed_at']
+            if item:
+                status = item['status']
+                first_at = item['first_sent_at']
+                if status in ('generating', 'queued', 'dequeued', 'claimed'):
+                    status = 'unknown' if status == 'claimed' else 'failed'
+                    outbox.settle_in(c, item, status)
+            self._settle_in(c, row, status, channel, first_at)
+        if self.life is not None:
+            self.life.interrupt_on_exit(c)
+
     def settle_delivery(self, character_id: str, outreach_id: int, outreach: Outreach, result, channel: str = 'qq', *, first_at=None) -> None:
         """按投递结果收尾这条主动开口，以及它在心事 / 问候 / 纪念日那边的占位。
         result：bridge.outbox.Delivery（QQ），或 True / False（桌面说完没有）。
