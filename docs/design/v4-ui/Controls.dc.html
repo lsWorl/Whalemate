@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>控件规范</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#2F5BEA}a:hover{color:#1E3FB8}
+</style>
+</helmet>
+<div style="width: 1100px; height: 980px; box-sizing: border-box; padding: 36px 40px; background: #FBF8F3; font-family: 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif; color: #13234A; display: flex; flex-direction: column; gap: 18px">
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <h1 style="margin: 0; font-size: 26px">控件规范：所有窗口共用一套</h1>
+    <p style="margin: 0; font-size: 14px; color: #4B587A; line-height: 1.7">聊天面板、向导、设置、桌宠菜单里的按钮、选框、下拉框、输入框和滚动条都按这一张来。不再出现系统默认的灰色控件、黑色下拉箭头块和带上下箭头的滚动条。</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px">
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-size: 15px; font-weight: 700">按钮 · 一个界面只有一个主按钮</div>
+      <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); row-gap: 12px; column-gap: 14px; align-items: center; font-size: 12px; color: #5A6787">
+        <span>主按钮 44 高</span>
+        <div style="display: flex; gap: 8px; align-items: center"><button type="button" style="height: 44px; padding: 0 22px; border: none; border-radius: 22px; background: #2F5BEA; color: #FFFFFF; font: inherit; font-size: 15px; font-weight: 700">下一步</button><button type="button" style="height: 44px; padding: 0 22px; border: none; border-radius: 22px; background: #1E3FB8; color: #FFFFFF; font: inherit; font-size: 15px; font-weight: 700">悬停</button><button type="button" disabled style="height: 44px; padding: 0 22px; border: none; border-radius: 22px; background: #C9D5F2; color: #FFFFFF; font: inherit; font-size: 15px; font-weight: 700">不可用</button></div>
+        <span>次按钮 36 高</span>
+        <div style="display: flex; gap: 8px; align-items: center"><button type="button" style="height: 36px; padding: 0 16px; border: 1.5px solid #C9D5F2; border-radius: 18px; background: #FFFFFF; color: #2F5BEA; font: inherit; font-size: 14px; font-weight: 500">测试一下</button><button type="button" style="height: 36px; padding: 0 16px; border: 1.5px solid #2F5BEA; border-radius: 18px; background: #F3F6FF; color: #2F5BEA; font: inherit; font-size: 14px; font-weight: 500">悬停</button><button type="button" style="height: 36px; padding: 0 16px; border: 1.5px solid #E3E8F3; border-radius: 18px; background: #FFFFFF; color: #9AA8C7; font: inherit; font-size: 14px">不可用</button></div>
+        <span>文字按钮</span>
+        <div style="display: flex; gap: 16px; align-items: center"><button type="button" style="height: 36px; padding: 0 6px; border: none; background: transparent; color: #4B587A; font: inherit; font-size: 14px">上一步</button><button type="button" style="height: 36px; padding: 0 6px; border: none; background: transparent; color: #2F5BEA; font: inherit; font-size: 14px">先跳过</button><button type="button" style="height: 36px; padding: 0 10px; border: none; border-radius: 18px; background: #FBEAE5; color: #A3361A; font: inherit; font-size: 14px">删除</button></div>
+        <span>图标按钮 36 圆</span>
+        <div style="display: flex; gap: 8px; align-items: center">
+          <button type="button" aria-label="设置" style="width: 36px; height: 36px; border-radius: 18px; border: none; background: transparent; color: #4B587A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg></button>
+          <button type="button" aria-label="朗读已开" style="width: 36px; height: 36px; border-radius: 18px; border: none; background: #E6EEFF; color: #2F5BEA; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path></svg></button>
+          <button type="button" aria-label="发送" style="width: 36px; height: 36px; border-radius: 18px; border: none; background: #2F5BEA; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg></button>
+          <span>普通 / 开启 / 主操作</span>
+        </div>
+      </div>
+      <div style="font-size: 12px; line-height: 1.6; color: #5A6787">表单行里的按钮一律用次按钮，不要整行拉满宽度。“安装”“试听”这类动作放在它所属的卡片里，按钮宽度跟随文字。</div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-size: 15px; font-weight: 700">输入框 · 下拉框 · 数字框 · 统一 40 高、12 圆角</div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; font-size: 12px; color: #5A6787">
+        <div style="display: flex; flex-direction: column; gap: 4px"><span>普通</span><div style="height: 40px; box-sizing: border-box; border: 1.5px solid #D9E1F2; border-radius: 12px; background: #FFFFFF; display: flex; align-items: center; padding: 0 12px; font-size: 14px; color: #13234A">鲸鲸</div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span>正在输入</span><div style="height: 40px; box-sizing: border-box; border: 1.5px solid #2F5BEA; border-radius: 12px; background: #FFFFFF; box-shadow: 0 0 0 3px #E6EEFF; display: flex; align-items: center; padding: 0 12px; font-size: 14px; color: #13234A">鲸鲸|</div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span>有问题</span><div style="height: 40px; box-sizing: border-box; border: 1.5px solid #C2410C; border-radius: 12px; background: #FFFFFF; display: flex; align-items: center; padding: 0 12px; font-size: 14px; color: #13234A">12a45</div><span style="color: #A3361A">QQ 号只能是 5～12 位数字</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span>不可用</span><div style="height: 40px; box-sizing: border-box; border: 1.5px solid #E8E1D6; border-radius: 12px; background: #F4F1EC; display: flex; align-items: center; padding: 0 12px; font-size: 14px; color: #9AA8C7">由角色包决定</div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span>下拉框：箭头是细线图标，没有分隔块</span><div style="height: 40px; box-sizing: border-box; border: 1.5px solid #D9E1F2; border-radius: 12px; background: #FFFFFF; display: flex; align-items: center; padding: 0 10px 0 12px; font-size: 14px; color: #13234A"><span style="flex-grow: 1">女儿（叫你爹）</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4B587A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><span>数字框：右侧两个小箭头，无边框</span><div style="height: 40px; box-sizing: border-box; border: 1.5px solid #D9E1F2; border-radius: 12px; background: #FFFFFF; display: flex; align-items: center; padding: 0 8px 0 12px; font-size: 14px; color: #13234A"><span style="flex-grow: 1">130 分钟</span><div style="display: flex; flex-direction: column"><svg width="14" height="12" viewBox="0 0 24 20" fill="none" stroke="#4B587A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"></path></svg><svg width="14" height="12" viewBox="0 0 24 20" fill="none" stroke="#4B587A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 6 6 6-6"></path></svg></div></div></div>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 12px; box-shadow: 0 8px 24px rgba(19,35,74,0.12); padding: 6px; display: flex; flex-direction: column; gap: 2px; font-size: 14px">
+        <div style="height: 34px; border-radius: 8px; padding: 0 10px; display: flex; align-items: center">妹妹（叫你哥哥）</div>
+        <div style="height: 34px; border-radius: 8px; padding: 0 10px; display: flex; align-items: center; background: #E6EEFF; color: #1E3FB8; font-weight: 500">女儿（叫你爹）　✓</div>
+        <div style="height: 34px; border-radius: 8px; padding: 0 10px; display: flex; align-items: center; background: #F3F6FF">朋友（悬停）</div>
+      </div>
+      <div style="font-size: 12px; color: #5A6787">下拉列表：白底、12 圆角、轻阴影，选项 34 高，选中项泡泡蓝底。</div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px">
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-size: 15px; font-weight: 700">复选框 · 18px、5 圆角</div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px"><span style="width: 18px; height: 18px; border-radius: 5px; background: #2F5BEA; display: inline-flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span>聊天时可以发表情包</div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px"><span style="width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid #9AA8C7; box-sizing: border-box; background: #FFFFFF"></span>也回复陌生人的私聊</div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: #9AA8C7"><span style="width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid #D9E1F2; box-sizing: border-box; background: #F4F1EC"></span>不可用</div>
+      <div style="font-size: 12px; line-height: 1.6; color: #5A6787">文字跟框间距 10，整行可点；悬停时框边变鲸鲸蓝。</div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-size: 15px; font-weight: 700">单选 · 18px 圆</div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px"><span style="width: 18px; height: 18px; border-radius: 50%; border: 5px solid #2F5BEA; box-sizing: border-box"></span>电脑自带的声音</div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px"><span style="width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #9AA8C7; box-sizing: border-box"></span>鲸鲸专属声线</div>
+      <div style="border: 2px solid #2F5BEA; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 700">选项卡片（选中）</span><span style="font-size: 12px; color: #5A6787">整张卡片可点；未选中边框 1.5 #D9E1F2</span></div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-size: 15px; font-weight: 700">开关 · 分段 · 标签页</div>
+      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px"><div style="width: 40px; height: 24px; border-radius: 12px; background: #2F5BEA; position: relative; flex-shrink: 0"><div style="position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #FFFFFF"></div></div>开（整项功能的总开关）</div>
+      <div style="display: flex; gap: 4px; padding: 4px; background: #F1ECE3; border-radius: 16px; align-self: flex-start"><span style="height: 28px; padding: 0 14px; border-radius: 14px; background: #FFFFFF; display: flex; align-items: center; font-size: 13px; font-weight: 500">聊天</span><span style="height: 28px; padding: 0 14px; border-radius: 14px; display: flex; align-items: center; font-size: 13px; color: #4B587A">帮我做事</span></div>
+      <div style="display: flex; gap: 18px; border-bottom: 1px solid #E3E8F3; font-size: 14px"><span style="padding: 6px 0; border-bottom: 2px solid #2F5BEA; color: #2F5BEA; font-weight: 500">QQ 聊天</span><span style="padding: 6px 0; color: #4B587A">社区与黑话</span></div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px">
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; gap: 18px">
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 15px; font-weight: 700">滚动条 · 细、圆、没有箭头</div>
+        <div style="font-size: 13px; line-height: 1.7; color: #4B587A">宽 8，滑块 #C9D5F2、圆角 4，悬停 #9AB0E8；轨道透明，不画上下箭头和背景槽。滚动条贴着内容区右边、留 4 的边距，不压住卡片边框。默认尺寸下向导和概览页不应出现滚动条：内容放不下就先压缩间距或折叠说明。</div>
+      </div>
+      <div style="width: 120px; height: 150px; flex-shrink: 0; border: 1px solid #E3E8F3; border-radius: 14px; position: relative; background: #FBF8F3">
+        <div style="position: absolute; right: 4px; top: 10px; width: 8px; height: 60px; border-radius: 4px; background: #C9D5F2"></div>
+        <div style="position: absolute; left: 12px; top: 14px; right: 22px; height: 10px; border-radius: 5px; background: #E3E8F3"></div>
+        <div style="position: absolute; left: 12px; top: 34px; right: 30px; height: 10px; border-radius: 5px; background: #E3E8F3"></div>
+        <div style="position: absolute; left: 12px; top: 54px; right: 26px; height: 10px; border-radius: 5px; background: #E3E8F3"></div>
+      </div>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 15px; font-weight: 700">状态标记 · 清单行左侧统一 28px 圆</div>
+      <div style="display: flex; gap: 18px; align-items: center; font-size: 13px; color: #4B587A">
+        <span style="display: flex; align-items: center; gap: 8px"><span style="width: 28px; height: 28px; border-radius: 50%; background: #E3F6EC; color: #16683F; display: inline-flex; align-items: center; justify-content: center">✓</span>已完成</span>
+        <span style="display: flex; align-items: center; gap: 8px"><span style="width: 28px; height: 28px; border-radius: 50%; background: #FFF1DC; color: #8A4A00; display: inline-flex; align-items: center; justify-content: center; font-weight: 700">!</span>必需、未完成</span>
+        <span style="display: flex; align-items: center; gap: 8px"><span style="width: 28px; height: 28px; border-radius: 50%; background: #F1ECE3; color: #5A6787; display: inline-flex; align-items: center; justify-content: center">4</span>可选</span>
+      </div>
+      <div style="font-size: 12px; line-height: 1.6; color: #5A6787">“可选”只做成标题旁的小标签，不放在圆里；“还差 N 步”只数必需项，可选项不算。</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

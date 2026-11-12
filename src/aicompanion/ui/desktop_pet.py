@@ -13,13 +13,15 @@ from datetime import datetime
 
 from PySide6.QtCore import QPoint, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCursor, QGuiApplication, QRegion
-from PySide6.QtWidgets import QApplication, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget, QWidgetAction
 
 from aicompanion.brain.focus import focus_until, in_quiet_hours, is_focused, set_focus
 from aicompanion.pet.behavior import LinePacer, greeting_key
 from aicompanion.pet.state import PetStateMachine
 from aicompanion.pet.locomotion import advance_walk,clamp_target,braking_step
 from aicompanion.ui import desktop_integration as desktop
+from aicompanion.ui import theme
+from aicompanion.ui.icons import app_icon, line_icon
 from aicompanion.ui.pet_bubble import ACTIVITY, BubbleStack, QuickInput
 from aicompanion.ui.pet_geometry import fit_pet_geometry
 
@@ -52,6 +54,8 @@ class DesktopPetWindow(QWidget):
         self.database = database
         self.view = None; self.view_kind = 'none'; self.pack = None
         self.character_name = '角色'; self.model_label = ''; self.characters = []; self.active_id = ''
+        self.presence = '还没连上模型'
+        self.reply_active = False
         self.call_active = False; self.subtitle_text = ''; self.status_text = ''
         self._drag_offset = None; self._press_pos = None; self._dragging = False
         self._shutting_down = False; self._auto_hidden = False; self._user_hidden = False
@@ -559,7 +563,7 @@ class DesktopPetWindow(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400); QTimer.singleShot(0, self._update_mask)
+        if hasattr(self, '_save_timer') and not self._shutting_down: self._save_timer.start(400); QTimer.singleShot(0, self, self._update_mask)
 
     def save_geometry(self):
         if self._shutting_down:return
@@ -569,36 +573,96 @@ class DesktopPetWindow(QWidget):
     # ---- 右键菜单 ------------------------------------------------------------------
     def show_menu(self):
         self._drag_offset = None; self._press_pos = None
+        menu = self.build_menu()
+        try:
+            menu.exec(QCursor.pos())
+        finally:
+            menu.deleteLater()
+
+    def build_menu(self):
         menu = QMenu(self)
-        menu.addAction(f'{self.character_name}  ·  {self.model_label}' if self.model_label else self.character_name).setEnabled(False)
-        if self.status_text: menu.addAction(self.status_text[:60]).setEnabled(False)
-        menu.addSeparator()
-        menu.addAction('说点什么…（双击角色）', self.open_quick_input)
-        menu.addAction('打开聊天面板', self.chat_requested.emit)
-        menu.addAction('结束通话' if self.call_active else '开启通话', self.call_requested.emit)
-        menu.addAction('打断回复', self.interrupt_requested.emit)
-        if getattr(self, 'agent_busy', False): menu.addAction('让她停下手里的活', self.agent_stop_requested.emit)
-        else: menu.addAction('交给她做件事…', self.agent_requested.emit)
-        focus = menu.addMenu('专注模式')
+        menu.setStyleSheet(theme.COMMON)
+        header = QWidgetAction(menu)
+        card = QWidget()
+        row = QHBoxLayout(card)
+        avatar = QLabel()
+        avatar.setPixmap(app_icon().pixmap(36, 36))
+        row.addWidget(avatar)
+        names = QVBoxLayout()
+        name = QLabel(self.character_name)
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        name.setObjectName('CardTitle')
+        names.addWidget(name)
+        status = QLabel(self.presence)
+        status.setObjectName('Hint')
+        names.addWidget(status)
+        row.addLayout(names, 1)
+        header.setDefaultWidget(card)
+        header.setEnabled(False)
+        # 菜单项不可触发；单独启用展示控件，让 Qt 按原色绘制头像。
+        card.setEnabled(True)
+        menu.addAction(header)
+        menu.addAction('和她说话').setEnabled(False)
+        menu.addAction(line_icon('platforms'), '说点什么…\t双击她', self.open_quick_input)
+        menu.addAction(line_icon('window'), '打开聊天窗口', self.chat_requested.emit)
+        menu.addAction(line_icon('mic'), '结束语音聊天' if self.call_active else '语音聊天', self.call_requested.emit)
+        if self.reply_active:
+            menu.addAction(line_icon('stop'), '打断回复', self.interrupt_requested.emit)
+        menu.addAction('让她帮忙').setEnabled(False)
+        if getattr(self, 'agent_busy', False):
+            menu.addAction(line_icon('stop'), '让她停下手里的活', self.agent_stop_requested.emit)
+        else:
+            menu.addAction(line_icon('agent'), '交给她一件事…', self.agent_requested.emit)
+        focus = menu.addMenu(line_icon('clock'), '专注一会儿')
         until = focus_until(self.database)
         if until: focus.addAction(f'专注中，到 {until:%H:%M}').setEnabled(False)
         for label, minutes in [('25 分钟', 25), ('1 小时', 60), ('2 小时', 120)]:
             focus.addAction(label, lambda checked=False, m=minutes: self.set_focus(m))
         if until: focus.addAction('结束专注', lambda: self.set_focus(None))
+        menu.addAction('她的样子').setEnabled(False)
         if len(self.characters) > 1:
-            roles = menu.addMenu('切换角色')
+            roles = menu.addMenu(line_icon('persona'), '换个角色')
             for character_id, name in self.characters:
                 action = roles.addAction(name, lambda checked=False, cid=character_id: self.character_requested.emit(cid))
                 action.setCheckable(True); action.setChecked(character_id == self.active_id)
-        if self.view_kind in ('sprites', 'rig', 'spritesheet'):
-            poses = menu.addMenu('做个动作')
+        if self.view_kind == 'spritesheet':
+            actions=menu.addMenu(line_icon('star'), '做个动作')
+            preferred=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle'] if getattr(self.view,'using_reference',False) else []
+            seen=set()
+            for key in preferred+[k for k in self.view.pack.actions if k not in preferred]:
+                if key not in self.view.pack.actions: continue
+                entry=self.view.pack.actions[key]
+                identity=(entry.path,key if key in ('walking_left','walking_right') else '')
+                if identity in seen:continue
+                seen.add(identity)
+                label=entry.name+({'walking_left':'（向左）','walking_right':'（向右，镜像）'}.get(key,''))
+                actions.addAction(label,lambda checked=False,k=key:self.view.play_action(k))
+        elif self.view_kind in ('sprites', 'rig'):
+            poses = menu.addMenu(line_icon('star'), '做个动作')
             for label, pose in DEMO_POSES:
                 poses.addAction(label, lambda checked=False, p=pose: self.dispatch('force_pose', pose=p, seconds=2.5))
-        size = menu.addMenu('大小')
+        size = menu.addMenu(line_icon('size'), '大小')
         for scale in SCALES:
             action = size.addAction(f'{int(scale*100)}%', lambda checked=False, s=scale: self.set_scale(s))
             action.setCheckable(True); action.setChecked(abs(scale-self.scale) < .01)
-        options = menu.addMenu('桌宠设置')
+        menu.addSeparator()
+        menu.addAction(line_icon('gear'), '设置…', self.settings_requested.emit)
+        menu.addAction(line_icon('moon'), '让她休息（藏到右下角）', self.rest)
+        quit_action = QWidgetAction(menu)
+        quit_action.setText('退出鲸伴')
+        quit_button = QPushButton(line_icon('quit', theme.DANGER), '退出鲸伴')
+        quit_button.setStyleSheet(f'color:{theme.DANGER}; text-align:left; border:none; padding-left:8px')
+        quit_button.clicked.connect(quit_action.trigger)
+        quit_action.setDefaultWidget(quit_button)
+        quit_action.triggered.connect(menu.close)
+        quit_action.triggered.connect(self.quit_requested.emit)
+        menu.addAction(quit_action)
+        return menu
+
+    def more_menu(self, parent):
+        """设置页打开时按当前的渲染器构建，切换形象后下次可见的选项也会更新。"""
+        options = menu = QMenu(parent)
+        menu.setStyleSheet(theme.COMMON)
         self._toggle(options, '始终置顶', 'pet_topmost', True, self._topmost_changed)
         self._toggle(options, '全屏应用时自动隐藏', 'pet_hide_fullscreen', True)
         self._toggle(options, '显示对话气泡', 'pet_bubble_enabled', True, lambda on: on or self.bubble.fade_out())
@@ -619,16 +683,6 @@ class DesktopPetWindow(QWidget):
                 if dy and not getattr(self.view,'supports_vertical_walk',True):continue
                 walk.addAction(label,lambda checked=False,x=dx,y=dy:self.walk_to(self.x()+x*120*self.scale,self.y()+y*90*self.scale))
             walk.addSeparator();walk.addAction('停下来',self.stop_walking)
-            actions=menu.addMenu('动画动作')
-            preferred=['walking_left','walking_right','click_wave','curtsy','curious','shy_peek','happy_hops','self_hug','pout_stomp','giggle'] if getattr(self.view,'using_reference',False) else []
-            seen=set()
-            for key in preferred+[k for k in self.view.pack.actions if k not in preferred]:
-                entry=self.view.pack.actions[key]
-                identity=(entry.path,key if key in ('walking_left','walking_right') else '')
-                if identity in seen:continue
-                seen.add(identity)
-                label=entry.name+({'walking_left':'（向左）','walking_right':'（向右，镜像）'}.get(key,''))
-                actions.addAction(label,lambda checked=False,k=key:self.view.play_action(k))
         # 选装动画使用角色包的默认顺序；只在显示内置鲸娘时切换骨骼与立绘。
         if (self.pack is not None and self.pack.renderer.get('rig')
                 and (self.pack.renderer_kind != 'spritesheet' or self.view_kind in ('rig', 'sprites'))):
@@ -651,11 +705,7 @@ class DesktopPetWindow(QWidget):
         if self.view_kind in ('spritesheet','rig'):
             self._toggle(options, '闲着时到处走走', 'pet_wander', True, lambda on: on or self.stop_walking())
         self._toggle(options, '松手后落到屏幕底边（重力）', 'pet_gravity', True)
-        menu.addAction('设置…', self.settings_requested.emit)
-        menu.addSeparator()
-        menu.addAction('让她休息（隐藏到托盘）', self.rest)
-        menu.addAction('退出应用', self.quit_requested.emit)
-        menu.exec(QCursor.pos())
+        return menu
 
     def set_appearance(self,kind):
         self.database.set_setting(f'pet_animation_enabled:{self.active_id}',kind=='spritesheet')

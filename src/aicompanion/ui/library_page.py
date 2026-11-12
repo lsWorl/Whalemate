@@ -12,9 +12,12 @@ from aicompanion.ui.chat_worker import TaskWorker
 
 class LibraryPage(QWidget):
     ANALYZE_BATCH=10
-    def __init__(self,database,character_id,parent=None,controller=None):
+    def __init__(self,database,character_id,parent=None,controller=None, defer=None):
         super().__init__(parent);self.catalog=AssetCatalog(database);self.character_id=character_id;self.worker=None
         self.controller=controller;self.analyzer=None
+        self.defer = defer or (lambda group, save: save())
+        self.drafts = {}
+        self.database = database
         layout=QVBoxLayout(self)
         hint=QLabel('沿用“聊天平台”的表情包目录。放进目录或导入的图默认当作你自己的图，直接可用；含义会用识图模型自动识别。'
                    '素材清单里没写许可的图标为“许可待确认”，选中后在“来源”里选一项即可启用。')
@@ -24,12 +27,12 @@ class LibraryPage(QWidget):
         collect=QHBoxLayout()
         self.collect=QCheckBox('收集 QQ 私聊和群里别人发的表情包（分析含义后她也能用）')
         self.collect.setChecked(bool(database.get_setting('sticker_collect_enabled',True)))
-        self.collect.toggled.connect(lambda on:database.set_setting('sticker_collect_enabled',bool(on)));collect.addWidget(self.collect)
+        self.collect.toggled.connect(lambda: self.defer('library', self.save_collect));collect.addWidget(self.collect)
         collect.addWidget(QLabel('每天最多分析'))
         self.analysis_daily=QSpinBox();self.analysis_daily.setRange(0,1000);self.analysis_daily.setSuffix(' 张')
         from aicompanion.expression.collect import ANALYSIS_DAILY
         self.analysis_daily.setValue(int(database.get_setting('sticker_analysis_daily',ANALYSIS_DAILY) or 0))
-        self.analysis_daily.valueChanged.connect(lambda value:database.set_setting('sticker_analysis_daily',int(value)))
+        self.analysis_daily.valueChanged.connect(lambda: self.defer('library', self.save_analysis_daily))
         collect.addWidget(self.analysis_daily);collect.addStretch(1);layout.addLayout(collect)
         self.collect_status=QLabel();self.collect_status.setWordWrap(True);layout.addWidget(self.collect_status)
         row=QHBoxLayout()
@@ -54,17 +57,28 @@ class LibraryPage(QWidget):
         layout.addLayout(source)
         meaning=QHBoxLayout();meaning.addWidget(QLabel('含义（自动识别，一般不用改）'))
         self.semantic=QLineEdit();self.semantic.setPlaceholderText('选中一张图后可以改；留空保存 = 重新自动识别');meaning.addWidget(self.semantic,1)
-        save=QPushButton('保存含义');save.clicked.connect(self.save_meaning);meaning.addWidget(save);layout.addLayout(meaning)
+        self.semantic.setMaxLength(160)
+        self.semantic.textEdited.connect(self.queue_meaning)
+        layout.addLayout(meaning)
         self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setMaximumHeight(90);layout.addWidget(self.details)
         self.status=QLabel();self.status.setWordWrap(True);self.status.setTextFormat(Qt.TextFormat.PlainText);layout.addWidget(self.status)
         # 最近几轮"发没发表情、卡在哪一步"：没发图时能直接看出是没候选、模型选了文字、格式没解析、图片校验失败还是显示 / 发送失败
         decisions=QHBoxLayout();decisions.addWidget(QLabel('最近的表达决策（不含聊天内容）'))
         self.debug=QCheckBox('开发模式：同时写入日志');self.debug.setChecked(bool(database.get_setting('expression_debug',False)))
-        self.debug.toggled.connect(lambda on:database.set_setting('expression_debug',bool(on)));decisions.addWidget(self.debug)
+        self.debug.toggled.connect(lambda: self.defer('library', self.save_debug));decisions.addWidget(self.debug)
         again=QPushButton('刷新');again.clicked.connect(self.show_traces);decisions.addWidget(again);layout.addLayout(decisions)
         self.trace_view=QPlainTextEdit();self.trace_view.setReadOnly(True);self.trace_view.setMaximumHeight(120);layout.addWidget(self.trace_view)
         self.refresh()
         self.analyze_soon()   # 打开图库页时顺手识别还没识别含义的图（配置了识图模型才会）
+    def save_collect(self):
+        self.database.set_setting('sticker_collect_enabled', self.collect.isChecked())
+
+    def save_analysis_daily(self):
+        self.database.set_setting('sticker_analysis_daily', self.analysis_daily.value())
+
+    def save_debug(self):
+        self.database.set_setting('expression_debug', self.debug.isChecked())
+
     def selected(self):
         row=self.table.currentRow()
         return self.table.item(row,0).data(Qt.ItemDataRole.UserRole) if row>=0 and self.table.item(row,0) else None
@@ -130,7 +144,7 @@ class LibraryPage(QWidget):
             self.semantic.clear();self.details.setPlainText(f'已选中 {len(ids)} 张' if ids else '');return
         row=self.catalog.get(ids[0])
         if not row:return
-        m=row['metadata'];self.semantic.setText(m.get('semantic',''))
+        m=row['metadata'];self.semantic.setText(self.drafts.get(ids[0], m.get('semantic','')))
         index=self.license.findData(m.get('license'))
         if index>=0:self.license.setCurrentIndex(index)
         details={k:v for k,v in row.items() if k not in ('thumbnail',)}
@@ -174,15 +188,31 @@ class LibraryPage(QWidget):
         self.status.setText(f"已把 {len(ids)-len(failed)} 张设为“{LICENSE_LABELS.get(license,license)}”"
                             +(f"；{len(failed)} 张没改：{failed[0]}" if failed else ''))
         self.analyze_soon()   # 确认来源后可用的图，如果还在等识别含义，接着识别
+    def queue_meaning(self, text):
+        ids = self.selected_ids()
+        if len(ids) == 1:
+            self.drafts[ids[0]] = text.strip()
+            self.defer('library', self.flush_meanings)
+
+    def flush_meanings(self):
+        for aid, text in list(self.drafts.items()):
+            self.write_meaning(aid, text)
+            del self.drafts[aid]
+        ids = self.selected_ids()
+        self.refresh()
+        self.keep_selection(ids)
+        self.explain_if_blocked()
+
     def save_meaning(self):
         aid=self.selected()
         if not aid:self.status.setText('选中一张图再改含义');return
-        text=self.semantic.text().strip()
+        self.queue_meaning(self.semantic.text())
+
+    def write_meaning(self, aid, text):
         if text:
             self.catalog.annotate(aid,{'semantic':text[:160]});self.status.setText('已保存含义；以后自动识别不会覆盖')
         else:
             self.queue_analysis([aid]);self.status.setText('含义已清空，会重新自动识别')
-        self.refresh();self.keep_selection([aid]);self.explain_if_blocked()
     def explain_if_blocked(self):
         """开始识别；现在不能识别（额度、识图没配好等）就把原因接在状态后面，不让图一声不吭地停在“识别含义中”。"""
         if self.analyze_soon() or self.analyzer is not None:return

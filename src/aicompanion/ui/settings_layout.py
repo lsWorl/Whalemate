@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QScrollArea, QStackedWidget,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QScrollArea, QStackedWidget,
                                QTabWidget, QVBoxLayout, QWidget)
 
 
@@ -28,6 +28,40 @@ class Section(QFrame):
         return content
 
 
+class FoldSection(Section):
+    """次要设置可展开，标题和展开按钮均位于卡片内。"""
+    def __init__(self, title, content):
+        super().__init__(title)
+        heading = self.box.takeAt(0).widget()
+        row = QHBoxLayout()
+        row.addWidget(heading, 1)
+        self.toggle = QPushButton('展开')
+        self.toggle.setObjectName('Link')
+        self.toggle.setCheckable(True)
+        self.toggle.setAccessibleName(title)
+        row.addWidget(self.toggle)
+        self.box.addLayout(row)
+        self.add(content)
+        content.hide()
+        self.toggle.toggled.connect(content.setVisible)
+        self.toggle.toggled.connect(lambda expanded: self.toggle.setText('收起' if expanded else '展开'))
+
+
+class TabPage(QWidget):
+    """导航标题固定，每个标签的内容负责自己的滚动。"""
+    def __init__(self, title, intro):
+        super().__init__()
+        self.box = QVBoxLayout(self)
+        self.box.setContentsMargins(22, 18, 22, 12)
+        self.box.setSpacing(10)
+        heading = QLabel(title)
+        heading.setObjectName('PageTitle')
+        hint = QLabel(intro)
+        hint.setObjectName('PageIntro')
+        hint.setWordWrap(True)
+        self.box.addWidget(heading)
+        self.box.addWidget(hint)
+
 class ComingSoon(QFrame):
     """还没做的功能：告诉用户它会出现在这里、能做什么。"""
 
@@ -48,7 +82,8 @@ class Page(QScrollArea):
         self.setWidgetResizable(True); self.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget(); body.setObjectName('PageBody'); self.setWidget(body)
         self.box = QVBoxLayout(body); self.box.setContentsMargins(22, 18, 22, 18); self.box.setSpacing(12)
-        head = QLabel(title); head.setObjectName('PageTitle'); self.box.addWidget(head)
+        if title:
+            head = QLabel(title); head.setObjectName('PageTitle'); self.box.addWidget(head)
         if intro:
             text = QLabel(intro); text.setObjectName('PageIntro'); text.setWordWrap(True); self.box.addWidget(text)
         self._stretch = False
@@ -78,12 +113,28 @@ class SettingsNav(QWidget):
     """左侧分组导航 + 右侧页面。add_group 加分组标题，add_page 加一页（key 用来从别处直接跳过来）。"""
     page_changed = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, title="鲸鲸的设置", parent=None):
         super().__init__(parent)
         row = QHBoxLayout(self); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(0)
-        self.list = QListWidget(); self.list.setObjectName('Nav'); self.list.setFixedWidth(176)
+        self.list = QListWidget(); self.list.setObjectName('Nav'); self.list.setFixedWidth(214)
         self.stack = QStackedWidget(); self.stack.setObjectName('Stack')
-        row.addWidget(self.list); row.addWidget(self.stack, 1)
+        from aicompanion.ui.icons import app_icon
+        sidebar = QFrame()
+        sidebar.setObjectName('Brand')
+        side = QVBoxLayout(sidebar)
+        side.setContentsMargins(3, 12, 3, 4)
+        brand = QHBoxLayout()
+        brand.setContentsMargins(12, 0, 4, 2)
+        face = QLabel()
+        face.setPixmap(app_icon().pixmap(30, 30))
+        brand.addWidget(face)
+        name = QLabel(title)
+        name.setObjectName('CardTitle')
+        brand.addWidget(name, 1)
+        side.addLayout(brand)
+        side.addWidget(self.list, 1)
+        row.addWidget(sidebar)
+        row.addWidget(self.stack, 1)
         self.keys: list[str] = []          # 与 list 的行一一对应；分组标题行为空串
         self.pages: dict[str, QWidget] = {}
         self.list.currentRowChanged.connect(self._row_changed)
@@ -94,7 +145,8 @@ class SettingsNav(QWidget):
         self.list.addItem(item); self.keys.append('')
 
     def add_page(self, key: str, label: str, widget: QWidget, hint: str = ''):
-        item = QListWidgetItem('　'+label); item.setToolTip(hint or label); self.list.addItem(item)
+        from aicompanion.ui.icons import line_icon
+        item = QListWidgetItem(line_icon(key), label); item.setToolTip(hint or label); self.list.addItem(item)
         self.keys.append(key); self.pages[key] = widget; self.stack.addWidget(widget)
         return widget
 

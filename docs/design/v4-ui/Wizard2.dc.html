@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>向导：连接大脑</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#2F5BEA}a:hover{color:#1E3FB8}
+</style>
+</helmet>
+<div style="width: 760px; height: 520px; box-sizing: border-box; display: flex; background: #FBF8F3; font-family: 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif; color: #13234A">
+  <div style="width: 300px; flex-shrink: 0; background: #E6EEFF; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 24px 20px 28px; box-sizing: border-box; gap: 18px; position: relative">
+    <div style="position: absolute; left: 22px; top: 22px; right: 22px; background: #FFFFFF; border-radius: 16px 16px 16px 6px; padding: 10px 14px; font-size: 13px; line-height: 1.6">我需要一个“大脑”才能想事情和说话。它来自网上的 AI 服务，按用量付费，平时聊天花得很少。</div>
+    <img src="../../../src/aicompanion/characters/deepseek-whale/sprites/thinking.png" alt="正在思考的鲸鲸" style="width: 200px; height: 268px; object-fit: contain">
+    <div style="display: flex; gap: 8px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #2F5BEA"></span><span style="width: 22px; height: 8px; border-radius: 4px; background: #2F5BEA"></span><span style="width: 8px; height: 8px; border-radius: 4px; background: #B9C8EE"></span><span style="width: 8px; height: 8px; border-radius: 4px; background: #B9C8EE"></span><span style="width: 8px; height: 8px; border-radius: 4px; background: #B9C8EE"></span></div>
+  </div>
+  <div style="flex-grow: 1; padding: 30px 40px 26px; display: flex; flex-direction: column; gap: 14px; min-width: 0">
+    <div style="font-size: 13px; color: #5A6787">第 2 步，共 5 步 · 必需</div>
+    <h1 style="margin: 0; font-size: 24px; line-height: 1.35">给她连上“大脑”</h1>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+      <button type="button" style="text-align: left; padding: 10px 12px; border-radius: 14px; border: 2px solid #2F5BEA; background: #FFFFFF; font: inherit; color: #13234A; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 700">DeepSeek</span><span style="font-size: 12px; color: #1E3FB8">推荐 · 中文好</span></button>
+      <button type="button" style="text-align: left; padding: 10px 12px; border-radius: 14px; border: 1.5px solid #D9E1F2; background: #FFFFFF; font: inherit; color: #13234A; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 700">MiniMax</span><span style="font-size: 12px; color: #5A6787">也支持语音</span></button>
+      <button type="button" style="text-align: left; padding: 10px 12px; border-radius: 14px; border: 1.5px solid #D9E1F2; background: #FFFFFF; font: inherit; color: #13234A; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 700">其他服务</span><span style="font-size: 12px; color: #5A6787">填网址和密钥</span></button>
+    </div>
+    <div style="background: #FFFFFF; border: 1px solid #E3E8F3; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.6">
+      <div style="font-weight: 700">还没有密钥？三步拿到</div>
+      <div><span style="color: #2F5BEA; font-weight: 700">1</span>　<a href="https://platform.deepseek.com/">打开 DeepSeek 开放平台</a>，用手机号注册</div>
+      <div><span style="color: #2F5BEA; font-weight: 700">2</span>　在“充值”里充一点余额（按官方价格，几块钱能聊很久）</div>
+      <div><span style="color: #2F5BEA; font-weight: 700">3</span>　在“API keys”里点“创建”，复制那串 sk- 开头的字</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="key" style="font-size: 14px; font-weight: 500">把密钥粘贴到这里</label>
+      <div style="display: flex; gap: 8px">
+        <input id="key" type="password" value="sk-xxxxxxxxxxxxxxxx" style="flex-grow: 1; min-width: 0; height: 42px; box-sizing: border-box; padding: 0 14px; border: 1.5px solid #D9E1F2; border-radius: 14px; font: inherit; font-size: 14px; background: #FFFFFF; color: #13234A">
+        <button type="button" style="height: 42px; padding: 0 16px; border: 1.5px solid #C9D5F2; border-radius: 21px; background: #FFFFFF; color: #2F5BEA; font: inherit; font-size: 14px; font-weight: 500">测试一下</button>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #16683F"><span style="padding: 2px 8px; border-radius: 10px; background: #E3F6EC">✓ 连上了</span>她刚刚说：“我醒啦！”</div>
+      <div style="font-size: 12px; color: #5A6787">密钥只加密保存在这台电脑上，不会上传到别处。</div>
+    </div>
+    <div style="flex-grow: 1"></div>
+    <div style="display: flex; align-items: center; gap: 12px">
+      <a href="Wizard1.dc.html" style="font-size: 14px; color: #4B587A; text-decoration: none; padding: 10px 4px">上一步</a>
+      <div style="flex-grow: 1"></div>
+      <a href="Wizard3.dc.html" style="font-size: 14px; color: #4B587A; text-decoration: none; padding: 10px 4px">先跳过（离线试用）</a>
+      <a href="Wizard3.dc.html" style="display: inline-flex; align-items: center; height: 46px; padding: 0 26px; border-radius: 23px; background: #2F5BEA; color: #FFFFFF; font-size: 15px; font-weight: 700; text-decoration: none">下一步</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":520}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

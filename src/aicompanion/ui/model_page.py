@@ -6,7 +6,8 @@ Key 输入框始终遮蔽；保存后只显示“已加密保存 / 未设置”�
 from __future__ import annotations
 
 
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+from PySide6.QtCore import Signal, QTimer
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
@@ -80,15 +81,25 @@ class ModelDialog(QDialog):
 
 
 class ModelPage(QWidget):
+    persisted = Signal()
+    save_failed = Signal(str)
+
     def __init__(self, router, characters, current_character_id, parent=None, speech_output=None, run=None):
         """characters：[(角色 ID, 名字)]；run：后台执行网络请求的函数（默认 TaskWorker），测试里可换成同步执行。"""
         super().__init__(parent)
+        self.pending = set()
+        self.errors = {}
+        self.debounce = QTimer(self)
+        self.debounce.setSingleShot(True)
+        self.debounce.setInterval(500)
+        self.debounce.timeout.connect(self.flush)
         self.admin = ModelAdmin(router); self.router = router
         self.characters = list(characters); self.current = current_character_id
         self.speech_output = speech_output; self.run = run or self._run_in_background; self.workers = set()
         layout = QVBoxLayout(self)
 
-        accounts = QGroupBox('账户与 Key'); a = QVBoxLayout(accounts)
+        from aicompanion.ui.settings_layout import Section
+        accounts = Section('账户与 Key'); a = accounts.box
         self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(['名称', '服务', '地址', 'Key'])
         from PySide6.QtWidgets import QHeaderView
         header = self.table.horizontalHeader()
@@ -100,10 +111,13 @@ class ModelPage(QWidget):
         row = QHBoxLayout()
         for text, slot in (('添加账户', self.add_account), ('修改 / 换 Key', self.edit_account), ('删除账户', self.remove_account),
                            ('添加模型', self.add_model)):
-            button = QPushButton(text); button.clicked.connect(slot); row.addWidget(button)
+            button = QPushButton(text)
+            if text == '删除账户': button.setObjectName('Danger')
+            button.clicked.connect(slot); row.addWidget(button)
+        row.addStretch()
         a.addLayout(row); layout.addWidget(accounts)
 
-        choose = QGroupBox('每种能力用哪个模型'); c = QFormLayout(choose)
+        choose = Section('每种能力用哪个模型'); c = QFormLayout(); choose.add(c)
         self.scope = QComboBox(); self.scope.addItem('全局默认', None)
         for cid, name in self.characters: self.scope.addItem(f'角色：{name}', cid)
         self.scope.currentIndexChanged.connect(self._scope_changed); self._scope = None
@@ -111,7 +125,7 @@ class ModelPage(QWidget):
         self.pickers = {}
         for cap in ('chat', 'vision', 'search', 'agent', 'tts'):
             box = QComboBox(); self.pickers[cap] = box; c.addRow(CAPABILITY_LABELS[cap], box)
-            box.currentIndexChanged.connect(lambda *_, cap=cap: self._auto_save(cap))
+            box.currentIndexChanged.connect(lambda *_, cap=cap: self._queue_save(cap))
             if cap == 'agent':
                 hint = QLabel('办事只列出 Harness 能用的模型（DeepSeek、MiniMax）。注意：“全局默认”里的办事模型会用于所有没有单独设置的角色；'
                               '只想给某个角色换，请先把上面的“设置范围”切到那个角色再选。')
@@ -127,9 +141,9 @@ class ModelPage(QWidget):
         c.addRow('音色', self.voice); c.addRow('', tts_row); c.addRow('语气', self.instructions)
         # 选了就保存：切换范围、关闭设置都不会丢（实机反馈：退出后又变回“未设置”）
         self._loading = False
-        for signal in (self.voice.editingFinished, self.instructions.editingFinished, self.language.currentIndexChanged,
+        for signal in (self.voice.textChanged, self.instructions.textChanged, self.language.currentIndexChanged,
                        self.speed.valueChanged, self.volume.valueChanged):
-            signal.connect(lambda *_: self._auto_save('tts'))
+            signal.connect(lambda *_: self._queue_save('tts'))
         buttons = QHBoxLayout()
         for text, slot in (('测试聊天', self.test_chat), ('试听语音', self.test_tts)):
             button = QPushButton(text); button.clicked.connect(slot); buttons.addWidget(button)
@@ -195,6 +209,11 @@ class ModelPage(QWidget):
                             f'语音 {tts.label if tts else "未配置"}')
 
     def _scope_changed(self, *args):
+        if not self.flush():
+            self.scope.blockSignals(True)
+            self.scope.setCurrentIndex(self.scope.findData(self._scope))
+            self.scope.blockSignals(False)
+            return
         self._load_scope(self.scope.currentData())
 
     # ---- 账户 --------------------------------------------------------------------------------
@@ -207,6 +226,7 @@ class ModelPage(QWidget):
         except Exception as error:
             QMessageBox.warning(self, '账户没有添加', str(error)); return
         self.refresh()
+        self.persisted.emit()
 
     def edit_account(self):
         account_id = self._selected_account()
@@ -220,6 +240,7 @@ class ModelPage(QWidget):
         except Exception as error:
             QMessageBox.warning(self, '账户没有修改', str(error)); return
         self.refresh()
+        self.persisted.emit()
 
     def remove_account(self):
         account_id = self._selected_account()
@@ -228,6 +249,7 @@ class ModelPage(QWidget):
         except Exception as error:
             QMessageBox.warning(self, '账户没有删除', str(error)); return
         self.refresh()
+        self.persisted.emit()
 
     def add_model(self):
         accounts = self.admin.accounts()
@@ -239,6 +261,7 @@ class ModelPage(QWidget):
         except Exception as error:
             QMessageBox.warning(self, '模型没有添加', str(error)); return
         self.refresh()
+        self.persisted.emit()
 
     # ---- 选择与测试 --------------------------------------------------------------------------
     def _save_one(self, cap):
@@ -253,13 +276,30 @@ class ModelPage(QWidget):
         else:
             self.admin.choose(cap, cid, self.pickers[cap].currentData() or '')
 
-    def _auto_save(self, cap):
-        """改一项存一项。不弹窗：例如选了语音合成但音色还没填，只在状态栏提示，填好音色后自动补存。"""
-        if self._loading: return
-        try: self._save_one(cap)
-        except Exception as error:
-            self.status.setText(f'{CAPABILITY_LABELS[cap]}还没有保存：{error}'); return
-        self._show_effective()
+    def _queue_save(self, capability):
+        if not self._loading:
+            self.pending.add(capability)
+            self.debounce.start()
+
+    def flush(self):
+        self.debounce.stop()
+        pending, self.pending = self.pending, set()
+        for cap in sorted(pending):
+            try:
+                self._save_one(cap)
+            except Exception as error:
+                self.errors[cap] = f'{CAPABILITY_LABELS[cap]}还没有保存：{error}'
+            else:
+                self.errors.pop(cap, None)
+        if self.errors:
+            message = next(iter(self.errors.values()))
+            self.status.setText(message)
+            self.save_failed.emit(message)
+            return False
+        if pending:
+            self._show_effective()
+            self.persisted.emit()
+        return True
 
     def apply(self) -> bool:
         """保存当前范围的全部选择（关闭设置、测试前调用）。出错时提示并返回 False，出错那一项不变。"""
@@ -275,6 +315,7 @@ class ModelPage(QWidget):
 
     def test_chat(self):
         # 选择已自动保存；这里不再整体保存，免得没填完的语音设置挡住聊天测试
+        self.flush()
         cid = self._scope or self.current
         self.status.setText('正在测试聊天…')
         self.run(lambda token: self.admin.test_chat(cid, token),

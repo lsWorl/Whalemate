@@ -41,7 +41,9 @@ class UiRefreshTests(unittest.TestCase):
 
     def window(self, **kwargs):
         import aicompanion.ui.settings_window as module
-        with mock.patch.object(module, 'QMediaDevices', SimpleNamespace(audioInputs=lambda: [])):   # 容器里没有音频设备
+        # 这些导航用例不会等待 QQ 轮询，避免工作线程在临时数据库回收后才交付结果。
+        with (mock.patch.object(module, 'QMediaDevices', SimpleNamespace(audioInputs=lambda: [])),
+              mock.patch('aicompanion.ui.bridge_page.BridgePage.refresh', lambda page: None)):
             return module.SettingsWindow(self.controller, self.settings, **kwargs)
 
     def test_icon_files_ship_with_package(self):
@@ -68,9 +70,9 @@ class UiRefreshTests(unittest.TestCase):
             self.assertEqual(dialog.nav.current(), 'overview')
             overview = dialog.nav.pages['overview'].widget()
             texts = ' '.join(label.text() for label in overview.findChildren(type(dialog.archive_label)))
-            self.assertIn('还没有配置', texts); self.assertIn('即将推出', texts)
-            go = [b for b in overview.findChildren(QPushButton) if b.text() == '去设置']
-            self.assertEqual(len(go), 5)
+            self.assertIn('还没有配置', texts); self.assertNotIn('即将推出', texts); self.assertIn('还差', texts)
+            go = [b for b in overview.findChildren(QPushButton) if b.text() == '连接模型']
+            self.assertEqual(len(go), 1)
             go[0].click(); self.assertEqual(dialog.nav.current(), 'models')                 # 第一项：聊天模型
         finally:
             dialog.deleteLater()
