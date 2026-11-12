@@ -77,7 +77,10 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 
 ## 📦 Download and install
 
-No Python or command line needed:
+No Python or command line needed.
+
+> [!IMPORTANT]
+> **Turn off Windows Smart App Control before downloading.** Whalemate is not code-signed, so with Smart App Control on, `AICompanion.exe` is blocked and will not start (or shows "This app has been blocked"). To turn it off, open Windows Security → App & browser control → Smart App Control settings and choose Off. On some Windows 11 versions it cannot simply be switched back on afterwards without resetting Windows, so decide before you change it. Windows 10 and PCs without this setting need no change.
 
 1. Open the [Releases page](https://github.com/lsWorl/AICompanion/releases/latest) and download `Whalemate-v<version>-windows-x64.zip`. You can check the file against `SHA256SUMS.txt` on the same page.
 2. Extract it to a folder on a **non-system drive**, e.g. `D:\Apps`. Chats and memories are kept off drive C where possible.
@@ -175,7 +178,7 @@ into **a companion with her own life and moods, who reaches out to you, and whos
 | 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | ✅ Shipped (smart reading, default whale voice); QQ voice messages to do |
 | 9 | Companion dates: days since you met, anniversaries she brings up on the day | ✅ Basic version shipped |
 | — | UI redesign: whale theme, first-run guide, settings autosave | ✅ Shipped |
-| — | Ready-to-run Windows build and uninstaller | 🚧 In progress |
+| — | Ready-to-run Windows build and uninstaller | ✅ Released (v0.1.0) |
 
 "Shipped" means merged into the main line and passing automated tests; real-model, QQ and voice behaviour is confirmed by the owner's hands-on testing.
 
@@ -339,7 +342,7 @@ If you are an author of one of these projects and something here is inaccurate o
 The [MIT License](LICENSE) covers Whalemate's code, documentation, the bundled original whale artwork (sprites and rig textures), application icons (`src/aicompanion/assets/icons/`) and six original sticker images (`src/aicompanion/assets/expression/`).
 
 - **Aboutme Dafeiyu** artwork and locally generated animation sheets follow the [upstream asset notice](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt). Use them only for noncommercial purposes and credit PC2005-cloud/dsh-pet in public derivatives. The repository and release packages exclude these assets.
-- **NapCatQQ v4.18.41** is for non-commercial use under the Limited Redistribution License for NapCat (Copyright © 2024 Mlikiowa). QQ setup checks the bundled archive, the original ZIP or its containing directory selected in QQ advanced settings, then the download cache and official URL. A local personal build keeps the archive, full license and attribution in `third-party/napcat/`. NapCat, the Tencent QQ runtime and Node.js have their own licenses and are outside Whalemate’s MIT license.
+- **NapCatQQ v4.18.41** is for non-commercial use under the Limited Redistribution License for NapCat (Copyright © 2024 Mlikiowa). QQ setup checks the bundled archive, the original ZIP or its containing directory selected in QQ advanced settings, then the download cache and official URL. The zip on Releases ships the unmodified official NapCat Windows archive with its full license and attribution in `third-party/napcat/`, so QQ setup no longer downloads it from GitHub. NapCat, the Tencent QQ runtime and Node.js have their own licenses and are outside Whalemate’s MIT license.
 - **Live2D Cubism Core**, under the [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html). Neither the repository nor the packaged builds **include** Core. It is only needed to import external Live2D models; users download it themselves from Live2D with `tools/fetch_avatar.py`, which means accepting that license. Because Whalemate can import arbitrary models, distributing a build that bundles Core may count as an [Expandable Application](https://www.live2d.com/en/sdk/license/expandable/), which requires Live2D review and a special Publication License Agreement; the exemptions for individuals and small businesses do not apply. `tools/build_windows.py` strips Core from builds by default; `--keep-cubism-core` is for your own machine only and must not be distributed.
 - **Twemoji graphics** (`assets/stickers/daily-reactions-v2/images/twemoji/`, `sources/twemoji-svg/`): Copyright Twitter, Inc. and other contributors, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), not MIT. We rendered the original SVGs to 256×256 PNGs without changing the artwork. The full license text is in [`licenses/TWEMOJI-CC-BY-4.0.txt`](assets/stickers/daily-reactions-v2/licenses/TWEMOJI-CC-BY-4.0.txt); keep the attribution and license link when redistributing.
 - **Whale-girl sticker GIFs**: copyright remains with the artist 可以叫我云大人 / 雾雪 ([bilibili](https://space.bilibili.com/103739) · [kiriyuki.com](https://kiriyuki.com)); noncommercial sharing only, keeping the artist's links. The repository and release packages exclude them. The whale entries' annotations in `catalog.json` draw on the [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) knowledge base (CC BY-NC 4.0); that part is not under MIT. See [`licenses/WHALE-ASSETS.txt`](assets/stickers/daily-reactions-v2/licenses/WHALE-ASSETS.txt).
