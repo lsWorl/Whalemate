@@ -13,12 +13,12 @@ def schedule_smoke_check(window, database, output):
         view.bridge.loaded.connect(lambda status: state.update(avatar_ready=status in ('ready', 'animation-ready', 'illustration-ready')))
     else:
         # 鲸娘等原生立绘角色在构造时已经加载完毕。
-        state.update(page_loaded=True, avatar_ready=window.pet.isVisible() or True, renderer=type(view).__name__)
+        state.update(page_loaded=True, avatar_ready=window.pet.isVisible() and view is not None, renderer=type(view).__name__)
     QTimer.singleShot(1500, lambda: window.submit('今天有点累。'))
     QTimer.singleShot(1800, lambda: window.submit('请先听我说。'))
 
     def finish():
-        rows = database.recent_messages()
+        rows = database.recent_messages(character_id=window.controller.character.id)
         state['roles'] = [row['role'] for row in rows]
         state['passed'] = state['page_loaded'] and state['avatar_ready'] and state['roles'] == ['user', 'user', 'assistant']
         window.grab().save(str(output/'window.png')); window.pet.grab().save(str(output/'pet.png'))
@@ -26,3 +26,4 @@ def schedule_smoke_check(window, database, output):
         window.request_exit()
 
     QTimer.singleShot(8000, finish)
+    return state
