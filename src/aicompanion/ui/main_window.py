@@ -799,7 +799,7 @@ class MainWindow(QMainWindow):
             if extra: self.speech.enqueue(extra,'interjection:'+str(generation))
 
     def speak_reply(self,text,expressions=(),spoken_summary=None):
-        """干活结果等一次性文字：完整朗读模式念全文，否则只发一声。"""
+        """办事结果优先念同轮口播；缺省使用当前朗读模式。"""
         if not self.speech.enabled or not text: return
         # 每份结果一个独立的朗读轮次：上一份退回本地朗读 / 出错，不影响下一份（Codex PR #39 第 2 项）
         generation='agent:'+uuid4().hex
