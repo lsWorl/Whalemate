@@ -22,6 +22,7 @@ import threading
 from uuid import uuid4
 
 from aicompanion.domain.cancellation import CancellationToken
+from aicompanion.qq.specs import MIN_PROACTIVE_PLUGIN, plugin_version
 
 PLATFORM_NAMES = {'qq': 'QQ'}
 MAX_TEXT = 1500
@@ -979,23 +980,20 @@ class BridgeService:
     # 生成和桌面主动消息是同一个大脑、同一段和爹的记录（desktop 频道）；生成完放进发件箱，插件下一次心跳（15 秒内）取走，
     # 用 AstrBot 的主动发送接口发到爹的 QQ 私聊，再回报发没发成。没发出去的话从记录里拿掉（不算她说过）。
     # 投递的几个时限见 bridge/outbox.py：没被取走、取走了没来领取、领取了没回执。
-    # 插件 0.10.0 起先领取再发送、回执带第一段实际发出的时间和发出了几段（Codex PR #46 第三轮），旧插件不再用来主动发
     from aicompanion.bridge.outbox import QUEUE_TTL as OUTBOX_TTL, CLAIM_TTL, ACK_TTL
-    PROACTIVE_PLUGIN = (0, 10, 1)   # 0.10.1：超时只算不确定、中途停用不报 sent、首达按领取后的秒数（Codex PR #46 第四轮）
 
-    def qq_ready(self) -> bool:
-        """能不能主动发 QQ：接口开着、绑定了爹、插件 1 分钟内有心跳且 QQ 已连上、插件版本支持发件箱（0.9.0 起）。"""
+    def qq_ready(self, beat=None) -> bool:
+        """生成时看最近心跳，交件时只看本次请求，避免其他客户端的版本替旧插件放行。"""
         from aicompanion.bridge.server import runtime
-        beat = runtime.last_heartbeat or {}
+        if beat is None: beat = runtime.last_heartbeat or {}
         owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
-        version = re.fullmatch(r'plugin-(\d+)\.(\d+)\.(\d+)', str(beat.get('astrbot') or ''))
         return bool(not self.closed and re.fullmatch(r'\d{5,12}', owner) and beat and time.time()-beat.get('at', 0) < 60
-                    and (beat.get('onebot') or {}).get('connected') and version
-                    and tuple(int(x) for x in version.groups()) >= self.PROACTIVE_PLUGIN)
+                    and (beat.get('onebot') or {}).get('connected')
+                    and plugin_version(beat.get('astrbot')) >= MIN_PROACTIVE_PLUGIN)
 
     def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None) -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
-        on_queued(轮次)：放进发件箱时；on_taken(轮次)：插件领取、开始发送时；on_done(Delivery)：有结果时（发出 / 部分 / 失败 / 未知）。
+        on_queued(轮次)：生成前绑定调度记录，显式返回 False 则取消；on_taken(轮次)：插件领取时；on_done(Delivery)：有结果时。
         回调只是快速通知，结果以 qq_outbox 为准（程序重启后调度器按它对账）。
         这一轮带上的纪念日提醒跟着送达结果走：全部发出才算提过（bridge/outbox.py）。"""
         from aicompanion.bridge.server import runtime
@@ -1022,23 +1020,28 @@ class BridgeService:
             # 聊天窗不会显示一条实际没发出的祝福（Codex PR #46 第四轮 P3）
             store.begin(turn, character.id)
             def give_up():
-                store.settle(turn, 'failed')            # 拿掉回复、放掉这一轮占住的纪念日
+                if store.settle(turn, 'failed') is None:
+                    # 本轮生成期间被清理，回复和纪念日占位可能在清理之后才写入。
+                    from aicompanion.services.companion_dates import CompanionDates
+                    self.database.drop_reply(turn, character.id)
+                    CompanionDates(self.database).release(character.id, turn)
+                controller.expression.cancel(turn, character.id)
                 return None
             try:
+                if on_queued and on_queued(turn) is False:
+                    return give_up()
                 for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
                                              situation=situation, source='qq', offer_tasks=False, purpose='companion',
                                              expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
                 return give_up()
             if self.closed or controller.character.id != character.id or not delivered:
-                if delivered: controller.expression.cancel(turn, character.id)
                 return give_up()
             expression = delivered[-1]; wire = expression.wire(); wire['attachments'] = []
             for attachment in expression.attachments:
                 media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
                 if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
                 item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
-                with self.expression_lock: self.expression_bindings[attachment.delivery_id] = ('qq', owner, '', character.id)
             burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
             segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
@@ -1050,16 +1053,16 @@ class BridgeService:
                 dates.hold(character.id, turn, self.OUTBOX_TTL+self.CLAIM_TTL+self.ACK_TTL+60)
                 keys, day = dates.held(character.id, turn)
             except Exception: pass
-            store.add(turn, character.id, keys, day)
+            if not store.add(turn, character.id, keys, day):
+                return give_up()
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
+                for attachment in wire['attachments']:
+                    self.expression_bindings[attachment['delivery_id']] = ('qq', owner, '', character.id)
                 self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
                 self.outbox_waiting[turn] = (on_done, character.id); self.outbox_taken[turn] = on_taken
-            if on_queued:
-                try: on_queued(turn)
-                except Exception: pass
             return turn
 
     def take_outbox(self) -> list:
@@ -1082,7 +1085,9 @@ class BridgeService:
     def outbox_claim(self, payload) -> dict:
         """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。"""
         turn = str(payload.get('id') or '') if isinstance(payload, dict) else ''
-        if set(payload or {}) != {'id'} or not re.fullmatch(r'[a-f0-9]{32}', turn): return {'allowed': False}
+        if (not re.fullmatch(r'[a-f0-9]{32}', turn) or set(payload) != {'id', 'astrbot'}
+                or plugin_version(payload['astrbot']) < MIN_PROACTIVE_PLUGIN):
+            return {'allowed': False}
         from aicompanion.bridge.outbox import OutboxStore
         if not OutboxStore(self.database, self.clock).claim(turn): return {'allowed': False}
         with self.expression_lock:
@@ -1090,29 +1095,46 @@ class BridgeService:
         if callback:
             try: callback(turn)
             except Exception: pass
-        return {'allowed': True}
+        return {'allowed': True, 'arrival_clock': True}
 
     def outbox_ack(self, payload) -> dict:
-        """插件回报结果：status，第一段实际发出后过了多少秒（first_delay，插件和桌宠不必对表），发出了几段（sent）。
-        可以重发：已经有结果的直接认可，不重复处理；“未知”之后迟到的回执照样补记。"""
-        if not isinstance(payload, dict) or not set(payload) <= {'id', 'status', 'first_delay', 'first_after_claim', 'sent'} or not {'id', 'status'} <= set(payload):
+        """插件回报平台确认的首达时刻和投递结果。回执可重发，也可以补记迟到的确定结果。"""
+        fields = {'id', 'status', 'first_delay', 'first_after_claim', 'first_wall', 'claim_round_trip', 'sent'}
+        if not isinstance(payload, dict) or not set(payload) <= fields or not {'id', 'status'} <= set(payload):
             return {'ok': False}
         turn, status = str(payload['id']), payload['status']
         # unknown：插件 0.10.1 起，发送超时 / 断连（可能已经送到）时如实回报“不确定”，桌宠留着防重、不重发
         if status not in ('sent', 'partial', 'failed', 'unknown') or not re.fullmatch(r'[a-f0-9]{32}', turn): return {'ok': False}
+        if 'sent' in payload:
+            count = payload['sent']
+            if type(count) is not int or count < 0 or (count > 0) != (status in ('sent', 'partial')):
+                return {'ok': False}
         seconds = lambda v: v is None or (not isinstance(v, bool) and isinstance(v, (int, float)) and 0 <= v <= 24*3600)
         delay, after = payload.get('first_delay'), payload.get('first_after_claim')
-        if not seconds(delay) or not seconds(after): return {'ok': False}
+        wall, trip = payload.get('first_wall'), payload.get('claim_round_trip')
+        if not seconds(delay) or not seconds(after) or not seconds(trip): return {'ok': False}
+        if 'first_wall' in payload or 'claim_round_trip' in payload:
+            if (type(wall) not in (int, float) or not 0 <= wall <= 253402300799
+                    or None in (trip, after, delay)):
+                return {'ok': False}
         from aicompanion.bridge.outbox import OutboxStore
         store = OutboxStore(self.database, self.clock)
         row = store.get(turn)
         if row is None: return {'ok': False}
         first = None
         if status in ('sent', 'partial'):
-            # 首达时间：优先用“领取时刻（桌宠自己记的）+ 领取后几秒发出”，回执 POST 在路上耽搁多久都不影响；
-            # 旧回执只有 first_delay 时退回“收到回执的时刻 − first_delay”（Codex PR #46 第四轮）
-            if after is not None and row['claimed_at']: first = min(self.clock(), float(row['claimed_at'])+float(after))
-            else: first = self.clock()-float(delay or 0)
+            now = self.clock()
+            if after is not None and row['claimed_at'] is not None:
+                lower = min(now, float(row['claimed_at']) + after)
+                first = lower  # 0.10.1 的旧回执只有这个领取下界
+                if trip is not None:
+                    # 领取响应耗时介于 0 和整个领取往返之间。回执出发一定早于到达桌宠，
+                    # 两个独立上界取小值，ACK 重试或任一方向单独延迟都不会扩大另一侧的边界。
+                    upper = max(lower, min(lower + trip, now - delay))
+                    # 同机墙钟能区分两侧同时延迟。异钟落在区间外时保守取上界，避免把未见消息时的发言算作回复。
+                    first = wall if lower <= wall <= upper else upper
+            else:
+                first = now - float(delay or 0)
         self._notify(turn, store.settle(turn, status, first))
         return {'ok': True}
 

@@ -56,13 +56,18 @@ class OutboxStore:
     def begin(self, turn: str, character_id: str) -> None:
         """开始生成前先记一条：生成出来的回复写进聊天记录后、放进发件箱前程序退出，启动时能认出这条回复没发出去。"""
         with self.db.transaction() as c:
-            c.execute('INSERT OR REPLACE INTO qq_outbox(turn_id, character_id, status, created_at) VALUES (?,?,?,?)',
+            c.execute('INSERT INTO qq_outbox(turn_id, character_id, status, created_at) VALUES (?,?,?,?)',
                       (turn, character_id, 'generating', self.clock()))
 
-    def add(self, turn: str, character_id: str, date_keys=(), day: str = '') -> None:
+    def add(self, turn: str, character_id: str, date_keys=(), day: str = '') -> bool:
+        """生成完成后入队。清理器可能已判定这一轮过期，旧线程恢复时不能覆盖结果。"""
         with self.db.transaction() as c:
-            c.execute('INSERT OR REPLACE INTO qq_outbox(turn_id, character_id, status, date_keys, date_day, created_at) VALUES (?,?,?,?,?,?)',
-                      (turn, character_id, 'queued', json.dumps(list(date_keys), ensure_ascii=False), day, self.clock()))
+            return c.execute("""INSERT INTO qq_outbox(turn_id, character_id, status, date_keys, date_day, created_at)
+                                VALUES (?,?,'queued',?,?,?)
+                                ON CONFLICT(turn_id) DO UPDATE SET status='queued', date_keys=excluded.date_keys,
+                                    date_day=excluded.date_day, created_at=excluded.created_at
+                                WHERE qq_outbox.status='generating' AND qq_outbox.character_id=excluded.character_id""",
+                             (turn, character_id, json.dumps(list(date_keys), ensure_ascii=False), day, self.clock())).rowcount == 1
 
     def get(self, turn: str):
         with self.db.transaction() as c:
@@ -78,16 +83,16 @@ class OutboxStore:
             return c.execute("UPDATE qq_outbox SET status='claimed', claimed_at=? WHERE turn_id=? AND status='dequeued' AND dequeued_at>=?",
                              (self.clock(), turn, self.clock()-CLAIM_TTL)).rowcount == 1
 
-    def settle(self, turn: str, status: str, first_at: float | None = None) -> Delivery | None:
+    def settle(self, turn: str, status: str, first_at: float | None = None, *, expected: str | None = None) -> Delivery | None:
         """记下结果并处理连带的事（纪念日、聊天记录）。已经有确定结果的不再改（回执重发时幂等）；返回这次新定下的结果。"""
         now = self.clock()
         allowed = {'sent': ('claimed', 'unknown'), 'partial': ('claimed', 'unknown'),
                    'failed': ('generating', 'queued', 'dequeued', 'claimed', 'unknown'), 'unknown': ('claimed',)}[status]
         with self.db.transaction() as c:
             row = c.execute('SELECT * FROM qq_outbox WHERE turn_id=?', (turn,)).fetchone()
-            if row is None or row['status'] not in allowed: return None
-            c.execute(f"UPDATE qq_outbox SET status=?, first_sent_at=?, settled_at=? WHERE turn_id=? AND status IN ({','.join('?'*len(allowed))})",
-                      (status, first_at, now, turn, *allowed))
+            if row is None or row['status'] not in allowed or (expected and row['status'] != expected): return None
+            if not c.execute("UPDATE qq_outbox SET status=?, first_sent_at=?, settled_at=? WHERE turn_id=? AND status=?",
+                             (status, first_at, now, turn, row['status'])).rowcount: return None
             self._after(c, row, status)                    # 同一个事务：结果和连带写入要么都在、要么都不在
         try:                                               # 这一轮在内存里的纪念日占位（重启后已经没有了）
             from aicompanion.services.companion_dates import CompanionDates
@@ -117,6 +122,6 @@ class OutboxStore:
                              (now-GENERATING_TTL, now-QUEUE_TTL, now-CLAIM_TTL, now-ACK_TTL)).fetchall()
         done = []
         for row in rows:
-            result = self.settle(row['turn_id'], 'unknown' if row['status'] == 'claimed' else 'failed')
+            result = self.settle(row['turn_id'], 'unknown' if row['status'] == 'claimed' else 'failed', expected=row['status'])
             if result: done.append((row['turn_id'], row['character_id'], result))
         return done

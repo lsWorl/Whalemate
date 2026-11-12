@@ -5,8 +5,9 @@ GET  /v1/ping   → {"ok": true, "name": 角色名}
 POST /v1/heartbeat {"astrbot","onebot":{"connected","self_id","error"},"groups":[{"id","name"}]}
                 → {"ok": true, "groups": [允许的群号], "media": {...}, "outbox"?: [主动发到 QQ 私聊的消息]}
                   插件每 15 秒一次：桌宠据此显示连接状态，插件据此拿到允许的群和待发的主动消息
-POST /v1/outbox/claim {"id"} → {"allowed"}（插件 0.10.0 起：领取成功才发送）
-POST /v1/outbox/ack {"id","status": sent|partial|failed|unknown, "first_delay"?: 第一段发出后过了几秒, "first_after_claim"?: 领取后几秒第一段发出, "sent"?: 发出了几段} → {"ok"}（可重发）
+POST /v1/outbox/claim {"id","astrbot"} → {"allowed", "arrival_clock"?}（领取成功才发送）
+POST /v1/outbox/ack {"id","status","sent","first_delay"?,"first_after_claim"?,"first_wall"?,"claim_round_trip"?} → {"ok"}
+                  首次平台确认的墙钟时刻及单调耗时用于对齐首达时间；重试沿用同一首次确认。
 """
 from __future__ import annotations
 
@@ -75,20 +76,21 @@ class BridgeServer:
         for item in (payload.get('groups') or [])[:500]:
             if isinstance(item, dict) and re.fullmatch(r'\d{5,12}', str(item.get('id', ''))):
                 groups.append({'id': str(item['id']), 'name': str(item.get('name') or '')[:40]})
-        runtime.last_heartbeat = {'at': time.time(), 'astrbot': str(payload.get('astrbot') or '')[:20], 'groups': groups,
-                                  'onebot': {'connected': bool(onebot.get('connected')), 'self_id': str(onebot.get('self_id') or '')[:20],
-                                             'error': str(onebot.get('error') or '')[:200]}}
+        beat = {'at': time.time(), 'astrbot': str(payload.get('astrbot') or '')[:20], 'groups': groups,
+                'onebot': {'connected': bool(onebot.get('connected')), 'self_id': str(onebot.get('self_id') or '')[:20],
+                           'error': str(onebot.get('error') or '')[:200]}}
+        runtime.last_heartbeat = beat
         from aicompanion.bridge.service import setting
-        # 主动发到 QQ 私聊的消息跟着心跳回给插件（插件 0.9.0 起会发；旧插件忽略这个字段，条目过期后从记录里拿掉）
         take = getattr(self.service, 'take_outbox', None)
-        outbox = take() if take else []
+        outbox = take() if take and self.service.qq_ready(beat) else []
         reply = {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []],
                 # 插件据此决定要不要下载别人发的图：识图关了或现在接的模型不收图片，就不传（只标一个中性的 [图片]）
                 'media': {'vision': (self.service.vision_ready() if hasattr(self.service, 'vision_ready') else bool(self.service.database.get_setting('qq_vision_enabled', True))),
                           # 插件据此决定要不要把别人发的表情包原图附上来（关掉收集就不传图）
                           'collect': bool(self.service.database.get_setting('sticker_collect_enabled', True)),
                           'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸鲸')}}
-        if outbox: reply['outbox'] = outbox
+        if outbox:
+            reply['outbox'] = [dict(item, require_plugin_version=True) for item in outbox]
         return reply
 
     @property

@@ -23,8 +23,8 @@ class FakeGreetings:
 
 class FakePurposes:
     def __init__(self): self.rows = []; self.log = []
-    def delivered(self, pid): self.log.append(('delivered', pid))
-    def release(self, pid): self.log.append(('release', pid))
+    def delivered(self, pid, *, connection=None): self.log.append(('delivered', pid))
+    def release(self, pid, *, connection=None): self.log.append(('release', pid))
     def due(self, cid, idle, since): return self.rows.pop(0) if self.rows else None
     def intent(self, row): return '心事：'+row['content']
 
@@ -285,8 +285,12 @@ class CodexRoundTwoTests(SchedulerTests):
         self.assertEqual(SCHEMA_VERSION, 13)
         path = Path(self.tmp.name)/'v12.sqlite3'
         db = Database(path); db.initialize()
-        db.add_message('user', '基线里的旧消息', CID); db.set_setting('proactive_daily_limit', 3)
+        old_message = db.add_message('user', '基线里的旧消息', CID)
+        db.set_setting('proactive_daily_limit', 3)
         with closing(sqlite3.connect(path)) as conn:
+            # 旧消息早于测试时钟一天；用机器当天的 CURRENT_TIMESTAMP 会偶尔触发“三分钟内不插嘴”。
+            old_stamp = datetime.fromtimestamp(self.now[0]-24*HOUR, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            conn.execute('UPDATE chat_messages SET created_at=? WHERE id=?', (old_stamp, old_message))
             conn.execute('DROP TABLE outreach_log'); conn.execute('DROP TABLE qq_outbox'); conn.execute('PRAGMA user_version=12'); conn.commit()
         for backup in Path(self.tmp.name).glob('v12.backup-*'): backup.unlink()
         db = Database(path); db.initialize()
@@ -352,7 +356,7 @@ class CodexRoundThreeTests(CodexRoundTwoTests):
     def test_never_claimed_is_failed_and_given_back(self):
         """交出去了插件却没来领取（没读到心跳响应）：确定没发。撤掉记录，问候的占位放回。"""
         released = []
-        self.db.release_proactive = lambda cid, key: released.append(key)
+        self.db.release_proactive = lambda cid, key, **kwargs: released.append(key)
         receipts = []; cls, window = self.window(receipts, hand='9'*32, claim=False)
         outreach = self.s.next(CID, 0, 9999)
         cls._deliver_outreach(window, CID, outreach)
@@ -441,7 +445,7 @@ class CodexRoundFourTests(CodexRoundTwoTests):
         outreach, receipts, store = self.qq_purpose('8'*32)
         store.settle('8'*32, 'sent', self.now[0]+2)
         calls = []
-        def delivered(pid):
+        def delivered(pid, *, connection=None):
             calls.append(pid)
             if len(calls) == 1: raise SystemExit                                              # 第一次：写到一半进程没了
             self.purposes.log.append(('delivered', pid))

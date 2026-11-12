@@ -213,6 +213,13 @@ class BridgePage(QWidget):
         if code == 'need_owner': return self.save_people()
         if code == 'stopped': return self._run(self.qq.start, '正在启动…')
         if code == 'bridge_off': return self._run(self._apply_bridge, '正在打开接口…')
+        if code == 'plugin_outdated':
+            if self.qq.mode == 'auto':
+                return self._run(self._retry, '正在更新插件并重启 QQ 服务…')
+            root = self.database.get_setting('qq_existing_root', '')
+            if root:
+                return self._run(lambda: self.qq.attach_existing(root), '正在更新 AstrBot 插件…')
+            return self._attach_existing()
         if code == 'plugin_missing' and self.qq.mode == 'existing':
             return QMessageBox.information(self, '接入已有的 AstrBot', '桌宠已经把插件装到你的 AstrBot 里了。请在 AstrBot 管理面板的"插件"里重载 '
                                            'astrbot_plugin_aicompanion（或重启 AstrBot），并确认 NapCat 已经连上 AstrBot。')
