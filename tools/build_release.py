@@ -12,13 +12,17 @@ import tempfile
 import tomllib
 import zipfile
 
+# 源码运行构建工具时也使用随应用打包的清单格式。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src'))
+from aicompanion.release_manifest import EXE, MANIFEST, inventory
+
 if __package__:
     from .build_windows import character_data_args
 else:
     from build_windows import character_data_args
 
 ROOT = Path(__file__).resolve().parents[1]
-UNINSTALLER = 'UninstallWhalemate'
+UNINSTALLER = Path(EXE).stem
 PUBLIC = ('LICENSE', 'README.md', 'README.en.md', '.env.example',
           'docs/aboutme-pet.md', 'docs/live2d_model_sources.md', 'docs/storage-locations.md',
           'tools/install_aboutme_pet.py', 'tools/aboutme-pet.lock.json', 'tools/aboutme-requirements.txt')
@@ -83,9 +87,9 @@ def freeze(work, name, entry, version, options):
                    env=dict(os.environ, PATH=os.pathsep.join(clean_path), PYINSTALLER_CONFIG_DIR=str(work/'pyinstaller-cache')))
 
 
-def package(work, bundle, release, version):
+def validated_members(bundle, required_files):
     members = sorted(bundle.rglob('*'))
-    for required in (*PUBLIC, 'AICompanion.exe', UNINSTALLER+'.exe'):
+    for required in required_files:
         if not (bundle/required).is_file():
             raise ValueError(f'发布包缺少 {required}')
     for item in members:
@@ -100,6 +104,13 @@ def package(work, bundle, release, version):
             with item.open('rb') as stream:
                 if stream.read(16) == b'SQLite format 3\0':
                     raise ValueError(f'发布目录含 SQLite 数据库：{relative}')
+    return members
+
+
+def package(work, bundle, release, version):
+    members = validated_members(bundle, (*PUBLIC, 'AICompanion.exe', EXE, MANIFEST))
+    if (bundle/MANIFEST).read_bytes() != inventory(bundle):
+        raise ValueError('发布内容与冻结卸载程序时生成的清单不一致')
     name = f'Whalemate-v{version}-windows-x64.zip'
     archive = work/name
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
@@ -137,12 +148,15 @@ def main():
         # 唯一允许剔除的是构建机 PATH 里的冲突 ICU DLL，Qt 在 Windows 上使用系统 ICU。
         for name in ('icuuc.dll', 'icudt78.dll'):
             (bundle/'_internal'/name).unlink(missing_ok=True)
-        freeze(work, UNINSTALLER, 'tools/uninstall_entry.py', version, [
-            '--onefile', '--add-data', f'{work/"assets/icons"}:aicompanion/assets/icons'])
-        (work/'dist'/(UNINSTALLER+'.exe')).rename(bundle/(UNINSTALLER+'.exe'))
         for name in PUBLIC:
             (bundle/name).parent.mkdir(exist_ok=True)
             shutil.copy2(ROOT/name, bundle/name)
+        validated_members(bundle, (*PUBLIC, 'AICompanion.exe'))
+        manifest = bundle/MANIFEST
+        manifest.write_bytes(inventory(bundle))
+        freeze(work, UNINSTALLER, 'tools/uninstall_entry.py', version, [
+            '--onefile', '--add-data', f'{manifest}:.', '--add-data', f'{work/"assets/icons"}:aicompanion/assets/icons'])
+        (work/'dist'/EXE).rename(bundle/EXE)
         package(work, bundle, ROOT/'dist/release', version)
 
 

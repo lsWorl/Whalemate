@@ -54,6 +54,10 @@ class UninstallWindow(QDialog):
         self.gallery.hide()
         self.gallery.toggled.connect(self.refresh)
         body.addWidget(self.gallery)
+        self.trash = QCheckBox('同时清空办事回收区和旧版快照（里面是她替你删除或修改的文件，删了就找不回）')
+        self.trash.hide()
+        self.trash.toggled.connect(self.refresh)
+        body.addWidget(self.trash)
         self.confirm = QCheckBox('我知道删除后无法恢复')
         self.confirm.setVisible(not preview)
         body.addWidget(self.confirm)
@@ -89,6 +93,8 @@ class UninstallWindow(QDialog):
         self.rescan.setEnabled(False)
         self.gallery.hide()
         self.gallery.setChecked(False)
+        self.trash.hide()
+        self.trash.setChecked(False)
         self.details.clear()
         self.status.setText('正在扫描鲸伴程序和存储位置…')
         self.bar.setRange(0, 0)
@@ -113,12 +119,14 @@ class UninstallWindow(QDialog):
         self.gallery.setEnabled(True)
         self.bar.hide()
         self.gallery.setVisible(bool(plan.galleries))
+        self.trash.setEnabled(True)
+        self.trash.setVisible(bool(plan.trash))
         self.refresh()
 
     def refresh(self):
         if self.plan:
             self.confirm.setChecked(False)
-            self.details.setPlainText('\n'.join(self.plan.lines(self.gallery.isChecked())))
+            self.details.setPlainText('\n'.join(self.plan.lines(self.gallery.isChecked(), self.trash.isChecked())))
             self.status.setText('请核对每一项的路径、大小和用途。' if not self.preview else '卸载预览')
 
     def progress(self, done, total, path):
@@ -130,12 +138,14 @@ class UninstallWindow(QDialog):
         if self.preview or not self.confirm.isChecked() or self.worker.isRunning():
             return
         confirmed, galleries = self.confirm.isChecked(), self.gallery.isChecked()
+        trash = self.trash.isChecked()
         self.confirm.setEnabled(False)
         self.gallery.setEnabled(False)
+        self.trash.setEnabled(False)
         self.remove.setEnabled(False)
         self.rescan.setEnabled(False)
         self.bar.show()
-        self.run_job(lambda job: execute(self.plan, confirmed=confirmed, galleries=galleries,
+        self.run_job(lambda job: execute(self.plan, confirmed=confirmed, galleries=galleries, trash=trash,
                                          progress=lambda i, n, path: job.progress.emit(i, n, str(path))), self.complete)
 
     def error(self, message):
@@ -159,6 +169,7 @@ class UninstallWindow(QDialog):
         self.bar.hide()
         self.confirm.hide()
         self.gallery.hide()
+        self.trash.hide()
         self.remove.hide()
         self.rescan.hide()
 

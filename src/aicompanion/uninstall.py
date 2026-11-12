@@ -17,7 +17,7 @@ from aicompanion.qq.supervisor import Supervisor, process_identity
 from aicompanion.storage.locations import DATABASE_NAME, default_data_root, read_record
 from aicompanion.ui.desktop_integration import RUN_KEY, RUN_NAME
 
-EXE = 'UninstallWhalemate.exe'
+from aicompanion.release_manifest import EXE, MANIFEST, file_digest, read_inventory, trusted_inventory
 # 存储文档使用同一组名称；每项的实际路径、文件大小另外列出。
 PROGRAM = '程序、运行配置与本机安装的角色资源'
 MEMORY = '记忆数据库、备份、迁移记录和数据库内的 DPAPI 凭据'
@@ -29,7 +29,8 @@ LOW = '办事沙箱和 DSH 会话'
 QQ = 'QQ 组件和运行环境'
 TRASH = '办事回收区和旧版快照'
 STARTUP = '当前用户的鲸伴开机启动项'
-CATEGORIES = (PROGRAM, MEMORY, RECORD, MEMES, EXTERNAL, LOCAL, LOW, QQ, TRASH, STARTUP)
+OTHER = '用户文件和受保护的目录'
+CATEGORIES = (OTHER, PROGRAM, MEMORY, RECORD, MEMES, EXTERNAL, LOCAL, LOW, QQ, TRASH, STARTUP)
 
 
 @dataclass
@@ -63,6 +64,31 @@ class Locations:
             default = install/'data'
         return cls(install, default, local, home, tuple(map(Path, os.listdrives())))
 
+    def personal_folders(self):
+        names = ('Desktop', 'Downloads', 'Documents', 'Pictures', 'Music', 'Videos', 'OneDrive')
+        folders = {self.home/name for name in names}
+        if not self.fence:
+            # User Shell Folders 保存 Windows 已知目录的当前位置，包括重定向到其他盘的桌面。
+            import winreg
+            keys = ('Desktop', 'Personal', 'My Pictures', 'My Music', 'My Video',
+                    '{374DE290-123F-4565-9164-39C4925E467B}', 'OneDrive')
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                    r'Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders') as shell:
+                    for key in keys:
+                        try:
+                            value, kind = winreg.QueryValueEx(shell, key)
+                        except FileNotFoundError:
+                            continue
+                        if kind in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) and value:
+                            folders.add(Path(os.path.expandvars(value)))
+            except FileNotFoundError:
+                pass
+            for key in ('OneDrive', 'OneDriveConsumer', 'OneDriveCommercial'):
+                if value := os.getenv(key):
+                    folders.add(Path(value))
+        return folders
+
     def check(self, path):
         path = Path(path)
         if (not path.is_absolute() or '..' in path.parts or path.drive.startswith('\\\\')
@@ -95,14 +121,19 @@ class Item:
 class Plan:
     locations: Locations
     items: dict[Path, Item] = field(default_factory=dict)
+    shipped_stats: dict[Path, tuple[int, int]] = field(default_factory=dict)
     galleries: set[Path] = field(default_factory=set)
+    trash: set[Path] = field(default_factory=set)
     external_memory: set[Path] = field(default_factory=set)
     qq: set[Path] = field(default_factory=set)
     startup: tuple | None = None
     notes: list[str] = field(default_factory=list)
 
-    def add(self, path, category, *, tree=False, empty_after=False):
+    def add(self, path, category, *, tree=False, empty_after=False, shallow=False):
         path = self.locations.check(path)
+        if tree and path == self.locations.install:
+            # 安装目录可能也被用作应用缓存目录，仍须按发布清单逐一认领。
+            return
         try:
             info = path.lstat()
         except FileNotFoundError:
@@ -112,7 +143,7 @@ class Plan:
         directory = stat.S_ISDIR(info.st_mode)
         if empty_after and (not directory or any(child not in self.items for child in path.iterdir())):
             return
-        if directory and not (tree or empty_after):
+        if directory and not (tree or empty_after or shallow):
             raise ValueError(f'预期为文件，却找到目录：{path}')
         # 先登记的专用类别保留，外部图库在整个清单建好后单独过滤。
         if path in self.items:
@@ -122,25 +153,35 @@ class Plan:
             for child in sorted(path.iterdir()):
                 self.add(child, category, tree=True)
 
-    def selected(self, galleries=False):
+    def selected(self, galleries=False, trash=False):
+        optional = set()
+        if not galleries:
+            optional.update(self.galleries)
+        if not trash:
+            optional.update(self.trash)
         def wanted(item):
             path = item.path
-            if not galleries and any(path.is_relative_to(g) or g.is_relative_to(path) for g in self.galleries):
+            if item.category == OTHER or any(path.is_relative_to(root) for root in optional):
                 return False
             # 外部记忆位置即使嵌在旧缓存或程序目录里，也只移除可核实的专属文件。
             if item.category not in (MEMORY, RECORD, MEMES, EXTERNAL):
                 if any(path.is_relative_to(m) or m.is_relative_to(path) for m in self.external_memory):
                     return False
             return True
-        return sorted((item for item in self.items.values() if wanted(item)),
+        kept = set()
+        for item in self.items.values():
+            if not wanted(item):
+                kept.add(item.path)
+                kept.update(item.path.parents)
+        return sorted((item for item in self.items.values() if item.path not in kept),
                       key=lambda item: (item.path.is_relative_to(self.locations.install), -len(item.path.parts), str(item.path)))
 
     @property
     def startup_path(self):
         return 'HKCU\\'+self.locations.run_key+'\\'+RUN_NAME
 
-    def lines(self, galleries=False):
-        selected = {item.path for item in self.selected(galleries)}
+    def lines(self, galleries=False, trash=False):
+        selected = {item.path for item in self.selected(galleries, trash)}
         for item in self.items.values():
             action = '删除' if item.path in selected else '保留'
             yield f'{action}\t{item.size} B\t{item.category}\t{item.path}'
@@ -193,10 +234,68 @@ def database_files(plan, path):
                 plan.add(entry, MEMORY)
 
 
-def scan(locations):
+def scan_program(plan, files, directories):
+    install = plan.locations.install
+    core = install/'_internal/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js'
+    runtime = {install/'.env', core, *(install/name/'startup.log' for name in ('bundle-smoke', 'bundle-pet-smoke'))}
+    # 仅识别随包角色目录下的动画和安装器使用的确切缓存位置。
+    characters = install/'_internal/aicompanion/characters'
+    character_dirs = {p.parent for p in files if p.name == 'character.json' and p.parent.parent == characters}
+    cache = install/'output/aboutme-cache'
+    containers = {cache}
+    for path in (*runtime, cache, *plan.items):
+        if path.is_relative_to(install):
+            containers.update(p for p in path.parents if p.is_relative_to(install))
+    protected = plan.locations.personal_folders()
+
+    def matches_release(path):
+        if path not in files:
+            return False
+        record = files[path]
+        if record is None:
+            return True
+        try:
+            info = path.stat()
+            if info.st_size != record['size'] or file_digest(path) != record['sha256']:
+                return False
+            plan.shipped_stats[path] = (info.st_size, info.st_mtime_ns)
+            return True
+        except OSError as error:
+            plan.notes.append(f'无法核对发布文件，已保留：{path}（{error}）')
+            return False
+
+    def visit(folder):
+        for path in sorted(folder.iterdir()):
+            if path in plan.items:
+                continue
+            plan.locations.check(path)
+            animation = path.parent in character_dirs and path.name.startswith('animation-')
+            animation_file = path.parent.parent in character_dirs and path.parent.name.startswith('animation-')
+            generated = (path in runtime
+                         or (path.parent == cache and path.suffix in ('.webp', '.partial'))
+                         or (animation_file and (path.suffix in ('.webp', '.png') or
+                             path.name in ('animations.json', 'animations.partial.json', 'SOURCE.json'))))
+            if path.is_dir() and (path in directories or path in containers or animation):
+                visit(path)
+            else:
+                owned = path.is_file() and (generated or matches_release(path))
+                plan.add(path, PROGRAM if owned else OTHER, shallow=True)
+        # 上级目录用 rmdir；只要有一项保留，selected() 就会一起保留其所有上级。
+        owned = (folder == install or folder in directories or
+                 any(plan.items.get(p) and plan.items[p].category != OTHER for p in folder.iterdir()))
+        plan.add(folder, PROGRAM if owned and folder not in protected else OTHER, shallow=True)
+
+    visit(install)
+
+
+def scan(locations, trusted_manifest=None):
     install = locations.check(locations.install)
     if not (install/'AICompanion.exe').is_file() or not (install/'_internal').is_dir() or not (install/EXE).is_file():
         raise ValueError(f'这里不是完整的鲸伴程序目录：{install}')
+    locations.check(install/MANIFEST)
+    if trusted_manifest is None:
+        trusted_manifest = trusted_inventory()
+    files, directories = read_inventory(install, trusted_manifest)
     plan = Plan(locations)
     default = locations.check(locations.default)
     local = locations.check(locations.local)
@@ -260,7 +359,7 @@ def scan(locations):
         if settings.get('qq_meme_root'):
             plan.galleries.add(locations.check(settings['qq_meme_root']))
         if settings.get('blog_root'):
-            plan.add(Path(settings['blog_root'])/'.aicompanion-trash', TRASH, tree=True)
+            plan.trash.add(Path(settings['blog_root'])/'.aicompanion-trash')
     plan.galleries.difference_update(default_galleries)
     for gallery in plan.galleries.copy():
         if install.is_relative_to(gallery) or local.is_relative_to(gallery):
@@ -284,17 +383,25 @@ def scan(locations):
             for name in ('manifest.json', 'downloads', 'napcat', 'uv', 'astrbot', 'python', 'uv-cache',
                          'astrbot-home', 'napcat-home', 'qq-data', 'logs'):
                 plan.add(root/name, QQ, tree=name != 'manifest.json')
+    plan.trash.add(local/'trash')
     for drive in locations.drives:
         for name in ('.aicompanion-trash', '.aicompanion-snapshots'):
             # 没有挂载介质的盘符不参与枚举。
             if (drive/name).is_dir():
-                plan.add(drive/name, TRASH, tree=True)
+                plan.trash.add(drive/name)
+    plan.trash = {path for path in plan.trash if locations.check(path).is_dir()}
+    for path in sorted(plan.trash):
+        plan.add(path, TRASH, tree=True)
     plan.add(default, MEMORY, empty_after=True)
     if default.parent != install and default.parent.name.casefold() == 'aicompanion':
         plan.add(default.parent, RECORD, empty_after=True)
-    plan.add(local, LOCAL, tree=True)
+    if local == install:
+        for name in ('voice-cache', 'models', 'rigs', 'rig_import', 'logs'):
+            plan.add(local/name, LOCAL, tree=True)
+    else:
+        plan.add(local, LOCAL, tree=True)
     plan.add(locations.home/'AppData/LocalLow/AICompanion', LOW, tree=True)
-    plan.add(install, PROGRAM, tree=True)
+    scan_program(plan, files, directories)
     startup = registry_value(locations)
     if startup and isinstance(startup[0], str) and Path(startup[0].strip('"')) == install/'AICompanion.exe':
         plan.startup = startup
@@ -332,18 +439,19 @@ def ensure_stopped(plan):
 def validate_item(plan, item):
     path = plan.locations.check(item.path)
     info = path.lstat()
-    if ((info.st_dev, info.st_ino) != item.identity or item.directory != stat.S_ISDIR(info.st_mode)
+    if ((path in plan.shipped_stats and plan.shipped_stats[path] != (info.st_size, info.st_mtime_ns))
+            or (info.st_dev, info.st_ino) != item.identity or item.directory != stat.S_ISDIR(info.st_mode)
             or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
         raise ValueError(f'预览后路径已被替换，请重新预览：{path}')
 
 
-def execute(plan, *, confirmed, galleries=False, progress=lambda *args: None):
+def execute(plan, *, confirmed, galleries=False, trash=False, progress=lambda *args: None):
     if not confirmed:
         raise ValueError('请先勾选“我知道删除后无法恢复”')
-    selected = plan.selected(galleries)
-    for marker in ('AICompanion.exe', '_internal', EXE):
+    selected = plan.selected(galleries, trash)
+    for marker in ('AICompanion.exe', '_internal', EXE, MANIFEST):
         validate_item(plan, plan.items[plan.locations.install/marker])
-    for item in selected:
+    for item in plan.items.values():
         try:
             validate_item(plan, item)
         except OSError:

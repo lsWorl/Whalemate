@@ -1,10 +1,11 @@
 ﻿# 仅操作模拟安装启动的卸载窗口。通过 Windows UI Automation 点击实际复选框与按钮。
-param([Parameter(Mandatory)][string]$Install, [ValidateSet('normal','locked','running')][string]$Scenario)
+param([Parameter(Mandatory)][string]$Install, [ValidateSet('normal','locked','running','desktop','trash')][string]$Scenario)
 $ErrorActionPreference = 'Stop'
 $base = [IO.Path]::GetFullPath($env:WHALEMATE_UNINSTALL_TEST_ROOT)
+$expectedInstall = if ($Scenario -eq 'desktop') { Join-Path $base 'profile\Desktop' } else { Join-Path $base 'Whalemate' }
 if ((Split-Path $base -Leaf) -notmatch '^whalemate-test-[0-9a-f]{32}$' -or
     (Split-Path $base -Parent) -ne [IO.Path]::GetTempPath().TrimEnd('\') -or
-    [IO.Path]::GetFullPath($Install) -ne (Join-Path $base 'Whalemate')) { throw '缺少隔离目录' }
+    [IO.Path]::GetFullPath($Install) -ne $expectedInstall) { throw '缺少隔离目录' }
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 $ae = [Windows.Automation.AutomationElement]
 $subtree = [Windows.Automation.TreeScope]::Descendants
@@ -53,6 +54,13 @@ try {
     $gallery = By-Name '同时删除我的表情图库（里面可能有你自己收集的图片）'
     if ($gallery.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne 'Off') {
         throw '外部图库没有默认保留'
+    }
+    $trash = By-Name '同时清空办事回收区和旧版快照（里面是她替你删除或修改的文件，删了就找不回）'
+    $toggle = $trash.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+    if ($toggle.Current.ToggleState -ne 'Off') { throw '回收区没有默认保留' }
+    if ($Scenario -eq 'trash') {
+        $toggle.Toggle()
+        if ($toggle.Current.ToggleState -ne 'On') { throw '回收区开关未选中' }
     }
     if ($Scenario -eq 'running') {
         # 启动同一份打包程序的真实自检，使用临时数据库，结束后自然退出。

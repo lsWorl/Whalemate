@@ -31,6 +31,14 @@ def extract(archive, target):
                 raise ValueError(f'非法成员路径：{member.filename}')
             check_member(Path(*parts[1:]))
         bundle.extractall(target)
+        manifest = json.loads(bundle.read('Whalemate/_internal/whalemate-files.json'))
+        actual = {i.filename.removeprefix('Whalemate/'): i.file_size for i in bundle.infolist() if not i.is_dir()}
+        expect(actual.keys() == manifest['files'].keys(), '发布清单没有逐一覆盖 zip 内所有文件')
+        for name, size in actual.items():
+            if name not in ('_internal/whalemate-files.json', UNINSTALLER):
+                expect(manifest['files'][name]['size'] == size, '清单大小不符：'+name)
+        directories = {i.filename.removeprefix('Whalemate/').rstrip('/') for i in bundle.infolist() if i.is_dir()}
+        expect(directories == set(manifest['directories']), '清单目录与 zip 不符')
     install = target/'Whalemate'
     for exe in ('AICompanion.exe', UNINSTALLER):
         expect((install/exe).is_file(), '缺少 '+exe)
@@ -80,7 +88,9 @@ def used_machine(root, install, env):
     database = memory/'aicompanion.sqlite3'
     with closing(sqlite3.connect(database)) as conn, conn:
         conn.execute('CREATE TABLE app_settings(key,value)')
-        conn.execute('INSERT INTO app_settings VALUES (?,?)', ('qq_meme_root', json.dumps(str(root/'my-gallery'))))
+        conn.executemany('INSERT INTO app_settings VALUES (?,?)',
+                         [('qq_meme_root', json.dumps(str(root/'my-gallery'))),
+                          ('blog_root', json.dumps(str(root/'blog'))), ('credential:test', '{"blob":"fixture"}')])
     record = Path(env['AICOMPANION_PATHS_FILE'])
     record.parent.mkdir()
     record.write_text(json.dumps({'memory_root':str(memory), 'meme_root':str(root/'my-gallery')}), 'utf-8')
@@ -90,19 +100,24 @@ def used_machine(root, install, env):
              root/'disk/AICompanion/.aicompanion-paths.json', local/'voice-cache/demo.wav', local/'models/asr/test',
              local/'qq/napcat/test', local/'qq/astrbot/test', local/'rigs/test', local/'logs/app.log',
              Path(env['USERPROFILE'])/'AppData/LocalLow/AICompanion/dsh/session',
-             root/'disk/.aicompanion-trash/one/fixture', install/'.env',
-             install/'_internal/aicompanion/characters/deepseek-whale/animation-fixture/synthetic.txt']
+             install/'.env', install/'bundle-smoke/startup.log', install/'output/aboutme-cache/idle.webp',
+             install/'_internal/aicompanion/assets/live2d/vendor/live2dcubismcore.min.js',
+             install/'_internal/aicompanion/characters/deepseek-whale/animation-fixture/idle.webp']
+    trash = [root/'disk/.aicompanion-trash/one/fixture', root/'disk/.aicompanion-snapshots/one/fixture',
+             root/'blog/.aicompanion-trash/one/fixture', local/'trash/one/fixture']
     # SQLite 完成 checkpoint 后也可能保留零长度的 WAL。
     wal = Path(str(database)+'-wal')
     wal.touch()
     keep = [root/'my-gallery/keep.png', memory/'other.sqlite3', root/'unrelated/keep.txt']
-    for path in files+keep:
+    if install == Path(env['USERPROFILE'])/'Desktop':
+        keep.extend([install/'personal-note.txt', install/'School'/'notes.txt', install/'_internal/private-note.txt'])
+    for path in files+keep+trash:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('{}' if path.suffix == '.json' else 'fixture', 'utf-8')
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, test_key(root)) as key:
         winreg.SetValueEx(key, 'AICompanion', 0, winreg.REG_SZ, f'"{install/"AICompanion.exe"}"')
         winreg.SetValueEx(key, 'Unrelated', 0, winreg.REG_SZ, 'keep')
-    return [database, record, *files, wal], keep
+    return [database, record, *files, wal], keep, trash
 
 
 def test_key(root):
@@ -112,14 +127,27 @@ def test_key(root):
 def uninstall_case(root, install, env, scenario):
     import winreg
     locked = scenario == 'locked'
-    deleted, keep = used_machine(root, install, env)
+    deleted, keep, trash = used_machine(root, install, env)
+    desktop = scenario == 'desktop'
+    if desktop:
+        # 同名同大小的私人文档也不能被路径清单误认。
+        personal_readme = install/'README.en.md'
+        personal_bytes = b'x'*personal_readme.stat().st_size
+        personal_readme.write_bytes(personal_bytes)
     result = subprocess.run([str(install/UNINSTALLER), '--dry-run'], capture_output=True,
                             cwd=root, env=env, timeout=90)
     preview = result.stdout.decode('utf-8-sig')
     expect(result.returncode == 0, preview[-1000:])
     lines = preview.splitlines()
     planned = {line.split('\t')[-1] for line in lines if line.startswith('删除\t')}
-    expected = [*deleted, install, install/UNINSTALLER, install/'AICompanion.exe']
+    kept = {line.split('\t')[-1] for line in lines if line.startswith('保留\t')}
+    expected = [*deleted, install/UNINSTALLER, install/'AICompanion.exe']
+    if desktop:
+        expect({str(install), str(install/'personal-note.txt'), str(install/'School'),
+                str(install/'_internal/private-note.txt'), str(personal_readme)} <= kept, '模拟桌面缺少保留说明')
+    else:
+        expected.append(install)
+    expect(all(str(p) in kept and p.is_file() for p in trash), '默认预览误选回收区或快照')
     for path in expected:
         expect(str(path) in planned and path.exists(), f'预览遗漏或改动了 {path}')
     expect('HKCU\\'+test_key(root)+'\\AICompanion' in planned, '预览遗漏测试启动项')
@@ -141,6 +169,14 @@ def uninstall_case(root, install, env, scenario):
         expect(not path.exists(), f'卸载残留：{path}')
     expect(all(p.read_bytes() == b'fixture' for p in keep), '外部图库或其他无关文件被改动')
     expect(busy.exists() == locked, '被占用文件结果错误')
+    if scenario == 'trash':
+        expect(all(not p.exists() for p in trash), '勾选清空后回收区仍有文件')
+    else:
+        expect(all(p.read_bytes() == b'fixture' for p in trash), '默认保留的回收区文件受损')
+    if desktop:
+        expect(install.is_dir() and not (install/UNINSTALLER).exists(), '桌面或已卸载的程序状态错误')
+        expect(personal_readme.read_bytes() == personal_bytes, '同名同大小的私人文档被改动')
+    print(f'{scenario}：回收区与快照 4 处、外部图库和无关文件均符合勾选状态', flush=True)
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, test_key(root)) as key:
         expect(winreg.QueryValueEx(key, 'Unrelated')[0] == 'keep', '无关注册表值被改动')
         try:
@@ -149,26 +185,31 @@ def uninstall_case(root, install, env, scenario):
             pass
         else:
             raise RuntimeError('测试启动项仍存在')
-    print('真实卸载通过，外部图库及无关文件完整；'+('占用项已报告' if locked else '程序文件夹已删除'), flush=True)
+    if desktop:
+        print('模拟桌面仍在，私人文件完整，程序文件已清除', flush=True)
 
 
 def main():
     import winreg
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
-    parser.add_argument('--case', choices=('all', 'smoke', 'normal', 'locked', 'running'), default='all')
+    parser.add_argument('--case', choices=('all', 'smoke', 'normal', 'locked', 'running', 'desktop', 'trash'), default='all')
     args = parser.parse_args()
     archive = args.archive.resolve(strict=True)
     with archive.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     expect(archive.with_name('SHA256SUMS.txt').read_text('ascii').strip() == f'{digest}  {archive.name}', 'SHA256 不符')
     base = Path(tempfile.gettempdir()).resolve()
-    for case in (('smoke', 'normal', 'locked', 'running') if args.case == 'all' else (args.case,)):
+    for case in (('smoke', 'normal', 'locked', 'running', 'desktop', 'trash') if args.case == 'all' else (args.case,)):
         root = base/('whalemate-test-'+uuid4().hex)
         root.mkdir()
         try:
             env = environment(root)
             install = extract(archive, root)
+            if case == 'desktop':
+                desktop = Path(env['USERPROFILE'])/'Desktop'
+                expect(install.parent == root and desktop.is_relative_to(root), '模拟桌面越界')
+                install = install.rename(desktop)
             if case == 'smoke':
                 smoke(install, root, env, '--smoke-test', 'bundle-smoke')
                 smoke(install, root, env, '--pet-smoke-test', 'bundle-pet-smoke')

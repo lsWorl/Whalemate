@@ -71,7 +71,7 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 - One-click setup in Settings: pinned versions are downloaded from official sources, verified, and connected on localhost only.
 
 ### 🔐 Security and privacy
-- API keys are encrypted with Windows DPAPI; the database only stores references. Keys are never shared between providers.
+- Model profiles reference a key for each provider. Keys saved in Settings are encrypted with Windows DPAPI and stored in the local database. Removing the database also removes those keys.
 - Chats, memories and settings live in a local SQLite database, backed up automatically before migrations.
 - Daily usage and quotas are tracked locally.
 
@@ -95,14 +95,14 @@ The Dafeiyu animation can be installed in step 4 of the guide or under Settings 
 
 Run `UninstallWhalemate.exe` in the `Whalemate` folder. It first lists everything it will delete and only proceeds after you confirm:
 
-- the program folder itself, including the locally installed Dafeiyu animation;
+- the program files listed in the release manifest and the locally installed Dafeiyu animation;
 - chats, memories, settings and their database backups, including the encrypted model keys stored there;
 - the sticker library the app created, the QQ components (NapCat, AstrBot), voice caches, the local speech-recognition model and the agent's temporary folders;
-- the start-with-Windows entry, if you enabled it.
+- the current user’s `AICompanion` start-with-Windows entry, only if it points to this installation’s `AICompanion.exe`.
 
-Inside the program folder only Whalemate's own files are removed; anything else you put there is kept.
+Other files you placed in the program folder are kept. The folder is removed only if empty. Personal folders such as Desktop, Downloads, Documents and OneDrive are always kept.
 
-Two things are **kept by default** and only deleted if you tick them: **your own sticker folder** chosen under Settings → Storage (it may contain images you collected), and the **agent recycle area** (files she "deleted" for you go there first and cannot be recovered once removed). Deletion cannot be undone — back up the database file first if you want to keep your chats. See [storage locations](docs/storage-locations.md) (Chinese) for the exact paths.
+Two things are **kept by default** and only deleted if you tick them: **your own sticker folder** chosen under Settings → Storage (it may contain images you collected), and the **agent recycle area** (files she "deleted" for you go there first and cannot be recovered once removed). Deletion cannot be undone — copy your database backup to a location outside the uninstall list if you want to keep your chats. See [storage locations](docs/storage-locations.md) (Chinese) for the exact paths.
 
 ## 🛠️ Run from source (developers)
 
