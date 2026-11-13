@@ -3,10 +3,12 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from aicompanion.brain.scheduler import ProactiveScheduler
+from aicompanion.brain.scheduler import GROUP_GAP_SECONDS, ProactiveScheduler
 from aicompanion.bridge.server import runtime
 from aicompanion.llm.base import ChatTurn
 from aicompanion.services import budget
+from aicompanion.services.proactive_service import ProactiveMessageService
+from aicompanion.services.promises import Promises
 from aicompanion.services.circle_topics import CircleTopics, INTENT, switch_key
 from aicompanion.storage.schema import SCHEMA_VERSION
 from test_qq_proactive import Base
@@ -55,6 +57,137 @@ class CircleTests(Base):
         if not turn:
             self.scheduler.release(rid)
         return turn
+
+    def enable_circle(self):
+        self.repeated()
+        self.db.set_setting(switch_key(self.cid, self.scope), True)
+        return self.choose()
+
+    def add_promise(self, scope, label):
+        service = Promises(self.db, self.clock)
+        due = datetime.fromtimestamp(self.now + 60).strftime('%Y-%m-%d %H:%M')
+        create, error = service.prepare(self.cid, self.controller.relationships.owner_person(), scope,
+                                        'text' if scope == 'desktop' else 'qq', label, '', dict(due=due,title=label))
+        self.assertFalse(error)
+        self.db.locked(create)
+
+    def acknowledge(self, turn):
+        parcel, = self.service.take_outbox()
+        self.assertEqual(parcel['id'], turn)
+        self.assertTrue(self.service.outbox_claim(dict(id=turn, astrbot='plugin-0.11.0'))['allowed'])
+        self.assertTrue(self.service.outbox_ack(dict(id=turn, status='sent', sent=1))['ok'])
+
+    def test_unanswered_circle_leaves_owner_promise_due_and_reply_window_open(self):
+        self.add_promise('desktop', '主人的到期约定')
+        turn = self.send(self.enable_circle())
+        self.acknowledge(turn)
+        self.now += 60
+        self.db.initialize()
+        self.db.set_setting('proactive_daily_limit', 1)
+        self.assertEqual(self.scheduler.today_count(self.cid), 0)
+        self.assertEqual(self.scheduler.today_count(self.cid, self.scope), 1)
+        self.assertEqual(self.scheduler.last(self.cid, self.scope)['status'], 'sent')
+        owner = self.choose()
+        self.assertEqual((owner.source, owner.payload['scope']), ('promise', 'desktop'))
+        rid = self.scheduler.reserve(self.cid, owner)
+        self.assertTrue(self.scheduler.show_desktop_promise(self.cid, rid, owner.key))
+        self.assertEqual(self.scheduler.today_count(self.cid), 1)
+        # 主人收到提醒之后，群友才回应原先那句；两个会话各自认领回应。
+        self.now += 2
+        self.message('我也这么想')
+        self.scheduler.settle(self.cid)
+        self.assertEqual(self.scheduler.last(self.cid, self.scope)['status'], 'answered')
+        self.assertEqual(self.scheduler.last(self.cid)['status'], 'sent')
+
+    def test_unanswered_circle_leaves_evening_greeting_on_time(self):
+        self.now = datetime(2032,4,7,19,59).timestamp()
+        self.acknowledge(self.send(self.enable_circle()))
+        self.scheduler.greetings = ProactiveMessageService(self.db, clock=lambda: datetime.fromtimestamp(self.now),
+                                                          pace=lambda cid: 1.0)
+        self.db.set_setting('proactive_daily_limit', 1)
+        self.now += 60
+        greeting = self.choose()
+        self.assertEqual((greeting.source,greeting.key), ('greeting','2032-04-07:evening'))
+        self.assertTrue(self.scheduler.record(self.cid, greeting))
+        self.assertEqual(self.scheduler.today_count(self.cid), 1)
+        self.assertEqual(self.scheduler.last(self.cid,self.scope)['status'], 'sent')
+
+    def test_pending_circle_and_owner_or_other_group_can_reserve_together(self):
+        item = self.enable_circle()
+        for scope in (self.scope, self.other, 'desktop'):
+            self.add_promise(scope, scope)
+        turn = self.send(item)
+        self.now += 60
+        self.assertTrue(self.scheduler.pending(self.cid,self.scope))
+        self.assertFalse(self.scheduler.pending(self.cid))
+        owner = self.choose()
+        self.assertEqual(owner.payload['scope'], 'desktop')
+        owner_id = self.scheduler.reserve(self.cid, owner)
+        self.assertTrue(owner_id)
+        other = self.choose()
+        self.assertEqual(other.payload['scope'], self.other)
+        self.assertTrue(self.scheduler.reserve(self.cid, other))
+        self.assertIsNone(self.choose())
+        active = Promises(self.db,self.clock).due(self.cid)
+        self.assertEqual(active['scope'], self.scope)
+        self.assertFalse(self.scheduler.reserve(self.cid, self.scheduler._promise(active)))
+        self.acknowledge(turn)
+        self.assertTrue(self.scheduler.show_desktop_promise(self.cid, owner_id, owner.key))
+
+    def test_group_promises_share_circle_gap_and_daily_limit_only_in_original_group(self):
+        self.db.set_setting('proactive_daily_limit', 0)
+        self.db.set_setting('proactive_gap_minutes', 600)
+        circle = self.enable_circle()
+        self.acknowledge(self.send(circle))
+        self.now += 1
+        self.message('群友已经接话')
+        self.add_promise(self.scope, '本群第二条')
+        self.add_promise(self.scope, '本群第三条')
+        self.now += GROUP_GAP_SECONDS - 2
+        self.assertIsNone(self.choose())
+        self.now += 1
+        promise = self.choose()
+        self.assertEqual((promise.source,promise.payload['scope']), ('promise',self.scope))
+        rid = self.scheduler.reserve(self.cid, promise)
+        self.assertTrue(rid)
+        self.assertFalse(self.scheduler.show_desktop_promise(self.cid, rid, promise.key))
+        self.scheduler.confirm(self.cid, rid, promise, channel='qq')
+        self.now += 1
+        self.message('收到第二条')
+        self.now += GROUP_GAP_SECONDS
+        self.assertIsNone(self.choose())
+        self.assertEqual(self.scheduler.today_count(self.cid,self.scope), 2)
+        self.assertEqual(self.scheduler.today_count(self.cid), 0)
+        self.add_promise(self.other, '别的群')
+        self.now += 60
+        self.assertEqual(self.choose().payload['scope'], self.other)
+        self.now = datetime(2032,4,8,9).timestamp()
+        self.assertEqual(self.scheduler.today_count(self.cid,self.scope), 0)
+        self.assertEqual(self.choose().payload['scope'], self.scope)
+
+    def test_legacy_scope_backfill_preserves_circle_and_both_types_of_promises(self):
+        turn = self.send(self.enable_circle())
+        self.acknowledge(turn)
+        for scope in (self.scope, 'desktop'):
+            self.add_promise(scope, scope)
+        self.now += 60
+        rows = Promises(self.db,self.clock).due_rows(self.cid)
+        with self.db.transaction() as c:
+            for row in rows:
+                c.execute("INSERT INTO outreach_log(character_id,source,key,channel,status,sent_at) "
+                          "VALUES (?,'promise',?,'qq','answered',?)",
+                          (self.cid, f"promise:{row['id']}:1", self.now))
+            c.execute('UPDATE promises SET revision=2')
+            c.execute('DROP INDEX ix_outreach_scope')
+            c.execute('ALTER TABLE outreach_log DROP COLUMN scope')
+        self.db.initialize()
+        self.db.initialize()
+        self.assertEqual(self.scheduler.today_count(self.cid), 1)
+        self.assertEqual(self.scheduler.today_count(self.cid,self.scope), 2)
+        self.assertEqual(self.scheduler.last(self.cid,self.scope)['source'], 'promise')
+        with self.db.transaction() as c:
+            self.assertEqual(c.execute("SELECT scope FROM outreach_log WHERE turn_id=?", (turn,)).fetchone()[0], self.scope)
+            self.assertFalse(c.execute('PRAGMA foreign_key_check').fetchall())
 
     def test_one_model_call_validates_group_sources_and_participants(self):
         ids = [self.message('在讨论棋局', 90000), self.message('棋局继续', 3600)]
@@ -139,7 +272,7 @@ class CircleTests(Base):
         self.db.set_setting(switch_key(self.cid,self.scope), True)
         item = self.choose()
         self.assertEqual((item.source, item.payload['scope']), ('circle', self.scope))
-        for key, value in [('bridge_chime','off'), ('proactive_daily_limit',0), ('quiet_start',13),
+        for key, value in [('bridge_chime','off'), ('quiet_start',13),
                            ('bridge_groups',['40004']), ('bridge_last_spoke:'+self.scope,self.now-5)]:
             previous = self.db.get_setting(key)
             self.db.set_setting(key, value)
@@ -194,7 +327,8 @@ class CircleTests(Base):
         self.assertTrue(self.service.outbox_ack(dict(id=turn,status='sent',sent=1))['ok'])
         self.db.initialize()
         self.scheduler.reconcile(self.cid)
-        self.assertEqual(self.scheduler.last(self.cid)['source'], 'circle')
+        self.assertIsNone(self.scheduler.last(self.cid))
+        self.assertEqual(self.scheduler.last(self.cid, self.scope)['source'], 'circle')
         self.assertFalse(self.scheduler.reserve(self.cid,item))
         self.assertIsNone(self.choose())
         self.message('别群说的话', scope=self.other)
@@ -202,7 +336,7 @@ class CircleTests(Base):
         with patch('aicompanion.services.mood_service.MoodService.event') as mood:
             self.scheduler.settle(self.cid)
             mood.assert_not_called()
-        self.assertEqual(self.scheduler.last(self.cid)['status'],'dropped')
+        self.assertEqual(self.scheduler.last(self.cid, self.scope)['status'],'dropped')
         self.assertIsNone(self.topics.due(self.cid, lambda group: True))
 
     def test_topics_after_forgetting_use_only_new_evidence(self):

@@ -2134,3 +2134,9 @@ Windows 在代码 `412a423c01128b121aecf76bee3a831f5a2d059b` 运行 `tools\run_c
 - `python -m unittest test_circle_topics test_bridge.MemorySharingTests test_bridge.EarlyV4Tests test_group_glance` 运行 26 项，用时 5.272 秒，全部通过。使用工作树的 `src`、`tests` 作为 `PYTHONPATH`，所有测试数据均为合成数据。
 
 未在真实 QQ 群、NapCat 或线上模型环境下验证，群内主动接话的自然程度待人工体验。
+
+## 2026-11-13　V4-7d 群接话与主人提醒独立调度（#64 审查修正）
+
+主人桌面与绑定 QQ 私聊共用主动记录，每个 QQ 群的圈子接话与原群约定各按本群记录结算。每群同时一条在途、每天两条、至少间隔 90 分钟。主人提醒和问候可以在群里等待回应期间照常发送。新增目标会话字段，按旧投递和约定记录回填；同一份回执仍只结算一次。
+
+Windows `tools\run_checks.bat` 退出码 0，运行 1372 项单测，用时 243.289 秒，失败 0，跳过 7。桌宠 smoke 的 `circle_topics_settings` 和 `passed` 均为 `true`，失败列表为空。调度专项 `python -m unittest test_circle_topics test_promises test_scheduler test_outreach_recovery_regressions` 运行 105 项，用时 11.073 秒，全部通过。 未使用真实 QQ 或线上模型。
