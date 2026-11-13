@@ -113,6 +113,94 @@ class VectorTests(Base):
         guard = MemoryService.public_guard(content, CID, 'qq:group:2')
         self.assertFalse(self.db.upsert_memory(content, CID, 'qq#1:job', source_ids=[mid], scope='qq', guard=guard))
 
+    def test_missing_or_edited_fact_uses_other_current_vectors(self):
+        self.add('老街红楼', 'home')
+        self.add('上班的楼', 'office')
+        self.ready()
+        self.index.start.reset_mock()
+        self.db.upsert_memory('改为海边', CID, 'office')
+        self.add('去年新建的楼', 'new')
+        self.assertEqual([k for k, _, _ in self.hits()], ['home'])
+        self.index.start.assert_called_once()
+
+    def test_local_encoding_never_uses_cloud_even_after_failure_or_restart(self):
+        from unittest.mock import patch
+        from aicompanion.services import local_embedding
+        from aicompanion.services.semantic import LOCAL
+
+        self.add('小楼房', 'home')
+        self.ready()
+        encoder = Mock()
+        encoder.encode.side_effect = lambda texts, token, **kw: [semantic.normalize([1]+[0]*511, 512) for _ in texts]
+        with patch.object(self.index, 'client', side_effect=AssertionError('调用了云端')) as cloud, \
+                patch.object(semantic.net, 'fetch', side_effect=AssertionError('发出网络请求')) as network, \
+                patch('urllib.request.OpenerDirector.open', side_effect=AssertionError('本地运行联机')) as http, \
+                patch.object(local_embedding, 'LocalEncoder', return_value=encoder) as load:
+            self.index.enable_local(download=False)
+            self.index.loader.join(5)
+            self.assertEqual(self.db.get_setting(semantic.SETTING), vars(LOCAL))
+            self.assertFalse(self.hits())
+            self.assertTrue(self.index.index_batch(CID))
+            self.assertTrue(self.hits())
+            scopes = [call.kwargs for call in encoder.encode.call_args_list]
+            self.assertEqual(scopes, [{'query': False}, {'query': True}])
+            self.index.close()
+            restarted = semantic.SemanticRecall(self.db, self.router, cloud)
+            self.assertIsNone(restarted.target())
+            restarted.loader.join(5)
+            self.assertIs(restarted.target()[1], encoder)
+            self.assertFalse(load.call_args.args[2])  # 重启只加载缓存。
+            restarted.close()
+            self.index.disable()
+            cloud.assert_not_called()
+            network.assert_not_called()
+            http.assert_not_called()
+        with patch.object(local_embedding, 'LocalEncoder', side_effect=OSError), \
+                patch.object(self.index, 'client') as cloud:
+            fresh = semantic.SemanticRecall(self.db, self.router, cloud)
+            fresh.start = Mock()
+            fresh.enable_local(download=False)
+            fresh.loader.join(5)
+            self.assertFalse(fresh.search(CID, '住所', 'pet', 'desktop', self.token))
+            self.assertIn('关键词', fresh.state)
+            cloud.assert_not_called()
+            fresh.close()
+
+    def test_switch_to_local_cancels_pending_cloud_request(self):
+        from threading import Thread, Event
+        self.add('家里小楼', 'home')
+        self.ready()
+        started = Event()
+        cancelled = Event()
+        def pending(target, key, texts, cid, token):
+            started.set()
+            if token.event.wait(3):
+                cancelled.set()
+            token.check()
+            return []
+        with patch.object(self.index, 'client', side_effect=pending), \
+                patch.object(semantic.local, 'LocalEncoder', return_value=Mock()):
+            thread = Thread(target=self.hits)
+            thread.start()
+            self.assertTrue(started.wait(2))
+            self.index.enable_local(download=False)
+            thread.join(3)
+            self.index.loader.join(2)
+            self.assertTrue(cancelled.is_set())
+            self.assertFalse(self.token.event.is_set())
+            self.assertEqual(self.index.failures, 0)
+            self.index.close()
+
+    def test_query_timeout_is_shorter_than_index_timeout(self):
+        self.add('红楼', 'home')
+        self.index.enable(self.profile, 256)
+        self.index.client = semantic.embed
+        data = {'data': [{'index': 0, 'embedding': [1]+[0]*255}]}
+        with patch.object(semantic.net, 'fetch', return_value=json.dumps(data).encode()) as fetch:
+            self.index.index_batch(CID)
+            self.assertTrue(self.hits())
+            self.assertEqual([c.kwargs['timeout'] for c in fetch.call_args_list], [4, 1.5])
+
     def test_new_dimension_and_model_wait_until_batch_complete(self):
         for i in range(12):
             self.add(f'海边楼房{i}', f'f{i}')

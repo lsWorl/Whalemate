@@ -9,6 +9,7 @@ import time
 from urllib.request import Request
 
 from aicompanion import net
+from aicompanion.services import local_embedding as local
 from aicompanion.brain.memory_card import visible_in
 from aicompanion.domain.cancellation import CancellationToken
 from aicompanion.providers.admin import check_base_url
@@ -35,6 +36,25 @@ class Target:
 
     def signature(self):
         return self.provider, self.endpoint, self.model, self.dimension
+
+
+LOCAL = Target('builtin:bge', 'builtin:local', local.REVISION, local.MODEL, local.DIMENSION)
+QUERY_TIMEOUT = 1.5
+FALLBACK_LIMIT = 256
+
+
+def rank_vectors(needle, blobs):
+    """输入均为已归一化的 float32。可选 NumPy 在需要打分时才载入。"""
+    if not blobs:
+        return []
+    try:
+        import numpy as np
+    except ImportError:
+        return [(k, sum(x*y for x, y in zip(needle, memoryview(blob).cast('f'), strict=True)))
+                for k, blob in blobs[:FALLBACK_LIMIT]]
+    matrix = np.frombuffer(b''.join(blob for _, blob in blobs), dtype=np.float32).reshape(len(blobs), len(needle))
+    scores = np.einsum('ij,j->i', matrix, np.asarray(needle, dtype=np.float32))
+    return [(k, float(score)) for (k, _), score in zip(blobs, scores, strict=True)]
 
 
 def target_for(router, profile, dimension):
@@ -64,11 +84,11 @@ def normalize(values, dimension):
     return array('f', (v / length for v in values))
 
 
-def embed(target, key, texts, cid, cancellation):
+def embed(target, key, texts, cid, cancellation, *, timeout=4):
     body = {'model': target.model, 'input': texts, 'dimensions': target.dimension}
     request = Request(target.endpoint + '/embeddings', data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
                       headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
-    raw = net.fetch(request, cancellation, timeout=4, limit=4*1024*1024)
+    raw = net.fetch(request, cancellation, timeout=timeout, limit=4*1024*1024)
     reply = json.loads(raw)
     usage = reply.get('usage') or {}
     tokens = usage.get('prompt_tokens') or usage.get('total_tokens')
@@ -157,28 +177,103 @@ class SemanticRecall:
         self.failures = 0
         self.state = '未开启，使用关键词召回'
         self.index_states = {}
+        self.local_root = db.database_path.parent / 'models' / local.MODEL / local.REVISION
+        self.encoder = None
+        self.loader_token = None
+        self.loader = None
+        self.requests = set()
+        self.download_status = ''
+        self.local_error = False
 
     def enable(self, profile, dimension):
         target, account = target_for(self.router, profile, dimension)
         if not self.router.credentials.get(account.credential, endpoint=target.endpoint):
             raise ValueError('请先在“模型与 Key”配置此账户的 Key')
         # 同意与实际目的地址、模型、维度绑定；账户改地址后必须重新确认。
-        self.db.set_setting(SETTING, vars(target))
-        self.retry_at = self.failures = 0
-        self.index_states.clear()
-        self.state = '等待后台建索引'
+        self._select(target)
         self.start()
 
+    def _select(self, target):
+        choice = vars(target) if target else None
+        def select(c):
+            old = self.db.setting_in(c, SETTING)
+            if choice and old != choice:
+                for row in c.execute('SELECT id FROM characters'):
+                    # 仅已有不同签名的向量时等待整批切换。日常新增记忆继续使用有效部分。
+                    changed = c.execute("""SELECT 1 FROM memory_vectors WHERE character_id=? AND
+                        (provider,endpoint,model,dimension) != (?,?,?,?) LIMIT 1""",
+                        (row[0], *target.signature())).fetchone()
+                    self.db.set_setting_in(c, 'semantic_rebuild:' + row[0], choice if changed else None)
+            self.db.set_setting_in(c, SETTING, choice)
+        with self.lock:
+            self.db.locked(select)
+            for request in self.requests:
+                request.cancel()
+            if self.loader_token:
+                self.loader_token.cancel()
+            self.encoder = None
+            self.download_status = ''
+            self.local_error = False
+            self.retry_at = self.failures = 0
+            self.index_states.clear()
+            self.state = '等待后台建索引' if target else '未开启，使用关键词召回'
+            self.wake.set()
+
+    def enable_local(self, *, download=True):
+        with self.lock:
+            self._select(LOCAL)
+            self._load_local(download)
+        self.start()
+
+    def _load_local(self, download):
+        with self.lock:
+            if (self.stop_token.event.is_set() or self.encoder or self.local_error
+                    or self.db.get_setting(SETTING) != vars(LOCAL)):
+                return
+            if self.loader and self.loader.is_alive() and not self.loader_token.event.is_set():
+                return
+            token = CancellationToken()
+            self.loader_token = token
+            self.state = '正在准备本地模型，使用关键词召回'
+
+            def progress(message):
+                with self.lock:
+                    if self.loader_token is token and not token.event.is_set():
+                        self.download_status = message
+
+            def load():
+                try:
+                    encoder = local.LocalEncoder(self.local_root, token, download, progress)
+                except Exception as error:
+                    with self.lock:
+                        if self.loader_token is token and not token.event.is_set():
+                            self.local_error = True
+                            if isinstance(error, local.ModelFilesError):
+                                self.download_status = ''
+                            self.state = (str(error) if isinstance(error, local.ModelFilesError)
+                                          else '本地模型未能加载，请检查下载或运行库后重试') + '，使用关键词召回'
+                    return
+                with self.lock:
+                    if self.loader_token is token and not token.event.is_set():
+                        self.encoder = encoder
+                        self.state = '本地模型已就绪，正在检查索引'
+                        self.wake.set()
+            self.loader = threading.Thread(target=load, daemon=True, name='aicompanion-local-model')
+            self.loader.start()
+
     def disable(self):
-        self.db.set_setting(SETTING, None)
-        self.state = '未开启，使用关键词召回'
-        self.wake.set()
+        self._select(None)
 
     def target(self):
         choice = self.db.get_setting(SETTING)
         if not choice:
             self.state = '未开启，使用关键词召回'
             return None
+        if choice == vars(LOCAL):
+            if self.encoder is None:
+                self._load_local(False)  # 重启只从磁盘加载，重新下载必须由用户点击。
+                return None
+            return (LOCAL, self.encoder) if self.clock() >= self.retry_at else None
         if getattr(self.router, 'offline', True) or not hasattr(self.router, 'store'):
             self.state = '离线，使用关键词召回'
             return None
@@ -210,8 +305,15 @@ class SemanticRecall:
                 self.worker.start()
 
     def close(self):
-        self.stop_token.cancel()
+        with self.lock:
+            self.stop_token.cancel()
+            for request in self.requests:
+                request.cancel()
+            if self.loader_token:
+                self.loader_token.cancel()
         self.wake.set()
+        if self.loader:
+            self.loader.join(1)
         if self.worker:
             self.worker.join(5)
 
@@ -234,6 +336,25 @@ class SemanticRecall:
                 self._failed()
                 pending = False
             self.wake.wait(0.15 if pending else 10)
+
+    def _encode(self, target, key, texts, cid, cancellation, *, query=False):
+        if target == LOCAL:
+            return key.encode(texts, cancellation, query=query)
+        token = CancellationToken()
+        with self.lock:
+            if self.db.get_setting(SETTING) != vars(target) or self.stop_token.event.is_set():
+                return []
+            self.requests.add(token)
+            cancellation.register(token.cancel)
+        try:
+            token.check()
+            if query and self.client is embed:
+                return embed(target, key, texts, cid, token, timeout=QUERY_TIMEOUT)
+            return self.client(target, key, texts, cid, token)
+        finally:
+            cancellation.unregister(token.cancel)
+            with self.lock:
+                self.requests.discard(token)
 
     def _failed(self):
         with self.lock:
@@ -264,6 +385,11 @@ class SemanticRecall:
         remaining = sum(self.index_states.values())
         self.state = f'正在建索引，剩余 {remaining} 条' if remaining else '向量索引就绪'
         if not missing:
+            if self.db.get_setting('semantic_rebuild:' + cid) == vars(target):
+                def finish(c):
+                    if self.db.setting_in(c, SETTING) == vars(target):
+                        self.db.set_setting_in(c, 'semantic_rebuild:' + cid, None)
+                self.db.locked(finish)
             return False
         channel = rows[missing[0]][2]
         keys = [k for k in missing if rows[k][2] == channel][:BATCH]
@@ -271,9 +397,12 @@ class SemanticRecall:
         if self.db.get_setting(SETTING) != vars(target):
             return False
         try:
-            vectors = self.client(target, key, texts, cid, self.stop_token)
+            vectors = self._encode(target, key, texts, cid, self.stop_token)
+            if not vectors:
+                return False
         except Exception:
-            self._failed()
+            if self.db.get_setting(SETTING) == vars(target):
+                self._failed()
             return False
         def save(c):
             if self.db.setting_in(c, SETTING) != vars(target):
@@ -288,6 +417,7 @@ class SemanticRecall:
         return True
 
     def search(self, cid, query, scene, channel, cancellation):
+        target = None
         try:
             resolved = self.target()
             if not resolved or not query.strip():
@@ -296,26 +426,29 @@ class SemanticRecall:
             rows, indexed, missing = self._snapshot(cid, target, vectors=True)
             if missing:
                 self.start()
-                return []
+                if self.db.get_setting('semantic_rebuild:' + cid) == vars(target):
+                    return []
+            stale = set(missing)
             allowed = [k for k, (row, _, origin) in rows.items()
-                       if origin == channel and visible_in(row['scope'], scene)]
+                       if k not in stale and origin == channel and visible_in(row['scope'], scene)]
             if not allowed:
                 return []
             if self.db.get_setting(SETTING) != vars(target):
                 return []
-            needle, = self.client(target, key, [query[:2000]], cid, cancellation)
+            vectors = self._encode(target, key, [query[:2000]], cid, cancellation, query=True)
+            if not vectors:
+                return []
+            needle, = vectors
             if self.db.get_setting(SETTING) != vars(target):
                 return []
             hits = []
-            for k in allowed:
-                vec = array('f')
-                vec.frombytes(indexed[k]['vector'])
-                similarity = sum(x*y for x, y in zip(needle, vec, strict=True))
+            blobs = [(k, indexed[k]['vector']) for k in allowed]
+            for k, similarity in rank_vectors(needle, blobs):
                 if similarity >= MIN_SIMILARITY:
                     hits.append((k, indexed[k]['content_hash'], similarity))
             self.failures = 0
             return sorted(hits, key=lambda item: item[2], reverse=True)[:12]
         except Exception:
-            if not cancellation.event.is_set():
+            if not cancellation.event.is_set() and target and self.db.get_setting(SETTING) == vars(target):
                 self._failed()
             return []
