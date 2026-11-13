@@ -206,6 +206,10 @@ class Task:
     always: set = field(default_factory=set)               # 选了"本次任务都可以"的类别（'command' 或 文件夹路径）
     cancelled: threading.Event = field(default_factory=threading.Event)
     resuming: bool = False
+    originals: dict[Path, Path] = field(default_factory=dict)  # 原件 → 本任务副本
+    copies: set[Path] = field(default_factory=set)
+    captions: dict[Path, str] = field(default_factory=dict)
+    read_chars: int = 3600
 
 
 class ToolBox:
@@ -231,7 +235,7 @@ class ToolBox:
          'inputSchema': {'type': 'object', 'properties': {'pattern': {'type': 'string'}, 'path': {'type': 'string', 'description': '在哪个文件夹下找'}}, 'required': ['pattern', 'path']}},
         {'name': 'grep', 'description': '在文件内容里搜正则，返回 文件:行号:内容（最多 300 行）。',
          'inputSchema': {'type': 'object', 'properties': {'pattern': {'type': 'string'}, 'path': {'type': 'string'}, 'glob': {'type': 'string', 'description': '只搜这些文件，如 *.md'}}, 'required': ['pattern', 'path']}},
-        {'name': 'read_file', 'description': '读文本文件。大文件用 offset / limit 按行分段读。',
+        {'name': 'read_file', 'description': '读文本文件和本任务的文档附件、图片识别结果。大文件用 offset / limit 按行分段读。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'offset': {'type': 'integer', 'description': '从第几行开始（1 起）'}, 'limit': {'type': 'integer', 'description': '读多少行'}}, 'required': ['path']}},
         {'name': 'write_file', 'description': '写文本文件（新建或整个覆盖，UTF-8）。覆盖前旧版本会自动留底。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['path', 'content']}},
@@ -316,9 +320,15 @@ class ToolBox:
         record['decision'] = 'denied' if answer == 'no' else 'timeout'
         raise PermissionError('用户没有同意' if answer == 'no' else '用户没有回应')
 
+    def _touches_original(self, path):
+        return any(path == original or path in original.parents for original in self.current.originals)
+
     def _check_write(self, record, path: Path, action: str):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能改（{reason}）')
+        if self._touches_original(path):
+            self._ask(record, 'original', f'要{action}，会影响附件原件：\n{path}', '这次操作需要单独确认。')
+            return
         resuming = self.current.resuming
         git_internal = any(part.lower() == '.git' for part in path.parts)
         outside = not self._allowed(path)
@@ -367,7 +377,7 @@ class ToolBox:
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not _secret_reason(Path(base)/d, self.secrets)]
             for name in files:
                 path = Path(base)/name
-                if not _secret_reason(path, self.secrets): yield path
+                if path not in self.current.originals and not _secret_reason(path, self.secrets): yield path
 
     def _t_glob(self, record, pattern, path):
         root = _norm(path); self._check_read(root)
@@ -381,7 +391,9 @@ class ToolBox:
         return '\n'.join(out) or '（没找到）'
 
     def _t_grep(self, record, pattern, path, glob=None):
-        root = _norm(path); self._check_read(root)
+        root = _norm(path)
+        root = self.current.originals.get(root, root)
+        self._check_read(root)
         regex = re.compile(pattern); out = []
         files = [root] if root.is_file() else self._walk(root)
         for p in files:
@@ -398,7 +410,18 @@ class ToolBox:
         return '\n'.join(out) or '（没有匹配）'
 
     def _t_read_file(self, record, path, offset=1, limit=None):
-        p = _norm(path); self._check_read(p)
+        requested = self.current.originals.get(_norm(path), Path(path))
+        p = _norm(requested)
+        self._check_read(p)
+        if requested in self.current.copies and p != requested:
+            raise PermissionError('附件副本路径被替换，请重新添加')
+        if p in self.current.copies:
+            from aicompanion.agent.attachment_text import document_text, read_page
+            from aicompanion.agent.attachments import read_copy
+            text = self.current.captions.get(p)
+            if text is None:
+                text = document_text(p, read_copy(p))
+            return read_page(text, offset, limit, self.current.read_chars)
         text = p.read_text(encoding='utf-8', errors='replace')
         lines = text.splitlines(); start = max(1, int(offset or 1))
         chosen = lines[start-1:start-1+int(limit)] if limit else lines[start-1:]
@@ -441,7 +464,9 @@ class ToolBox:
         source_ok = self._allowed(src) or str(src).lower() in self.current.created
         target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
         if any(part.lower() == '.git' for p in (src, dst) for part in p.parts): source_ok = target_ok = False   # 挪进 / 挪出 .git 都要问
-        if self.current.resuming:
+        if any(self._touches_original(p) for p in (src, dst, dst/src.name)):
+            self._ask(record, 'original', f'移动会影响附件原件：\n{src}\n→ {dst}', '这次移动需要单独确认。')
+        elif self.current.resuming:
             self._ask(record, 'resume', f'继续任务，要把\n{src}\n移到\n{dst}', '请确认这个移动还没做过。')
         elif not (source_ok and target_ok):
             where = [] if source_ok else ['原位置在放开的文件夹外或 .git 里']
@@ -457,7 +482,7 @@ class ToolBox:
         secret = _secret_reason(p, self.secrets)
         if secret: raise PermissionError(f'{p} 不能删（{secret}）')
         if not p.exists(): return f'{p} 本来就不存在'
-        if self.current.resuming or str(p).lower() not in self.current.created:
+        if self.current.resuming or self._touches_original(p) or str(p).lower() not in self.current.created:
             what = '整个文件夹' if p.is_dir() else '文件'
             self._ask(record, 'delete', f'要删除{what}：\n{p}'+(f'\n原因：{reason}' if reason else ''),
                       '同意后会移到同一个盘的 .aicompanion-trash 回收区，需要时可以从那里找回。')
@@ -476,11 +501,16 @@ class ToolBox:
         names = {s.name.lower() for s in self.secrets if s.suffix or s.name.startswith('.')} | {'.env', 'id_rsa', 'id_ed25519', '.git-credentials'}
         if any(re.search(r'(?<![\w.-])'+re.escape(n)+r'(?![\w-])', command.lower()) for n in names) or re.search(r'(?i)aicompanion[^\s]*\.sqlite3', command):
             raise PermissionError('命令涉及密钥文件或我的数据库')
-        if self.current.resuming or not is_read_only_command(command):
-            kind = 'resume' if self.current.resuming else 'command'
+        read_only = is_read_only_command(command)
+        if self.current.originals and read_only:
+            for path in self._paths_in(command):
+                if path in self.current.originals:
+                    raise PermissionError(f'请用 read_file 读取附件副本：{self.current.originals[path]}')
+        if self.current.resuming or not read_only:
+            kind = 'resume' if self.current.resuming else ('original' if self.current.originals else 'command')
             self._ask(record, kind, '要运行命令：\n'+command[:600]+(f'\n用途：{reason}' if reason else ''),
                       f'在 {folder} 运行。这条命令可能会改动文件或系统，请看清楚再同意。命令以低权限运行，改不了 C 盘的系统和用户目录。',
-                      remember=None if self.current.resuming else 'command')
+                      remember='command' if kind == 'command' else None)
             self._before_effect(record, os.path.normcase(folder), command.strip())
         return self.run_command(command, folder)
 

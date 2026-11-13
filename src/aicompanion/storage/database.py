@@ -393,9 +393,21 @@ class Database:
                                       (since, limit)).fetchall()
 
     # ---- P5：agent 审计 --------------------------------------------------------
-    def add_agent_run(self, character_id, goal):
+    def add_agent_run(self, character_id, goal, *, attachments=(), workspace=None):
+        from uuid import uuid4
         with self.transaction() as connection:
-            return connection.execute("INSERT INTO agent_runs(character_id,goal) VALUES (?,?)", (character_id, goal)).lastrowid
+            run_id = connection.execute("INSERT INTO agent_runs(character_id,goal) VALUES (?,?)", (character_id, goal)).lastrowid
+            if attachments:
+                folder = Path(workspace)/'attachments'/f'{run_id}-{uuid4().hex}'
+                for index, (original, size) in enumerate(attachments, 1):
+                    copy = folder/f'{index:02d}-{original.name}'
+                    connection.execute("INSERT INTO agent_attachments(run_id,original,copy,size) VALUES (?,?,?,?)",
+                                       (run_id, str(original), str(copy), size))
+            return run_id
+
+    def agent_attachments(self, run_id):
+        with self.transaction() as connection:
+            return connection.execute("SELECT * FROM agent_attachments WHERE run_id=? ORDER BY copy", (run_id,)).fetchall()
 
     def pause_agent_work(self, run_id, offers, *, connection=None):
         """关窗口后仍有进行中的任务或尚未开始的提议，供用户在操作日志里接续。"""

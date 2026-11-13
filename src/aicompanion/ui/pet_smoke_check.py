@@ -22,6 +22,8 @@ def schedule_pet_smoke_check(window, database, output):
     state = {'errors': [], 'poses_seen': []}
     # 后面会主动触发一次调度来验心事，隔离库里的兴趣搜索要关闭，离线自检不能向外发请求。
     database.set_setting('life_enabled', False)
+    # 全屏前台应用不能藏起自检中的角色，否则连气泡的尺寸都测不到。
+    database.set_setting('pet_hide_fullscreen', False)
     pet = window.pet
     pet.input_locked = True   # 自检不受手动拖动、点菜单影响
     # 记录台词标注、用户气泡、活动图标的调用，验证 P2 链路
@@ -235,11 +237,37 @@ def schedule_pet_smoke_check(window, database, output):
     later(21500, qq_media)
 
     def ui_refresh():
-        # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与附件占位、分组设置窗口能逐页打开
+        # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与文件选择器、分组设置窗口能逐页打开
         from aicompanion.ui.settings_window import SettingsWindow
         state['app_icon_ready'] = not window.windowIcon().isNull() and not window.tray.icon().isNull()
-        state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and not window.attach_button.isEnabled()
+        state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and window.attach_button.isEnabled()
                                          and window.speak_toggle.isCheckable())
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from PySide6.QtWidgets import QFileDialog
+        with TemporaryDirectory() as directory:
+            sample = Path(directory)/'附件自检.txt'
+            sample.write_text('离线附件', encoding='utf-8')
+            # Qt 文件对话框可由测试选中文件；系统原生对话框只能接受真实鼠标输入。
+            attr = Qt.ApplicationAttribute.AA_DontUseNativeDialogs
+            old_native = QApplication.testAttribute(attr)
+            QApplication.setAttribute(attr, True)
+            try:
+                window.attach_button.click()
+            finally:
+                QApplication.setAttribute(attr, old_native)
+            picker = window.attachments
+            dialog = picker.dialog
+            opened = isinstance(dialog, QFileDialog) and dialog.isVisible()
+            dialog.setDirectory(directory)
+            dialog.selectFile(sample.name)
+            dialog.accept()
+            state['attachment_picker_opened'] = opened
+            state['attachment_name_shown'] = sample.name in picker.names.text()
+            state['task_attachment_ready'] = (opened and picker.paths == [str(sample)]
+                                              and sample.name in picker.names.text() and not picker.isHidden()
+                                              and window.agent_toggle.isChecked())
+            window.agent_toggle.setChecked(False)
         from aicompanion.ui.onboarding import Onboarding
         menu = window.pet.build_menu()
         sections = [a.text() for a in menu.actions() if not a.isEnabled() and a.text()]
@@ -595,7 +623,7 @@ def schedule_pet_smoke_check(window, database, output):
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
-        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
+        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')

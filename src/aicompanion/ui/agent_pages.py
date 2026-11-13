@@ -114,7 +114,16 @@ class AuditPage(QWidget):
         status = self.runs.item(row, 2)
         self.resume_button.setEnabled(bool(self.resume and status and status.text() == STATUS['paused']))
         if row < 0 or not self.runs.item(row, 0): return
-        steps = self.database.agent_steps(self.runs.item(row, 0).data(Qt.ItemDataRole.UserRole)); self.steps.setRowCount(len(steps))
+        run_id = self.runs.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        files = self.database.agent_attachments(run_id)
+        steps = self.database.agent_steps(run_id)
+        self.steps.setRowCount(len(steps)+len(files))
+        for index, file in enumerate(files, len(steps)):
+            path = file['recycled'] or file['copy']
+            for column, value in enumerate(('', '办事附件', f"{file['size']} 字节", path)):
+                item = QTableWidgetItem(str(value))
+                item.setToolTip(f"原件：{file['original']}\n副本：{file['copy']}\nSHA-256：{file['sha256']}")
+                self.steps.setItem(index, column, item)
         for i, s in enumerate(steps):
             result = ('✗ '+s['error']) if s['error'] else (s['result_summary'] or s['args_json'])
             for j, v in enumerate((s['seq'], s['tool'], APPROVAL.get(s['approval'], s['approval']), result)):
@@ -133,7 +142,8 @@ class AuditPage(QWidget):
     def _export(self):
         path, _ = QFileDialog.getSaveFileName(self, '导出操作日志', 'agent-audit.json', 'JSON (*.json)')
         if not path: return
-        data = [dict(r, steps=[dict(s) for s in self.database.agent_steps(r['id'])]) for r in self.database.agent_runs(1000)]
+        data = [dict(r, steps=[dict(s) for s in self.database.agent_steps(r['id'])],
+                     attachments=[dict(f) for f in self.database.agent_attachments(r['id'])]) for r in self.database.agent_runs(1000)]
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 
 

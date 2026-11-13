@@ -185,7 +185,8 @@ class PromiseTests(BridgeFixture):
         self.assertEqual(self.db.recent_messages(1,CID)[0]['content'],'旧历史')
         self.assertEqual(self.store.rows(CID),[])
         with self.db.transaction() as c:
-            self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0],16)
+            from aicompanion.storage.schema import SCHEMA_VERSION
+            self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
             self.assertFalse(c.execute('PRAGMA foreign_key_check').fetchall())
 
 

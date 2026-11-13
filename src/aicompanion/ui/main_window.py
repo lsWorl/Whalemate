@@ -412,8 +412,38 @@ class MainWindow(QMainWindow):
         label = {'ready': '角色已就绪'}
         self._status(label.get(value, value))
 
+    def dragEnterEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls and all(url.isLocalFile() for url in urls):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls and all(url.isLocalFile() for url in urls):
+            self.attachments.add([url.toLocalFile() for url in urls])
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
     def _send_current_message(self):
         text=self.input_box.text().strip()
+        picker = getattr(self, 'attachments', None)
+        if picker and picker.paths:
+            goal = next((text[len(prefix):].strip() for prefix in self.AGENT_PREFIXES if text.startswith(prefix)), text)
+            if not goal:
+                self._status('请写下希望她用这些文件做什么。')
+                return
+            if self.agent.busy and text.rstrip('！!。.') in self.STOP_WORDS:
+                self._stop_agent()
+                return
+            if self.agent.start(goal, attachments=tuple(picker.paths)):
+                self.database.add_message('user', text, self.controller.character.id, source='text')
+                self.pet.show_user(text)
+                self.input_box.clear()
+                self.agent_toggle.setChecked(False)
+            return
         if not text: return
         self.input_box.clear()
         if self.agent_toggle.isChecked():
@@ -424,6 +454,8 @@ class MainWindow(QMainWindow):
         self.submit(text)
 
     def _agent_mode_changed(self,on):
+        if not on:
+            self.attachments.clear()
         self.mode_hint.setVisible(on)
         self.input_box.setPlaceholderText('要她做什么？' if on else f'和{self.controller.character.name}说点什么…')
         self.input_box.setToolTip('例如：把桌面上的截图整理到一个文件夹（改动文件前会先问你）' if on else '点左边的“办事”，这句话就交给她动手做')
@@ -1246,6 +1278,9 @@ class MainWindow(QMainWindow):
         if not character_id or character_id==self.controller.character.id: return
         character=next((c for c in self.registry.characters() if c.id==character_id),None)
         if character is None: return
+        self.agent_toggle.setChecked(False)
+        if self.attachments.dialog:
+            self.attachments.dialog.reject()
         self._end_call(); self.interrupt()
         self.controller.character=character; self.registry.set_active(character_id)
         # 被取消的旧角色任务仍可能排队发送结束信号；保留其送达文本直到收尾。

@@ -255,7 +255,7 @@ class SettingsWindow(QDialog):
         agent_page=TabPage('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
         agent_settings=QWidget(); agent_box=QVBoxLayout(agent_settings); agent_box.setContentsMargins(0,6,0,0)
         agent_box.addWidget(self.agent_page)
-        agent_box.addWidget(ComingSoon('把文件交给她','在聊天面板附上或拖入文件，让她读、整理或改写；文件先复制到工作区，原件不动。'))
+        agent_box.addWidget(QLabel('在桌面聊天输入栏点“＋”或拖入文件，再写下任务。她会处理工作区里的副本。'))
         agent_box.addWidget(ComingSoon('跨天的任务','任务有进度和检查点，重启后从断点继续；你也可以在 QQ 私聊里交办，审批发到你那里确认。'))
         agent_box.addStretch(1)
         agent_page.box.addWidget(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
