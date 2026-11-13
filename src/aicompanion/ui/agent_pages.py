@@ -34,10 +34,10 @@ class AgentPage(QWidget):
         pick = QPushButton('选择…'); pick.clicked.connect(lambda: self._pick(self.workspace))
         row = QHBoxLayout(); row.addWidget(self.workspace, 1); row.addWidget(pick)
         form.addRow('默认工作区', row)
-        from aicompanion.agent.approval import MODES
+        from aicompanion.agent.approval import DEFAULT_MODE, MODES
         self.mode = QComboBox()
         for value,label in MODES.items(): self.mode.addItem(label,value)
-        self.mode.setCurrentIndex(max(0,self.mode.findData(database.get_setting('approval_mode','ask'))))
+        self.mode.setCurrentIndex(max(0,self.mode.findData(database.get_setting('approval_mode', DEFAULT_MODE))))
         form.addRow('默认审批模式',self.mode)
         rules = QPushButton('管理项目审批规则…')
         rules.clicked.connect(self._rules)

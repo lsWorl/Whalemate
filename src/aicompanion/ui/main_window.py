@@ -1202,7 +1202,8 @@ class MainWindow(QMainWindow):
             self._status('语音识别失败，可以再说一次：'+error)
 
     def _apply_settings(self):
-        mode = self.database.get_setting('approval_mode','ask')
+        from aicompanion.agent.approval import DEFAULT_MODE
+        mode = self.database.get_setting('approval_mode', DEFAULT_MODE)
         if getattr(self,'last_default_mode',None)!=mode:
             self.last_default_mode = mode
             if hasattr(self, 'approval_mode') and not self.agent.busy:

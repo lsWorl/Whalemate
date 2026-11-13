@@ -290,6 +290,15 @@ class AttachmentTests(Base):
             self.assertIn(str(copy), prompt)
             self.assertNotIn(str(self.source), prompt)
             self.assertIn('early', session.box.call('read_file', {'path':str(copy)})[0])
+            # 用户从未选择模式。模拟放开的一般工作区，实际执行写入并检查没有调用审批。
+            self.assertIsNone(self.db.get_setting('approval_mode'))
+            result = self.workspace/'整理结果.txt'
+            with patch('aicompanion.agent.tools_server.system_location', return_value=False), \
+                    patch.object(session.box, 'request_approval') as approve:
+                _, failed = session.box.call('write_file', {'path': str(result), 'content': '已整理'})
+                self.assertFalse(failed)
+                approve.assert_not_called()
+                self.assertEqual(result.read_text(encoding='utf-8'), '已整理')
             return DshResult('done', '已整理')
         session.dsh.run.side_effect = harness
         with patch('aicompanion.ui.agent_session.problem',return_value=''), \

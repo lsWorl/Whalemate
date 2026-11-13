@@ -25,7 +25,7 @@ import time
 from typing import Callable
 
 from aicompanion.agent.paths import protected_reason
-from aicompanion.agent.approval import MODES, PROJECT_CODE, Rule, Rules, denied_command_family, command_prefix, system_location
+from aicompanion.agent.approval import DEFAULT_MODE, MODES, PROJECT_CODE, Rule, Rules, denied_command_family, command_prefix, system_location
 
 TRASH_NAME = '.aicompanion-trash'
 READ_LIMIT = 200_000
@@ -204,7 +204,7 @@ class Task:
     allowed: list[Path] = field(default_factory=list)      # 放开写的文件夹
     always: set[Rule] = field(default_factory=set)          # 仅在本次运行中复用
     cancelled: threading.Event = field(default_factory=threading.Event)
-    mode: str = 'workspace'
+    mode: str = DEFAULT_MODE
     rules: Rules | None = None
     peer: tuple | None = None
     resuming: bool = False

@@ -353,7 +353,7 @@ class RedesignTests(unittest.TestCase):
             win.approval_mode.setCurrentIndex(win.approval_mode.findData('auto'))
             self.assertEqual(win.agent.box.task.mode, 'auto')
             win.agent._worker_finished()
-            self.assertEqual(win.approval_mode.currentData(), 'ask')
+            self.assertEqual(win.approval_mode.currentData(), 'workspace')
         finally:
             win.pet.shutdown()
             win.pet.deleteLater()

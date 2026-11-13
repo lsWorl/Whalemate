@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
-from aicompanion.agent.approval import MODES, Rules
+from aicompanion.agent.approval import DEFAULT_MODE, MODES, Rules
 from aicompanion.bridge.tasks import TaskBridge, authorized
 
 from aicompanion.agent import attachments as task_files
@@ -121,7 +121,7 @@ class AgentSession(QObject):
         task = self.box.task = Task(run_id=run_id, allowed=allowed, resuming=resuming,
                                     originals={Path(row['original']): Path(row['copy']) for row in rows if not peer},
                                     rules=Rules(database,cwd),peer=peer,
-                                    mode=database.get_setting('approval_mode','ask'),
+                                    mode=database.get_setting('approval_mode', DEFAULT_MODE),
                                     copies={Path(row['copy']) for row in rows})
 
         selector = getattr(w,'approval_mode',None)
@@ -471,7 +471,7 @@ class AgentSession(QObject):
         w.pet.agent_busy = False
         selector = getattr(w, 'approval_mode', None)
         if selector is not None:
-            default_mode = w.database.get_setting('approval_mode', 'ask')
+            default_mode = w.database.get_setting('approval_mode', DEFAULT_MODE)
             selector.setCurrentIndex(max(0, selector.findData(default_mode)))
         if not getattr(self, 'got_result', True):
             # 线程异常退出且没有结果：也要把界面从"干活中"恢复过来

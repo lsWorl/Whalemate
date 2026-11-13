@@ -210,12 +210,12 @@ def build(window):
     w.chat_mode.clicked.connect(lambda: (w.agent_toggle.setChecked(False), w.chat_mode.setChecked(True)))
     w.agent_toggle.toggled.connect(lambda on: w.chat_mode.setChecked(not on))
     w.chat_mode.setChecked(True)
-    from aicompanion.agent.approval import MODES
+    from aicompanion.agent.approval import DEFAULT_MODE, MODES
     w.approval_mode = QComboBox()
     w.approval_mode.setAccessibleName('当前办事审批模式')
     for value,label in MODES.items():
         w.approval_mode.addItem(label,value)
-    w.approval_mode.setCurrentIndex(max(0,w.approval_mode.findData(w.database.get_setting('approval_mode','ask'))))
+    w.approval_mode.setCurrentIndex(max(0,w.approval_mode.findData(w.database.get_setting('approval_mode', DEFAULT_MODE))))
     w.approval_mode.currentIndexChanged.connect(lambda _:setattr(w.agent.box.task,'mode',w.approval_mode.currentData()))
     modes.addWidget(w.approval_mode)
     wrap.addWidget(segments, 0, Qt.AlignmentFlag.AlignLeft)

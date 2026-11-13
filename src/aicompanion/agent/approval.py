@@ -7,6 +7,7 @@ import secrets
 import threading
 import time
 
+DEFAULT_MODE = 'workspace'
 MODES = {'ask': '每步确认', 'workspace': '自动接受工作区改动', 'auto': '放手做'}
 CATEGORIES = {'write': '写入', 'move': '移动', 'command': '命令'}
 # 只有行为可说明的子命令才提供复用候选。脚本入口、解释器 -c、安装和网络执行必须单独看。
