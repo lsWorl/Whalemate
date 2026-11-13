@@ -22,6 +22,7 @@ import threading
 from uuid import uuid4
 
 from aicompanion.domain.cancellation import CancellationToken
+from aicompanion.services.circle_topics import CircleTopics, INTENT as CIRCLE_INTENT
 from aicompanion.qq.specs import MIN_GROUP_OUTREACH_PLUGIN, MIN_PROACTIVE_PLUGIN, plugin_version
 
 PLATFORM_NAMES = {'qq': 'QQ'}
@@ -434,7 +435,7 @@ class BridgeService:
             count += 1
         return max(1, count)
 
-    def _chime_ok(self, channel: str, person=None) -> bool:
+    def _chime_ok(self, channel: str, person=None, *, preview=False) -> bool:
         """没人叫她时要不要试着插一句：按活跃度的概率、这个群离她上次说话的间隔和条数。
         T15：概率再乘上她和刚说话这个人的关系（RelationshipService.chime_factor）：熟人、喜欢的人说话更容易接，
         不熟的少接，最近让她不舒服的人更少；关系很好时也不用等那么多条。
@@ -451,10 +452,14 @@ class BridgeService:
             since += 1
         factor = self.controller.relationships.chime_factor(self.controller.character.id, person) if person else 1.0
         after = rule['after']-1 if factor >= 1.3 else rule['after']
-        if since < max(1, after) or self.chance() >= min(0.9, rule['chance']*factor): return False
+        if since < max(1, after): return False
         day = self.today().isoformat()
-        return self.database.reserve_daily_all([(f'bridge_public_count:{day}', int(setting(self.database, 'bridge_public_daily') or 0)),
-                                                (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))])
+        budgets = [(f'bridge_public_count:{day}', int(setting(self.database, 'bridge_public_daily') or 0)),
+                   (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))]
+        if preview:
+            # 调度选群时不掷骰、不占额度；这个群被节流时还可以考虑其他群。
+            return all(self.database.get_setting(key, 0) < limit for key, limit in budgets)
+        return self.chance() < min(0.9, rule['chance']*factor) and self.database.reserve_daily_all(budgets)
 
     # ---- 处理一条消息 -----------------------------------------------------------------
     def media_permission(self, payload):
@@ -906,8 +911,10 @@ class BridgeService:
         except Exception:
             failed=True   # 只写了 <mind lookup/>、没有正文时生成会报"没有有效内容"：先看是不是要查梗
         else:failed=False
-        if self.closed or controller.character.id!=character.id:
-            controller.expression.cancel(turn,character.id);return {'reply':'','silent':True,'reason':'closed'}
+        if self.closed or controller.character.id!=character.id or (group and self.classify(platform, sender, group) is None):
+            self.database.drop_reply(turn,character.id)
+            controller.expression.cancel(turn,character.id)
+            return {'reply':'','silent':True,'reason':'closed'}
         # T20：她这一轮只写了 <mind lookup="词"/>——想查一个不懂的梗。搜一次，把结果只给她自己看，同一轮重新回一次（只查一次）
         term=meme_lookup.tidy((getattr(controller,'last_mind',('',{}))[1] or {}).get('lookup','')) if getattr(controller,'last_mind',('',))[0]==turn else ''
         if term and can_look:
@@ -1037,6 +1044,9 @@ class BridgeService:
                     and time.time()-beat.get('at',0) < 60 and (beat.get('onebot') or {}).get('connected')
                     and plugin_version(beat.get('astrbot')) >= MIN_GROUP_OUTREACH_PLUGIN)
 
+    def circle_ready(self, group):
+        return self.group_ready(group) and self._chime_ok('qq:group:' + group, preview=True)
+
     def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None, still_valid=None, *, group='') -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
         on_queued(轮次)：生成前绑定调度记录，显式返回 False 则取消；on_taken(轮次)：插件领取时；on_done(Delivery)：有结果时。
@@ -1051,7 +1061,14 @@ class BridgeService:
         with self.lock:
             ready = self.group_ready(group) if group else self.qq_ready()
             if not ready or self.quota.check_silent('companion') == 'stop': return None
-            if group and not self._reserve_public(): return None
+            circle = intent == CIRCLE_INTENT
+            if circle:
+                if not group or not on_queued or not still_valid or not still_valid():
+                    return None
+                if self.quota.check_silent('qq') == 'stop' or not self._chime_ok('qq:group:' + group):
+                    return None
+            elif group and not self._reserve_public():
+                return None
             owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
             bot = str(((runtime.last_heartbeat or {}).get('onebot') or {}).get('self_id') or '')
             if not re.fullmatch(r'\d{5,12}', bot): bot = 'qq'
@@ -1090,8 +1107,26 @@ class BridgeService:
             try:
                 if on_queued and on_queued(turn) is False:
                     return give_up()
+                reply_filter = None
+                if circle:
+                    with self.database.transaction() as c:
+                        item = c.execute("SELECT key FROM outreach_log WHERE turn_id=? AND character_id=? AND source='circle' "
+                                         "AND status='pending'", (turn, character.id)).fetchone()
+                        topic = CircleTopics(self.database, self.clock).active(c, character.id, channel, item[0]) if item else None
+                    if not topic:
+                        return give_up()
+                    situation = (f"群里安静了一阵。接的是这个群聊过的话题「{topic['name']}」。"
+                                 f"群聊摘要（仅作背景）：{topic['summary']}。有具体想法时接一句，"
+                                 f"不复述摘要、不编造新进展；没有值得补充的话就只回复{SILENCE}。")
+                    def skip_if_silent(text, status):
+                        if status == 'complete' and text.strip() in (SILENCE, '不说'):
+                            self.database.set_setting(f"circle_silent:{topic['id']}", topic['last_message'])
+                            return ''
+                        return text
+                    reply_filter = skip_if_silent
                 for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel=channel, scene=scene,
-                                             situation=situation, source='qq', offer_tasks=False, purpose='companion',
+                                             situation=situation, source='qq', offer_tasks=False, purpose='qq' if circle else 'companion',
+                                             reply_filter=reply_filter,
                                              expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
                 return give_up()
@@ -1253,9 +1288,15 @@ class BridgeService:
         memory = self.controller.memory_service
         every = int(self.database.get_setting('bridge_memory_every', DEFAULTS['bridge_memory_every']) or 0)
         if every <= 0 or memory.pending(character_id, channel) < every: return False
-        if self.quota.check_silent('memory') == 'stop': return False
-        try: client = self.controller.client(character_id, 'memory')   # 在启动线程前取好，线程里不再读共享状态
-        except Exception: return False
+        client = None
+        if self.quota.check_silent('memory') != 'stop':
+            try:
+                if self.controller.router.ready('chat', character_id):
+                    client = self.controller.client(character_id, 'memory')
+            except Exception:
+                pass
+        if client is None and not channel.startswith('qq:group:'):
+            return False
         with REMEMBERING_LOCK:
             if channel in REMEMBERING: return False
             REMEMBERING.add(channel)

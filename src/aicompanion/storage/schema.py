@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 19  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单；v18：主人 QQ 交办与审批规则；v19：向量索引与阶段摘要
+SCHEMA_VERSION = 20  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单；v18：主人 QQ 交办与审批规则；v19：向量索引与阶段摘要；v20：群内话题
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -256,6 +256,24 @@ CREATE TABLE IF NOT EXISTS promises (
 );
 CREATE INDEX IF NOT EXISTS ix_promises_due ON promises(character_id,status,due_at);
 CREATE UNIQUE INDEX IF NOT EXISTS ix_promise_delivery ON outreach_log(character_id,key) WHERE source='promise';
+-- v20 群内话题及其出处。保留原消息，删除话题只级联删除出处引用
+CREATE TABLE IF NOT EXISTS circle_topics (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, channel TEXT NOT NULL,
+ name TEXT NOT NULL, name_key TEXT NOT NULL, summary TEXT NOT NULL, summary_through INTEGER NOT NULL,
+ UNIQUE(character_id,channel,name_key)
+);
+CREATE TABLE IF NOT EXISTS circle_evidence (
+ topic_id INTEGER NOT NULL REFERENCES circle_topics(id) ON DELETE CASCADE,
+ message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE, person_id INTEGER,
+ day TEXT NOT NULL, seen_at REAL NOT NULL, PRIMARY KEY(topic_id,message_id)
+);
+CREATE TABLE IF NOT EXISTS circle_tombstones (
+ character_id TEXT NOT NULL, channel TEXT NOT NULL, through_id INTEGER NOT NULL,
+ PRIMARY KEY(character_id,channel)
+);
+CREATE INDEX IF NOT EXISTS ix_circle_speaker ON chat_messages(character_id,channel,sender,id);
+CREATE INDEX IF NOT EXISTS ix_circle_turn ON outreach_log(turn_id) WHERE source='circle';
+CREATE UNIQUE INDEX IF NOT EXISTS ix_circle_delivery ON outreach_log(character_id,key) WHERE source='circle';
 -- v14 她自己看过的活动和来源
 CREATE TABLE IF NOT EXISTS activities (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'read', interest TEXT NOT NULL,

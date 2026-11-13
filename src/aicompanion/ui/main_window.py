@@ -994,7 +994,8 @@ class MainWindow(QMainWindow):
         service = getattr(runtime.server, 'service', None)
         group_ready = getattr(service,'group_ready',None) if self.database.get_setting('proactive_qq_enabled',True) else None
         outreach=self.outreach_scheduler.next(character_id,system_idle_seconds(),monotonic()-self.last_interaction,
-                                              group_ready=group_ready or (lambda group: False))
+                                              group_ready=group_ready or (lambda group: False),
+                                              circle_ready=getattr(service, 'circle_ready', None))
         if outreach: self._deliver_outreach(character_id,outreach)
 
     def _deliver_outreach(self,character_id,outreach):
@@ -1043,7 +1044,9 @@ class MainWindow(QMainWindow):
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
         if group:
-            if not service or not service.group_ready(group) or not self.database.get_setting('proactive_qq_enabled', True): return False
+            from aicompanion.services.circle_topics import INTENT as CIRCLE_INTENT
+            if not service or not service.group_ready(group): return False
+            if intent != CIRCLE_INTENT and not self.database.get_setting('proactive_qq_enabled', True): return False
         elif choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
         target = {'group':group} if group else {}
         worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken,on_queued=queued,still_valid=still_valid,**target),self)

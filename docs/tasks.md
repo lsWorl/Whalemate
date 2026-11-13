@@ -4,7 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| V4-7d | 圈子长期话题 | Codex 实现、Claude 审查 | 进行中 | [任务说明](tasks/V4-7d-circle-topics.md) |
+| V4-7d | 圈子长期话题 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7d-circle-topics.md) |
 | V4-6b | 混合语义召回与有来源的阶段摘要 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-6b-semantic-recall.md) |
 | V4-6c | 本地中文向量、索引与首字延迟改进 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-6c-local-embedding.md) |
 | V4-QQ-本地 | 恢复新装 QQ 的 NapCat 来源，验证自包含和扫码前链路 | Codex 实现，Claude 审查 | 待审查，最终包已验至二维码 | [任务说明](tasks/V4-qq-local-napcat.md) |

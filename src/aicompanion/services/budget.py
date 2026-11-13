@@ -100,7 +100,7 @@ def describe(data: dict | None) -> str:
     """记忆页上显示的一行说明。"""
     if not data: return '还没有记录（聊一句之后这里会显示上一轮请求带了多少内容）。'
     names = {'persona': '人格', 'memory': '记忆', 'recall': '想起的旧事', 'relationship': '关系', 'expression': '表情候选',
-             'stages': '阶段摘要', 'attachments': '办事附件', 'tools': '办事说明', 'other': '其他说明'}
+             'circle': '本群话题', 'stages': '阶段摘要', 'attachments': '办事附件', 'tools': '办事说明', 'other': '其他说明'}
     parts = '、'.join(f"{names.get(k, k)} {v} 字" for k, v in (data.get('sections') or {}).items() if v)
     text = (f"上一轮请求共 {data.get('total', 0)} 字（预算 {data.get('limit', 0)} 字）：系统提示 {data.get('prompt', 0)} 字"
             + (f"（{parts}）" if parts else '') + f"，聊天记录 {data.get('turns', 0)} 条 {data.get('history', 0)} 字")

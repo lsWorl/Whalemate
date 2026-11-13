@@ -280,7 +280,10 @@ class SettingsWindow(QDialog):
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
         platforms_page=TabPage('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')
-        platforms_page.box.addWidget(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话')),1)
+        from aicompanion.ui.circle_topics import CircleTopicsPage
+        self.circle_topics = CircleTopicsPage(self.database, cid, self)
+        platforms_page.box.addWidget(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话'),
+                                         (self.circle_topics,'圈子长期话题')),1)
         self.storage_page=StoragePage(self.database,settings)
         storage_page=Page('存储位置','聊天记录、记忆和表情图库放在哪里。'); storage_page.add(self.storage_page); storage_page.finish()
         self.usage_page=UsagePage(self.database)

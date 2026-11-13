@@ -284,6 +284,30 @@ def schedule_pet_smoke_check(window, database, output):
         try:
             state['settings_pages_ready'] = (dialog.nav.current() == 'models'
                                              and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
+            from unittest.mock import patch
+            from aicompanion.services.circle_topics import switch_key
+            from PySide6.QtWidgets import QMessageBox
+            circle = dialog.circle_topics
+            cid = window.controller.character.id
+            scope = 'qq:group:30003'
+            saved_groups = database.get_setting('bridge_groups', [])
+            database.set_setting('bridge_groups', ['30003'])
+            try:
+                circle.refresh_groups()
+                mid = database.add_message('user', '自检群聊新棋谱', cid, source='qq', channel=scope)
+                circle.topics.collect(cid, scope, database.recent_messages(1, cid, channel=scope),
+                                      [dict(name='棋谱', summary='群里在复盘棋局', source_ids=[mid])])
+                circle.refresh_rows()
+                circle.table.selectRow(0)
+                circle.enabled_box.click()
+                visible = circle.table.rowCount() == 1 and str(mid) in circle.evidence.toPlainText()
+                with patch('aicompanion.ui.circle_topics.QMessageBox.question', return_value=QMessageBox.Yes):
+                    circle.delete_one.click()
+                state['circle_topics_settings'] = (visible and database.get_setting(switch_key(cid, scope), False)
+                                                   and circle.table.rowCount() == 0)
+            finally:
+                database.set_setting('bridge_groups', saved_groups)
+                database.set_setting(switch_key(cid, scope), False)
             semantic = dialog.semantic_card
             state['semantic_settings'] = ('未开启' in semantic.status.text() and not semantic.disable.isEnabled()
                                           and semantic.originals.isEnabled())
@@ -291,7 +315,6 @@ def schedule_pet_smoke_check(window, database, output):
             state['local_embedding_option'] = (semantic.enable.isEnabled() and semantic.model.isHidden()
                                                and '本地' in semantic.enable.text())
             from aicompanion.services.semantic import LOCAL
-            from unittest.mock import patch
             with patch.object(semantic.service.db, 'get_setting', return_value=vars(LOCAL)), \
                     patch.object(semantic.service, 'download_status', 'hf-mirror.com · HTTP 503；huggingface.co · 正在连接'):
                 semantic.refresh_status()
@@ -659,7 +682,7 @@ def schedule_pet_smoke_check(window, database, output):
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.extend(['qq_media_settings_ready','qq_task_approval'])
-        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
+        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'circle_topics_settings', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
