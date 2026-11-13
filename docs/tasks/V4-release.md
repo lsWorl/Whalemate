@@ -80,3 +80,15 @@
 本机包解压后的 `Whalemate/third-party/napcat/` 包含未改动的原版 ZIP、完整 LICENSE 和 NOTICE.txt。NapCat 仅限非商业用途。NapCat、腾讯 QQ 二进制和 Node.js 均适用各自的许可。面向其他用户分发 QQ 运行时的授权尚未核实。
 
 用 `tools/verify_release.py <ZIP> --case qq` 运行联网的扫码前验收。它启动解压出的主程序，在临时用户目录里准备真实组件，检查 WebUI、二维码、AstrBot 监听和插件心跳，随后停止服务。正式账号登录由负责人扫码。[构建来源与实测记录](V4-qq-local-napcat.md)
+
+## V4-6c 本地向量运行库的发布包增量（2026-11-13）
+
+Windows x64、Python 3.14、PyInstaller 6.22.3，采用 `tools/build_release.py` 的常规构建流程，各自使用全新的临时目录，均不附 NapCat。对照组在冻结主程序和卸载程序时额外传 `--exclude-module onnxruntime --exclude-module tokenizers`；实验组保留两个运行库。NumPy 2.5.4 已被本地语音代码引用，两组均收录。两个 ZIP 均通过发布脚本的清单检查。
+
+| 构建 | ZIP 字节 | MiB |
+| --- | ---: | ---: |
+| 对照组 | 422,070,321 | 402.52 |
+| 含 onnxruntime 1.31.1、tokenizers 0.23.3 | 439,505,400 | 419.15 |
+| 整包净增 | **17,435,079** | **16.63** |
+
+按 ZIP 条目的压缩大小计算，`_internal/onnxruntime*` 为 13.64 MiB，`_internal/tokenizers*` 为 2.66 MiB，`_internal/numpy*` 在两组均为 8.89 MiB，NumPy 净增为零。整包差额还包含冻结的 Python 代码及清单等变化。两个 ZIP 的条目中均未发现本地 ONNX 权重和 tokenizer.json。本次仅构建并在本机测量包体，未运行这两个压缩包内的程序或上传发布。

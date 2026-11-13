@@ -2117,3 +2117,11 @@ Windows 在代码提交 `4335653827c1e9e2995f26f7fae0f01c8285137b` 运行 `tools
 Windows 对代码 `4dc764d434527e53a08cd21a4a7dd83deab902c8` 运行 `tools\run_checks.bat`，退出 0，1349 项（1342 通过、7 跳过），233.851 秒。桌宠 smoke 通过，local_embedding_option 和 semantic_settings 均为 true，失败列表为空。专项 `python -m unittest test_semantic_recall test_local_embedding test_model_page` 共 32 项通过（5.281 秒）。公开模型经真实下载器校验后，阻断 socket.connect 仍成功生成 512 维向量，相关和无关合成句的得分分别为 0.6052 和 0.1368。
 
 `tools\measure_pet.ps1` 对照 `-LocalEmbeddingDir`，整个进程树工作集 445.6 → 541.2 MiB（+95.6），专用提交 342.4 → 1035.6 MiB（+693.2），工作集超过 350 MiB 目标。`tools/measure_semantic.py` 实测 2000 × 1024 维打分中位数由 72.66 降到 2.32 毫秒。临时聊天在关闭向量和本地模型热态下的首段分别为 34.80 和 38.88 毫秒，回环慢服务超时由 4053.92 降到 1570.54 毫秒。测量条件与文件哈希见[任务说明](tasks/V4-6c-local-embedding.md)。未测公网模型首字、长时间高负载、安装包及人工体验。
+
+### V4-6c 审查修订：大陆镜像优先（2026-11-13）
+
+每个文件先取 hf-mirror.com 的固定提交，再尝试 huggingface.co。设置显示源、失败原因和校验结果，并说明本地模式约多占 100 MB 常驻内存。镜像文件同样通过长度和 SHA-256 校验后才落入缓存，取消会停止切源。
+
+Windows 在代码 `412a423c01128b121aecf76bee3a831f5a2d059b` 运行 `tools\run_checks.bat`，退出 0。1352 项单测用时 233.731 秒，1345 通过、7 跳过；桌宠 smoke 的 `local_embedding_sources` 和 `passed` 均为 true，失败列表为空。另运行下载与召回专项 21 项，用时 1.598 秒，全部通过。本机实测两个域名曾同时出现 TLS 中断，重试后两个真实文件均从首选镜像下载并通过固定哈希校验，阻断网络后成功生成 512 维向量。主源失败、次源成功也有离线回归覆盖。
+
+同机对照构建的 Windows 发布 ZIP 净增 16.63 MiB（含新增推理依赖）。两组已有的 NumPy 体积相同。见 [V4-release 构建记录](tasks/V4-release.md)。未做大陆多运营商可达性测试，未运行对照包内的 EXE。
