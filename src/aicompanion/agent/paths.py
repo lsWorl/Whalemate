@@ -21,7 +21,8 @@ PROTECTED_NAMES = {'.env', '.git-credentials', '.npmrc', '.pypirc', 'id_rsa', 'i
 
 def protected_reason(path: Path) -> str:
     """系统目录、凭据和浏览器配置、密钥文件、本应用的数据库：不论是否同意都不碰。"""
-    if path.name.lower() in PROTECTED_NAMES or path.suffix.lower() in ('.pem', '.key', '.pfx', '.kdbx'):
+    if (path.name.lower() in PROTECTED_NAMES or path.name.lower().startswith('.env.')
+            or path.suffix.lower() in ('.pem', '.key', '.pfx', '.kdbx')):
         return '这是密钥 / 凭据文件'
     if path.suffix.lower() in ('.sqlite3', '.sqlite3-wal', '.sqlite3-shm') and 'aicompanion' in path.name.lower():
         return '这是我自己的数据库'

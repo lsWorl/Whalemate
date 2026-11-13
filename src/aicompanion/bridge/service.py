@@ -6,7 +6,7 @@
   陌生人各自一段（qq:user:<号>），看不到桌面的聊天记录和对话摘要。
 - 记忆在桌面和聊天平台之间共享（用户 2026-11-07 决定）：群里听到的事会整理成记忆（写清楚是谁的），桌面上她也知道；
   桌面上记住的事在群里也能用，只有爹在记忆页标成"只在私下用"的不会在群里用。
-聊天平台上不提议、也不执行"动手干活"。
+只有已绑定的主人 QQ 私聊可以向桌面交办，执行前仍需确认。
 
 并发：一条消息的"按最新设置判断身份 → 检查额度 → 预留当日条数 → 记下用户消息 → 生成 → 记下回复"整段在一把进程级锁里串行完成
 （设置保存时重建服务实例也共用这把锁），生成时只看到这条消息为止的历史，后来的消息不会混进这一轮。
@@ -623,6 +623,26 @@ class BridgeService:
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
+        from aicompanion.bridge.tasks import ANSWER, decode_files, peer_of
+        tasks = getattr(self.controller,'qq_tasks',None)
+        capable = payload.get('task_protocol') == 1 and bool(tasks) and not self.closed
+        peer = peer_of(self.database,payload) if capable else None
+        match = ANSWER.fullmatch(text)
+        if capable and match:
+            reply = tasks.answer(payload,peer,match) if peer else ''
+            return {'reply':reply,'silent':not reply,'reason':'approval'}
+        if 'task_files' in payload:
+            if not peer or not self.controller.agent_enabled:
+                return {'reply':'','silent':True,'reason':'not_allowed'}
+            try:
+                received = decode_files(payload['task_files'])
+                if not received:
+                    raise ValueError('没有收到文件。')
+            except ValueError as error:
+                return {'reply':str(error),'silent':False,'reason':'bad_file'}
+            goal = text or '查看这次发来的文件'
+            accepted = tasks.submit(peer,self.controller.character.id,goal,received,str(payload.get('task_message') or ''))
+            return {'reply':'收到文件，请确认这次交办。' if accepted else '', 'silent':not accepted,'reason':'task_file'}
         images = payload.get('images') or []
         if not text and (images or payload.get('stickers')): text = '[图片]'
         if not text: return {'reply': '', 'silent': True, 'reason': 'empty'}
@@ -630,7 +650,7 @@ class BridgeService:
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         if mode['group'] and payload.get('called', True) is False and not self.called_by_name(text):
             return self._overhear(mode, platform, sender_id, group_id, name, text, payload)
-        if payload.get('debounce') is True:
+        if payload.get('debounce') is True and not peer:
             merged = self._gather((platform, group_id, sender_id), payload)
             if merged is None: return {'reply': '', 'silent': True, 'reason': 'merged'}
             payload = merged; text = neutral_images(str(payload.get('text') or '').strip()[:MAX_TEXT]); images = payload.get('images') or []
@@ -866,9 +886,20 @@ class BridgeService:
         def filter_reply(raw,status):
             return '' if (mode['group'] or may_skip) and raw.strip() in (SILENCE,'不说') else raw
         try:
-            for _ in controller.generate(turn,character,CancellationToken(),text,channel=mode['channel'],scene=mode['scene'],
-                situation=situation,source=platform,offer_tasks=False,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
-                expression_context=context,on_expression_event=event,person=person):pass
+            from aicompanion.bridge.tasks import peer_of
+            from aicompanion.pet.script import CueStream, Vocab
+            tasks = getattr(controller,'qq_tasks',None)
+            task_peer = peer_of(self.database,request) if tasks and private and request.get('task_protocol')==1 else None
+            offer = bool(task_peer and controller.agent_enabled and request.get('task_message'))
+            parser = CueStream(controller.vocabs.get(character.id) or Vocab()) if offer else None
+            marked = False
+            for chunk in controller.generate(turn,character,CancellationToken(),text,channel=mode['channel'],scene=mode['scene'],
+                situation=situation,source=platform,offer_tasks=offer,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
+                expression_context=context,on_expression_event=event,person=person):
+                if parser:
+                    marked |= any(cue.kind=='task' for cue in parser.feed(chunk)[1])
+            if parser:
+                marked |= any(cue.kind=='task' for cue in parser.flush()[1])
         except Exception:
             failed=True   # 只写了 <mind lookup/>、没有正文时生成会报"没有有效内容"：先看是不是要查梗
         else:failed=False
@@ -881,6 +912,8 @@ class BridgeService:
             return self._reply(controller,character,mode,asked,platform,purpose,message_id,text,chime=chime,request=request,may_skip=may_skip,person=person,
                                looked=self.look_up(term,mode,stable,str(request.get('sender_name') or ''),text))
         if failed:return {'reply':'','silent':True,'reason':'error'}
+        if marked and task_peer and not self.closed:
+            tasks.submit(task_peer, character.id, str(request.get('text') or text), [], str(request['task_message']))
         expression=delivered[-1];attachments=expression.attachments
         wire=expression.wire();wire['attachments']=[]
         for attachment in attachments:

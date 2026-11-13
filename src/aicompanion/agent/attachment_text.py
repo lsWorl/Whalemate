@@ -9,8 +9,14 @@ MAX_TEXT = 4 * 1024 * 1024
 PAGE_CHARS = 3600
 
 
-def _xml(book, name):
-    data = book.read(name)
+def _xml(book, name, remaining):
+    data = bytearray()
+    with book.open(name) as stream:
+        while chunk := stream.read(min(65536, remaining[0]+1)):
+            remaining[0] -= len(chunk)
+            if remaining[0] < 0:
+                raise ValueError('文档实际解压内容过大，请拆分后再交给她')
+            data.extend(chunk)
     markup = data.replace(b'\0', b'').upper()
     if b'<!DOCTYPE' in markup or b'<!ENTITY' in markup:
         raise ValueError('不支持含 DTD 或声明实体的文档')
@@ -23,18 +29,19 @@ def _strings(element):
 
 def _office(path, data):
     with ZipFile(BytesIO(data)) as book:
+        remaining = [MAX_XML]
         members = book.infolist()
         if len(members) > 2048 or sum(m.file_size for m in members) > MAX_XML:
             raise ValueError('文档解压后过大，请拆分后再交给她')
         if path.suffix.lower() == '.docx':
-            for paragraph in _xml(book, 'word/document.xml').iterfind('.//{*}p'):
+            for paragraph in _xml(book, 'word/document.xml', remaining).iterfind('.//{*}p'):
                 yield _strings(paragraph)
             return
         names = book.namelist()
-        strings = ([_strings(si) for si in _xml(book, 'xl/sharedStrings.xml')]
+        strings = ([_strings(si) for si in _xml(book, 'xl/sharedStrings.xml', remaining)]
                    if 'xl/sharedStrings.xml' in names else [])
-        workbook = _xml(book, 'xl/workbook.xml')
-        targets = {r.get('Id'): r.get('Target', '') for r in _xml(book, 'xl/_rels/workbook.xml.rels')
+        workbook = _xml(book, 'xl/workbook.xml', remaining)
+        targets = {r.get('Id'): r.get('Target', '') for r in _xml(book, 'xl/_rels/workbook.xml.rels', remaining)
                    if r.get('TargetMode') != 'External'}
         for sheet in workbook.iterfind('.//{*}sheet'):
             rid = next((value for key, value in sheet.attrib.items() if key.endswith('}id')), '')
@@ -43,7 +50,7 @@ def _office(path, data):
             if not member.startswith('xl/worksheets/') or '..' in member.split('/'):
                 continue
             yield '工作表 '+sheet.get('name', '')
-            for cell in _xml(book, member).iterfind('.//{*}c'):
+            for cell in _xml(book, member, remaining).iterfind('.//{*}c'):
                 value = cell.findtext('{*}v', '')
                 if cell.get('t') == 's':
                     if not value.isdecimal() or int(value) >= len(strings):

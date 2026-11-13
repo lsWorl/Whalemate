@@ -311,27 +311,44 @@ class RedesignTests(unittest.TestCase):
         self.assertEqual(len(wizard.admin.accounts()), 1)
 
     def test_task_card_and_pet_share_one_approval(self):
-        import threading
+        from aicompanion.agent.approval import Rule
         win = MainWindow(self.controller, self.settings, self.registry)
         win.scheduler.stop()
         win.pump.stop()
+        queue = win.agent.tasks.approvals
+        def ask(rule=None):
+            req = queue.add(0, rule.category if rule else 'move', '允许移动测试文件吗？', '源文件 → 目标目录', rule)
+            win.agent._refresh_approvals()
+            return req
         try:
-            box = {'event': threading.Event(), 'answer': 'timeout'}
-            spec = {'text': '允许移动测试文件吗？', 'details': '源文件 → 目标目录',
-                    'choices': [('同意', 'once'), ('让她停下', 'no')]}
-            win.agent._ask(spec, box)
-            bubble = win.pet.confirm
-            self.assertEqual(win.task_card.details.toPlainText(), spec['details'])
-            win.task_card.respond('once')
-            self.assertTrue(box['event'].is_set())
-            self.assertEqual(box['answer'], 'once')
-            self.assertTrue(bubble.answered)
-            self.assertIsNone(win.task_card.answer)
-            second = {'event': threading.Event(), 'answer': 'timeout'}
-            win.agent._ask(spec, second)
+            for action, button in [('once', win.task_card.allow), ('always', win.task_card.reuse),
+                                   ('persist', win.task_card.persist), ('no', win.task_card.deny)]:
+                req = ask(Rule('move', str(Path(self.temp.name))))
+                bubble = win.pet.confirm
+                self.assertEqual(win.task_card.details.toPlainText(), '源文件 → 目标目录')
+                with patch('PySide6.QtWidgets.QInputDialog.getText', return_value=('先等等', True)):
+                    button.click()
+                self.assertTrue(req.ready.is_set())
+                self.assertEqual(req.decision, action)
+                if action == 'no':
+                    self.assertEqual(req.reason, '先等等')
+                self.assertTrue(bubble.answered)
+                self.assertIsNone(win.task_card.answer)
+            second = ask()
             win.pet.close_confirm()
             win.task_card.respond('once')
-            self.assertEqual(second['answer'], 'timeout')
+            self.assertEqual(second.decision, 'timeout')
+            first = ask(Rule('move', str(Path(self.temp.name))))
+            hard = ask()
+            last = ask(Rule('command', 'set-content'))
+            self.assertIn('3', win.task_card.queue_count.text())
+            from PySide6.QtWidgets import QMessageBox
+            with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes) as confirm:
+                win.task_card.batch.click()
+            self.assertIn(first.code, confirm.call_args.args[2])
+            self.assertIn(last.code, confirm.call_args.args[2])
+            self.assertNotIn(hard.code, confirm.call_args.args[2])
+            self.assertEqual((first.decision, last.decision, hard.decision), ('once', 'once', ''))
         finally:
             win.pet.shutdown()
             win.pet.deleteLater()

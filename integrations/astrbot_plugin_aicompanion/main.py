@@ -26,7 +26,9 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.11.0'
+PLUGIN_VERSION = '0.12.0'
+TASK_LIMIT = 4*1024*1024
+TASK_TOTAL = 16*1024*1024
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -61,6 +63,7 @@ class AICompanionBridge(Star):
         self.pet_vision = True
         self.pet_collect = True        # 桌宠心跳告诉我们要不要收集别人发的表情包
         self.known_stickers = set()    # 桌宠已经收过的表情包（内容哈希）：再看到只传哈希，不重复传图
+        self.approval_messages = {}  # (机器人, 编号) → (主人, 平台消息号, 可批量)
         self.private_origins = {}      # QQ 号 → AstrBot 会话标识（主动发私聊时用；没聊过就按平台 id 拼）
         self.platform_id = 'aicompanion_qq'
         self.outbox_sent = set()       # 已经发过的主动消息 id（心跳重复带回时不重发）
@@ -91,6 +94,9 @@ class AICompanionBridge(Star):
             called = self.called(event)
             if self.option('group_only_when_called') and not called: return None
         else: called = True
+        files = [s for s in self.raw_segments(event) if s.get('type')=='file']
+        if files and not group_id and not text:
+            text = '查看这次发来的文件'
         if not text and not has_images:
             # 2026-11-09 实测：群里只 @ 她、不带字时，插件不接，AstrBot 自己（没配模型）就在群里回"LLM 请求失败"。
             # 只 @ 了一下也是在叫她：交给她，像真人那样回一句（"咋了""在呢"）
@@ -385,9 +391,96 @@ class AICompanionBridge(Star):
                 media = data.get('media') or {}
                 self.pet_vision = bool(media.get('vision', True)); self.pet_name = str(media.get('name') or '鲸娘')
                 self.pet_collect = bool(media.get('collect', True))
+                if isinstance(data.get('tasks'),dict) and onebot.get('connected'):
+                    await self.task_notices(str(onebot.get('self_id') or ''), data['tasks'])
                 outbox = data.get('outbox')
                 if isinstance(outbox, list) and outbox:
                     for item in outbox[:5]: await self.deliver_outbox(item)
+
+    def bot_api(self):
+        return self.context.get_platform('aiocqhttp').get_client().api
+
+    async def task_notices(self, bot, batch):
+        active = set(batch.get('active') or [])
+        api = self.bot_api()
+        for key, (_, message, _) in list(self.approval_messages.items()):
+            if key[0]!=bot or key[1] in active:
+                continue
+            try:
+                await api.call_action('delete_msg',message_id=message)
+            except Exception:
+                pass  # 超过平台撤回期时，桌面仍会拒绝失效编号。
+            del self.approval_messages[key]
+        for notice in batch.get('ids',[])[:20]:
+            item = await self.post_json('/v1/task-claim',{'bot':bot,'id':notice})
+            if not re.fullmatch(r'\d{5,12}',str(item.get('owner') or '')):
+                continue
+            sent = await api.call_action('send_private_msg',user_id=int(item['owner']),
+                                        message=str(item['text']),auto_escape=True)
+            if item.get('code') and isinstance(sent,dict) and sent.get('message_id') is not None:
+                self.approval_messages[bot,item['code']] = (item['owner'],sent['message_id'],item.get('bulk'))
+
+    async def task_files(self, segments, payload):
+        if payload.get('group_id'):
+            return False
+        permit = await self.post_json('/v1/task-permission',{k:payload[k] for k in
+                                      ('platform','sender_id','group_id','bot_account_id')})
+        if not permit.get('allowed'):
+            return False
+        if len(segments)>16:
+            raise ValueError('一次最多 16 个文件。')
+        result, total = [], 0
+        for part in segments:
+            data = part.get('data') or {}
+            fid = str(data.get('file_id') or data.get('id') or '')
+            if (not fid or len(fid) > 512 or any(ord(ch) < 32 for ch in fid)
+                    or any(ch in fid for ch in ('\\', ':')) or fid.startswith('/') or '..' in fid.split('/')):
+                raise ValueError('未取得平台文件编号，请重新发文件。')
+            size = str(data.get('file_size', data.get('size', '')))
+            if not size.isdecimal() or int(size)>TASK_LIMIT or total+int(size)>TASK_TOTAL:
+                raise ValueError('需要带大小的 QQ 文件，单件最多 4 MiB、合计 16 MiB。')
+            try:
+                info = await self.bot_api().call_action('get_file', file=fid, file_id=fid)
+            except Exception as error:
+                raise ValueError('NapCat 未能取回这个文件，请重新发文件。') from error
+            if not isinstance(info, dict):
+                raise ValueError('NapCat 没有返回文件信息。')
+            name = str(data.get('file_name') or data.get('name') or info.get('file_name') or data.get('file') or '')
+            encoded = info.get('base64')
+            if encoded is None or encoded=='':
+                # 只读 NapCat 经文件 ID 返回的本机缓存，不接受消息段里的路径或 URL。
+                path = Path(str(info.get('file') or ''))
+                def read_cache():
+                    import stat
+                    if not path.is_absolute() or str(path).startswith('\\\\') or '..' in path.parts:
+                        raise ValueError('NapCat 没有返回可读取的本机文件')
+                    for item in (path,*path.parents):
+                        st = item.lstat()
+                        if stat.S_ISLNK(st.st_mode) or getattr(st,'st_file_attributes',0)&stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                            raise ValueError('平台缓存不能是链接')
+                    if not path.is_file() or path.stat().st_size!=int(size):
+                        raise ValueError('平台文件大小不一致')
+                    with path.open('rb') as f:
+                        import os
+                        current = os.fstat(f.fileno())
+                        if current.st_nlink > 1 or not os.path.samestat(current, path.lstat()):
+                            raise ValueError('平台缓存已更换或含硬链接')
+                        raw = f.read(TASK_LIMIT+1)
+                    if len(raw) != int(size):
+                        raise ValueError('平台文件大小已改变')
+                    return base64.b64encode(raw).decode('ascii')
+                try:
+                    encoded = await asyncio.to_thread(read_cache)
+                except OSError as error:
+                    raise ValueError('AstrBot 无法读取 NapCat 的文件缓存，请检查本机的缓存路径。') from error
+            if not isinstance(encoded,str) or len(encoded)!=4*((int(size)+2)//3):
+                raise ValueError('平台文件与声明的体积不一致。')
+            if len(encoded) // 4 * 3 - (len(encoded) - len(encoded.rstrip('='))) != int(size):
+                raise ValueError('平台文件与声明的体积不一致。')
+            total += int(size)
+            result.append({'name':name,'base64':encoded})
+        payload['task_files'] = result
+        return True
 
     async def heartbeat_loop(self):
         while True:
@@ -400,7 +493,8 @@ class AICompanionBridge(Star):
     async def ask_pet(self, payload: dict) -> dict:
         # 识图先调用视觉接口再由原大脑回复，给额外一步留出时间。
         timeout = float(self.option('timeout')) + 45*int(bool(payload.get('images'))) + 45*int(bool(payload.get('avatar'))) + 10*int(bool(payload.get('debounce')))
-        async with await self.post('/v1/chat', payload, timeout) as response:
+        endpoint = '/v1/task-files' if 'task_files' in payload else '/v1/chat'
+        async with await self.post(endpoint, payload, timeout) as response:
             if response.status == 401:
                 logger.error('AICompanion 拒绝了请求：令牌不对，请把桌宠"设置 → 聊天平台"里的令牌填进插件配置。')
                 return {'reply': '', 'silent': True, 'reason': 'unauthorized'}
@@ -544,18 +638,36 @@ class AICompanionBridge(Star):
         payload['bot_account_id']=str(getattr(event,'get_self_id',lambda:'')() or '')
         # 0.9.3：允许桌宠把同一个人连发的几条合在一起回一次（前面的请求会静默返回 merged）
         payload['debounce']=True
+        payload['task_protocol']=1
+        obj = getattr(event,'message_obj',None)
+        payload['task_message'] = str(getattr(obj,'message_id','') or '')
+        if payload['text']=='同意全部':
+            payload['shown_approvals'] = [code for (bot,code),(owner,_,bulk) in self.approval_messages.items()
+                                          if bot==payload['bot_account_id'] and owner==payload['sender_id'] and bulk]
         # 0.9.5：这条 @ 了谁、引用的是谁的消息——桌宠判断"是不是在说她、是不是在转述别人"要用
         payload['context']=self.message_context(event)
         try:
-            await self.attach_avatar(event, payload)
-            await self.attach_images(event, payload)
-            await self.attach_stickers(event, payload)
+            segments = [s for s in self.raw_segments(event) if s.get('type')=='file']
+            if segments and not payload['group_id']:
+                try:
+                    if not await self.task_files(segments,payload):
+                        yield event.plain_result('文件交办需要在桌面绑定主人 QQ 并启用新版桥接。')
+                        return
+                except ValueError as error:
+                    yield event.plain_result(str(error))
+                    return
+            elif not re.match(r'^(同意|拒绝|以后都允许)',payload['text']):
+                await self.attach_avatar(event, payload)
+                await self.attach_images(event, payload)
+                await self.attach_stickers(event, payload)
             result = await self.ask_pet(payload)
             self.remember_stickers(result)
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
             logger.warning(f'AICompanion 不在线或没有回应：{error}')
             if not payload['called']: return
             offline = str(self.option('offline_reply') or '')
+            if not payload['group_id'] and (segments or re.search(r'办事|帮我|帮忙|动手|整理|运行|删除|同意|拒绝|改写|执行|写入',payload['text'])):
+                offline = '桌面程序没有连接，现在办不了这件事。'
             if offline: yield event.plain_result(offline)
             return
         reply = str(result.get('reply') or '').strip()

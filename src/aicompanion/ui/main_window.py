@@ -799,19 +799,38 @@ class MainWindow(QMainWindow):
         if offer and offer[0] == self.controller.character.id:
             self._offer_task(offer[1])
 
-    def _offer_task(self,task):
-        if self.closing or self.agent.busy: return
-        if self.database.get_setting('agent_auto',True):
-            # 不用 /做：聊天里说要做什么，她直接开始；有影响的步骤再逐个征求同意
-            self.agent.start(task,announce=False); return
-        bubble=self.pet.ask(f'要我现在动手吗？\n「{task}」',[('动手吧','go'),('先不用','no')])
-        self.open_offer = (self.controller.character.id, task)
-        def answer(value):
-            self.open_offer = None
-            if value == 'go' and not self.closing:
-                self.agent.start(task)
-        bubble.chosen.connect(answer)
-        self._append_message('提议',task)
+    def _qq_offer(self, offer):
+        from aicompanion.bridge.tasks import authorized
+        if self.closing or offer.character!=self.controller.character.id or not authorized(self.database,offer.peer):
+            return
+        if not self.controller.agent_enabled:
+            self.agent.tasks.notify(offer.peer, '桌面已关闭办事，这次没有开始。')
+            return
+        self._offer_task(offer.goal,remote=offer)
+
+    def _offer_task(self,task,remote=None):
+        if self.closing or self.agent.busy or self.agent.offer_callbacks or self.open_offer:
+            if remote:
+                self.agent.tasks.notify(remote.peer,'手上的事还没结束，请稍后再交办。')
+            return
+        if remote or not self.database.get_setting('agent_auto',True):
+            peer = remote.peer if remote else self.agent.tasks.current_peer()
+            self.open_offer = None if remote else (self.controller.character.id,task)
+            cid = self.controller.character.id
+            def answered(value):
+                self.open_offer = None
+                if value=='once' and not self.closing and cid==self.controller.character.id:
+                    if not self.agent.start(task,remote=remote) and peer:
+                        self.agent.tasks.notify(peer,'暂时办不了，请检查桌面的办事模型、额度和任务状态。')
+                elif remote:
+                    self.agent.tasks.notify(peer,'这次没有开始。')
+                if not self.agent.busy:
+                    self.task_card.hide()
+            self.agent.confirm_offer(task,peer,answered)
+            self.agent._refresh_approvals()
+            self._append_message('提议',task)
+            return
+        self.agent.start(task,announce=False)
 
     def _handle_cues(self,generation,cues):
         if not cues: return
@@ -1183,6 +1202,11 @@ class MainWindow(QMainWindow):
             self._status('语音识别失败，可以再说一次：'+error)
 
     def _apply_settings(self):
+        mode = self.database.get_setting('approval_mode','ask')
+        if getattr(self,'last_default_mode',None)!=mode:
+            self.last_default_mode = mode
+            if hasattr(self, 'approval_mode') and not self.agent.busy:
+                self.approval_mode.setCurrentIndex(max(0,self.approval_mode.findData(mode)))
         # 新配置的专属声线只启用一次；之后尊重用户在设置中选择的朗读方式。
         if self.settings.tts_provider=='qwen' and self.settings.qwen_api_key:
             setup=self.settings.qwen_tts_model+':'+self.settings.qwen_tts_voice

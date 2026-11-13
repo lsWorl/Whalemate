@@ -204,7 +204,7 @@ class RelationshipService:
                                   (pid, prior, ref.platform, ref.bot_account_id, ref.platform_user_id))
                         self.notes.merge(c, prior, pid)
             else:
-                if row and row['link_state'] == 'owner':
+                if row and row['link_state'] in ('owner', 'bound'):
                     # 主人绑定已解除：这个号不再算主人。原来有自己的档案就还原回去，没有就另建；主人的关系不带走。
                     prior = row['prior_person_id']
                     if prior and c.execute('SELECT 1 FROM people WHERE id=?', (prior,)).fetchone():
@@ -397,7 +397,7 @@ class RelationshipService:
     def delete(self, person_id: int) -> None:
         """删除档案：人物、平台身份、所有角色对他的关系和事件一起删。主人档案不能删（只能重置）。"""
         def work(c):
-            if c.execute("SELECT 1 FROM platform_identities WHERE person_id=? AND link_state='owner'", (person_id,)).fetchone():
+            if c.execute("SELECT 1 FROM platform_identities WHERE person_id=? AND link_state IN ('owner','bound')", (person_id,)).fetchone():
                 raise ValueError('主人的档案不能删除，可以重置')
             for table, column in (('relationship_events', 'person_id'), ('person_notes', 'person_id'), ('relationship_profiles', 'person_id'),
                                   ('platform_identities', 'person_id'), ('people', 'id')):

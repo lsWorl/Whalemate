@@ -8,7 +8,9 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QTimer, Qt
+from aicompanion.agent.approval import MODES, Rules
+from aicompanion.bridge.tasks import TaskBridge, authorized
 
 from aicompanion.agent import attachments as task_files
 from aicompanion.agent.dsh_backend import DshAgent, pick_workspace, problem
@@ -26,7 +28,6 @@ TOOL_NAMES = {'list_dir': '看文件夹', 'glob': '找文件', 'grep': '搜文�
 OWN_TOOLS = {t['name'] for t in ToolBox.TOOLS}
 ACTIVITY = {'web_search': 'searching', 'web_fetch': 'reading', 'read_file': 'reading', 'list_dir': 'reading', 'glob': 'searching',
             'grep': 'searching', 'write_file': 'writing', 'edit_file': 'writing', 'make_dir': 'writing', 'run_powershell': 'computer'}
-CHOICES = {'write': ('这个文件夹本次都可以', True), 'command': ('本次的命令都可以', True), 'delete': (None, False), 'move': (None, False)}
 
 
 def tool_label(name: str) -> str:
@@ -35,7 +36,8 @@ def tool_label(name: str) -> str:
 
 class _Bridge(QObject):
     event = Signal(str, object)
-    ask = Signal(object, object)          # (气泡内容, 回传盒子)
+    offered = Signal(object)
+    changed = Signal()
 
 
 class AgentSession(QObject):
@@ -47,13 +49,19 @@ class AgentSession(QObject):
         self.dsh = DshAgent()
         self.box = ToolBox(secrets=self._secrets())
         self.box.reserve_effect = window.database.reserve_agent_effect
-        self.box.approve = self._approve_tool; self.box.on_call = self._tool_record
+        self.box.peer_valid = lambda peer: authorized(window.database,peer)
+        self.box.request_approval = self._request; self.box.on_call = self._tool_record
         self.server = McpToolServer(self.box)
         self.run_state = {'run_id': 0, 'seq': 0}
         self.bridge = _Bridge(self)
-        from PySide6.QtCore import QTimer
+        self.tasks = window.controller.qq_tasks = TaskBridge(window.database, self.bridge.offered.emit,self.bridge.changed.emit)
+        self.bridge.offered.connect(window._qq_offer)
+        self.bridge.changed.connect(self._refresh_approvals, Qt.ConnectionType.QueuedConnection)
+        self.displayed = None
+        self.offer_callbacks = {}
+        self.audit_lock = threading.Lock()
         QTimer.singleShot(60_000, lambda: threading.Thread(target=self.housekeep, daemon=True, name='trash-clean').start())
-        self.bridge.event.connect(self._event); self.bridge.ask.connect(self._ask)
+        self.bridge.event.connect(self._event)
         self.auto_approve = None   # 自检时替换成函数
 
     @property
@@ -61,9 +69,11 @@ class AgentSession(QObject):
         return self.worker is not None or self.box.working
 
     # ---- 开始 / 停止 ---------------------------------------------------------------
-    def start(self, goal: str, announce: bool = True, *, paused_run=None, attachments=()) -> bool:
+    def start(self, goal: str, announce: bool = True, *, paused_run=None, attachments=(), remote=None) -> bool:
         w = self.window
-        if w.closing: return False
+        if getattr(self,'offer_callbacks',None):
+            w._status('请先回应当前办事提议。'); return False
+        if w.closing or (remote and not w.controller.agent_enabled): return False
         if self.busy: w.pet.show_bubble('我手上还有活没做完，等我一下～', 5); return False
         missing = problem() or dependency_problem()
         if missing: w.pet.show_bubble(missing, 8); w._status(missing); return False
@@ -75,13 +85,23 @@ class AgentSession(QObject):
         if w.quota.check_silent('agent') == 'stop':
             w.pet.show_bubble('今天"干活"的词元额度用完了，明天再帮你做吧。', 8); return False
         database = w.database; character = w.controller.character
+        peer = remote.peer if remote else None
+        received = remote.files if remote else ()
+        if paused_run is not None:
+            with database.transaction() as c:
+                bound = c.execute('SELECT bot,owner FROM agent_qq_runs WHERE run_id=?',(paused_run,)).fetchone()
+            peer = tuple(bound) if bound else None
+        if peer and not authorized(database,peer):
+            w._status('这项 QQ 交办的主人绑定已失效。')
+            return False
         self.goal = goal
         cwd = pick_workspace(goal, database.get_setting('dsh_workspace', ''))
         rows = database.agent_attachments(paused_run) if paused_run is not None else []
         if rows:
             cwd = Path(rows[0]['copy']).parents[2]
         try:
-            files = task_files.selection(attachments, self.box.secrets)
+            files = ([(Path(name),len(data)) for name,data in received] if received else
+                     task_files.selection(attachments,self.box.secrets))
         except (ValueError, OSError) as exc:
             w.pet.show_bubble(str(exc), 8); w._status(str(exc)); return False
         model = target.model_id
@@ -93,14 +113,22 @@ class AgentSession(QObject):
             seq = database.resume_agent_run(run_id, character.id)
             if seq is None: return False
         else:
-            run_id = database.add_agent_run(character.id, goal, attachments=files, workspace=cwd)
+            run_id = database.add_agent_run(character.id, goal, attachments=files, workspace=cwd, peer=peer)
             if files:
                 rows = database.agent_attachments(run_id)
             seq = 0
         state = self.run_state = {'run_id': run_id, 'seq': seq}
         task = self.box.task = Task(run_id=run_id, allowed=allowed, resuming=resuming,
-                                    originals={Path(row['original']): Path(row['copy']) for row in rows},
+                                    originals={Path(row['original']): Path(row['copy']) for row in rows if not peer},
+                                    rules=Rules(database,cwd),peer=peer,
+                                    mode=database.get_setting('approval_mode','ask'),
                                     copies={Path(row['copy']) for row in rows})
+
+        selector = getattr(w,'approval_mode',None)
+        if selector is not None and selector.currentData() in MODES:
+            task.mode = selector.currentData()
+        if peer:
+            self.tasks.notify(peer,'我开始办了。'+goal[:100])
 
         def on_event(kind, data):
             if kind == 'usage':
@@ -110,26 +138,32 @@ class AgentSession(QObject):
                 if w.quota.check_silent('agent') == 'stop': self.dsh.stop()   # 额度用完立即停
             elif kind == 'tool' and data['tool'] not in OWN_TOOLS:
                 # 自己的工具由 _tool_record 记（带审批结果）；DSH 自带的（网页、分身等）在这里记
-                state['seq'] += 1
-                step_id = database.add_agent_step(run_id, state['seq'], data['tool'], data['summary'][:4000], 'dsh', 'auto')
+                with self.audit_lock:
+                    state['seq'] += 1
+                    seq = state['seq']
+                step_id = database.add_agent_step(run_id, seq, data['tool'], data['summary'][:4000], 'dsh', 'auto')
                 database.finish_agent_step(step_id, data['summary'][:200])
             self.bridge.event.emit(kind, data)
 
         def run(token):
             try:
+                if peer and not authorized(database, peer):
+                    raise PermissionError('主人绑定已失效')
                 active_prompt = prompt
                 if rows:
                     from aicompanion.bridge.media import QQMedia
                     from aicompanion.services import budget
                     media = QQMedia(database, w.controller)
                     def describe(data, mime):
+                        if peer and not authorized(database, peer):
+                            raise PermissionError('主人绑定已失效')
                         if w.quota.check_silent('agent') == 'stop':
                             raise ValueError('今天的办事额度已用完')
                         with meter.using('agent', character.id, f'agent:{run_id}'):
                             return media.describe_task_image(data, mime, goal, character.id)
                     previews, task.captions = task_files.prepare(
                         database, rows, resuming=resuming, secrets=self.box.secrets, cancelled=task.cancelled,
-                        describe=describe)
+                        describe=describe, received=received)
                     if w.quota.check_silent('agent') == 'stop':
                         raise ValueError('今天的办事额度已用完')
                     active_prompt, report = task_files.prompt_for(prompt, rows, previews, target)
@@ -138,6 +172,8 @@ class AgentSession(QObject):
                 self.dsh.mcp_servers = [self.server.acp_entry()]
                 if task.cancelled.is_set():
                     raise ValueError('任务已停止')
+                if peer and not authorized(database,peer):
+                    raise PermissionError('主人绑定已失效')
                 result = self.dsh.run(active_prompt, cwd, target, on_event)
             except Exception as error:
                 database.finish_agent_run(run_id, 'cancelled' if task.cancelled.is_set() else 'failed',
@@ -242,8 +278,8 @@ class AgentSession(QObject):
                  SAY_PROMPT.strip(),
                  '做事要求：用户的电脑是 Windows。看文件、改文件、删文件、跑 PowerShell 都用 aicompanion 开头的那组工具；'
                  '尽量在后台完成，不要让用户手动操作；用户点名的路径、文件名、程序就用那个，不要擅自换；一句话里有几件事要按顺序全部做完。',
-                 f'当前工作区：{cwd}。放开写的文件夹：{"；".join(str(a) for a in allowed) or "无"}——在这些里面写和改不用问；'
-                 '在外面写、删除任何文件、运行会改东西的命令时，工具会自动弹窗问用户，你不用自己再问一遍。'
+                 f'当前工作区：{cwd}。放开写的文件夹：{"；".join(str(a) for a in allowed) or "无"}。'
+                 '工具会根据当前办事模式和项目规则审批。删除和越界改动需要用户逐项确认，无需你重复询问。'
                  '如果工具返回"被拒绝"，就停下来如实告诉用户，不要换个办法绕过去，也不要教用户怎么绕过。密钥文件和我的数据库是读不到的，也别去找。'
                  '看 git 差异时写 `git diff --no-ext-diff --no-textconv`（show 同样；blame 加 --no-textconv），这样不用弹窗。']
         if blog: lines.append(f'用户的 Hexo 博客在 {blog}：草稿放 source/_drafts，本地预览用 `npx hexo server --draft -p 4000`（后台启动，别阻塞）。')
@@ -267,30 +303,91 @@ class AgentSession(QObject):
         return [{'role': r['role'], 'content': r['content']} for r in rows[-6:]]
 
     # ---- 审批与提问（DSH 的后台线程调用，阻塞等待界面回答） ---------------------------------------
-    def _wait_ui(self, spec) -> str:
-        from time import monotonic
-        # T11 在工具线程绑定 current；兼容尚未合入 T11 的 ToolBox，不能把旧调用绑到新的全局任务。
-        task = getattr(self.box, 'current', self.box.task)
-        if task.cancelled.is_set(): return 'no'
-        box = {'event': threading.Event(), 'answer': 'timeout'}
-        self.bridge.ask.emit(spec, box)
-        deadline = monotonic()+APPROVAL_TIMEOUT
-        while not box['event'].wait(.1):
-            if task.cancelled.is_set(): return 'no'
-            if monotonic() >= deadline:
-                self.bridge.event.emit('approval_timeout', {})
-                return 'timeout'
-        return 'no' if task.cancelled.is_set() else box['answer']
+    def _request(self, kind, title, detail, rule):
+        task = self.box.current
+        if task.cancelled.is_set(): return 'no',''
+        if self.auto_approve:
+            return self.auto_approve(kind,title,detail), ''
+        req = self.tasks.approvals.add(task.run_id,kind,title,detail,rule,task.peer or self.tasks.current_peer(),APPROVAL_TIMEOUT)
+        self._send_request(req)
+        while not req.ready.wait(.1):
+            if task.cancelled.is_set() or (task.peer and not authorized(self.window.database,task.peer)):
+                self.tasks.approvals.answer(req.code,'no')
+            elif self.tasks.clock()>=req.deadline:
+                self.tasks.approvals.answer(req.code,'timeout')
+        return req.decision, req.reason
 
-    def _approve_tool(self, kind: str, title: str, detail: str) -> str:
-        """工具要你点头时（后台线程）：弹确认气泡，返回 once / always / no / timeout。"""
-        if self.auto_approve: return self.auto_approve(kind, title, detail)
-        label, can_remember = CHOICES.get(kind, (None, False))
-        choices = [('同意', 'once')] + ([(label, 'always')] if can_remember and label else []) + [('让她停下', 'no')]
-        answer = self._wait_ui({'text': title, 'choices': choices, 'details': detail, 'log': title.replace('\n', ' ')})
-        if self.worker is not None:
-            self.bridge.event.emit('approved', {'tool': kind, 'decision': answer, 'title': title})
-        return answer
+    def _send_request(self, req):
+        if req.peer:
+            choices = '同意 编号 / 拒绝 编号 原因'
+            if req.rule:
+                choices += ' / 同意这类 编号 / 以后都允许 编号 / 同意全部'
+            self.tasks.notify(req.peer,req.describe()+'\n'+req.detail+'\n'+choices,req)
+
+    def confirm_offer(self, goal, peer, callback, *, kind='offer'):
+        title = '要我接着办吗？请核对已做步骤。' if kind=='resume' else '要我现在动手吗？'
+        req = self.tasks.approvals.add(0,kind,title+'\n'+goal,peer=peer,timeout=APPROVAL_TIMEOUT)
+        self.offer_callbacks[req.code] = (req,callback)
+        self._send_request(req)
+        QTimer.singleShot(int(APPROVAL_TIMEOUT*1000)+1,lambda:self.tasks.approvals.answer(req.code,'timeout'))
+
+    def _refresh_approvals(self):
+        w = self.window
+        for code,(req,callback) in list(self.offer_callbacks.items()):
+            if req.ready.is_set():
+                del self.offer_callbacks[code]
+                callback(req.decision)
+        items = self.tasks.approvals.items()
+        card = w.task_card
+        req = items[0] if items else None
+        card.queue_count.setText(f'还有 {len(items)} 项待确认')
+        card.queue_count.setVisible(bool(items))
+        card.batch.setVisible(bool(req and any(i.rule and i.run == self.box.task.run_id for i in items)))
+        if self.displayed is req:
+            return
+        if self.displayed:
+            self.displayed = None
+            w.pet.close_confirm()
+            card.clear_approval()
+            w.pet.dispatch('waiting',active=False)
+        if not req or w.closing:
+            if not self.busy: card.hide()
+            return
+        self.displayed = req
+        choices = [('同意这一次','once')]
+        if req.rule:
+            choices += [('本次任务都同意这类','always'),('以后都允许','persist')]
+        choices.append(('拒绝','no'))
+        bubble = w.pet.ask(req.describe(),choices,req.detail)
+        def answer(value):
+            reason = ''
+            if value=='no':
+                from PySide6.QtWidgets import QInputDialog
+                reason, _ = QInputDialog.getText(w,'拒绝操作','原因（可留空）')
+            self.tasks.approvals.answer(req.code,value,reason)
+        bubble.chosen.connect(answer)
+        card.detail.setText(req.describe())
+        card.details.setPlainText(req.detail)
+        card.details.setVisible(bool(req.detail))
+        card.answer = bubble.choose
+        card.actions.show()
+        card.show()
+        card.reuse.setVisible(bool(req.rule))
+        card.persist.setVisible(bool(req.rule))
+        w.pet.dispatch('waiting',active=True)
+        if w.pet.isHidden(): w.pet.summon()
+
+    def approve_batch(self):
+        from PySide6.QtWidgets import QMessageBox
+        items = [r for r in self.tasks.approvals.items() if r.rule and r.run==self.box.task.run_id]
+        if not items:
+            return
+        details = '\n\n'.join(r.describe() + '\n' + r.detail for r in items)
+        choice = QMessageBox.question(self.window, '确认以下操作', details,
+                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                      QMessageBox.StandardButton.No)
+        if choice == QMessageBox.StandardButton.Yes:
+            self.tasks.approvals.batch([r.code for r in items],items[0].run)
 
     def _tool_record(self, record: dict):
         """自己的工具每调用一次记一步审计（参数、审批结果、结果或错误）。"""
@@ -298,30 +395,13 @@ class AgentSession(QObject):
         state = self.run_state
         run_id = record.get('run_id') or state.get('run_id')   # 记在调用开始时的任务名下：迟到的回调不会算进下一个任务
         if not run_id: return
-        if run_id == state.get('run_id'): state['seq'] += 1; seq = state['seq']
-        else: seq = 0
+        with self.audit_lock:
+            if run_id == state.get('run_id'): state['seq'] += 1; seq = state['seq']
+            else: seq = 0
         database = self.window.database
         step_id = database.add_agent_step(run_id, seq, record['tool'], json.dumps(record['args'], ensure_ascii=False)[:4000],
                                           'tool', record['decision'])
         database.finish_agent_step(step_id, record.get('result', '')[:500], record.get('error', '')[:500])
-
-    def _ask(self, spec, box):
-        w = self.window
-        bubble = w.pet.ask(spec['text'][:420], spec['choices'], spec.get('details', ''))
-        w.task_card.detail.setText(spec['text'])
-        details = spec.get('details', '')
-        w.task_card.details.setPlainText(details)
-        w.task_card.details.setVisible(bool(details))
-        w.task_card.answer = bubble.choose
-        w.task_card.actions.show()
-        def chosen(value):
-            w.task_card.clear_approval()
-            box['answer'] = value; box['event'].set()
-            w.pet.dispatch('waiting', active=False)
-        bubble.chosen.connect(chosen)
-        w.pet.dispatch('waiting', active=True)
-        w._append_message('确认', spec.get('log') or spec['text'])
-        if w.pet.isHidden(): w.pet.summon()
 
     # ---- 进度 -----------------------------------------------------------------------
     def _event(self, kind, data):
@@ -329,7 +409,8 @@ class AgentSession(QObject):
         if kind == 'result':
             self.got_result = True; self._done(data); return
         if kind == 'tool':
-            w.task_card.detail.setText(f'正在{tool_label(data.get("tool", ""))} · ' + data.get('summary', '')[:120])
+            if not self.displayed:
+                w.task_card.detail.setText(f'正在{tool_label(data.get("tool", ""))} · ' + data.get('summary', '')[:120])
             w.pet.show_activity(ACTIVITY.get(data.get('tool'), 'computer'))
             w.pet.dispatch('work_started', tool=data.get('tool', ''), task=self.goal)
             w._status(f'正在{tool_label(data.get("tool", ""))}：'+data.get('summary', '').split('：', 1)[-1][:40])
@@ -357,6 +438,10 @@ class AgentSession(QObject):
         for cue in cues:
             if cue.kind != 'task': w.pet.perform(cue)
         result.text = text.strip() or '做完了。'
+        peer = getattr(self.box.task,'peer',None)
+        if peer:
+            from aicompanion.bridge.tasks import result_notice
+            self.tasks.notify(peer, result_notice(ok, result.text, result.spoken_summary))
         w.pet.show_bubble(result.text, 14, typewriter=True, kind='reply')
         w._append_message(w.controller.character.name, result.text
                           + f'\n（{len(result.steps)} 步 · {result.tokens} 词元 · 约 {result.cost:.3f} 元）')
@@ -374,6 +459,8 @@ class AgentSession(QObject):
         w = self.window
         w.pet.hide_activity(); w.pet.close_confirm()
         w.pet.dispatch('work_finished', ok=False, error=error)
+        if self.box.task.peer:
+            self.tasks.notify(self.box.task.peer,'这件事没办成，详细见桌面办事记录。')
         w.pet.show_bubble('呜，出错了：'+error[:80], 10); w._status('任务失败：'+error)
 
     def _worker_finished(self):
@@ -386,6 +473,8 @@ class AgentSession(QObject):
             # 线程异常退出且没有结果：也要把界面从"干活中"恢复过来
             w.pet.hide_activity(); w.pet.close_confirm(); w.pet.dispatch('waiting', active=False)
             w.pet.dispatch('work_finished', ok=False, error='任务中断'); w._status('就绪')
+            if self.box.task.peer:
+                self.tasks.notify(self.box.task.peer, '任务中断了，详细见桌面办事记录。')
         if worker:
             w.tasks.discard(worker); worker.deleteLater()
         w._finish_exit_if_ready()
