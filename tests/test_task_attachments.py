@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from zipfile import ZipFile
 
 from PySide6.QtCore import QObject, QMimeData, QUrl
-from PySide6.QtGui import QColor, QImage, QPainter, QPdfWriter, QFont
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from aicompanion.agent import attachments as files
@@ -20,6 +20,26 @@ from aicompanion.bridge.media import QQMedia
 from aicompanion.storage.database import Database
 from aicompanion.ui.main_window import MainWindow
 from test_relationship import Base, BridgeFixture, CID
+
+
+def sample_pdf(content):
+    # 标准 PDF 字体与明确的文本绘制指令；不依赖 Windows 字体、Qt 平台插件或先前测试的应用设置。
+    objects = [b'<< /Type /Catalog /Pages 2 0 R >>',
+               b'<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
+               b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+               b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+               b'<< /Length %d >>\nstream\n' % len(content) + content + b'\nendstream']
+    data = bytearray(b'%PDF-1.4\n')
+    offsets = []
+    for index, obj in enumerate(objects, 1):
+        offsets.append(len(data))
+        data.extend(b'%d 0 obj\n' % index + obj + b'\nendobj\n')
+    start = len(data)
+    data.extend(b'xref\n0 6\n0000000000 65535 f \n')
+    for offset in offsets:
+        data.extend(b'%010d 00000 n \n' % offset)
+    data.extend(b'trailer\n<< /Root 1 0 R /Size 6 >>\nstartxref\n%d\n%%%%EOF\n' % start)
+    return bytes(data)
 
 
 class AttachmentTests(Base):
@@ -190,12 +210,7 @@ class AttachmentTests(Base):
             book.writestr('xl/sharedStrings.xml','<sst><si><t>苹果</t></si></sst>')
             book.writestr('xl/worksheets/s1.xml','<s><c r="A1" t="s"><v>0</v></c><c r="B1"><v>12</v></c></s>')
         pdf = self.root/'sample.pdf'
-        writer = QPdfWriter(str(pdf))
-        painter = QPainter(writer)
-        painter.setFont(QFont('Arial', 12))
-        painter.drawText(100, 500, 'Offline PDF')
-        painter.end()
-        del writer
+        pdf.write_bytes(sample_pdf(b'BT /F1 16 Tf 50 150 Td (Offline PDF) Tj ET'))
         rows = self.register(doc, sheet, pdf)
         self.prepare(rows)
         self.box.task = Task(copies={Path(r['copy']) for r in rows})
@@ -206,7 +221,6 @@ class AttachmentTests(Base):
 
     def test_invalid_documents_and_scanned_pdf(self):
         from io import BytesIO
-        from PySide6.QtCore import QRect
         doc = BytesIO()
         with ZipFile(doc, 'w') as book:
             book.writestr('word/document.xml', '<!DOCTYPE document [<!ENTITY x "X">]><document/>')
@@ -216,11 +230,7 @@ class AttachmentTests(Base):
             document_text(Path('a.xlsx'), b'bad')
         app = QApplication.instance() or QApplication([])
         pdf = self.root/'scan.pdf'
-        writer = QPdfWriter(str(pdf))
-        painter = QPainter(writer)
-        painter.fillRect(QRect(100,100,400,400), QColor("black"))
-        painter.end()
-        del writer
+        pdf.write_bytes(sample_pdf(b'0 0 0 rg 10 10 20 20 re f'))
         with self.assertRaisesRegex(ValueError, '扫描件'):
             document_text(pdf, pdf.read_bytes())
 
