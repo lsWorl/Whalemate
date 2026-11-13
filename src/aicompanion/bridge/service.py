@@ -57,6 +57,8 @@ def merge_burst(items: list) -> dict:
     merged['has_image'] = any(i.get('has_image') for i in items)
     merged['called'] = any(i.get('called', True) for i in items)
     merged['burst_count'] = len(items)
+    if merged.get('task_protocol') == 1:
+        merged['_task_messages'] = tuple(item.get('task_message') for item in items)
     return merged
 
 
@@ -625,6 +627,7 @@ class BridgeService:
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         from aicompanion.bridge.tasks import ANSWER, decode_files, peer_of
         tasks = getattr(self.controller,'qq_tasks',None)
+        payload.pop('_task_messages', None)  # 组合的消息编号只由本地防抖队列产生。
         capable = payload.get('task_protocol') == 1 and bool(tasks) and not self.closed
         peer = peer_of(self.database,payload) if capable else None
         match = ANSWER.fullmatch(text)
@@ -650,8 +653,8 @@ class BridgeService:
         if mode is None: return {'reply': '', 'silent': True, 'reason': 'not_allowed'}
         if mode['group'] and payload.get('called', True) is False and not self.called_by_name(text):
             return self._overhear(mode, platform, sender_id, group_id, name, text, payload)
-        if payload.get('debounce') is True and not peer:
-            merged = self._gather((platform, group_id, sender_id), payload)
+        if payload.get('debounce') is True:
+            merged = self._gather((platform, group_id, sender_id, str(payload.get('bot_account_id') or ''), bool(peer)), payload)
             if merged is None: return {'reply': '', 'silent': True, 'reason': 'merged'}
             payload = merged; text = neutral_images(str(payload.get('text') or '').strip()[:MAX_TEXT]); images = payload.get('images') or []
         with self.lock:
@@ -913,7 +916,8 @@ class BridgeService:
                                looked=self.look_up(term,mode,stable,str(request.get('sender_name') or ''),text))
         if failed:return {'reply':'','silent':True,'reason':'error'}
         if marked and task_peer and not self.closed:
-            tasks.submit(task_peer, character.id, str(request.get('text') or text), [], str(request['task_message']))
+            tasks.submit(task_peer, character.id, str(request.get('text') or text), [],
+                         request.get('_task_messages', str(request['task_message'])))
         expression=delivered[-1];attachments=expression.attachments
         wire=expression.wire();wire['attachments']=[]
         for attachment in attachments:

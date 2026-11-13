@@ -108,7 +108,6 @@ class Offer:
     character: str
     goal: str
     files: list
-    message: str
 
 
 class TaskBridge:
@@ -121,15 +120,24 @@ class TaskBridge:
         self.online = None
 
     def reserve(self, peer, message):
-        if not re.fullmatch(r'[-\w:.]{1,96}',message) or not authorized(self.db,peer):
+        ids = message if isinstance(message, tuple) else (message,)
+        if not ids or not all(isinstance(key, str) and re.fullmatch(r'[-\w:.]{1,96}', key) for key in ids):
             return False
-        with self.db.transaction() as c:
-            return bool(c.execute('INSERT OR IGNORE INTO qq_task_turns VALUES (?,?,?)',(*peer,message)).rowcount)
+        if not authorized(self.db, peer):
+            return False
+        def reserve_turns(c):
+            # 一个合并的交办可能来自几条连续消息。任一条已处理，整组都不能再触发。
+            for key in ids:
+                if c.execute('SELECT 1 FROM qq_task_turns WHERE bot=? AND owner=? AND message=?', (*peer, key)).fetchone():
+                    return False
+            c.executemany('INSERT INTO qq_task_turns VALUES (?,?,?)', [(*peer, key) for key in set(ids)])
+            return True
+        return self.db.locked(reserve_turns)
 
     def submit(self, peer, character, goal, files, message):
         if not self.reserve(peer,message):
             return False
-        self.offer(Offer(peer, character, goal, files, message))
+        self.offer(Offer(peer, character, goal, files))
         return True
 
     def notify(self, peer, text, req=None):

@@ -77,6 +77,19 @@ class TaskTests(BridgeFixture):
         restarted = TaskBridge(self.db, self.offers.append, lambda: None)
         self.assertFalse(restarted.reserve(PEER, 'old-event'))
 
+    def test_burst_keeps_task_text_and_reserves_every_message_once(self):
+        from aicompanion.bridge.service import merge_burst
+        self.bind()
+        parts = [dict(self.packet, text=label, task_message=key) for label, key in
+                 [('整理报告', 'a'), ('放到工作区', 'b')]]
+        self.model.replies.append('好。<task>整理</task>')
+        with patch.object(self.service, '_gather', return_value=merge_burst(parts)) as gather:
+            self.service.handle(dict(parts[-1], debounce=True))
+            gather.assert_called_once()
+        self.assertEqual(self.offers[0].goal, '整理报告\n放到工作区')
+        for packet in parts:
+            self.assertFalse(self.tasks.reserve(PEER, packet['task_message']))
+
     def test_notification_limits(self):
         from aicompanion.bridge.tasks import result_notice
         self.assertEqual(result_notice(True, '报告'*300, '我把清单写好了。'), '我把清单写好了。')
