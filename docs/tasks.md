@@ -4,6 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| V4-6b | 混合语义召回与有来源的阶段摘要 | Codex 实现、Claude 审查 | 进行中 | [任务说明](tasks/V4-6b-semantic-recall.md) |
 | V4-QQ-本地 | 恢复新装 QQ 的 NapCat 来源，验证自包含和扫码前链路 | Codex 实现，Claude 审查 | 待审查，最终包已验至二维码 | [任务说明](tasks/V4-qq-local-napcat.md) |
 | V4-5 | 真正退出自己的程序，保存告别原因并在重启后接上 | Codex 实现、Claude 审查 | 首轮 P2、P3 已修，待 Claude 复审（PR #53） | [任务说明](tasks/V4-5-self-exit.md) |
 | V4-发布 | 解压即用的 Windows 压缩包（AICompanion.exe + UninstallWhalemate.exe，卸载清除程序、数据库和全部本机数据）、上传私有仓库 Releases、README 增加下载安装与卸载说明 | Codex 实现与打包；Claude 审计、上传、README | PR #52 P1/P2 已修复，待 Claude 复审；最终 ZIP 的主程序被本机应用控制拦截，两个打包 smoke 和运行中卸载待验 | docs/tasks/V4-release.md |
