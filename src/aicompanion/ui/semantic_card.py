@@ -46,7 +46,10 @@ class SemanticCard(QWidget):
     def refresh_status(self):
         choice = self.service.db.get_setting(SETTING)
         active = ('本地' if choice == vars(LOCAL) else '云端') if choice else ''
-        self.status.setText((active + ' · ' if active else '') + self.service.state)
+        message = (active + ' · ' if active else '') + self.service.state
+        if choice == vars(LOCAL) and self.service.download_status:
+            message += '\n下载记录：' + self.service.download_status
+        self.status.setText(message)
         self.disable.setEnabled(bool(self.service.db.get_setting(SETTING)))
 
     def reload(self):
@@ -98,7 +101,7 @@ class SemanticCard(QWidget):
     def confirm(self):
         if self.mode.currentData() == 'local':
             if QMessageBox.question(self, '启用本地语义召回',
-                    '首次启用将从 Hugging Face 下载约 24.5 MB 模型文件。记忆和查询在本机计算。'
+                    '首次启用需下载约 24.5 MB 模型文件，优先使用 hf-mirror.com，失败时尝试 huggingface.co。记忆和查询在本机计算。'
                     '可用“关闭语义召回”取消下载，或稍后重试。继续？') == QMessageBox.StandardButton.Yes:
                 self.service.enable_local()
                 self.refresh_status()

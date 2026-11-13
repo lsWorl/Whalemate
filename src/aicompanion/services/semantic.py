@@ -182,6 +182,7 @@ class SemanticRecall:
         self.loader_token = None
         self.loader = None
         self.requests = set()
+        self.download_status = ''
         self.local_error = False
 
     def enable(self, profile, dimension):
@@ -211,6 +212,7 @@ class SemanticRecall:
             if self.loader_token:
                 self.loader_token.cancel()
             self.encoder = None
+            self.download_status = ''
             self.local_error = False
             self.retry_at = self.failures = 0
             self.index_states.clear()
@@ -237,7 +239,7 @@ class SemanticRecall:
             def progress(message):
                 with self.lock:
                     if self.loader_token is token and not token.event.is_set():
-                        self.state = message
+                        self.download_status = message
 
             def load():
                 try:
@@ -246,6 +248,8 @@ class SemanticRecall:
                     with self.lock:
                         if self.loader_token is token and not token.event.is_set():
                             self.local_error = True
+                            if isinstance(error, local.ModelFilesError):
+                                self.download_status = ''
                             self.state = (str(error) if isinstance(error, local.ModelFilesError)
                                           else '本地模型未能加载，请检查下载或运行库后重试') + '，使用关键词召回'
                     return

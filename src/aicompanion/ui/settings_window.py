@@ -190,7 +190,7 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.semantic_card import SemanticCard
         self.semantic_card = SemanticCard(controller)
         memory_page.add(Section('语义召回与阶段摘要', '开启云端后，记忆和你说的话会发给所选厂商计算向量。'
-                                '本地模式在这台电脑计算。默认关闭时仍可按关键词找回旧事。阶段摘要可查回原话。', self.semantic_card))
+                                '本地模式在这台电脑计算，启用后约多占 100 MB 常驻内存。默认关闭时仍可按关键词找回旧事。阶段摘要可查回原话。', self.semantic_card))
         memory_page.finish()
 
         # ---- 主动与提醒 ---------------------------------------------------------------------
