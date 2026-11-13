@@ -351,6 +351,15 @@ class PluginTests(unittest.TestCase):
             self.assertEqual((posts[-1][0], posts[-1][1]['status'], posts[-1][1]['sent']), ('/v1/outbox/ack', 'sent', count))
             self.assertGreaterEqual(posts[-1][1]['first_delay'], 0)
 
+    def test_group_outbox_never_uses_private_origin(self):
+        plugin = self.plugin()
+        item = {'id':'c'*32, 'group_id':'30003', 'segments':['下次的报告好了。']}
+        sent, posts = self.run_outbox(plugin,item)
+        self.assertEqual([s[0] for s in sent],['aicompanion_qq:GroupMessage:30003'])
+        self.assertEqual(posts[-1][1]['status'],'sent')
+        mixed = dict(item, id='d'*32,user_id='10001')
+        self.assertEqual(self.run_outbox(plugin,mixed)[0],[])
+
     def test_outbox_is_sent_to_owner_private_once_with_sticker_and_acked(self):
         plugin = self.plugin(); plugin.private_origins['10001'] = 'aicompanion_qq:FriendMessage:10001'
         item = {'id': 'a'*32, 'user_id': '10001', 'segments': ['爹', '吃饭了没'], 'expression': {'attachments': [

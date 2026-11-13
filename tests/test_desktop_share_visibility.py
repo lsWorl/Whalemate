@@ -182,6 +182,24 @@ class DesktopShareVisibilityTests(unittest.TestCase):
             row = c.execute("SELECT content FROM chat_messages WHERE turn_id=? AND role='assistant'", (turn,)).fetchone()
         self.assertEqual(row[0], body)
 
+    def test_desktop_promise_confirms_when_first_text_is_displayed(self):
+        from aicompanion.services.promises import Promises
+        store = Promises(self.db)
+        person = self.controller.relationships.owner_person()
+        create, _ = store.prepare(self.cid,person,'desktop','text','original','',{'condition':'下次聊天','title':'合成约定'})
+        self.db.locked(create)
+        self.db.locked(lambda c: store.conversation(c,self.cid,person,'desktop','next','在吗'))
+        item = self.win.outreach_scheduler.next(self.cid,0,9999)
+        self.assertEqual(item.source,'promise')
+        self.controller.client=lambda *a, **kw: FakeClient('该告诉我结果啦。')
+        self.win._deliver_outreach(self.cid,item)
+        worker, = self.win.workers
+        self.assertTrue(worker.wait(5000))
+        self.assertEqual(store.rows(self.cid)[0]['status'],'pending')
+        self.app.processEvents()
+        self.assertEqual(self.win.items[worker.generation_id].content,'该告诉我结果啦。')
+        self.assertEqual(store.rows(self.cid)[0]['status'],'done')
+
     def test_share_without_native_speech_backend(self):
         worker, resume = self.start()
         self.finish(worker, resume)

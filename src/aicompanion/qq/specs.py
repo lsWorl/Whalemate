@@ -50,6 +50,7 @@ UV = Archive(
 ASTRBOT = PyPackage('AstrBot', '4.29.3', 'b78d8ab2d6f153c18be7162799b8589c9f5284233d557c93364c22193fe6be8e')
 
 PLUGIN_NAME = 'astrbot_plugin_aicompanion'
+MIN_GROUP_OUTREACH_PLUGIN = (0, 11, 0)
 MIN_PROACTIVE_PLUGIN = (0, 10, 2)
 PLATFORM_ID = 'aicompanion_qq'          # 我们在 AstrBot 里加的那个 aiocqhttp 平台
 ONEBOT_CLIENT_NAME = 'aicompanion'      # 我们在 NapCat 里加的那条 websocketClient

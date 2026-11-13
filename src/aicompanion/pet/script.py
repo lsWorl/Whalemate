@@ -17,7 +17,7 @@ EXPRESSION_TAGS = ('<sticker', '<meme', '<expression', '<mind')
 SAY_OPEN, SAY_CLOSE = '<say>', '</say>'
 MAX_SAY = 1200   # 超过这个长度按原文显示；真正朗读另用 speech.smart.TOTAL
 SAY_PROMPT = '\n长回复或办事结果需要口播时，在正文最前面写 <say>几句口语化的总结</say>，随后写完整正文。'
-CONTROL_TAGS = EXPRESSION_TAGS + ('<img', '<leave', TASK_OPEN, SAY_OPEN)
+CONTROL_TAGS = EXPRESSION_TAGS + ('<img', '<leave', '<promise', TASK_OPEN, SAY_OPEN)
 
 
 @dataclass(frozen=True)

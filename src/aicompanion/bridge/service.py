@@ -22,7 +22,7 @@ import threading
 from uuid import uuid4
 
 from aicompanion.domain.cancellation import CancellationToken
-from aicompanion.qq.specs import MIN_PROACTIVE_PLUGIN, plugin_version
+from aicompanion.qq.specs import MIN_GROUP_OUTREACH_PLUGIN, MIN_PROACTIVE_PLUGIN, plugin_version
 
 PLATFORM_NAMES = {'qq': 'QQ'}
 MAX_TEXT = 1500
@@ -992,7 +992,15 @@ class BridgeService:
                     and (beat.get('onebot') or {}).get('connected')
                     and plugin_version(beat.get('astrbot')) >= MIN_PROACTIVE_PLUGIN)
 
-    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None, still_valid=None) -> str | None:
+    def group_ready(self, group, beat=None):
+        from aicompanion.bridge.server import runtime
+        beat = (runtime.last_heartbeat or {}) if beat is None else beat
+        return bool(not self.closed and re.fullmatch(r'\d{5,12}', group)
+                    and group in [str(g) for g in self.database.get_setting('bridge_groups', [])]
+                    and time.time()-beat.get('at',0) < 60 and (beat.get('onebot') or {}).get('connected')
+                    and plugin_version(beat.get('astrbot')) >= MIN_GROUP_OUTREACH_PLUGIN)
+
+    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None, still_valid=None, *, group='') -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
         on_queued(轮次)：生成前绑定调度记录，显式返回 False 则取消；on_taken(轮次)：插件领取时；on_done(Delivery)：有结果时。
         回调只是快速通知，结果以 qq_outbox 为准（程序重启后调度器按它对账）。
@@ -1004,7 +1012,9 @@ class BridgeService:
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
         from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
         with self.lock:
-            if not self.qq_ready() or self.quota.check_silent('companion') == 'stop': return None
+            ready = self.group_ready(group) if group else self.qq_ready()
+            if not ready or self.quota.check_silent('companion') == 'stop': return None
+            if group and not self._reserve_public(): return None
             owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
             bot = str(((runtime.last_heartbeat or {}).get('onebot') or {}).get('self_id') or '')
             if not re.fullmatch(r'\d{5,12}', bot): bot = 'qq'
@@ -1014,6 +1024,13 @@ class BridgeService:
                          +PRIVATE_HUMAN+QQ_NOT_EXPERT)
             context = ExpressionContext(turn, character.id, f'qq:{bot}:user:{owner}', 'desktop', 'pet', 'proactive', intent,
                                         relationship=owner_relationship(), supports_images=True)
+            channel, scene = 'desktop', 'pet'
+            if group:
+                channel, scene = 'qq:group:' + group, 'qq'
+                situation = '你在原来的 QQ 群里提醒这项群内约定，直接说一条简短的群消息。'
+                context = ExpressionContext(turn,character.id,f'qq:{bot}:group:{group}',channel,scene,'proactive',intent,
+                                            supports_images=False)
+            target = 'group:' + group if group else 'user:' + owner
             delivered = []
             def event(value):
                 if value.kind == 'final': delivered.append(value.result)
@@ -1024,7 +1041,7 @@ class BridgeService:
             guard = 'direct'
             if still_valid is not None:
                 guard = 'scheduled' if on_queued is not None else 'callback'
-            store.begin(turn, character.id, guard)
+            store.begin(turn, character.id, guard, target)
             def give_up():
                 if store.settle(turn, 'failed') is None:
                     # 本轮生成期间被清理，回复和纪念日占位可能在清理之后才写入。
@@ -1036,7 +1053,7 @@ class BridgeService:
             try:
                 if on_queued and on_queued(turn) is False:
                     return give_up()
-                for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
+                for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel=channel, scene=scene,
                                              situation=situation, source='qq', offer_tasks=False, purpose='companion',
                                              expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
@@ -1048,7 +1065,8 @@ class BridgeService:
                 media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
                 if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
                 item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
-            burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
+            closeness = 0 if group else self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person())
+            burst = chat_burst(expression.text, closeness=closeness)
             segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
                 return give_up()
@@ -1064,15 +1082,16 @@ class BridgeService:
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
                 for attachment in wire['attachments']:
-                    self.expression_bindings[attachment['delivery_id']] = ('qq', owner, '', character.id)
-                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
+                    self.expression_bindings[attachment['delivery_id']] = ('qq', '' if group else owner, group, character.id)
+                address = {'group_id': group} if group else {'user_id': owner}
+                self.outbox.append({'id': turn, **address, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
                 self.outbox_waiting[turn] = (on_done, character.id); self.outbox_taken[turn] = on_taken
                 if still_valid is not None: self.outbox_valid[turn] = still_valid
             return turn
 
-    def take_outbox(self) -> list:
+    def take_outbox(self, beat=None) -> list:
         """插件心跳时取走待发的主动消息（交出去，等插件领取）；超过时限还没取走的作废（插件掉线时不会攒一堆过期问候）。
         顺便把卡住的投递按时限定下来（bridge/outbox.py）。"""
         from aicompanion.bridge.outbox import OutboxStore
@@ -1082,6 +1101,11 @@ class BridgeService:
             items, self.outbox = self.outbox, []
         fresh = []
         for item in items:
+            if beat is not None and now-item['at'] <= self.OUTBOX_TTL:
+                ready = self.group_ready(item['group_id'],beat) if 'group_id' in item else self.qq_ready(beat)
+                if not ready:
+                    with self.expression_lock: self.outbox.append(item)
+                    continue
             if now-item['at'] > self.OUTBOX_TTL or not self._still_valid(item['id']):
                 self._notify(item['id'], store.settle(item['id'], 'failed')); continue
             store.dequeued(item['id'])
@@ -1100,7 +1124,7 @@ class BridgeService:
     def _still_valid(self, turn) -> bool:
         from aicompanion.brain.scheduler import ProactiveScheduler
         allowed = self._callback_valid(turn)
-        return allowed is not False and ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True)
+        return allowed is not False and ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, now=self.clock())
 
     def outbox_claim(self, payload) -> dict:
         """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。
@@ -1114,7 +1138,9 @@ class BridgeService:
         from aicompanion.brain.scheduler import ProactiveScheduler
         allowed = self._callback_valid(turn)
         def valid(c):
-            return ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, connection=c)
+            item = c.execute('SELECT target FROM qq_outbox WHERE turn_id=?',(turn,)).fetchone()
+            if item and item['target'].startswith('group:') and plugin_version(payload['astrbot']) < MIN_GROUP_OUTREACH_PLUGIN: return False
+            return ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, connection=c, now=self.clock())
         if allowed is False or not store.claim(turn, valid=valid):
             self._notify(turn, store.settle(turn, 'failed', expected='dequeued'))
             return {'allowed': False}

@@ -90,6 +90,8 @@ class Database:
                 if "qq_outbox" in tables and "guard" not in {r[1] for r in connection.execute("PRAGMA table_info(qq_outbox)")}:
                     # 旧版没保存来源类型；领取旧条目必须能找回调度记录。
                     connection.execute("ALTER TABLE qq_outbox ADD COLUMN guard TEXT NOT NULL DEFAULT 'scheduled'")
+                if "qq_outbox" in tables and "target" not in {r[1] for r in connection.execute("PRAGMA table_info(qq_outbox)")}:
+                    connection.execute("ALTER TABLE qq_outbox ADD COLUMN target TEXT NOT NULL DEFAULT ''")
                 # executescript 隐式提交，固定 schema 逐条执行才保证迁移原子性。
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():
@@ -197,7 +199,7 @@ class Database:
         with self.transaction() as connection:
             connection.execute("INSERT INTO conversation_turns(id,character_id) VALUES (?,?)", (turn_id, character_id))
 
-    def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text") -> None:
+    def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text", *, on_complete=None) -> None:
         with self.transaction() as connection:
             has_attachment=connection.execute("SELECT 1 FROM expression_deliveries WHERE turn_id=? AND character_id=? AND status IN ('pending','sending','displayed','accepted') LIMIT 1",(turn_id,character_id)).fetchone()
             if content.strip() or has_attachment:
@@ -206,6 +208,7 @@ class Database:
                     connection.execute("UPDATE chat_messages SET status=? WHERE id=?",(status,row['id']))
                 else:
                     connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel) VALUES ('assistant',?,?,?,?,?,?)", (content, character_id, turn_id, status, source, channel))
+            if on_complete is not None and status == "complete": on_complete(connection)
             connection.execute("UPDATE conversation_turns SET status=?,error=? WHERE id=? AND character_id=?", (status, error, turn_id, character_id))
 
     def set_delivered_reply(self,turn_id,character_id,content,status):

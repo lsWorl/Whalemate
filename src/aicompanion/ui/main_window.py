@@ -571,13 +571,19 @@ class MainWindow(QMainWindow):
         if check is None:return True
         try:ok=bool(check())
         except Exception:ok=False
+        promise = getattr(self,'promise_first_display',{}).get(generation)
+        if ok and visible and promise:
+            ok = self.outreach_scheduler.show_desktop_promise(*promise)
         if ok:
-            if visible:self.outreach_valid.pop(generation,None)   # 这次就要显示了：之后不再撤回
+            if visible:
+                getattr(self,'promise_first_display',{}).pop(generation,None)
+                self.outreach_valid.pop(generation,None)   # 这次就要显示了：之后不再撤回
             return True
         self._withdraw(generation);return False
 
     def _withdraw(self,generation):
         self.outreach_valid.pop(generation,None); self.withdrawn.add(generation)
+        getattr(self,'promise_first_display',{}).pop(generation,None)
         for worker in list(self.workers):
             if getattr(worker,'generation_id',None)==generation:worker.cancellation.cancel()
         if self.coordinator.active==generation:self.coordinator.cancel(False)
@@ -638,6 +644,7 @@ class MainWindow(QMainWindow):
         self._sync_delivery(generation); self.first_token.discard(generation)
         stream=getattr(self,'cue_streams',{}).pop(generation,None)
         if withdrawn or not self.coordinator.accepts(generation) or self.closing:
+            getattr(self,'promise_first_display',{}).pop(generation,None)
             task_turns.discard(generation)
             getattr(self,'pending_tasks',{}).pop(generation,None)
             character_id=self.reply_characters.get(generation,self.controller.character.id)
@@ -651,6 +658,12 @@ class MainWindow(QMainWindow):
         if stream and state=='complete':
             rest,cues=stream.flush(); self._handle_cues(generation,cues)
             if rest:
+                promise = getattr(self,'promise_first_display',{}).pop(generation,None)
+                if promise and not self.outreach_scheduler.show_desktop_promise(*promise):
+                    if outreach_done: outreach_done(False,'desktop')
+                    self.items[generation].withdraw()
+                    self.database.drop_reply(generation,self.reply_characters[generation])
+                    return
                 self.texts[generation]+=rest; self.items[generation].set_text(self.texts[generation])
                 for sentence in self.sentences.feed(rest): self._enqueue_sentence(sentence,generation)
         # 落单反引号后面的委托可能到 flush 才能辨认，这时仍须核实是用户发起的轮次。
@@ -667,6 +680,7 @@ class MainWindow(QMainWindow):
             seen=bool(self.texts[generation].strip() or (expression and any(
                 a.delivery_id in self.displayed_attachments for a in expression.attachments)))
             outreach_done(state=='complete' and seen,'desktop')
+            getattr(self,'promise_first_display',{}).pop(generation,None)
             if state=='complete' and not seen:
                 self.items[generation].withdraw()
                 self.database.drop_reply(generation,self.reply_characters[generation])
@@ -925,7 +939,11 @@ class MainWindow(QMainWindow):
         if self.quota.check_silent('companion')=='stop': return
         from aicompanion.ui.desktop_integration import system_idle_seconds
         # 计划书 v4 统一主动调度：纪念日、心事、问候、追问都由调度器决定要不要开口、说哪件（brain/scheduler.py）
-        outreach=self.outreach_scheduler.next(character_id,system_idle_seconds(),monotonic()-self.last_interaction)
+        from aicompanion.bridge.server import runtime
+        service = getattr(runtime.server, 'service', None)
+        group_ready = getattr(service,'group_ready',None) if self.database.get_setting('proactive_qq_enabled',True) else None
+        outreach=self.outreach_scheduler.next(character_id,system_idle_seconds(),monotonic()-self.last_interaction,
+                                              group_ready=group_ready or (lambda group: False))
         if outreach: self._deliver_outreach(character_id,outreach)
 
     def _deliver_outreach(self,character_id,outreach):
@@ -934,6 +952,7 @@ class MainWindow(QMainWindow):
         if purpose: self.database.update_purpose(purpose['id'],'delivering')
         # 选中就先占位（pending）：走 QQ 要等插件回执，期间不会再选中同一句（Codex PR #46 第 1 项）
         reserved=self.outreach_scheduler.reserve(character_id,outreach)
+        if not reserved: return
 
         def done(result,channel,o=outreach,cid=character_id,rid=reserved):
             # 桌面传 True / False；QQ 传投递结果（发出 / 部分 / 失败 / 未知，bridge/outbox.py）。心事、问候、纪念日的占位一起收尾
@@ -943,9 +962,17 @@ class MainWindow(QMainWindow):
         taken=lambda turn,rid=reserved:self.outreach_scheduler.handed(rid,turn)
         # 交给插件前、插件领取时再问一次还该不该说：分享和追问分享的那句，在关掉“自己的生活”后撤回（Codex PR #48 第 2 项）
         valid=lambda o=outreach:self.outreach_scheduler.still_valid(o)
+        scope = outreach.payload.get('scope','desktop')
+        if scope.startswith('qq:group:'):
+            if not self._proactive_on_qq(outreach.intent,lambda result:done(result,'qq'),taken,queued,valid,group=scope.split(':')[-1]):
+                done(False,'qq')
+            return
         if self._proactive_on_qq(outreach.intent,lambda result:done(result,'qq'),taken,queued,valid):return
         generation=self.coordinator.active=uuid4().hex
         self.outreach_scheduler.attach(reserved,generation)   # 追问时按轮次找回这句原话
+        if outreach.source == 'promise':
+            if not hasattr(self,'promise_first_display'): self.promise_first_display={}
+            self.promise_first_display[generation] = (character_id,reserved,outreach.key)
         def desktop_done(sent,channel):
             from aicompanion.services.companion_dates import CompanionDates
             dates=CompanionDates(self.database)
@@ -953,10 +980,10 @@ class MainWindow(QMainWindow):
             else: dates.release(character_id,generation)
             done(sent,channel)
         self.outreaches[generation]=desktop_done
-        if outreach.source in ('share','date_eve') or outreach.payload.get('origin')=='share': self.outreach_valid[generation]=valid
+        if outreach.source in ('share','date_eve','promise') or outreach.payload.get('origin')=='share': self.outreach_valid[generation]=valid
         self._start(generation,proactive=outreach.intent)
 
-    def _proactive_on_qq(self,intent,done,taken=None,queued=None,still_valid=None):
+    def _proactive_on_qq(self,intent,done,taken=None,queued=None,still_valid=None,*,group=''):
         """主动消息随机发到 QQ 私聊（用户 2026-11-09）。选中 QQ 就在后台交给桥接生成，插件下次心跳取走发送；
         没生成出来 / 没发出去时 done(False)，问候 / 心事退回去下次再说；插件取件时 taken(轮次)。返回 True 表示这次走 QQ，桌面不再说。"""
         from aicompanion.bridge.server import runtime
@@ -964,8 +991,11 @@ class MainWindow(QMainWindow):
         from aicompanion.ui.desktop_integration import system_idle_seconds
         service=getattr(runtime.server,'service',None) if runtime.server else None
         ready=bool(service and getattr(service,'qq_ready',lambda:False)())
-        if choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
-        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken,on_queued=queued,still_valid=still_valid),self)
+        if group:
+            if not service or not service.group_ready(group) or not self.database.get_setting('proactive_qq_enabled', True): return False
+        elif choose_channel(self.database,system_idle_seconds(),ready)!='qq':return False
+        target = {'group':group} if group else {}
+        worker=TaskWorker(lambda token:service.proactive_qq(intent,on_done=done,on_taken=taken,on_queued=queued,still_valid=still_valid,**target),self)
         self.tasks.add(worker)
         worker.succeeded.connect(lambda turn:None if turn else done(False))
         worker.failed.connect(lambda error:done(False))
