@@ -132,6 +132,8 @@ def main() -> int:
         if '--pet-smoke-test' not in sys.argv:
             window.show()
     else:
+        controller.semantic.start()
+        app.aboutToQuit.connect(controller.semantic.close)
         window._instance_server = _listen_for_second_instance(window)
         # 聊天平台接口（T9，默认关闭）：设置里打开后，AstrBot 插件把 QQ 消息交给同一个她
         from aicompanion.bridge.server import runtime as bridge

@@ -2101,3 +2101,11 @@ Windows 上在代码提交 `16ec3ff` 运行 `tools\run_checks.bat`，退出 0。
 未配置审批模式时，任务、桌面输入栏、设置和恢复入口统一使用 workspace。专项测试实际写入放开的目录并断言没有触发审批。显式选择的模式仍按其规则执行。
 
 Windows 对代码提交 f47a4b24ed208014ba7abbcee6a27a9242a32a54 运行两套检查。tools/run_checks.bat 退出 0，1331 项用时 333.566 秒（7 跳过）；tools/run_agent_checks.bat --offline 退出 0，1331 项用时 242.408 秒（7 跳过）。两次桌宠 smoke 均通过，失败列表为空。未接真实 QQ 或调用真实办事模型。
+
+### V4-6b 云端语义召回与阶段摘要（2026-11-13）
+
+设置可启用百炼、智谱或自定义兼容服务。记忆后台分批建立索引，聊天将同频道向量、关键词和关联查询结果去重后计入预算。远期同频道对话可生成带消息编号的摘要，设置中可查回原文。schema 18 → 19，合成旧库验证了数据保留、备份和重启复用。删除同步清理向量和摘要；向量请求等待期间删除的事实不会进入聊天请求。
+
+Windows 在代码提交 `4335653827c1e9e2995f26f7fae0f01c8285137b` 运行 `tools\run_checks.bat`，退出 0，1343 项（1336 通过、7 跳过），235.374 秒。桌宠 smoke 通过，semantic_settings 为 true，失败列表为空。另运行 `python -m unittest test_semantic_recall test_recall test_bridge.MemorySharingTests test_model_page`，42 项通过，用时 11.763 秒。
+
+没有使用真实账户或私人聊天验证厂商接口、实际账单、中文召回效果和真实 QQ。负责人真机体验待验收。本地推理、首次下载及 Windows 内存增量实测拆至 V4-6c。

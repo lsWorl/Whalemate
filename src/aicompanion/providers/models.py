@@ -124,6 +124,8 @@ DEFAULT_MAX_OUTPUT_WHEN_THINKING = {'vision': 4000, 'analysis': 4000}
 
 # ---- 内置预设（资料核对日期 2026-11-10；只作为可编辑的初始数据） ----------------------------
 PROVIDER_PRESETS = {
+    'bailian': ProviderProfile('bailian', '阿里云百炼（北京）', base_url='https://dashscope.aliyuncs.com/compatible-mode/v1', region='cn'),
+    'zhipu': ProviderProfile('zhipu', '智谱开放平台', base_url='https://open.bigmodel.cn/api/paas/v4', region='cn'),
     'deepseek': ProviderProfile('deepseek', 'DeepSeek', 'deepseek', 'https://api.deepseek.com', 'global', 'payg'),
     'minimax-global': ProviderProfile('minimax-global', 'MiniMax 国际站', 'minimax', 'https://api.minimax.io/v1', 'global', 'payg'),
     # 国内站地址各文档写法不一（api.minimaxi.com / api.minimax.cn），以用户账户页面为准，可在设置里修改。
@@ -133,6 +135,10 @@ PROVIDER_PRESETS = {
 }
 
 MODEL_PRESETS = {
+    'text-embedding-v4': ModelProfile('text-embedding-v4', 'bailian', 'text-embedding-v4', capabilities=('embedding',)),
+    'qwen3.7-text-embedding-flash': ModelProfile('qwen3.7-text-embedding-flash', 'bailian', 'qwen3.7-text-embedding-flash', capabilities=('embedding',)),
+    'qwen3.7-text-embedding': ModelProfile('qwen3.7-text-embedding', 'bailian', 'qwen3.7-text-embedding', capabilities=('embedding',)),
+    'embedding-3': ModelProfile('embedding-3', 'zhipu', 'embedding-3', capabilities=('embedding',)),
     'deepseek-flash': ModelProfile('deepseek-flash', 'deepseek', 'deepseek-flash', 'DeepSeek Flash',
                                    ('chat', 'vision', 'tools')),
     'deepseek-v4-pro': ModelProfile('deepseek-v4-pro', 'deepseek', 'deepseek-v4-pro', 'DeepSeek V4 Pro', ('chat', 'tools')),

@@ -269,6 +269,7 @@ class Database:
 
     def delete_memory(self, memory_id, character_id) -> None:
         with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT fact_key FROM memories WHERE id=? AND character_id=?", (memory_id,character_id)).fetchone()
             if row:
                 connection.execute("INSERT OR IGNORE INTO memory_tombstones(character_id,fact_key) VALUES (?,?)", (character_id,row['fact_key']))
@@ -276,6 +277,10 @@ class Database:
                 connection.execute("DELETE FROM memory_archive WHERE character_id=? AND fact_key=?", (character_id,row['fact_key']))
                 connection.execute("DELETE FROM memories WHERE id=? AND character_id=?", (memory_id,character_id))
                 connection.execute("DELETE FROM conversation_summaries WHERE character_id=?", (character_id,))
+                connection.execute("DELETE FROM stage_summaries WHERE character_id=?", (character_id,))
+                connection.execute("DELETE FROM memory_vectors WHERE character_id=? AND fact_key=?", (character_id,row['fact_key']))
+                last = connection.execute('SELECT MAX(id) FROM chat_messages WHERE character_id=?', (character_id,)).fetchone()[0]
+                self.set_setting_in(connection, f'context_after:{character_id}', last or 0)
 
     # ---- v2：记忆卡、存档、收件箱、目的 ----
     def memory_card(self, character_id):

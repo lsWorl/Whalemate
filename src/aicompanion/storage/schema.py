@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 18  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单
+SCHEMA_VERSION = 19  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单；v18：主人 QQ 交办与审批规则；v19：向量索引与阶段摘要
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS purposes (
 CREATE TABLE IF NOT EXISTS memory_tombstones (
     character_id TEXT NOT NULL REFERENCES characters(id), fact_key TEXT NOT NULL,
     deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(character_id, fact_key)
+);
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    character_id TEXT NOT NULL REFERENCES characters(id), fact_key TEXT NOT NULL,
+    provider TEXT NOT NULL, endpoint TEXT NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL,
+    content_hash TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY(character_id, fact_key)
+);
+CREATE TABLE IF NOT EXISTS stage_summaries (
+    id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES characters(id), channel TEXT NOT NULL,
+    first_id INTEGER NOT NULL, last_id INTEGER NOT NULL, source_ids TEXT NOT NULL, summary TEXT NOT NULL,
+    UNIQUE(character_id,channel,first_id)
 );
 CREATE TABLE IF NOT EXISTS conversation_summaries (
     character_id TEXT PRIMARY KEY REFERENCES characters(id), summary TEXT NOT NULL,
