@@ -25,3 +25,8 @@ Codex 实现，Claude 审查。分支 `task/v4-7d-circle-topics` 从 #63 合并�
 离线专项覆盖模型字段、规则兜底、逐日衰减、参与者隔离、来源回查、预算让位、节流和上限、群开关、取消与删除、跨午夜和重启防重、迁移保留旧消息和记忆。桌宠 smoke 在临时库中选择群、打开开关、回查原话并删除话题。
 
 未连接真实 QQ 群、NapCat 或线上模型。真实群里何时接话最自然，留待负责人体验。
+
+Windows 实测结果如下。
+
+- `tools\run_checks.bat` 退出码 0。Python 3.14 单测运行 1367 项，用时 239.858 秒，失败 0，跳过 7。桌宠 smoke 的 `circle_topics_settings` 和 `passed` 均为 `true`，`failed_checks` 为空。
+- `python -m unittest test_circle_topics test_bridge.MemorySharingTests test_bridge.EarlyV4Tests test_group_glance` 运行 26 项，用时 5.272 秒，全部通过。使用工作树的 `src`、`tests` 作为 `PYTHONPATH`，所有测试数据均为合成数据。

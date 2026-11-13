@@ -133,12 +133,9 @@ class MemoryService:
         existing = [dict(r) for r in self.database.recent_memories(character_id=character_id)]
         if public:
             # 公开来源的整理看不到"只在私下用"的记忆；写入时再在同一事务里按最新状态把关（public_guard）
-            from aicompanion.services.semantic import shared_here, source_channel
+            from aicompanion.services.semantic import shared_here
             with self.database.transaction() as c:
-                if group_topics:
-                    existing = [r for r in existing if r['scope'] == 'qq' and source_channel(c, character_id, r) == channel]
-                else:
-                    existing = [r for r in existing if r['scope'] != 'private' and shared_here(c, character_id, r, channel)]
+                existing = [r for r in existing if r['scope'] != 'private' and shared_here(c, character_id, r, channel)]
         instruction = (
             '仅提取用户明确表达的稳定事实、偏好、重要经历和关系事件。不要将假设、否定或角色猜测当事实。'
             '输出 JSON {"memories":[{"content":"摘要","fact_key":"稳定语义键",'
@@ -153,7 +150,7 @@ class MemoryService:
         if group_topics:
             instruction += ('\n同一个 JSON 另加 topics 数组，只整理本群反复讨论的具体话题，每项包含 '
                             'name（可沿用原名的短语）、summary（一句话）、source_ids（支持它的本群用户消息编号）。'
-                            '从本批消息取证，无合适话题用空数组。话题不要再写入 memories。')
+                            '话题只从本批群友原话取证，existing 仅供整理事实时参考。无合适话题用空数组。话题不要再写入 memories。')
         context = {"messages": [{"id":r['id'],"role":r['role'],"content":r['content']} for r in rows],
                               "existing": [{"content":r['content'],"fact_key":r['fact_key']} for r in existing]}
         if group_topics:

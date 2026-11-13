@@ -2125,3 +2125,12 @@ Windows 对代码 `4dc764d434527e53a08cd21a4a7dd83deab902c8` 运行 `tools\run_c
 Windows 在代码 `412a423c01128b121aecf76bee3a831f5a2d059b` 运行 `tools\run_checks.bat`，退出 0。1352 项单测用时 233.731 秒，1345 通过、7 跳过；桌宠 smoke 的 `local_embedding_sources` 和 `passed` 均为 true，失败列表为空。另运行下载与召回专项 21 项，用时 1.598 秒，全部通过。本机实测两个域名曾同时出现 TLS 中断，重试后两个真实文件均从首选镜像下载并通过固定哈希校验，阻断网络后成功生成 512 维向量。主源失败、次源成功也有离线回归覆盖。
 
 同机对照构建的 Windows 发布 ZIP 净增 16.63 MiB（含新增推理依赖）。两组已有的 NumPy 体积相同。见 [V4-release 构建记录](tasks/V4-release.md)。未做大陆多运营商可达性测试，未运行对照包内的 EXE。
+
+## 2026-11-13　V4-7d 圈子长期话题
+
+每个允许的 QQ 群分别整理、引用和管理长期话题。模型整理与群记忆共用一轮请求，缺少模型时用本群词库和关键词频次。群级主动开关默认关闭，统一调度和 QQ 发件箱按原群校验权限、节流与送达状态。SQLite v20 保留原消息，设置支持回查、单个删除和清空。实现与阈值见[任务说明](tasks/V4-7d-circle-topics.md)。
+
+- `tools\run_checks.bat` 退出码 0。Python 3.14 单测运行 1367 项，用时 239.858 秒，失败 0，跳过 7。桌宠 smoke 的 `circle_topics_settings` 和 `passed` 均为 `true`，`failed_checks` 为空。
+- `python -m unittest test_circle_topics test_bridge.MemorySharingTests test_bridge.EarlyV4Tests test_group_glance` 运行 26 项，用时 5.272 秒，全部通过。使用工作树的 `src`、`tests` 作为 `PYTHONPATH`，所有测试数据均为合成数据。
+
+未在真实 QQ 群、NapCat 或线上模型环境下验证，群内主动接话的自然程度待人工体验。
