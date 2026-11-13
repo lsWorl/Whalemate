@@ -15,7 +15,7 @@ from aicompanion.providers.router import AGENT_MODELS, AGENT_NOT_READY, AGENT_RO
 
 CAPABILITY_LABELS = {'chat': '聊天', 'vision': '识图', 'search': '搜索', 'agent': '办事', 'tts': '语音合成'}
 # 每种能力需要模型具备的标记；搜索不选模型，选的是账户
-REQUIRES = {'chat': 'chat', 'vision': 'vision', 'agent': 'tools', 'tts': 'tts'}
+REQUIRES = {'chat': 'chat', 'vision': 'vision', 'agent': 'tools', 'tts': 'tts', 'embedding': 'embedding'}
 TTS_LANGUAGES = (('', '自动判断'), ('zh', '中文'), ('en', '英文'), ('ja', '日语'))
 
 
@@ -82,7 +82,7 @@ class ModelAdmin:
         if base:
             # 同一家服务的预设模型（国际站和国内站共用同一组模型）
             for model in MODEL_PRESETS.values():
-                if PROVIDER_PRESETS[model.provider].kind == base.kind:
+                if model.provider == preset or (base.kind == 'minimax' and PROVIDER_PRESETS[model.provider].kind == 'minimax'):
                     self.store.put_model(replace(model, id=self._model_id(profile.id, model.model_id), provider=profile.id))
         return profile
 
@@ -127,7 +127,7 @@ class ModelAdmin:
         """自定义模型：model_id 照填，能力由用户声明（服务返回的模型列表不等于能力证明）。"""
         model_id = model_id.strip()
         if not model_id: raise ValueError('模型名不能为空')
-        unknown = set(capabilities) - {'chat', 'vision', 'tools', 'tts'}
+        unknown = set(capabilities) - {'chat', 'vision', 'tools', 'tts', 'embedding'}
         if unknown: raise ValueError('未知能力：' + '、'.join(sorted(unknown)))
         model = ModelProfile(self._model_id(provider_id, model_id), provider_id, model_id, label or model_id, tuple(capabilities))
         self.store.put_model(model)

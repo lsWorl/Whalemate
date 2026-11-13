@@ -76,19 +76,49 @@ class Database:
                     for name, definition in (("clarity", "REAL NOT NULL DEFAULT 1"), ("recalled_at", "TEXT"), ("scope", "TEXT NOT NULL DEFAULT 'pet'")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE memories ADD COLUMN {name} {definition}")
+                if version < 15 and "companion_dates" in tables:
+                    columns = {r[1] for r in connection.execute("PRAGMA table_info(companion_dates)")}
+                    if "reminder" not in columns:
+                        connection.execute("ALTER TABLE companion_dates ADD COLUMN reminder TEXT NOT NULL DEFAULT 'day'")
+                        connection.execute("UPDATE companion_dates SET reminder='both' WHERE kind IN ('birthday','her_birthday')")
+                if version < 21 and 'agent_runs' in tables:
+                    columns = {r[1] for r in connection.execute('PRAGMA table_info(agent_runs)')}
+                    for name, definition in (('workspace', "TEXT NOT NULL DEFAULT ''"), ('plan', "TEXT NOT NULL DEFAULT '[]'"),
+                                             ('pause_reason', "TEXT NOT NULL DEFAULT ''"), ('revision', 'INTEGER NOT NULL DEFAULT 0')):
+                        if name not in columns:
+                            connection.execute(f'ALTER TABLE agent_runs ADD COLUMN {name} {definition}')
+                    connection.execute("UPDATE agent_runs SET pause_reason='上次暂停', ended_at=COALESCE(ended_at,started_at) WHERE status='paused'")
+                backfill_outreach_scope = False
                 if "outreach_log" in tables:
                     # 早期 v13/v14 缺取件时间、对应轮次，或这次分享已结算的回执类型；按缺哪列补哪列。
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(outreach_log)")}
-                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL"), ("share_delivery", "TEXT NOT NULL DEFAULT ''")):
+                    backfill_outreach_scope = "scope" not in existing
+                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL"), ("share_delivery", "TEXT NOT NULL DEFAULT ''"),
+                                             ("scope", "TEXT NOT NULL DEFAULT 'desktop'")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE outreach_log ADD COLUMN {name} {definition}")
                 if "qq_outbox" in tables and "guard" not in {r[1] for r in connection.execute("PRAGMA table_info(qq_outbox)")}:
                     # 旧版没保存来源类型；领取旧条目必须能找回调度记录。
                     connection.execute("ALTER TABLE qq_outbox ADD COLUMN guard TEXT NOT NULL DEFAULT 'scheduled'")
+                if "qq_outbox" in tables and "target" not in {r[1] for r in connection.execute("PRAGMA table_info(qq_outbox)")}:
+                    connection.execute("ALTER TABLE qq_outbox ADD COLUMN target TEXT NOT NULL DEFAULT ''")
                 # executescript 隐式提交，固定 schema 逐条执行才保证迁移原子性。
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():
                         connection.execute(statement)
+                if backfill_outreach_scope:
+                    # 旧记录的 channel 只区分桌面与 QQ。用稳定的约定 id（即使已改版）或实际收件群恢复会话。
+                    connection.execute("""UPDATE outreach_log AS o SET scope=coalesce(
+                        (SELECT 'qq:'||q.target FROM qq_outbox q WHERE q.turn_id=o.turn_id AND q.target LIKE 'group:%'),
+                        (SELECT p.scope FROM promises p WHERE p.character_id=o.character_id
+                         AND p.id=CAST(substr(o.key,9) AS INTEGER)), 'desktop') WHERE source='promise'""")
+                    connection.execute("""UPDATE outreach_log SET scope='qq:group:'||
+                        substr(key,8,instr(substr(key,8),':')-1) WHERE source='circle' AND key GLOB 'circle:*:*:*'""")
+                if version < 18:
+                    # 仅迁移桌面明确配置的主人账号。新版插件首次心跳再绑定实际机器人。
+                    owner = str(self.setting_in(connection, 'bridge_owner:qq', '') or '')
+                    if owner:
+                        self.set_setting_in(connection, 'qq_task_binding', [owner, ''])
                 self._insert_character(connection, DEFAULT_CHARACTER)
                 if version == 0 and "emotion_state" in tables:
                     connection.execute("INSERT OR REPLACE INTO emotion_state(character_id,mood,affection,loneliness,energy,updated_at) SELECT 'deepseek-whale',mood,affection,loneliness,energy,updated_at FROM legacy_emotion WHERE id=1")
@@ -110,7 +140,7 @@ class Database:
                 # 超时的旧生成线程可能刚写完回复就退出，还没来得及自行清理。
                 connection.execute("DELETE FROM chat_messages WHERE role='assistant' AND turn_id IN "
                                    "(SELECT turn_id FROM qq_outbox WHERE status='failed')")
-                connection.execute("UPDATE agent_runs SET status='paused',ended_at=datetime('now','localtime') WHERE status='running'")
+                connection.execute("UPDATE agent_runs SET status='paused',pause_reason='程序中断',revision=revision+1,ended_at=datetime('now','localtime') WHERE status='running'")
                 # 重启后未确认的外部发送不能自动重发；尚未开始的待发结果作废。
                 connection.execute("UPDATE expression_deliveries SET status='unknown' WHERE status='sending'")
                 connection.execute("UPDATE expression_deliveries SET status='cancelled' WHERE status='pending'")
@@ -192,7 +222,7 @@ class Database:
         with self.transaction() as connection:
             connection.execute("INSERT INTO conversation_turns(id,character_id) VALUES (?,?)", (turn_id, character_id))
 
-    def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text") -> None:
+    def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text", *, on_complete=None) -> None:
         with self.transaction() as connection:
             has_attachment=connection.execute("SELECT 1 FROM expression_deliveries WHERE turn_id=? AND character_id=? AND status IN ('pending','sending','displayed','accepted') LIMIT 1",(turn_id,character_id)).fetchone()
             if content.strip() or has_attachment:
@@ -201,6 +231,7 @@ class Database:
                     connection.execute("UPDATE chat_messages SET status=? WHERE id=?",(status,row['id']))
                 else:
                     connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status,source,channel) VALUES ('assistant',?,?,?,?,?,?)", (content, character_id, turn_id, status, source, channel))
+            if on_complete is not None and status == "complete": on_complete(connection)
             connection.execute("UPDATE conversation_turns SET status=?,error=? WHERE id=? AND character_id=?", (status, error, turn_id, character_id))
 
     def set_delivered_reply(self,turn_id,character_id,content,status):
@@ -256,6 +287,7 @@ class Database:
 
     def delete_memory(self, memory_id, character_id) -> None:
         with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT fact_key FROM memories WHERE id=? AND character_id=?", (memory_id,character_id)).fetchone()
             if row:
                 connection.execute("INSERT OR IGNORE INTO memory_tombstones(character_id,fact_key) VALUES (?,?)", (character_id,row['fact_key']))
@@ -263,6 +295,10 @@ class Database:
                 connection.execute("DELETE FROM memory_archive WHERE character_id=? AND fact_key=?", (character_id,row['fact_key']))
                 connection.execute("DELETE FROM memories WHERE id=? AND character_id=?", (memory_id,character_id))
                 connection.execute("DELETE FROM conversation_summaries WHERE character_id=?", (character_id,))
+                connection.execute("DELETE FROM stage_summaries WHERE character_id=?", (character_id,))
+                connection.execute("DELETE FROM memory_vectors WHERE character_id=? AND fact_key=?", (character_id,row['fact_key']))
+                last = connection.execute('SELECT MAX(id) FROM chat_messages WHERE character_id=?', (character_id,)).fetchone()[0]
+                self.set_setting_in(connection, f'context_after:{character_id}', last or 0)
 
     # ---- v2：记忆卡、存档、收件箱、目的 ----
     def memory_card(self, character_id):
@@ -385,26 +421,60 @@ class Database:
                                       (since, limit)).fetchall()
 
     # ---- P5：agent 审计 --------------------------------------------------------
-    def add_agent_run(self, character_id, goal):
+    def add_agent_run(self, character_id, goal, *, attachments=(), workspace=None, peer=None):
+        from uuid import uuid4
         with self.transaction() as connection:
-            return connection.execute("INSERT INTO agent_runs(character_id,goal) VALUES (?,?)", (character_id, goal)).lastrowid
+            run_id = connection.execute("INSERT INTO agent_runs(character_id,goal,workspace) VALUES (?,?,?)", (character_id, goal, str(workspace or ''))).lastrowid
+            if peer:
+                connection.execute("INSERT INTO agent_qq_runs VALUES (?,?,?)",(run_id,*peer))
+            if attachments:
+                folder = Path(workspace)/'attachments'/f'{run_id}-{uuid4().hex}'
+                for index, (original, size) in enumerate(attachments, 1):
+                    copy = folder/f'{index:02d}-{original.name}'
+                    connection.execute("INSERT INTO agent_attachments(run_id,original,copy,size) VALUES (?,?,?,?)",
+                                       (run_id, str(original), str(copy), size))
+            return run_id
 
-    def pause_agent_work(self, run_id, offers, *, connection=None):
+    def agent_attachments(self, run_id):
+        with self.transaction() as connection:
+            return connection.execute("SELECT * FROM agent_attachments WHERE run_id=? ORDER BY copy", (run_id,)).fetchall()
+
+    def pause_agent_work(self, run_id, offers, *, reason="程序退出", connection=None):
         """关窗口后仍有进行中的任务或尚未开始的提议，供用户在操作日志里接续。"""
         with (self.transaction() if connection is None else nullcontext(connection)) as c:
-            c.execute("UPDATE agent_runs SET status='paused', steps=(SELECT COUNT(*) FROM agent_steps WHERE run_id=?) "
-                      "WHERE id=? AND status='running'", (run_id, run_id))
-            c.executemany("INSERT INTO agent_runs(character_id,goal,status) VALUES (?,?,'paused')", offers)
+            c.execute("UPDATE agent_runs SET status='paused', pause_reason=?, ended_at=datetime('now','localtime'), revision=revision+1, steps=(SELECT COUNT(*) FROM agent_steps WHERE run_id=?) "
+                      "WHERE id=? AND status='running'", (reason, run_id, run_id))
+            c.executemany("INSERT INTO agent_runs(character_id,goal,status,pause_reason,ended_at) "
+                          "VALUES (?,?,'paused','退出前尚未开始',datetime('now','localtime'))", offers)
 
-    def resume_agent_run(self, run_id, character_id):
+    def resume_agent_run(self, run_id, character_id, revision=None, remaining=''):
         def claim(c):
             if not c.execute("UPDATE agent_runs SET status='running', ended_at=NULL "
-                             "WHERE id=? AND character_id=? AND status='paused'", (run_id, character_id)).rowcount:
+                             "WHERE id=? AND character_id=? AND status='paused' AND (? IS NULL OR revision=?)", (run_id, character_id, revision, revision)).rowcount:
                 return None
+            if remaining:
+                c.execute('INSERT INTO agent_checkpoints(run_id,summary) VALUES (?,?)', (run_id, '主人补充：' + remaining))
             return c.execute("SELECT COALESCE(MAX(seq),0) FROM agent_steps WHERE run_id=?", (run_id,)).fetchone()[0]
         return self.locked(claim)
 
-    def reserve_agent_effect(self, run_id, signature, resuming):
+    def agent_run(self, run_id):
+        with self.transaction() as c:
+            return c.execute('SELECT * FROM agent_runs WHERE id=?', (run_id,)).fetchone()
+
+    def agent_checkpoints(self, run_id):
+        with self.transaction() as c:
+            return c.execute('SELECT * FROM agent_checkpoints WHERE run_id=? ORDER BY id', (run_id,)).fetchall()
+
+    def abandon_agent_run(self, run_id, character_id, revision):
+        with self.transaction() as c:
+            changed = c.execute("UPDATE agent_runs SET status='cancelled',result='主人已放弃',ended_at=datetime('now','localtime') "
+                                "WHERE id=? AND character_id=? AND revision=? AND status='paused'",
+                                (run_id, character_id, revision)).rowcount
+            if changed:
+                c.execute("DELETE FROM app_settings WHERE key=?", (f'agent_effects:{run_id}',))
+            return bool(changed)
+
+    def reserve_agent_effect(self, run_id, signature, resuming, description=""):
         """动手前先留指纹。即使在文件已写、工具结果尚未入审计时退出，也不能在接续时重放。"""
         def reserve(c):
             row = c.execute("SELECT status FROM agent_runs WHERE id=?", (run_id,)).fetchone()
@@ -417,6 +487,7 @@ class Database:
                     raise PermissionError('这一步在暂停前或接续时已经尝试过，请先核对结果')
             else:
                 self.set_setting_in(c, key, [*seen, signature])
+                c.execute('INSERT OR IGNORE INTO agent_effect_notes VALUES (?,?,?)', (run_id, signature, description[:500]))
         self.locked(reserve)
 
     def finish_agent_run(self, run_id, status, result='', error='', steps=0, tokens=0, cost=0.0):
@@ -439,9 +510,9 @@ class Database:
             connection.execute("UPDATE agent_steps SET result_summary=?,error=?,undo_json=?,ended_at=datetime('now','localtime') WHERE id=?",
                                (result_summary, error, undo_json, step_id))
 
-    def agent_runs(self, limit=50):
+    def agent_runs(self, limit=50, character=None):
         with self.transaction() as connection:
-            return connection.execute("SELECT * FROM agent_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return connection.execute("SELECT * FROM agent_runs WHERE (? IS NULL OR character_id=?) ORDER BY id DESC LIMIT ?", (character, character, limit)).fetchall()
 
     def agent_steps(self, run_id):
         with self.transaction() as connection:

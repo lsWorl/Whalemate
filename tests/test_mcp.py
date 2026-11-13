@@ -112,19 +112,18 @@ class McpServerTests(unittest.TestCase):
         self.assertFalse(self.server._thread.is_alive())
 
     def test_auth_origin_and_invalid_json(self):
-        for auth in ('', 'Bearer wrong'):
-            with self.assertRaises(urllib.error.HTTPError) as raised:
-                self.post({'jsonrpc': '2.0', 'id': 1, 'method': 'ping'}, {'Authorization': auth})
-            self.assertEqual(raised.exception.code, 401)
-            raised.exception.close()
-        with self.assertRaises(urllib.error.HTTPError) as raised:
-            self.post({'jsonrpc': '2.0', 'id': 1, 'method': 'ping'}, {'Origin': 'https://untrusted.example'})
-        self.assertEqual(raised.exception.code, 403)
-        raised.exception.close()
-        with self.assertRaises(urllib.error.HTTPError) as raised:
-            self.post(b'{invalid')
-        self.assertEqual(raised.exception.code, 400)
-        raised.exception.close()
+        import httpx2
+        # urllib 强制 Connection: close。Windows 上认证先拒绝、请求体后到时，客户端可能先收到 TCP 重置。
+        # 与正式 MCP 客户端一样保持回环连接，让测试核对实际 HTTP 状态码。
+        url = self.server.url
+        headers = {'Authorization': 'Bearer '+self.server.token, 'Content-Type': 'application/json',
+                   'Accept': 'application/json, text/event-stream'}
+        ping = {'jsonrpc': '2.0', 'id': 1, 'method': 'ping'}
+        with httpx2.Client(headers=headers, trust_env=False, timeout=10) as client:
+            for auth in ('', 'Bearer wrong'):
+                self.assertEqual(client.post(url, json=ping, headers={'Authorization': auth}).status_code, 401)
+            self.assertEqual(client.post(url, json=ping, headers={'Origin': 'https://untrusted.example'}).status_code, 403)
+            self.assertEqual(client.post(url, content=b'{invalid').status_code, 400)
 
     def test_protocol_versions_and_schema_validate_before_dispatch(self):
         records = []; self.box.on_call = records.append
@@ -185,14 +184,15 @@ class McpServerTests(unittest.TestCase):
         from types import SimpleNamespace
         from aicompanion.ui.agent_session import AgentSession
         original = self.box.task
-        def ask(spec, box):
+        from aicompanion.agent.approval import Approvals
+        notices = []
+        def send(req):
             original.cancelled.set()
             self.box.task = Task(run_id=2, allowed=[self.inside])
-        notices = []
-        session = SimpleNamespace(box=self.box, bridge=SimpleNamespace(
-            ask=SimpleNamespace(emit=ask), event=SimpleNamespace(emit=lambda *args: notices.append(args))))
+        session = SimpleNamespace(box=self.box, auto_approve=None, _send_request=send,
+                                  tasks=SimpleNamespace(approvals=Approvals(),current_peer=lambda:None))
         started = time.monotonic()
-        self.assertEqual(AgentSession._wait_ui(session, {}), 'no')
+        self.assertEqual(AgentSession._request(session,'write','操作','',None)[0], 'no')
         self.assertLess(time.monotonic()-started, .5)
         self.assertFalse(self.box.task.cancelled.is_set())
         self.assertEqual(notices, [])
@@ -207,7 +207,7 @@ class McpServerTests(unittest.TestCase):
             bridge=SimpleNamespace(ask=SimpleNamespace(emit=lambda *args: None),
                                    event=SimpleNamespace(emit=lambda *args: None)))
         started = time.monotonic()
-        self.assertEqual(AgentSession._wait_ui(session, {}), 'no')
+        self.assertEqual(AgentSession._request(session,'write','操作','',None)[0], 'no')
         self.assertLess(time.monotonic()-started, .5)
         self.assertFalse(current.cancelled.is_set())
 
@@ -218,12 +218,13 @@ class McpServerTests(unittest.TestCase):
         entered = threading.Event()
         original = self.box.task
         seen = []
-        def ask(spec, answer):
+        from aicompanion.agent.approval import Approvals
+        def send(req):
             seen.append(self.box.current)
             entered.set()
-        session = SimpleNamespace(box=self.box, bridge=SimpleNamespace(
-            ask=SimpleNamespace(emit=ask), event=SimpleNamespace(emit=lambda *args: None)))
-        self.box.approve = lambda *args: AgentSession._wait_ui(session, {})
+        session = SimpleNamespace(box=self.box,auto_approve=None,_send_request=send,
+                                  tasks=SimpleNamespace(approvals=Approvals(),clock=time.monotonic,current_peer=lambda:None))
+        self.box.request_approval = lambda *args: AgentSession._request(session,*args)
         target = self.outside/'old-task.txt'
         async def check():
             async with tool_client(self.server, mode='legacy') as client:

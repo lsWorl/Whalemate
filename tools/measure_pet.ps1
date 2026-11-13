@@ -1,13 +1,33 @@
-# 桌宠常驻性能实测：启动预览，等 15 秒稳定后，统计 10 秒内本应用全部进程（Python 与 WebEngine 子进程）的内存和 CPU。
-$ErrorActionPreference = 'SilentlyContinue'
+# 测量使用临时数据库；本地模式只有合成记忆已完成真实推理后才开始稳定期。
+param([string]$LocalEmbeddingDir)
+$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $root 'output\v2-check'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$ready = Join-Path $outDir ("perf-ready-" + [Guid]::NewGuid().ToString('N') + ".txt")
 $out = Join-Path $outDir 'perf.json'
-$start = (Get-Date).AddSeconds(-1)
-$proc = Start-Process -FilePath (Join-Path $root '.venv\Scripts\python.exe') -ArgumentList 'tools\smoke_pet.py', '--preview' -WorkingDirectory $root -WindowStyle Hidden -PassThru
+$arguments = @('tools\smoke_pet.py', '--preview', '--measure-ready', ('"' + $ready + '"'))
+if ($LocalEmbeddingDir) {
+  $arguments += @('--local-embedding-dir', ('"' + (Resolve-Path -LiteralPath $LocalEmbeddingDir).Path + '"'))
+  $out = Join-Path $outDir 'perf-local.json'
+}
+$proc = Start-Process -FilePath (Join-Path $root '.venv\Scripts\python.exe') -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru
+$deadline = (Get-Date).AddSeconds(55)
+while (!(Test-Path -LiteralPath $ready)) {
+  if ($proc.HasExited -or (Get-Date) -ge $deadline) { throw '预览或本地模型未就绪，未记录内存' }
+  Start-Sleep -Milliseconds 250
+}
+Remove-Item -LiteralPath $ready
 Start-Sleep -Seconds 15
-function Snapshot { Get-Process -Name python, pythonw, QtWebEngineProcess | Where-Object { $_.StartTime -ge $start } }
+function Snapshot {
+  $processes = @(Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe' OR Name='QtWebEngineProcess.exe'")
+  $family = @($proc.Id)
+  do {
+    $next = @($processes | Where-Object { $_.ParentProcessId -in $family -and $_.ProcessId -notin $family })
+    $family += @($next | ForEach-Object { $_.ProcessId })
+  } while ($next.Count -gt 0)
+  Get-Process -Id $family -ErrorAction SilentlyContinue
+}
 $before = @{}; foreach ($p in Snapshot) { $before[$p.Id] = $p.TotalProcessorTime.TotalSeconds }
 Start-Sleep -Seconds 10
 $cpu = 0.0; $mem = 0; $private = 0; $list = @()
@@ -24,4 +44,6 @@ $result = [ordered]@{
   processes = $list
 }
 $result | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $out
-Wait-Process -Id $proc.Id
+$proc.WaitForExit()
+if ($proc.ExitCode -ne 0) { throw "预览退出码 $($proc.ExitCode)" }
+exit 0

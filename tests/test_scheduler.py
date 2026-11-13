@@ -29,6 +29,47 @@ class FakePurposes:
     def intent(self, row): return '心事：'+row['content']
 
 
+class ResumeReminderTests(unittest.TestCase):
+    def test_next_day_once_after_restart_and_only_offer_until_confirmed(self):
+        with tempfile.TemporaryDirectory() as root:
+            db = Database(Path(root)/'test.sqlite3')
+            db.initialize()
+            db.set_setting('quiet_start', 23)
+            db.set_setting('quiet_end', 8)
+            run = db.add_agent_run(CID, '整理明细')
+            db.pause_agent_work(run, (), reason='还差第二张表')
+            with db.transaction() as c:
+                c.execute("UPDATE agent_runs SET ended_at='2026-11-12 20:00:00' WHERE id=?", (run,))
+            now = [datetime(2026,11,12,21)]
+            scheduler = ProactiveScheduler(db, FakePurposes(), FakeGreetings(), clock=lambda:now[0].timestamp())
+            self.assertNotEqual(scheduler.next(CID,0,9999).source, 'task_resume')
+            now[0] = datetime(2026,11,13,4)
+            self.assertIsNone(scheduler.next(CID,0,9999))
+            now[0] = datetime(2026,11,13,10)
+            self.assertEqual(scheduler.next(CID,0,9999,resume_ready=False).source, 'greeting')
+            outreach = scheduler.next(CID,0,9999)
+            self.assertEqual(outreach.source, 'task_resume')
+            self.assertIn('第二张表', outreach.intent)
+            self.assertFalse(scheduler.reserve(CID, outreach, 'qq'))
+            rid = scheduler.reserve(CID, outreach)
+            self.assertFalse(scheduler.reserve(CID, outreach))
+            scheduler.release(rid)
+            rid = scheduler.reserve(CID, outreach)
+            self.assertTrue(scheduler.show_resume(CID, rid, outreach))
+            self.assertFalse(scheduler.show_resume(CID, rid, outreach))
+            scheduler.answered_resume(CID, rid)
+            self.assertEqual(scheduler.last(CID)['status'], 'answered')
+            db.initialize()
+            self.assertFalse(scheduler.reserve(CID, outreach))
+            self.assertIsNone(scheduler._resume_reminder(CID, now[0]))
+            now[0] = datetime(2026,11,14,10)
+            later = scheduler._resume_reminder(CID, now[0])
+            self.assertIsNotNone(later)
+            self.assertEqual(db.agent_run(run)['status'], 'paused')
+            self.assertEqual(db.resume_agent_run(run, CID, later.payload['revision']), 0)
+            self.assertFalse(scheduler.reserve(CID, later))
+
+
 class SchedulerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

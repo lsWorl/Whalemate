@@ -16,7 +16,7 @@ from aicompanion.providers.models import PROVIDER_PRESETS
 
 PRESET_CHOICES = (('deepseek', 'DeepSeek'), ('minimax-global', 'MiniMax 国际站（minimax.io）'),
                   ('minimax-cn', 'MiniMax 国内站（minimaxi.com）'), ('breezeblue', 'Breeze Blue（语音合成）'),
-                  ('', '其他 OpenAI 兼容服务'))
+                  ('bailian', '阿里云百炼（北京）'), ('zhipu', '智谱开放平台'), ('', '其他 OpenAI 兼容服务'))
 KEY_HINTS = {
     'minimax-global': '国际站和国内站是两套账户，Key 不通用；订阅（M Plan）Key 与按量 Key 也不通用。',
     'minimax-cn': '国内站地址以你的账户页面为准（不同文档写作 api.minimaxi.com 或 api.minimax.cn）。订阅 Key 与按量 Key 不通用。',
@@ -69,7 +69,7 @@ class ModelDialog(QDialog):
         self.model_id = QLineEdit(); self.model_id.setPlaceholderText('服务商文档里的模型名，例如 deepseek-flash')
         self.caps = {}
         row = QHBoxLayout()
-        for cap, label in (('chat', '聊天'), ('vision', '识图'), ('tools', '工具调用'), ('tts', '语音合成')):
+        for cap, label in (('chat', '聊天'), ('vision', '识图'), ('tools', '工具调用'), ('tts', '语音合成'), ('embedding', '文本向量')):
             box = QCheckBox(label); box.setChecked(cap == 'chat'); self.caps[cap] = box; row.addWidget(box)
         form.addRow('账户', self.account); form.addRow('模型名', self.model_id); form.addRow('支持', row)
         note = QLabel('服务返回的模型列表不等于能力证明；没有确认支持的能力不要勾选。'); note.setWordWrap(True); form.addRow(note)

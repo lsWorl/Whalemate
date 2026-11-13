@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 14  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动
+SCHEMA_VERSION = 21  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单；v18：主人 QQ 交办与审批规则；v19：向量索引与阶段摘要；v20：群内话题；v21：跨天办事检查点
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -47,6 +47,16 @@ CREATE TABLE IF NOT EXISTS memory_tombstones (
     character_id TEXT NOT NULL REFERENCES characters(id), fact_key TEXT NOT NULL,
     deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(character_id, fact_key)
 );
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    character_id TEXT NOT NULL REFERENCES characters(id), fact_key TEXT NOT NULL,
+    provider TEXT NOT NULL, endpoint TEXT NOT NULL, model TEXT NOT NULL, dimension INTEGER NOT NULL,
+    content_hash TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY(character_id, fact_key)
+);
+CREATE TABLE IF NOT EXISTS stage_summaries (
+    id INTEGER PRIMARY KEY, character_id TEXT NOT NULL REFERENCES characters(id), channel TEXT NOT NULL,
+    first_id INTEGER NOT NULL, last_id INTEGER NOT NULL, source_ids TEXT NOT NULL, summary TEXT NOT NULL,
+    UNIQUE(character_id,channel,first_id)
+);
 CREATE TABLE IF NOT EXISTS conversation_summaries (
     character_id TEXT PRIMARY KEY REFERENCES characters(id), summary TEXT NOT NULL,
     through_id INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -91,7 +101,34 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, goal TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running', started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     ended_at TEXT, steps INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
-    result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT ''
+    result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', workspace TEXT NOT NULL DEFAULT '',
+    plan TEXT NOT NULL DEFAULT '[]', pause_reason TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS agent_effect_notes (
+    run_id INTEGER NOT NULL REFERENCES agent_runs(id), signature TEXT NOT NULL, description TEXT NOT NULL,
+    PRIMARY KEY(run_id, signature)
+);
+CREATE TABLE IF NOT EXISTS agent_checkpoints (
+    id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES agent_runs(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), summary TEXT NOT NULL,
+    artifacts TEXT NOT NULL DEFAULT '[]', removed TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS ix_agent_checkpoints_run ON agent_checkpoints(run_id,id);
+CREATE TABLE IF NOT EXISTS agent_rules (
+    project TEXT NOT NULL, category TEXT NOT NULL, pattern TEXT NOT NULL, effect TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(project, category, pattern, effect)
+);
+CREATE TABLE IF NOT EXISTS qq_task_turns (
+    bot TEXT NOT NULL, owner TEXT NOT NULL, message TEXT NOT NULL, PRIMARY KEY(bot,owner,message)
+);
+CREATE TABLE IF NOT EXISTS agent_qq_runs (
+    run_id INTEGER PRIMARY KEY REFERENCES agent_runs(id), bot TEXT NOT NULL, owner TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_attachments (
+    run_id INTEGER NOT NULL REFERENCES agent_runs(id), original TEXT NOT NULL, copy TEXT NOT NULL UNIQUE,
+    size INTEGER NOT NULL, sha256 TEXT NOT NULL DEFAULT '', caption TEXT NOT NULL DEFAULT '',
+    owned INTEGER NOT NULL DEFAULT 0, vision_started INTEGER NOT NULL DEFAULT 0, recycled TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(run_id, copy)
 );
 CREATE TABLE IF NOT EXISTS agent_steps (
     id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES agent_runs(id), seq INTEGER NOT NULL,
@@ -197,7 +234,7 @@ CREATE INDEX IF NOT EXISTS ix_mood_events ON mood_events(character_id, id);
 CREATE TABLE IF NOT EXISTS companion_dates (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, person_id INTEGER, kind TEXT NOT NULL, title TEXT NOT NULL,
  calendar TEXT NOT NULL DEFAULT 'solar', year INTEGER, month INTEGER NOT NULL, day INTEGER NOT NULL, yearly INTEGER NOT NULL DEFAULT 1,
- source TEXT NOT NULL DEFAULT 'user', scope TEXT NOT NULL DEFAULT 'private', enabled INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL
+ reminder TEXT NOT NULL DEFAULT 'day', source TEXT NOT NULL DEFAULT 'user', scope TEXT NOT NULL DEFAULT 'private', enabled INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_companion_dates ON companion_dates(character_id, kind);
 -- 哪个日子哪天已经提起过（同一个日子一天只提一次；她退出再启动也不会再庆祝一遍）
@@ -208,19 +245,48 @@ CREATE TABLE IF NOT EXISTS companion_date_mentions (
 -- 用来管“今天说了几次”“上一句他回了没有”“追问过几次”，几种主动消息不再各管各的、同时冒出来
 CREATE TABLE IF NOT EXISTS outreach_log (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, source TEXT NOT NULL, key TEXT NOT NULL,
- channel TEXT NOT NULL DEFAULT 'desktop', status TEXT NOT NULL DEFAULT 'sent', parent_id INTEGER,
+ channel TEXT NOT NULL DEFAULT 'desktop', scope TEXT NOT NULL DEFAULT 'desktop', status TEXT NOT NULL DEFAULT 'sent', parent_id INTEGER,
  sent_at REAL NOT NULL, settled_at REAL, turn_id TEXT, handed_at REAL, share_delivery TEXT NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS ix_outreach_scope ON outreach_log(character_id,scope,sent_at);
 CREATE INDEX IF NOT EXISTS ix_outreach_parent ON outreach_log(parent_id);
 -- 主动发到 QQ 私聊的每一条投递（bridge/outbox.py）：排队 → 交出 → 插件领取 → 发出 / 部分 / 失败 / 未知。
 -- 存进库里是为了重启以后还能对上账：迟到的回执、没被取走的回复、这一轮带的纪念日（date_keys、date_day）
 CREATE TABLE IF NOT EXISTS qq_outbox (
  turn_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, status TEXT NOT NULL, date_keys TEXT NOT NULL DEFAULT '[]',
  date_day TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, dequeued_at REAL, claimed_at REAL, first_sent_at REAL, settled_at REAL,
- guard TEXT NOT NULL DEFAULT 'scheduled'
+ guard TEXT NOT NULL DEFAULT 'scheduled', target TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
--- v14 计划书 v4 功能四 有自己的生活：她按兴趣去看的东西。必须有真实来源（标题、链接、摘录），没做完的不算做过
+-- v16 聊天约定及其原始人物、会话和投递版本
+CREATE TABLE IF NOT EXISTS promises (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL REFERENCES characters(id),
+ person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, scope TEXT NOT NULL, source TEXT NOT NULL, turn_id TEXT NOT NULL,
+ title TEXT NOT NULL, due_at REAL, condition TEXT NOT NULL DEFAULT '', expires_at REAL,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','cancelled','expired')),
+ revision INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, UNIQUE(character_id,turn_id)
+);
+CREATE INDEX IF NOT EXISTS ix_promises_due ON promises(character_id,status,due_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_promise_delivery ON outreach_log(character_id,key) WHERE source='promise';
+-- v20 群内话题及其出处。保留原消息，删除话题只级联删除出处引用
+CREATE TABLE IF NOT EXISTS circle_topics (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, channel TEXT NOT NULL,
+ name TEXT NOT NULL, name_key TEXT NOT NULL, summary TEXT NOT NULL, summary_through INTEGER NOT NULL,
+ UNIQUE(character_id,channel,name_key)
+);
+CREATE TABLE IF NOT EXISTS circle_evidence (
+ topic_id INTEGER NOT NULL REFERENCES circle_topics(id) ON DELETE CASCADE,
+ message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE, person_id INTEGER,
+ day TEXT NOT NULL, seen_at REAL NOT NULL, PRIMARY KEY(topic_id,message_id)
+);
+CREATE TABLE IF NOT EXISTS circle_tombstones (
+ character_id TEXT NOT NULL, channel TEXT NOT NULL, through_id INTEGER NOT NULL,
+ PRIMARY KEY(character_id,channel)
+);
+CREATE INDEX IF NOT EXISTS ix_circle_speaker ON chat_messages(character_id,channel,sender,id);
+CREATE INDEX IF NOT EXISTS ix_circle_turn ON outreach_log(turn_id) WHERE source='circle';
+CREATE UNIQUE INDEX IF NOT EXISTS ix_circle_delivery ON outreach_log(character_id,key) WHERE source='circle';
+-- v14 她自己看过的活动和来源
 CREATE TABLE IF NOT EXISTS activities (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'read', interest TEXT NOT NULL,
  query TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'doing', title TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',

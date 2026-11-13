@@ -619,6 +619,8 @@ class EarlyV4Tests(unittest.TestCase):
             db = Database(path); db.initialize()
             db.add_message('user', '旧的群消息', 'deepseek-whale', channel='qq:group:30003')
             with closing(sqlite3.connect(path)) as conn:
+                # 还原 v4 的实际结构：群内参与者索引在 v20 才出现。
+                conn.execute('DROP INDEX ix_circle_speaker')
                 conn.execute('ALTER TABLE chat_messages DROP COLUMN sender'); conn.execute('PRAGMA user_version=4'); conn.commit()
             for backup in Path(tmp).glob('*.backup-*'): backup.unlink()
             db = Database(path); db.initialize()

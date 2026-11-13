@@ -450,7 +450,10 @@ class BridgePage(QWidget):
             self.owner_error.setText('QQ 号应该是 5 到 12 位数字。'); self.owner_error.show()
             return False
         self.owner_error.hide()
-        db.set_setting('bridge_owner:qq', owner)
+        from aicompanion.bridge.tasks import bind_owner
+        from aicompanion.bridge.server import runtime
+        account = (runtime.last_heartbeat or {}).get('onebot') or {}
+        bind_owner(db,owner,str(account.get('self_id') or '') if account.get('connected') else '')
         groups = [self.groups.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.groups.count())
                   if self.groups.item(i).checkState() == Qt.CheckState.Checked]
         db.set_setting('bridge_groups', groups)   # 插件下次心跳就会拿到

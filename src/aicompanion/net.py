@@ -20,6 +20,22 @@ class NoRedirect(HTTPRedirectHandler):
 _OPENER = build_opener(NoRedirect())
 
 
+def finish_rejected_post(handler):
+    """先让本机客户端收到拒绝，再有界地排空短请求，避免 Windows 用 TCP RST 覆盖响应。"""
+    import socket
+    if handler.command != 'POST':
+        return
+    try:
+        handler.wfile.flush()
+        handler.connection.shutdown(socket.SHUT_WR)
+        size = int(handler.headers.get('Content-Length') or 0)
+        if 0 < size <= 65536:
+            handler.connection.settimeout(0.25)
+            handler.rfile.read(size)
+    except (OSError, ValueError):
+        pass
+
+
 def open_url(request, timeout=None):
     """等价于 urlopen，但不跟随重定向。"""
     return _OPENER.open(request, timeout=timeout)

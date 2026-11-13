@@ -17,8 +17,12 @@ class ChatController:
         from aicompanion.providers.router import FixedRouter
         self.router = models if hasattr(models,'resolve') else FixedRouter(database,models)
         self.character = database.characters()[0] if database.characters() else DEFAULT_CHARACTER
-        self.context = ContextService(database,memory_service)
+        from aicompanion.services.semantic import SemanticRecall
+        self.semantic = SemanticRecall(database, self.router)
+        self.context = ContextService(database, memory_service, self.semantic)
         self.emotions = EmotionService(database)
+        from aicompanion.services.promises import Promises
+        self.promises = Promises(database)
         # 每个角色的表情 / 动作词表（来自角色包）；模型可在台词里标注，存库前去掉
         self.vocabs = {}
         # P5：允许在回复里用 <task> 提议动手（由界面根据设置打开）
@@ -46,16 +50,28 @@ class ChatController:
         except Exception: pass
         base=marks.get('base',len(prompt)); rel=marks.get('relationship',base); other=marks.get('other',rel); tools=marks.get('tools',other)
         detail=dict(sections,relationship=rel-base,other=other-rel,tools=tools-other,expression=len(prompt)-tools)
+        start = detail.pop('_optional_start', base)
+        circle_size = detail.get('circle', 0)
+        limit = budget.limit_for(purpose, window, max_output)
+        if circle_size and len(prompt) + sum(len(t.content) for t in history) > limit:
+            prompt = prompt[:base-circle_size] + prompt[base:]
+            base -= circle_size
+            detail['circle'] = 0
+        mandatory = len(prompt) + (len(history[-1].content) if history else 0)
+        if start < base and mandatory > limit:
+            prompt = prompt[:start] + prompt[base:]
+            detail.update(stages=0, recall=0)
         kept,report=budget.fit(history,prompt,purpose,window,max_output,detail)
         budget.save(self.database,character_id,report)
         if report.blocked:   # 确定超过已知模型上限：不发（不删人格、不删当前这句话）
             raise budget.BudgetExceeded(budget.refusal(report,getattr(resolved,'label','')))
-        return kept
+        return kept, prompt
 
     def use_client(self,client,**options):
         """测试与桌宠自检：所有能力都改用这个客户端（options 传给 FixedRouter，例如 vision_model）。"""
         from aicompanion.providers.router import FixedRouter
         self.router=FixedRouter(self.database,client,**options)
+        self.semantic.router = self.router
 
     def search_factory(self,character_id):
         """查梗 / 学梗用的搜索服务工厂：按这个角色的搜索设置，而不是聊天接口的主机名。"""
@@ -81,7 +97,7 @@ class ChatController:
         from dataclasses import replace
         from aicompanion.expression.domain import ExpressionContext,ExpressionEvent
         from aicompanion.expression.stream import ExpressionStream
-        from aicompanion.pet.script import Vocab,strip_cues
+        from aicompanion.pet.script import SAY_PROMPT,Vocab,strip_cues
         context=expression_context or ExpressionContext(turn_id,character.id,'desktop:'+character.id,
             channel,scene,'proactive' if proactive else 'user_reply',proactive,supports_images=bool(on_expression_event))
         if context.generation_id!=turn_id or context.character_id!=character.id:
@@ -89,14 +105,24 @@ class ChatController:
         context=replace(context,supports_images=context.supports_images and on_expression_event is not None,
                         early_before=context.early_before and reply_filter is None)
         # 绑定主人的 QQ 私聊也复用 desktop 历史频道，必须同时检查实际来源。
-        local_reply = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice') and not proactive
-                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop'
-                       and context.scene == 'pet' and context.trigger == 'user_reply')
+        local_voice = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice')
+                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop' and context.scene == 'pet')
+        local_reply = local_voice and not proactive and context.trigger == 'user_reply'
+        from aicompanion.services.promises import INTENT as PROMISE_INTENT
+        promises = self.promises
+        promise_write = None
+        promise_scope = ''
+        if channel.startswith('qq:group:') and source=='qq' and context.channel==channel:
+            promise_scope = channel
+        elif channel=='desktop' and scene=='pet' and (local_voice or (source=='qq' and context.relationship.link_state=='bound')):
+            promise_scope = 'desktop'
+        promise_person = None
         self.database.start_turn(turn_id,character.id)
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
-            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id,turn_id=turn_id)
+            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id,turn_id=turn_id,
+                vector_query=not proactive and context.trigger == 'user_reply', cancellation=cancellation)
             marks={'base':len(prompt)}
             if local_reply:
                 if self.database.get_setting('self_exit_enabled', True):
@@ -105,10 +131,23 @@ class ChatController:
                                '不要写分析过程。普通聊天不用这个标记，求助、办事和涉及安全时先认真回应。')
                 else:
                     prompt += '\n想暂时离开时，可以告诉用户你想安静一会儿。'
+            if proactive == PROMISE_INTENT:
+                reminder = promises.reminder(character.id, promise_scope, turn_id)
+                if not reminder: raise ReplyCancelled('约定已变更或会话不匹配')
+                prompt += '\n' + reminder
             if proactive:
+                from aicompanion.services.companion_dates import DATE_EVE_INTENT, CompanionDates
+                if proactive == DATE_EVE_INTENT:
+                    reminder = (CompanionDates(self.database).eve_prompt(character.id, turn_id)
+                                if channel == 'desktop' and scene == 'pet' else '')
+                    if not reminder: raise ReplyCancelled('提前提醒已失效')
+                    prompt += '\n' + reminder
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去；句子中间停顿用逗号，别用空格），不编造经历。'
             # T15：她和对方的关系、此刻的心情精力、对方最近多常找她做事——给同一个大脑做判断的依据，不规定回应方式
             person_id=self._person(person,channel,scene,context)
+            if promise_scope and person_id and not proactive and context.trigger == 'user_reply':
+                promise_person = person_id
+                prompt += promises.prompt(character.id, person_id, promise_scope)
             if person_id:
                 from aicompanion.relationship.service import scope_of
                 emotion=self.database.load_emotion(character.id)
@@ -117,11 +156,16 @@ class ChatController:
             prompt+=self._community(character,query,channel)
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
+            if local_reply:
+                prompt += SAY_PROMPT
             marks['other']=len(prompt)
             if self.agent_enabled and not proactive and offer_tasks:
                 from aicompanion.pet.script import TASK_PROMPT
                 prompt+=TASK_PROMPT
             marks['tools']=len(prompt)
+            if proactive == PROMISE_INTENT:
+                context = replace(context,supports_images=False)
+                prompt += '\n用文字直接提醒。'
             candidates,report=self.expression.prepare_report(context,character,query,history)
             prompt+=self.expression.prompt(candidates,proactive=bool(proactive),qq=context.scope.startswith('qq:'))
             if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
@@ -134,11 +178,15 @@ class ChatController:
             client_purpose='proactive' if proactive else ('qq' if channel.startswith('qq:') else purpose)
             client=self.client(character.id,client_purpose)
             # 计划书 v4 功能六：整份请求预算。人格、记忆、召回、关系、表情候选、办事说明都已拼好，超了从最早的历史裁
-            history=self._fit(character.id,client_purpose,history,prompt,sections,marks)
+            history,prompt=self._fit(character.id,client_purpose,history,prompt,sections,marks)
+            summary_sent = False
             with using(purpose,character.id,turn_id):
                 for token in client.generate_reply_stream(history,prompt,cancellation):
                     cancellation.check()
                     clean=parser.feed(token)
+                    if local_reply and on_expression_event and not summary_sent and parser.say.leading_summary:
+                        summary_sent = True
+                        on_expression_event(ExpressionEvent('spoken_summary', turn_id, spoken_summary=parser.say.leading_summary))
                     if context.early_before and attachment is None and parser.selection and parser.selection[1]=='before_text':
                         attachment=self.expression.attachment(turn_id,context,choices[parser.selection[0]],'before_text')
                         cancellation.check()
@@ -156,6 +204,13 @@ class ChatController:
             if attachment is None and parser.selection:
                 aid,placement=parser.selection
                 attachment=self.expression.attachment(turn_id,context,choices[aid],placement)
+            if promise_person and not (parser.mind or {}).get('lookup'):
+                promise_write, clarify = promises.prepare(character.id,promise_person,promise_scope,source,turn_id,query,parser.promise_marker)
+                if clarify:
+                    extra = ('\n' if parts else '') + clarify
+                    parts.append(extra)
+                    yield extra
+            cancellation.check()
             if not ''.join(parts).strip() and attachment is None:
                 if local_reply and parser.leave_reason:
                     parts.append('我想先安静一会儿。')
@@ -187,7 +242,11 @@ class ChatController:
             if attachment and self.expression.catalog.resolve(attachment.asset_id,attachment.revision) is None:
                 self.expression.receipt(attachment.delivery_id,'cancelled');attachment=None
             result=self.expression.result(turn_id,context,content,attachment,status,parser.diagnostics if parser else ())
-            self.database.finish_turn(turn_id,character.id,content,status,error,channel=channel,source=source)
+            def commit_promises(c):
+                promises.conversation(c,character.id,promise_person,promise_scope,turn_id,query)
+                if promise_write: promise_write(c)
+            save = commit_promises if promise_person and status=='complete' and content and not (parser.mind or {}).get('lookup') else None
+            self.database.finish_turn(turn_id,character.id,content,status,error,channel=channel,source=source,on_complete=save)
             self.expression.record_trace(turn_id,context,report,parser.diagnostics if parser else (),
                                          parser.markers if parser else 0,parser.selection if parser else None,
                                          result.attachments[0] if result.attachments else None,status,

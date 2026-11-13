@@ -22,6 +22,8 @@ def schedule_pet_smoke_check(window, database, output):
     state = {'errors': [], 'poses_seen': []}
     # 后面会主动触发一次调度来验心事，隔离库里的兴趣搜索要关闭，离线自检不能向外发请求。
     database.set_setting('life_enabled', False)
+    # 全屏前台应用不能藏起自检中的角色，否则连气泡的尺寸都测不到。
+    database.set_setting('pet_hide_fullscreen', False)
     pet = window.pet
     pet.input_locked = True   # 自检不受手动拖动、点菜单影响
     # 记录台词标注、用户气泡、活动图标的调用，验证 P2 链路
@@ -235,11 +237,37 @@ def schedule_pet_smoke_check(window, database, output):
     later(21500, qq_media)
 
     def ui_refresh():
-        # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与附件占位、分组设置窗口能逐页打开
+        # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与文件选择器、分组设置窗口能逐页打开
         from aicompanion.ui.settings_window import SettingsWindow
         state['app_icon_ready'] = not window.windowIcon().isNull() and not window.tray.icon().isNull()
-        state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and not window.attach_button.isEnabled()
+        state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and window.attach_button.isEnabled()
                                          and window.speak_toggle.isCheckable())
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from PySide6.QtWidgets import QFileDialog
+        with TemporaryDirectory() as directory:
+            sample = Path(directory)/'附件自检.txt'
+            sample.write_text('离线附件', encoding='utf-8')
+            # Qt 文件对话框可由测试选中文件；系统原生对话框只能接受真实鼠标输入。
+            attr = Qt.ApplicationAttribute.AA_DontUseNativeDialogs
+            old_native = QApplication.testAttribute(attr)
+            QApplication.setAttribute(attr, True)
+            try:
+                window.attach_button.click()
+            finally:
+                QApplication.setAttribute(attr, old_native)
+            picker = window.attachments
+            dialog = picker.dialog
+            opened = isinstance(dialog, QFileDialog) and dialog.isVisible()
+            dialog.setDirectory(directory)
+            dialog.selectFile(sample.name)
+            dialog.accept()
+            state['attachment_picker_opened'] = opened
+            state['attachment_name_shown'] = sample.name in picker.names.text()
+            state['task_attachment_ready'] = (opened and picker.paths == [str(sample)]
+                                              and sample.name in picker.names.text() and not picker.isHidden()
+                                              and window.agent_toggle.isChecked())
+            window.agent_toggle.setChecked(False)
         from aicompanion.ui.onboarding import Onboarding
         menu = window.pet.build_menu()
         sections = [a.text() for a in menu.actions() if not a.isEnabled() and a.text()]
@@ -256,6 +284,77 @@ def schedule_pet_smoke_check(window, database, output):
         try:
             state['settings_pages_ready'] = (dialog.nav.current() == 'models'
                                              and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
+            from unittest.mock import patch
+            from aicompanion.services.circle_topics import switch_key
+            from PySide6.QtWidgets import QMessageBox
+            circle = dialog.circle_topics
+            cid = window.controller.character.id
+            from aicompanion.agent.checkpoints import Journey
+            run = database.add_agent_run(cid, '自检：跨天办事')
+            journey = Journey(database, run, [], [], None)
+            journey.plan(['准备材料', '交付'])
+            journey.checkpoint('找到了清单')
+            database.pause_agent_work(run, (), reason='等待材料')
+            audit = dialog.audit_page
+            audit.refresh()
+            audit.runs.selectRow(0)
+            state['long_task_checkpoint'] = (audit.resume_button.isEnabled() and audit.abandon_button.isEnabled()
+                                             and '找到了清单' in audit.detail.toPlainText()
+                                             and '等待材料' in audit.detail.toPlainText())
+            database.abandon_agent_run(run, cid, database.agent_run(run)['revision'])
+            scope = 'qq:group:30003'
+            saved_groups = database.get_setting('bridge_groups', [])
+            database.set_setting('bridge_groups', ['30003'])
+            try:
+                circle.refresh_groups()
+                mid = database.add_message('user', '自检群聊新棋谱', cid, source='qq', channel=scope)
+                circle.topics.collect(cid, scope, database.recent_messages(1, cid, channel=scope),
+                                      [dict(name='棋谱', summary='群里在复盘棋局', source_ids=[mid])])
+                circle.refresh_rows()
+                circle.table.selectRow(0)
+                circle.enabled_box.click()
+                visible = circle.table.rowCount() == 1 and str(mid) in circle.evidence.toPlainText()
+                with patch('aicompanion.ui.circle_topics.QMessageBox.question', return_value=QMessageBox.Yes):
+                    circle.delete_one.click()
+                state['circle_topics_settings'] = (visible and database.get_setting(switch_key(cid, scope), False)
+                                                   and circle.table.rowCount() == 0)
+            finally:
+                database.set_setting('bridge_groups', saved_groups)
+                database.set_setting(switch_key(cid, scope), False)
+            semantic = dialog.semantic_card
+            state['semantic_settings'] = ('未开启' in semantic.status.text() and not semantic.disable.isEnabled()
+                                          and semantic.originals.isEnabled())
+            semantic.mode.setCurrentIndex(semantic.mode.findData('local'))
+            state['local_embedding_option'] = (semantic.enable.isEnabled() and semantic.model.isHidden()
+                                               and '本地' in semantic.enable.text())
+            from aicompanion.services.semantic import LOCAL
+            with patch.object(semantic.service.db, 'get_setting', return_value=vars(LOCAL)), \
+                    patch.object(semantic.service, 'download_status', 'hf-mirror.com · HTTP 503；huggingface.co · 正在连接'):
+                semantic.refresh_status()
+                state['local_embedding_sources'] = all(text in semantic.status.text() for text in ('hf-mirror.com', 'HTTP 503', 'huggingface.co'))
+            semantic.refresh_status()
+            card = dialog.dates_card
+            card.kind.setCurrentIndex(card.kind.findData('custom'))
+            card.title.setText('自检纪念日')
+            card.add()
+            timing = card.table.cellWidget(0, 4)
+            timing.setCurrentIndex(timing.findData('eve'))
+            state['date_reminder_editable'] = (timing.count() == 4 and card.reminder.currentData() == 'day'
+                                                and card.dates.user_dates(card.cid)[0]['reminder'] == 'eve')
+            card.table.selectRow(0); card.remove()
+            promises = dialog.promises_card
+            who = window.controller.relationships.owner_person()
+            insert, _ = promises.service.prepare(card.cid, who, 'desktop', 'text', 'smoke-promise', '',
+                                                  {'condition':'下次聊天','title':'自检约定'})
+            database.locked(insert)
+            promises.refresh()
+            promises.table.selectRow(0)
+            promises.title.setText('修改后的自检约定')
+            promises.save.click()
+            promises.table.selectRow(0)
+            promises.cancel.click()
+            row = promises.service.rows(card.cid)[0]
+            state['promise_settings'] = row['title'] == '修改后的自检约定' and row['status'] == 'cancelled'
             # 计划书 v4 功能二：人格编辑器能载入当前人格
             state['persona_ready'] = bool(dialog.persona_editor.current_id) and bool(dialog.persona_editor.description.toPlainText())
             # 计划书 v4 功能三：心情卡能读出当前心情
@@ -283,7 +382,8 @@ def schedule_pet_smoke_check(window, database, output):
                 self.calls+=1
                 handle=re.search(r'^(s\d+)｜',prompt,re.M).group(1)   # 本轮候选短编号
                 yield '<sticker id="'+handle+'"/>'
-                yield '【开心】好耶，表达自检完成！<挥手>'
+                yield '【开心】好耶，表达自检完成！<挥手><sa'
+                yield 'y>语音专用自检词</say>'
                 yield '<lea'
                 yield 've reason="想休息一下"/>'
         model=ExpressionModel();window.controller.use_client(model)
@@ -311,6 +411,9 @@ def schedule_pet_smoke_check(window, database, output):
                 state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
                 state['self_exit_disabled_reply'] = (window.texts[generation] == '好耶，表达自检完成！'
                                                       and window.departure is None and not window.closing)
+                with database.transaction() as c:
+                    row = c.execute("SELECT content FROM chat_messages WHERE turn_id=? AND role='assistant'", (generation,)).fetchone()
+                state['say_hidden'] = bool(row and row['content'] == window.texts[generation] == '好耶，表达自检完成！')
                 state['expression_trace_ready']=state['expression_trace_stage']=='OK_displayed'
                 from aicompanion.ui.library_page import LibraryPage
                 page=LibraryPage(database,window.controller.character.id)
@@ -375,9 +478,11 @@ def schedule_pet_smoke_check(window, database, output):
         import tempfile
         inside = _Path(tempfile.mkdtemp()); outside = _Path(tempfile.mkdtemp())/'x.txt'
         session.box.task = Task(run_id=0, allowed=[inside])
+        # 工作区自动接受由普通路径专项覆盖；临时目录在 C 盘用户目录时必须单独询问。
+        from aicompanion.agent.approval import system_location
         _, inside_error = session.box.call('write_file', {'path': str(inside/'ok.txt'), 'content': 'hi'})
         _, outside_error = session.box.call('write_file', {'path': str(outside), 'content': 'hi'})
-        state['tools_gate'] = (not inside_error) and outside_error and asked == ['write'] and not outside.exists()
+        state['tools_gate'] = inside_error == system_location(inside) and outside_error and asked == ['write']*(1+int(inside_error)) and not outside.exists()
         session.auto_approve = None
         # 自检只验证清理结果的接口，不清理用户真实的回收区或 DSH 会话。
         from aicompanion.agent.housekeeping import Report
@@ -390,6 +495,27 @@ def schedule_pet_smoke_check(window, database, output):
         window._offer_task('整理下载文件夹')
         state['task_offer_shown'] = window.pet.confirm is not None and window.pet.confirm.isVisible()
         window.pet.close_confirm()
+        from aicompanion.agent.approval import Rule
+        from aicompanion.bridge.tasks import bind_owner, activate_binding, ANSWER
+        peer = ('90009','10001')
+        bind_owner(database,peer[1],peer[0])
+        activate_binding(database,peer[0])
+        bridge = window.agent.tasks
+        req = bridge.approvals.add(window.agent.box.task.run_id,'command','Set-Content smoke.txt OK',rule=Rule('command','set-content'),peer=peer)
+        window.agent._refresh_approvals()
+        card = window.task_card
+        visible = (not card.reuse.isHidden() and not card.persist.isHidden() and req.code in card.detail.text()
+                   and window.approval_mode.count()==3 and not card.batch.isHidden())
+        window.agent._send_request(req)
+        notices = bridge.heartbeat(peer[0])
+        for notice in notices['ids']:
+            bridge.claim(peer[0], notice)
+        packet = {'task_message':'smoke-approval','shown_approvals':[req.code]}
+        bridge.answer(packet,peer,ANSWER.fullmatch('同意全部'))
+        window.agent._refresh_approvals()
+        state['qq_task_approval'] = visible and req.decision=='once' and not bridge.approvals.items()
+        card.hide()
+        bind_owner(database,'')
         database.set_setting('quota_daily_total', 0.01)
         database.add_token_usage('companion', 'smoke', 1, 1, cost=0.02)
         before = len(window.workers)
@@ -557,8 +683,8 @@ def schedule_pet_smoke_check(window, database, output):
         required = ['pet_visible', 'chat_hidden', 'expected_renderer_shown', 'native_view', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'outreach_logged', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
-        required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
-        required.append('storage_locations_ready')
+        required.extend(['env_blocked', 'tools_gate', 'housekeep_ok', 'long_task_checkpoint'])
+        required.extend(['storage_locations_ready', 'semantic_settings', 'local_embedding_option', 'local_embedding_sources'])
         required.extend(['self_exit_default_on', 'self_exit_switch_saved', 'self_exit_disabled_reply'])
         if animation:
             required.extend(['animation_body_hit','animation_background_decode','legacy_setting_keeps_aboutme','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])
@@ -568,11 +694,11 @@ def schedule_pet_smoke_check(window, database, output):
 
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
-        required.append('qq_media_settings_ready')
-        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'persona_ready', 'mood_ready', 'speech_default_on'])
-        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
+        required.extend(['qq_media_settings_ready','qq_task_approval'])
+        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'circle_topics_settings', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
+        required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
-        if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
+        if state.get('tools_listed') != 11: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
         if state.get('center_alpha', 0) < (150 if placeholder else 200): state['failed_checks'].append('center_alpha')
         if state.get('pose_after_poke') != 'poked': state['failed_checks'].append('pose_after_poke')

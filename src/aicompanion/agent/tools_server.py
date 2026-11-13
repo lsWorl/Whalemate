@@ -4,11 +4,9 @@ DeepSeek Harness 只负责想和调度；它自带的写文件、PowerShell、�
 exFAT 盘上更是没有任何权限控制——实测）。所以真正动手的这些工具在这里执行，规则是：
 
 - 读：随便读，除了密钥 / 凭据 / 我的数据库 / 系统凭据目录（一律拒绝，不问）；
-- 写、改、建文件夹：在"放开的文件夹"（任务原话里点名的文件夹 + 工作区）里直接做，覆盖前把旧版本存进回收区；
-  在外面先问你；
-- 删除、移走：总是先问（她这次自己新建的文件除外），而且不是真删，是移到回收区，可以找回；
-- 命令：只读的命令（Get-ChildItem、Select-String、git status……）直接跑，其他的先把命令给你看再跑；
-  命令以 Windows 低完整性级别运行，C 盘的系统和用户目录它写不进去。
+- 写入、移动、命令按本次任务的模式和项目规则审批，拒绝规则优先；覆盖前备份；
+- 删除走回收区，继续任务的副作用、附件原件、越界写入等必须逐项确认；
+- Windows 命令以低完整性级别运行。命令前缀规则仅适用于可辨认的单一命令。
 """
 from __future__ import annotations
 
@@ -20,12 +18,14 @@ import os
 from pathlib import Path, PureWindowsPath
 import re
 import shutil
+import stat
 import subprocess
 import threading
 import time
 from typing import Callable
 
 from aicompanion.agent.paths import protected_reason
+from aicompanion.agent.approval import DEFAULT_MODE, MODES, PROJECT_CODE, Rule, Rules, denied_command_family, command_prefix, system_location
 
 TRASH_NAME = '.aicompanion-trash'
 READ_LIMIT = 200_000
@@ -202,10 +202,17 @@ class Task:
     """一次任务的放行范围。"""
     run_id: int = 0
     allowed: list[Path] = field(default_factory=list)      # 放开写的文件夹
-    created: set = field(default_factory=set)              # 这次任务新建的文件（删它不用问）
-    always: set = field(default_factory=set)               # 选了"本次任务都可以"的类别（'command' 或 文件夹路径）
+    always: set[Rule] = field(default_factory=set)          # 仅在本次运行中复用
     cancelled: threading.Event = field(default_factory=threading.Event)
+    mode: str = DEFAULT_MODE
+    rules: Rules | None = None
+    peer: tuple | None = None
     resuming: bool = False
+    originals: dict[Path, Path] = field(default_factory=dict)  # 原件 → 本任务副本
+    copies: set[Path] = field(default_factory=set)
+    captions: dict[Path, str] = field(default_factory=dict)
+    journey: object | None = None
+    read_chars: int = 3600
 
 
 class ToolBox:
@@ -217,6 +224,8 @@ class ToolBox:
         self.approve: Callable[[str, str, str], str] = lambda kind, title, detail: 'no'
         self.on_call: Callable[[dict], None] = lambda record: None
         self.reserve_effect = None
+        self.request_approval = None
+        self.peer_valid = None
         self.task = Task()                 # 当前任务；每次工具调用开始时绑定到这个线程（见 current）
         self._local = threading.local()
         self._calls_lock = threading.Lock()
@@ -225,13 +234,17 @@ class ToolBox:
 
     # ---- MCP 工具清单 ----------------------------------------------------------------
     TOOLS = [
+        {'name': 'task_stage', 'description': '登记对用户公开的计划、阶段产物、等待材料或最终交付清单。用绝对路径，纯文字交付的 files 为空。',
+         'inputSchema': {'type': 'object', 'properties': {'action': {'enum': ['plan','checkpoint','wait','deliver']},
+                         'summary': {'type': 'string'}, 'steps': {'type': 'array', 'items': {'type':'string'}},
+                         'files': {'type': 'array', 'items': {'type':'string'}}}, 'required': ['action','summary']}},
         {'name': 'list_dir', 'description': '列出文件夹里的文件和子文件夹（名字、大小、修改时间）。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string', 'description': '绝对路径'}}, 'required': ['path']}},
         {'name': 'glob', 'description': '按通配符找文件，例如 **/*.md。返回绝对路径列表（最多 500 个）。',
          'inputSchema': {'type': 'object', 'properties': {'pattern': {'type': 'string'}, 'path': {'type': 'string', 'description': '在哪个文件夹下找'}}, 'required': ['pattern', 'path']}},
         {'name': 'grep', 'description': '在文件内容里搜正则，返回 文件:行号:内容（最多 300 行）。',
          'inputSchema': {'type': 'object', 'properties': {'pattern': {'type': 'string'}, 'path': {'type': 'string'}, 'glob': {'type': 'string', 'description': '只搜这些文件，如 *.md'}}, 'required': ['pattern', 'path']}},
-        {'name': 'read_file', 'description': '读文本文件。大文件用 offset / limit 按行分段读。',
+        {'name': 'read_file', 'description': '读文本文件和本任务的文档附件、图片识别结果。大文件用 offset / limit 按行分段读。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'offset': {'type': 'integer', 'description': '从第几行开始（1 起）'}, 'limit': {'type': 'integer', 'description': '读多少行'}}, 'required': ['path']}},
         {'name': 'write_file', 'description': '写文本文件（新建或整个覆盖，UTF-8）。覆盖前旧版本会自动留底。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['path', 'content']}},
@@ -244,8 +257,9 @@ class ToolBox:
         {'name': 'delete_path', 'description': '删除文件或文件夹：会先问用户，同意后移到回收区（可找回）。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'reason': {'type': 'string', 'description': '一句话说明为什么要删'}}, 'required': ['path']}},
         {'name': 'run_powershell', 'description': '运行 PowerShell 命令并返回输出。只读命令直接运行，会改东西的命令先给用户看、同意后才运行。'
-                                                  '要长时间运行的程序（如本地预览服务器）请用 Start-Process 放到后台。单条命令最长 120 秒。',
+                                                  '把预期生成或修改的文件绝对路径填入 outputs，程序会在命令成功后逐一留存检查点。单条命令最长 120 秒。',
          'inputSchema': {'type': 'object', 'properties': {'command': {'type': 'string'}, 'cwd': {'type': 'string', 'description': '在哪个文件夹运行（默认工作区）'},
+                                                          'outputs': {'type': 'array', 'items': {'type':'string'}},
                                                           'reason': {'type': 'string', 'description': '一句话说明这条命令要做什么'}}, 'required': ['command']}},
     ]
 
@@ -267,11 +281,23 @@ class ToolBox:
         with self._calls_lock:
             self._active_calls += 1
         record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': '', 'run_id': task.run_id}
+        entered = False
         try:
+            if task.journey:
+                task.journey.enter()
+                entered = True
             if task.cancelled.is_set(): raise PermissionError('任务已经停止')
+            if task.peer and self.peer_valid and not self.peer_valid(task.peer):
+                raise PermissionError('主人 QQ 绑定已失效')
             handler = getattr(self, f'_t_{name}', None)
             if handler is None: raise ValueError(f'没有这个工具：{name}')
             text = handler(record, **{k: v for k, v in (args or {}).items() if v is not None})
+            if task.journey and name != 'task_stage':
+                try:
+                    task.journey.completed(record)
+                except Exception as error:
+                    task.journey.pause(f'无法记录 {name} 的检查点：{error}')
+                    raise
             record['result'] = text[:300]
             return text, False
         except PermissionError as error:
@@ -281,6 +307,8 @@ class ToolBox:
             record['error'] = f'{type(error).__name__}: {error}'
             return f'出错：{type(error).__name__}: {error}', True
         finally:
+            if entered:
+                task.journey.leave()
             self._local.task = None
             try: self.on_call(record)
             except Exception: pass
@@ -289,55 +317,103 @@ class ToolBox:
                     self._active_calls -= 1
 
     # ---- 把关 ------------------------------------------------------------------------
+    def _t_task_stage(self, record, action, summary, steps=None, files=None):
+        if not self.current.journey:
+            raise ValueError('没有活动的跨天任务')
+        try:
+            return self.current.journey.stage(action, summary, steps or [], files or [])
+        except (ValueError, OSError) as error:
+            self.current.journey.delivery_error = str(error)
+            raise
+
     def _before_effect(self, record, *operation):
         task = self.current
         if task.cancelled.is_set():
             raise PermissionError('任务已经停止')
+        if task.peer and self.peer_valid and not self.peer_valid(task.peer):
+            raise PermissionError('主人 QQ 绑定已失效')
         if self.reserve_effect and task.run_id:
             # 用实际路径、命令和内容计算指纹，不把文件正文、命令或凭据写入恢复记录。
             payload = json.dumps([record['tool'], *operation], ensure_ascii=False)
-            self.reserve_effect(task.run_id, hashlib.sha256(payload.encode()).hexdigest(), task.resuming)
+            args = record['args']
+            target = str(operation[0])
+            if record['tool'] == 'run_powershell':
+                target += ' ' + (args.get('reason') or command_prefix(args['command']) or '自定义命令')
+            if record['tool'] == 'move_path':
+                target += ' → ' + str(operation[1])
+            signature = hashlib.sha256(payload.encode()).hexdigest()
+            self.reserve_effect(task.run_id, signature, task.resuming, record['tool'] + ' ' + target)
 
     def _check_read(self, path: Path):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能读（{reason}）')
 
     def _allowed(self, path: Path) -> bool:
-        return any(_inside(path, folder) or path == folder for folder in self.current.allowed+[Path(p) for p in self.current.always if p != 'command'])
+        return any(path.is_relative_to(folder) for folder in self.current.allowed)
 
-    def _ask(self, record, kind: str, title: str, detail: str, remember: str | None = None):
-        if remember and remember in self.current.always:
-            record['decision'] = 'approved_session'; return
-        answer = self.approve(kind, title, detail)
-        if self.current.cancelled.is_set(): raise PermissionError('任务已经停止')
-        if answer == 'always' and remember: self.current.always.add(remember)
-        if answer in ('once', 'always'):
-            record['decision'] = 'approved_session' if answer == 'always' else 'approved'; return
-        record['decision'] = 'denied' if answer == 'no' else 'timeout'
-        raise PermissionError('用户没有同意' if answer == 'no' else '用户没有回应')
+    def _authorize(self, record, kind, title, detail, candidate=None, hard=False, readonly=False, deny_scopes=()):
+        task = self.current
+        reusable = bool(candidate and not hard)
+        hit = task.rules.hit(candidate, reusable, deny_scopes) if task.rules else None
+        if hit and hit[0] == 'deny':
+            record['decision'] = '拒绝规则 '+hit[1]
+            raise PermissionError(record['decision'])
+        if reusable and hit:
+            record['decision'] = '项目规则 '+hit[1]
+            return
+        with self._calls_lock:
+            matched = next((rule for rule in task.always if reusable and rule.matches(candidate)), None)
+        if matched:
+            record['decision'] = '任务规则 ' + matched.pattern
+            return
+        if readonly and not hard:
+            record['decision'] = '只读操作'
+            return
+        mode_ok = task.mode in ('auto', 'workspace') and kind in ('write', 'move')
+        if not hard and (mode_ok or task.mode == 'auto' and reusable):
+            record['decision'] = '模式 '+MODES[task.mode]
+            return
+        rule = candidate if reusable else None
+        if self.request_approval:
+            answer, reason = self.request_approval(kind,title,detail,rule)
+        else:
+            answer, reason = self.approve(kind,title,detail), ''
+        if task.cancelled.is_set():
+            raise PermissionError('任务已经停止')
+        if answer in ('once','always','persist'):
+            if answer == 'always' and rule:
+                with self._calls_lock:
+                    task.always.add(rule)
+            if answer == 'persist' and rule and task.rules:
+                task.rules.put(rule, 'allow')
+            record['decision'] = 'approved_session' if answer=='always' and rule else 'approved'
+            return
+        record['decision'] = 'timeout' if answer=='timeout' else 'denied'
+        raise PermissionError(('用户没有回应' if answer=='timeout' else '用户没有同意')+('：'+reason if reason else ''))
+
+    def _hard_path(self, path):
+        return (not self._allowed(path) or system_location(path) or self._touches_original(path)
+                or any(part.casefold()=='.git' for part in path.parts)
+                or (path.is_file() and path.stat().st_nlink>1))
+
+    def _touches_original(self, path):
+        return any(path == original or path in original.parents for original in self.current.originals)
 
     def _check_write(self, record, path: Path, action: str):
         reason = _secret_reason(path, self.secrets)
         if reason: raise PermissionError(f'{path} 不能改（{reason}）')
-        resuming = self.current.resuming
-        git_internal = any(part.lower() == '.git' for part in path.parts)
-        outside = not self._allowed(path)
-        if not (resuming or git_internal or outside):
-            return
-        title = ('继续任务，' if resuming else '') + f'要{action}'
-        details = ['请确认这是还没做的部分。'] if resuming else []
-        remember = None
-        if git_internal:
-            title += '，位置在 Git 仓库的内部目录里'
-            details.append('.git 里的 config、hooks 能指定 git 运行时执行的程序。一般不需要直接改这里，请确认是你要的。')
-        if outside:
-            title += '，超出这次任务放开的文件夹'
-            folders = '\n'.join(str(p) for p in self.current.allowed) or '（无）'
-            details.append(f'这次任务放开的文件夹：\n{folders}\n\n同意后她会{action}这个位置。')
-            if not (resuming or git_internal):
-                remember = str(path if path.is_dir() else path.parent)
-                details.append(f'选“这个文件夹本次都可以”会放开 {remember}。')
-        self._ask(record, 'resume' if resuming else 'write', f'{title}：\n{path}', '\n\n'.join(details), remember=remember)
+        task = self.current
+        kind = 'resume' if task.resuming else 'original' if self._touches_original(path) else 'write'
+        folder = path if path.is_dir() else path.parent
+        title = f'要{action}'
+        details = ['请确认这是还没做的部分。'] if task.resuming else []
+        if any(part.lower()=='.git' for part in path.parts):
+            details.append('.git 的 config、hooks 可以执行程序。')
+        if not self._allowed(path):
+            title += '，超出放开范围'
+            details.append('放开的文件夹：'+'、'.join(map(str,task.allowed)))
+        self._authorize(record,kind,f'{title}：\n{path}', '\n'.join(details), Rule('write', str(folder)),
+                        task.resuming or self._hard_path(path))
 
     def _backup(self, path: Path) -> str:
         """覆盖或删除前把旧版本移 / 复制进回收区：<盘>\\.aicompanion-trash\\<时间>-<任务号>\\<原路径>。"""
@@ -367,7 +443,7 @@ class ToolBox:
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not _secret_reason(Path(base)/d, self.secrets)]
             for name in files:
                 path = Path(base)/name
-                if not _secret_reason(path, self.secrets): yield path
+                if path not in self.current.originals and not _secret_reason(path, self.secrets): yield path
 
     def _t_glob(self, record, pattern, path):
         root = _norm(path); self._check_read(root)
@@ -381,7 +457,9 @@ class ToolBox:
         return '\n'.join(out) or '（没找到）'
 
     def _t_grep(self, record, pattern, path, glob=None):
-        root = _norm(path); self._check_read(root)
+        root = _norm(path)
+        root = self.current.originals.get(root, root)
+        self._check_read(root)
         regex = re.compile(pattern); out = []
         files = [root] if root.is_file() else self._walk(root)
         for p in files:
@@ -398,7 +476,18 @@ class ToolBox:
         return '\n'.join(out) or '（没有匹配）'
 
     def _t_read_file(self, record, path, offset=1, limit=None):
-        p = _norm(path); self._check_read(p)
+        requested = self.current.originals.get(_norm(path), Path(path))
+        p = _norm(requested)
+        self._check_read(p)
+        if requested in self.current.copies and p != requested:
+            raise PermissionError('附件副本路径被替换，请重新添加')
+        if p in self.current.copies:
+            from aicompanion.agent.attachment_text import document_text, read_page
+            from aicompanion.agent.attachments import read_copy
+            text = self.current.captions.get(p)
+            if text is None:
+                text = document_text(p, read_copy(p))
+            return read_page(text, offset, limit, self.current.read_chars)
         text = p.read_text(encoding='utf-8', errors='replace')
         lines = text.splitlines(); start = max(1, int(offset or 1))
         chosen = lines[start-1:start-1+int(limit)] if limit else lines[start-1:]
@@ -411,8 +500,8 @@ class ToolBox:
         p = _norm(path); self._check_write(record, p, '写入文件')
         self._before_effect(record, os.path.normcase(p), content)
         backup = self._backup(p) if p.exists() else ''
-        if not p.exists(): self.current.created.add(str(p).lower())
         p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding='utf-8')
+        record['output'] = p
         return f'已写入 {p}（{len(content)} 字）'+(f'；旧版本留底在 {backup}' if backup else '')
 
     def _t_edit_file(self, record, path, old_text, new_text, replace_all=False):
@@ -424,51 +513,84 @@ class ToolBox:
         self._before_effect(record, os.path.normcase(p), old_text, new_text, bool(replace_all))
         backup = self._backup(p)
         p.write_text(text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1), encoding='utf-8')
+        record['output'] = p
         return f'已修改 {p}（替换 {count if replace_all else 1} 处）；旧版本留底在 {backup}'
 
     def _t_make_dir(self, record, path):
         p = _norm(path); self._check_write(record, p, '新建文件夹')
         self._before_effect(record, os.path.normcase(p))
-        p.mkdir(parents=True, exist_ok=True); self.current.created.add(str(p).lower())
+        p.mkdir(parents=True, exist_ok=True)
+        record['output'] = p
         return f'已建好 {p}'
+
+    def _protected_tree(self, root):
+        if not root.is_dir():
+            return False
+        def unreadable(error):
+            raise PermissionError('不能核对目录内容：' + str(error))
+        for base, dirs, files in os.walk(root, onerror=unreadable):
+            for name in dirs + files:
+                path = Path(base) / name
+                info = path.lstat()
+                if (name.casefold() == '.git' or _secret_reason(path, self.secrets)
+                        or path in self.current.originals or path.is_symlink() or info.st_nlink > 1 and path.is_file()
+                        or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+                    return True
+        return False
 
     def _t_move_path(self, record, source, destination):
         src, dst = _norm(source), _norm(destination)
         for p in (src, dst):
             reason = _secret_reason(p, self.secrets)
             if reason: raise PermissionError(f'{p} 不能动（{reason}）')
-        # 源和目标分别检查：她这次自己建的文件可以在放开的文件夹里随便挪，但挪到外面一样要问
-        source_ok = self._allowed(src) or str(src).lower() in self.current.created
-        target_ok = self._allowed(dst) and self._allowed(dst.parent if not dst.exists() else dst)
-        if any(part.lower() == '.git' for p in (src, dst) for part in p.parts): source_ok = target_ok = False   # 挪进 / 挪出 .git 都要问
-        if self.current.resuming:
-            self._ask(record, 'resume', f'继续任务，要把\n{src}\n移到\n{dst}', '请确认这个移动还没做过。')
-        elif not (source_ok and target_ok):
-            where = [] if source_ok else ['原位置在放开的文件夹外或 .git 里']
-            if not target_ok: where.append('目标在放开的文件夹外')
-            self._ask(record, 'move', f'要把\n{src}\n移到\n{dst}', '，'.join(where)+'。移动后原位置就没有这个文件了（原文件会先留底到回收区）。')
+        if self._protected_tree(src):
+            raise PermissionError('目录内有受保护的文件或链接，请逐项移动')
+        target = dst/src.name if dst.is_dir() else dst
+        target = target.resolve()
+        reason = _secret_reason(target, self.secrets)
+        if reason:
+            raise PermissionError(f'{target} 不能动（{reason}）')
+        for location in (src,target):
+            if any(location == secret or location in secret.parents for secret in self.secrets):
+                raise PermissionError('不能移动包含私密数据的目录')
+        try:
+            common = Path(os.path.commonpath((src.parent,target.parent)))
+        except ValueError:
+            common = None
+        rule = Rule('move', str(common)) if common and self._allowed(common) else None
+        self._authorize(record, 'resume' if self.current.resuming else 'move', f'移动 {src} → {target}',
+                        '原位置会留底到回收区。', rule, self.current.resuming or
+                        any(self._hard_path(p) for p in (src, target)),
+                        deny_scopes=[Rule('move', str(p)) for p in (src, target)])
         self._before_effect(record, os.path.normcase(src), os.path.normcase(dst))
         backup = self._backup(src)
         dst.parent.mkdir(parents=True, exist_ok=True); shutil.move(str(src), str(dst))
+        record['output'], record['removed'] = target, src
         return f'已移动到 {dst}'+(f'；原样留底在 {backup}' if backup else '')
 
     def _t_delete_path(self, record, path, reason=''):
         p = _norm(path)
         secret = _secret_reason(p, self.secrets)
         if secret: raise PermissionError(f'{p} 不能删（{secret}）')
+        if any(p == secret or p in secret.parents for secret in self.secrets):
+            raise PermissionError('不能删除包含私密数据的目录')
         if not p.exists(): return f'{p} 本来就不存在'
-        if self.current.resuming or str(p).lower() not in self.current.created:
-            what = '整个文件夹' if p.is_dir() else '文件'
-            self._ask(record, 'delete', f'要删除{what}：\n{p}'+(f'\n原因：{reason}' if reason else ''),
-                      '同意后会移到同一个盘的 .aicompanion-trash 回收区，需要时可以从那里找回。')
+        self._authorize(record,'delete',f'移入回收区：{p}',str(reason),hard=True)
         self._before_effect(record, os.path.normcase(p))
+        if self._protected_tree(p):
+            raise PermissionError('目录内有受保护的文件或链接，请逐项移入回收区')
         target = self._backup(p)
         if p.is_dir(): shutil.rmtree(p)
         else: p.unlink()
+        record['removed'] = p
         return f'已删除 {p}（移到了回收区 {target}）'
 
     # ---- 命令 ------------------------------------------------------------------------
-    def _t_run_powershell(self, record, command, cwd=None, reason=''):
+    def _t_run_powershell(self, record, command, cwd=None, reason='', outputs=None):
+        if outputs:
+            if not self.current.journey or not isinstance(outputs, list) or len(outputs) > 100:
+                raise ValueError('命令产物需要对应活动任务，每步最多 100 个路径')
+            record['outputs'] = [self.current.journey.declared_path(path) for path in outputs]
         folder = _norm(cwd) if cwd else (self.current.allowed[0] if self.current.allowed else Path.home())
         for p in [folder, *self._paths_in(command)]:
             secret = _secret_reason(p, self.secrets)
@@ -476,13 +598,44 @@ class ToolBox:
         names = {s.name.lower() for s in self.secrets if s.suffix or s.name.startswith('.')} | {'.env', 'id_rsa', 'id_ed25519', '.git-credentials'}
         if any(re.search(r'(?<![\w.-])'+re.escape(n)+r'(?![\w-])', command.lower()) for n in names) or re.search(r'(?i)aicompanion[^\s]*\.sqlite3', command):
             raise PermissionError('命令涉及密钥文件或我的数据库')
-        if self.current.resuming or not is_read_only_command(command):
-            kind = 'resume' if self.current.resuming else 'command'
-            self._ask(record, kind, '要运行命令：\n'+command[:600]+(f'\n用途：{reason}' if reason else ''),
-                      f'在 {folder} 运行。这条命令可能会改动文件或系统，请看清楚再同意。命令以低权限运行，改不了 C 盘的系统和用户目录。',
-                      remember=None if self.current.resuming else 'command')
+        read_only = is_read_only_command(command)
+        if self.current.originals and read_only:
+            for path in self._paths_in(command):
+                if path in self.current.originals:
+                    raise PermissionError(f'请用 read_file 读取附件副本：{self.current.originals[path]}')
+        prefix = command_prefix(command)
+        operands = command.split()[len(prefix.split()):] if prefix else []
+        paths = [folder, *self._paths_in(command)]
+        paths.extend(_norm(folder/token) for token in operands if not token.startswith('-'))
+        if prefix == 'copy-item' and len(operands) == 2:
+            source, dest = (_norm(folder / arg) for arg in operands)
+            if dest.is_dir():
+                paths.append((dest / source.name).resolve())
+        for p in paths:
+            reason = _secret_reason(p,self.secrets)
+            if reason: raise PermissionError(f'命令涉及受保护的位置（{reason}）')
+        hard = (self.current.resuming or prefix in PROJECT_CODE or prefix == 'git add' or any(self._hard_path(p) for p in paths)
+                or prefix == 'copy-item' and bool(operands) and _norm(folder / operands[0]).is_dir()
+                or bool(self.current.originals and not read_only))
+        # 删除与网络执行不能借命令工具代替专用回收区或规避逐项审批。
+        if re.search(r'(?i)(?:^|[;|&\s])(?:rm|ri|rd|rmdir|del|erase|remove-item)(?:\s|$)', command):
+            raise PermissionError('删除请用 delete_path，逐项确认后进入回收区')
+        kind = 'resume' if self.current.resuming else 'command'
+        families = {denied_command_family(part) for part in _segments(command)}
+        detail = f'工作目录：{folder}\n用途：{reason}'
+        if prefix in PROJECT_CODE:
+            detail += '\n这条命令会执行项目自己的脚本，需逐次确认。'
+        self._authorize(record,kind,'要运行命令：\n'+command, detail,
+                        Rule('command',prefix) if prefix else None,
+                        hard if not read_only or self.current.resuming else False, readonly=read_only,
+                        deny_scopes=[Rule('command', name) for name in families if name])
+        if self.current.resuming or not read_only:
             self._before_effect(record, os.path.normcase(folder), command.strip())
-        return self.run_command(command, folder)
+        output = self.run_command(command, folder)
+        if self.current.journey and (re.search(r'\[退出码 (?!0\])-?\d+\]\s*$', output)
+                                     or output.startswith(('任务已停止，', '命令超过 '))):
+            raise RuntimeError(output[-1000:])
+        return output
 
     @staticmethod
     def _paths_in(command: str) -> list[Path]:

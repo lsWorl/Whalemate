@@ -7,13 +7,21 @@ from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView, QHeaderView)
 
-from aicompanion.services.companion_dates import KINDS, CompanionDates
+from aicompanion.services.companion_dates import KINDS, REMINDERS, CompanionDates, default_reminder
 
 WEEKDAYS = '一二三四五六日'
 
 
 def _qdate(value: date) -> QDate: return QDate(value.year, value.month, value.day)
 def _pydate(value: QDate) -> date: return date(value.year(), value.month(), value.day())
+
+
+def _reminder_box(value: str) -> QComboBox:
+    box = QComboBox()
+    box.setAccessibleName('提醒方式')
+    for key, label in REMINDERS.items(): box.addItem(label, key)
+    box.setCurrentIndex(box.findData(value))
+    return box
 
 
 class DatesCard(QWidget):
@@ -34,7 +42,7 @@ class DatesCard(QWidget):
         self.upcoming = QListWidget(); self.upcoming.setMaximumHeight(120); box.addWidget(self.upcoming)
 
         box.addWidget(QLabel('你加的日子'))
-        self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(['类型', '名称', '日期', '每年'])
+        self.table = QTableWidget(0, 5); self.table.setHorizontalHeaderLabels(['类型', '名称', '日期', '每年', '提醒方式'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -52,6 +60,11 @@ class DatesCard(QWidget):
         minus = QPushButton('删除选中'); minus.clicked.connect(self.remove)
         for widget in (self.kind, self.title, self.when, self.yearly, self.lunar, plus, minus): add.addWidget(widget)
         box.addLayout(add)
+        timing = QHBoxLayout()
+        self.reminder = _reminder_box(default_reminder(self.kind.currentData()))
+        self.kind.currentIndexChanged.connect(self._default_timing)
+        timing.addWidget(QLabel('新日子的提醒方式')); timing.addWidget(self.reminder); timing.addStretch(1)
+        box.addLayout(timing)
 
         toggles = QHBoxLayout()
         self.milestones = QCheckBox('认识第 100 天、周年这类纪念日'); self.holidays = QCheckBox('节日（春节、中秋、元旦、国庆等）')
@@ -90,9 +103,16 @@ class DatesCard(QWidget):
             values = (KINDS.get(r['kind'], r['kind']), r['title'], when, '是' if r['yearly'] else '只一次')
             for j, value in enumerate(values):
                 item = QTableWidgetItem(value); item.setData(256, r['id']); self.table.setItem(i, j, item)
+            timing = _reminder_box(r['reminder'])
+            timing.currentIndexChanged.connect(lambda _, combo=timing, row_id=r['id']:
+                                               self.dates.set_reminder(self.cid, row_id, combo.currentData()))
+            self.table.setCellWidget(i, 4, timing)
         options = d.options(self.cid)
         for check, key in ((self.milestones, 'milestones'), (self.holidays, 'holidays')):
             check.blockSignals(True); check.setChecked(options[key]); check.blockSignals(False)
+
+    def _default_timing(self):
+        self.reminder.setCurrentIndex(self.reminder.findData(default_reminder(self.kind.currentData())))
 
     def change_met(self):
         try: self.dates.set_met_on(self.cid, _pydate(self.met.date()))
@@ -102,7 +122,7 @@ class DatesCard(QWidget):
     def add(self):
         try:
             self.dates.add(self.cid, self.kind.currentData(), self.title.text(), _pydate(self.when.date()), self.yearly.isChecked(),
-                           lunar=self.lunar.isChecked())
+                           lunar=self.lunar.isChecked(), reminder=self.reminder.currentData())
         except ValueError as error:
             self.summary.setText(str(error)); return
         self.title.clear(); self.refresh(reset_when=True)

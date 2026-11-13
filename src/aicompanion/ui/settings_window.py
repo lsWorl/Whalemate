@@ -187,7 +187,10 @@ class SettingsWindow(QDialog):
         memory_page.add(Section('想得起旧事','聊到相关的事时，她会想起淡忘的旧记忆、30 条之外更早的聊天、以前帮你办过的事；'
                                 '你删掉的记忆不会再想起来，群里的聊天也不会出现在桌面上。每次请求有字数预算，超了先丢最早的聊天记录，'
                                 '人格和你刚说的话不会被丢。',self.context_report))
-        memory_page.add(ComingSoon('换个说法也想得起','同义词和省略说法也能对上（语义检索）；很早以前的聊天用有来源的摘要代替，需要时能查回原话。'))
+        from aicompanion.ui.semantic_card import SemanticCard
+        self.semantic_card = SemanticCard(controller)
+        memory_page.add(Section('语义召回与阶段摘要', '开启云端后，记忆和你说的话会发给所选厂商计算向量。'
+                                '本地模式在这台电脑计算，启用后约多占 100 MB 常驻内存。默认关闭时仍可按关键词找回旧事。阶段摘要可查回原话。', self.semantic_card))
         memory_page.finish()
 
         # ---- 主动与提醒 ---------------------------------------------------------------------
@@ -251,12 +254,15 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.community_page import CommunityPage           # T18
         from aicompanion.ui.storage_page import StoragePage
         self.agent_page=AgentPage(self.database)
-        self.audit_page=AuditPage(self.database, resume=self._resume_task if getattr(parent, 'agent', None) else None)
+        agent = getattr(parent, 'agent', None)
+        self.audit_page = AuditPage(self.database, character=cid, resume=self._resume_task if agent else None,
+                                    abandon=(lambda run, rev: agent.control_paused('放弃', run, rev)) if agent else None,
+                                    pause=(lambda run: agent.stop() if run == agent.run_state['run_id'] else None) if agent else None)
         agent_page=TabPage('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
         agent_settings=QWidget(); agent_box=QVBoxLayout(agent_settings); agent_box.setContentsMargins(0,6,0,0)
         agent_box.addWidget(self.agent_page)
-        agent_box.addWidget(ComingSoon('把文件交给她','在聊天面板附上或拖入文件，让她读、整理或改写；文件先复制到工作区，原件不动。'))
-        agent_box.addWidget(ComingSoon('跨天的任务','任务有进度和检查点，重启后从断点继续；你也可以在 QQ 私聊里交办，审批发到你那里确认。'))
+        agent_box.addWidget(QLabel('在桌面聊天输入栏点“＋”或拖入文件，再写下任务。她会处理工作区里的副本。'))
+        agent_box.addWidget(QLabel('在操作日志中查看办事进度、补充材料、接续或放弃暂停的任务。'))
         agent_box.addStretch(1)
         agent_page.box.addWidget(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
         self.library_page=LibraryPage(self.database,cid,self,controller=controller, defer=self.queue_setting)
@@ -271,10 +277,16 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.dates_card import DatesCard
         self.dates_card=DatesCard(self.database,cid,self, defer=self.queue_setting)
         relation_page.add(Section('我们的日子','她记得你们认识了多少天、哪些日子值得纪念；到了那天她会在和你聊天时自然提一句，一天只提一次。',self.dates_card))
+        from aicompanion.ui.promises_card import PromisesCard
+        self.promises_card = PromisesCard(self.database,cid,self)
+        relation_page.add(Section('我们的约定','在约定的时间或再次聊天时提醒。群里的约定只发回原群。',self.promises_card))
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
         platforms_page=TabPage('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')
-        platforms_page.box.addWidget(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话')),1)
+        from aicompanion.ui.circle_topics import CircleTopicsPage
+        self.circle_topics = CircleTopicsPage(self.database, cid, self)
+        platforms_page.box.addWidget(tabs((self.bridge_page,'QQ 聊天'),(scrolled(self.community_page),'社区与黑话'),
+                                         (self.circle_topics,'圈子长期话题')),1)
         self.storage_page=StoragePage(self.database,settings)
         storage_page=Page('存储位置','聊天记录、记忆和表情图库放在哪里。'); storage_page.add(self.storage_page); storage_page.finish()
         self.usage_page=UsagePage(self.database)
@@ -319,11 +331,11 @@ class SettingsWindow(QDialog):
         self.open_page(page or 'overview')
         theme.prepare_controls(self)
 
-    def _resume_task(self, run_id, remaining):
-        if self.parent().agent.start(remaining, paused_run=run_id):
+    def _resume_task(self, run_id, revision, remaining):
+        if self.parent().agent.control_paused('继续', run_id, revision, remaining):
             self.accept()
         else:
-            QMessageBox.information(self, '任务仍暂停', '请确认当前角色、办事模型和任务状态，再试一次。')
+            QMessageBox.information(self, '任务仍暂停', '请检查当前任务状态、审批和主人绑定。')
 
     def open_page(self, key):
         return self.nav.show_page(key)
@@ -585,9 +597,6 @@ class SettingsWindow(QDialog):
     def delete_memory(self):
         selected={index.row() for index in self.table.selectedIndexes()}
         for row in selected: self.database.delete_memory(self.table.item(row,0).data(Qt.ItemDataRole.UserRole),self.controller.character.id)
-        if selected:
-            history=self.database.recent_messages(1,self.controller.character.id)
-            self.database.set_setting(f'context_after:{self.controller.character.id}',history[-1]['id'] if history else 0)
         self.refresh()
 
     def queue_setting(self, group, save):

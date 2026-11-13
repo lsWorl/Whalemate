@@ -84,7 +84,7 @@ class CompatibilityTests(Base):
                         page.action.click()
                     if mode == 'existing':
                         metadata = existing/'data/plugins/astrbot_plugin_aicompanion/metadata.yaml'
-                        self.assertIn('v0.10.2', metadata.read_text(encoding='utf-8'))
+                        self.assertIn('v0.12.0', metadata.read_text(encoding='utf-8'))
                     else:
                         stop.assert_called_once()
                         start.assert_called_once()

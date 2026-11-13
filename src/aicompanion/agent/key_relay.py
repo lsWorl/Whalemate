@@ -86,6 +86,8 @@ class KeyRelay:
         handler.send_header('connection', 'close')
         handler.end_headers(); handler.wfile.write(body)
         handler.close_connection = True
+        if status in (401, 404):
+            net.finish_rejected_post(handler)
 
     def _read_body(self, handler) -> bytes | None:
         if 'chunked' in (handler.headers.get('transfer-encoding') or '').lower():

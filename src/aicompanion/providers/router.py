@@ -76,6 +76,8 @@ class AgentTarget:
     label: str
     source: str = ''      # 这份设置在哪里改：“全局默认”或“角色单独设置”，出错提示里告诉用户
     base_url: str = ''    # llm-pi-ai 路由（MiniMax）的接口地址，写进运行时补丁；DeepSeek 用环境变量，这里留空
+    context_window: int | None = None
+    max_output: int | None = None
 
 
 def anthropic_endpoint(base_url: str) -> str:
@@ -235,7 +237,8 @@ class ModelRouter:
                 if base_env and provider.base_url and provider.base_url.rstrip('/') != 'https://api.deepseek.com':
                     env.append((base_env, provider.base_url))
                 base_url = anthropic_endpoint(provider.base_url) if binding.route in PI_AI_ROUTES else ''
-                return AgentTarget(binding.route, model.model_id, tuple(env), f'{provider.label} · {model.model_id}', source, base_url)
+                return AgentTarget(binding.route, model.model_id, tuple(env), f'{provider.label} · {model.model_id}', source, base_url,
+                                   model.context_window, model.max_output.get('agent'))
         return None
 
     def agent_problem(self, character_id: str | None = None) -> str:

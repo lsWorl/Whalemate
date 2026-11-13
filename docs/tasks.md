@@ -4,6 +4,10 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| V4-7f | 跨天办事 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7f-long-tasks.md) |
+| V4-7d | 圈子长期话题 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7d-circle-topics.md) |
+| V4-6b | 混合语义召回与有来源的阶段摘要 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-6b-semantic-recall.md) |
+| V4-6c | 本地中文向量、索引与首字延迟改进 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-6c-local-embedding.md) |
 | V4-QQ-本地 | 恢复新装 QQ 的 NapCat 来源，验证自包含和扫码前链路 | Codex 实现，Claude 审查 | 待审查，最终包已验至二维码 | [任务说明](tasks/V4-qq-local-napcat.md) |
 | V4-5 | 真正退出自己的程序，保存告别原因并在重启后接上 | Codex 实现、Claude 审查 | 首轮 P2、P3 已修，待 Claude 复审（PR #53） | [任务说明](tasks/V4-5-self-exit.md) |
 | V4-发布 | 解压即用的 Windows 压缩包（AICompanion.exe + UninstallWhalemate.exe，卸载清除程序、数据库和全部本机数据）、上传私有仓库 Releases、README 增加下载安装与卸载说明 | Codex 实现与打包；Claude 审计、上传、README | PR #52 P1/P2 已修复，待 Claude 复审；最终 ZIP 的主程序被本机应用控制拦截，两个打包 smoke 和运行中卸载待验 | docs/tasks/V4-release.md |
@@ -15,9 +19,15 @@
 | PR42-冲突 | 合入当前目标分支 #41，保留关系设定与声线修复记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计另行记录 |
 | PR41-冲突 | 合入最新协作基线，保留默认声线与群聊实施记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计结果另行记录 |
 | PR40-冲突 | 接入已合并 PR #39 的基线，保留语音与群聊两份实施记录 | Codex | 已解决（负责人决定合并 PR） | 仅 Markdown 冲突；负责人明确不做回归测试 |
+| V4-7e | 一键审批、项目规则与办事模式 | Codex 实现、Claude 审查 | 待 Claude 审查，与 V4-7b 同 PR #61 | [任务说明](tasks/V4-7e-approval-modes.md) |
+| V4-7b | 已绑定主人 QQ 私聊交办与双端审批 | Codex 实现、Claude 审查 | 待 Claude 审查，PR #61 | [任务说明](tasks/V4-7b-qq-tasks.md) |
+| V4-7c | 桌面把文件交给她办事 | Codex 实现、Claude 审查 | 待审查 | [任务说明](tasks/V4-7c-attachments.md) |
+| V4-7a | 约定识别、分渠道到期提醒与设置 | Codex 实现、Claude 审查 | 待审查 | [任务说明](tasks/V4-7a-promises.md) |
+| V4-8c | 长回复附带口播版 | Codex 实现、Claude 审查 | 两项 P2 已修，待 Claude 复审（#58） | [任务说明](tasks/V4-8c-say.md) |
 | V4-8 回复带语音 | 计划书 v4 功能八：回复默认带语音、长回复分段取舍、大肥鱼声线。**先修 Codex 在 #38 实机发现的基线问题**：已经 complete 且展示完的回复，被下一轮 submit 或退出时 `_end_call → interrupt` 改成 cancelled，重启后显示“被打断”，也会让全文索引（只查 complete）漏掉这些旧消息。实机先验证系统朗读回退；云端声线（音色试听）未配置前不算完成 | Claude 实现；Codex 审查 | 待审查（第一版，`task/v4-8-voice`，从 #38 的 6775d81 拉出） | docs/tasks/V4-8-voice.md |
 | V4-8b 鲸鲸默认声线 | 负责人 2026-11-11：鲸鲸默认用网上 AI 视频那种有感情的少女声线。角色声线设定（`domain/voice_profile.py`）；MiniMax 语音客户端（和聊天共用 MiniMax 账户）；没在模型页配语音时用角色默认声线，候选音色在设置里换；心情明显时指定情绪，其余交给模型按台词自动选。音色听感由负责人试听拍板 | Claude 实现；Codex 审查 | 待审查（`task/v4-8b-whale-voice`，叠在 #39 之上） | docs/tasks/V4-8b-whale-voice.md |
 | V4-2b 关系设定 | 负责人 2026-11-11：人设不要写死父女（女朋友、妹妹都行），项目是情感框架。人格包加“和你的关系”（预设 + 自定义），提示词、QQ 群标记、冒充检测、聊天卡、办事人设都按当前关系；记忆统一写“用户” | Claude 实现；Codex 审查 | 待审查（`task/v4-2b-bond`，当前叠在 #41 之上；Codex 首轮 2 个 P2 已修，待复核） | docs/tasks/V4-2b-bond.md |
+| V4-9b | 纪念日提前提醒 | Codex 实现、Claude 审查 | 待审查 | docs/tasks/V4-9b-date-reminders.md |
 | V4-9 陪伴日期（基础版） | 计划书 v4 功能九：认识第几天（按日历日）、聊过几天、纪念日（第 100 天、周年、她的生日、办成事周年、公历和农历节日）、用户添加生日和纪念日（可按农历）；私下聊天时当天提一句、一天只提一次；群里不带；设置里“我们的日子”；schema 11→12；新依赖 lunar_python==1.4.9（负责人同意）。提前提醒、聊天里确认生日留到后续 | Claude 实现；Codex 审查 | 代码审查及 Windows 核心界面走查通过（临时数据 / 模拟回复）；1 项 P3 布局待优化；真实模型 / QQ 未验；待负责人合并 PR #43 | docs/tasks/V4-9-companion-dates.md |
 | V4-4a 统一主动调度 | 计划书 v4 功能四第一步：问候、心事、纪念日、追问都由一个调度器决定要不要开口；每天上限、两次间隔、没回不开新话题、追一句或算了、太久没回记小委屈；outreach_log（schema 12→13）；设置可调 | Codex 修复；Claude 审计 | 待 Claude 审计（PR #46 第五轮 9 项 P2 已修；QQ 主动投递需插件 0.10.2） | docs/tasks/V4-4a-scheduler.md |
 | V4-4b 自己的生活 | 计划书 v4 功能四：按兴趣去网上看真实内容（有来源才算做过）、形成看法、值得说的经调度器分享、等回应后更新心情；activities 表（schema 13→14）；设置“自己的生活”可开关、调件数、看她最近在做什么 | Codex 修复；Claude 审计 | 待 Claude 复审（PR #48 已修复 ecf0791 的落单反引号流式卡顿） | docs/tasks/V4-4b-life.md |

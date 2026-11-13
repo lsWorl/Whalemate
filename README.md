@@ -71,7 +71,10 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 
 ## 📦 下载安装
 
-不用装 Python，也不用敲命令：
+不用装 Python，也不用敲命令。
+
+> [!IMPORTANT]
+> **下载前请先关闭 Windows 的“智能应用控制”。** 鲸伴的程序没有代码签名，开着智能应用控制时，`AICompanion.exe` 会被直接拦下，双击后打不开或提示“此应用已被阻止”。关闭方法：打开“Windows 安全中心 → 应用和浏览器控制 → 智能应用控制设置”，选“关闭”。在部分 Windows 11 版本上，关闭后不能直接再打开，需要重置系统才能恢复，请先想清楚再操作。Windows 10 和没有这个选项的电脑不用处理。
 
 1. 打开 [Releases 页面](https://github.com/lsWorl/AICompanion/releases/latest)，下载 `Whalemate-v<version>-windows-x64.zip`。可以用同一页的 `SHA256SUMS.txt` 核对文件是否完整。
 2. 把压缩包解压到**非系统盘**的文件夹，例如 `D:\Apps`。程序会把聊天和记忆存在非系统盘上，尽量不占 C 盘。
@@ -161,13 +164,14 @@ Key 用 Windows DPAPI 加密保存，`.env` 里的 `LLM_*` 已经不再读取。
 | 2 | 可扩展人格包：自己写、导入导出、切换，不丢记忆 | ✅ 已上线（兼容 SillyTavern 角色卡，可回退版本） |
 | 3 | 持续情绪与小脾气：委屈、撒娇、回怼，也会消气 | ✅ 已上线 |
 | 4 | 自己的生活：按兴趣去看、去做，有趣的事主动分享，然后等你回应 | ✅ 已上线（统一主动调度 + 分享循环），等待真机长时间体验 |
-| 5 | 真正退出：情绪合适时真的关掉自己，下次启动能接上 | 📋 计划中 |
+| 5 | 真正退出：情绪合适时真的关掉自己，下次启动能接上 | ✅ 已上线（告别退出、重启问候、暂停的办事可接续） |
 | 6 | 记得住、想得起：混合召回、阶段摘要、整份请求的预算 | 🚧 第一部分已上线（全文召回、请求预算）；语义召回和阶段摘要待做 |
 | 7 | 圈子与长期事务：群里的长期话题、约定、跨天办事、把文件交给她 | 📋 计划中 |
 | 8 | 回复带语音：大肥鱼声线，长回复分段取舍 | ✅ 已上线（智能朗读、鲸鲸默认声线）；QQ 语音消息待做 |
 | 9 | 陪伴日期：认识第几天、纪念日，到了那天自己提起 | ✅ 基础版已上线 |
 | — | 界面重构：鲸鲸主题、首次启动向导、设置自动保存 | ✅ 已上线 |
-| — | 解压即用的 Windows 版和卸载程序 | 🚧 进行中 |
+| — | 解压即用的 Windows 版和卸载程序 | ✅ 已上线（v0.1.0） |
+| — | QQ 接入随包附带 NapCat，扫码即可登录，不再依赖在线下载 | ✅ 已上线（v0.1.0），真实账号收发待真机验收 |
 
 “已上线”指已经合入主线并通过自动测试；真实模型、QQ 和语音服务的体验以负责人真机验收为准。
 
@@ -329,7 +333,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 - **Aboutme 大肥鱼**素材和据此生成的本机动画图集适用[上游素材声明](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt)。禁止商用，公开二创须署名 PC2005-cloud/dsh-pet。上游图集仅在本机安装，仓库和发布包均不附带。
 - **Live2D Cubism Core**：适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。本项目的仓库和打包版本都**不包含** Core，只有导入外部 Live2D 模型时才需要，由用户运行 `tools/fetch_avatar.py` 从 Live2D 官网自行下载，下载即表示同意该许可。因为能导入任意模型，带着 Core 分发本项目的构建版本可能属于 Live2D 定义的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免不适用。`tools/build_windows.py` 默认会把 Core 从构建结果里去掉；`--keep-cubism-core` 只供自己电脑使用，不要对外分发。
-- **NapCatQQ v4.18.41** 仅限非商业用途，适用 Limited Redistribution License for NapCat（Copyright © 2024 Mlikiowa）。QQ 接入优先校验随包 ZIP，其次使用“QQ → 高级设置 → 本地 NapCat 包”指定的原版 ZIP 或存放它的文件夹，最后检查下载缓存和官方地址。本机自用构建将 ZIP、许可全文和来源说明放在 `third-party/napcat/`。NapCat、腾讯 QQ 运行时和 Node.js 各自适用其许可，均不随 Whalemate 的 MIT 许可分发。
+- **NapCatQQ v4.18.41** 仅限非商业用途，适用 Limited Redistribution License for NapCat（Copyright © 2024 Mlikiowa）。QQ 接入优先校验随包 ZIP，其次使用“QQ → 高级设置 → 本地 NapCat 包”指定的原版 ZIP 或存放它的文件夹，最后检查下载缓存和官方地址。Releases 上的压缩包已随附未经修改的 NapCat 官方 Windows 包，与许可全文和来源说明一起放在 `third-party/napcat/`，QQ 接入时不用再从 GitHub 下载。NapCat、腾讯 QQ 运行时和 Node.js 各自适用其许可，均不随 Whalemate 的 MIT 许可分发。
 - **Twemoji 图形**（`assets/stickers/daily-reactions-v2/images/twemoji/`、`sources/twemoji-svg/`）：Copyright Twitter, Inc. 及其他贡献者，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，不适用 MIT。我们把原 SVG 渲染成 256×256 PNG，没有改动图形内容。许可全文见 [`licenses/TWEMOJI-CC-BY-4.0.txt`](assets/stickers/daily-reactions-v2/licenses/TWEMOJI-CC-BY-4.0.txt)，再分发时请保留署名和许可链接。
 - **鲸娘表情 GIF**：作者“可以叫我云大人 / 雾雪”（[bilibili](https://space.bilibili.com/103739) · [kiriyuki.com](https://kiriyuki.com)）保留版权，只允许非商业、保留作者链接的分享，仓库和发布包都不附带。`catalog.json` 中鲸娘条目的说明标注参考了 [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) 的知识库（CC BY-NC 4.0），这部分不适用 MIT，详见 [`licenses/WHALE-ASSETS.txt`](assets/stickers/daily-reactions-v2/licenses/WHALE-ASSETS.txt)。
 - 其他第三方库和组件，以各自的许可证为准。

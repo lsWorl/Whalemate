@@ -35,7 +35,7 @@ class SettingsAutosave(QObject):
         ):
             self.watch(group, partial(self.save_value, key, widget), widget)
         agent = d.agent_page
-        self.watch('agent', agent.save, agent.enabled, agent.auto, agent.workspace, agent.blog, agent.keep_days, agent.max_mb)
+        self.watch('agent', agent.save, agent.enabled, agent.auto, agent.mode, agent.workspace, agent.blog, agent.keep_days, agent.max_mb)
         usage = d.usage_page
         self.watch('usage', usage.save, usage.total, *usage.limits.values(), usage.prices)
         def storage_applied():

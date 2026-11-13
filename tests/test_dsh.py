@@ -306,6 +306,10 @@ class KeyRelayTest(unittest.TestCase):
 
 class ToolBoxTest(unittest.TestCase):
     def setUp(self):
+        # 临时目录可能正好位于 C 盘用户目录；本组用它模拟普通工作区，硬底线另有专项。
+        from unittest.mock import patch
+        system = patch('aicompanion.agent.tools_server.system_location',return_value=False)
+        system.start(); self.addCleanup(system.stop)
         self.tmp = tempfile.TemporaryDirectory(); root = Path(self.tmp.name)
         self.inside = root/'ws'; self.inside.mkdir(); self.outside = root/'other'; self.outside.mkdir()
         self.secret = root/'project'/'.env'; self.secret.parent.mkdir(); self.secret.write_text('KEY=1')
@@ -337,8 +341,8 @@ class ToolBoxTest(unittest.TestCase):
         self.assertEqual(self.asked, ['write']); self.assertEqual(self.records[-1]['decision'], 'denied')
         self.answer = 'always'
         self.assertFalse(self.call('write_file', path=str(target), content='x')[1])
-        self.assertFalse(self.call('write_file', path=str(self.outside/'c.txt'), content='y')[1])   # 同一个文件夹不再问
-        self.assertEqual(self.asked, ['write', 'write'])
+        self.assertFalse(self.call('write_file', path=str(self.outside/'c.txt'), content='y')[1])   # 范围外每次都要单独问
+        self.assertEqual(self.asked, ['write', 'write', 'write'])
 
     def test_delete_always_asks_and_goes_to_trash(self):
         target = self.inside/'old.txt'; target.write_text('keep me')
@@ -349,10 +353,10 @@ class ToolBoxTest(unittest.TestCase):
         self.assertEqual([p.read_text() for p in (Path(self.tmp.name)/'trash').rglob('old.txt')], ['keep me'])
         self.assertEqual(self.asked, ['delete', 'delete'])
 
-    def test_delete_own_new_file_is_free(self):
+    def test_delete_own_new_file_also_needs_approval(self):
         target = self.inside/'tmp.txt'
         self.call('write_file', path=str(target), content='mine')
-        self.assertFalse(self.call('delete_path', path=str(target))[1]); self.assertEqual(self.asked, [])
+        self.assertTrue(self.call('delete_path', path=str(target))[1]); self.assertEqual(self.asked, ['delete'])
 
     def test_secrets_never_readable(self):
         for name, args in (('read_file', {'path': str(self.secret)}), ('run_powershell', {'command': 'Get-Content .env'}),
@@ -385,7 +389,7 @@ class ToolBoxTest(unittest.TestCase):
         self.assertTrue(is_read_only_command("$p = 'D:\\x'; (Get-ChildItem -LiteralPath $p -File | Measure-Object).Count"))
         self.assertFalse(is_read_only_command('Get-ChildItem | ForEach-Object { Remove-Item $_ }'))
         self.assertEqual(self.call('run_powershell', command='Get-Date')[0], 'ran Get-Date'); self.assertEqual(self.asked, [])
-        self.assertTrue(self.call('run_powershell', command='Remove-Item x')[1]); self.assertEqual(self.asked, ['command'])
+        self.assertIn('delete_path',self.call('run_powershell', command='Remove-Item x')[0]); self.assertEqual(self.asked, [])
 
     def test_move_checks_source_and_target(self):
         own = self.inside/'mine.txt'
@@ -564,7 +568,7 @@ class ToolBoxTest(unittest.TestCase):
         async def check():
             async with tool_client(server, mode='legacy') as client:
                 self.assertEqual(client.server_info.name, 'aicompanion')
-                self.assertEqual(len((await client.list_tools()).tools), 10)
+                self.assertEqual(len((await client.list_tools()).tools), 11)
                 (self.inside/'r.txt').write_text('hello')
                 reply = await client.call_tool('read_file', {'path': str(self.inside/'r.txt')})
                 self.assertFalse(reply.is_error)

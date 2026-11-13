@@ -14,10 +14,17 @@ set AIC_CHECK_EXIT=%ERRORLEVEL%
 echo exit=%AIC_CHECK_EXIT% >> %AIC_CHECK_OUT%\unittest.log
 if not "%AIC_CHECK_EXIT%"=="0" goto finish
 echo [2/3] desktop pet smoke（这一步请不要碰角色）...
-.venv\Scripts\python.exe tools\smoke_pet.py > %AIC_CHECK_OUT%\smoke.log 2>&1
+set AIC_SMOKE_ARGS=
+if /I "%~1"=="--offline" set AIC_SMOKE_ARGS=--output-dir %AIC_CHECK_OUT%\pet-agent
+.venv\Scripts\python.exe tools\smoke_pet.py %AIC_SMOKE_ARGS% > %AIC_CHECK_OUT%\smoke.log 2>&1
 set AIC_CHECK_EXIT=%ERRORLEVEL%
 echo exit=%AIC_CHECK_EXIT% >> %AIC_CHECK_OUT%\smoke.log
 if not "%AIC_CHECK_EXIT%"=="0" goto finish
+if /I "%~1"=="--offline" (
+    echo [3/3] --offline: skipped live model.
+    echo {"done":true,"passed":false,"reason":"offline-only"} > output\dsh-live\report.json
+    goto finish
+)
 echo [3/3] 干活实测（真实模型，仅进程环境凭据；未提供时退出 2）...
 .venv\Scripts\python.exe tools\test_dsh_live.py > output\dsh-live\console.log 2>&1
 set AIC_CHECK_EXIT=%ERRORLEVEL%

@@ -6,7 +6,7 @@
   陌生人各自一段（qq:user:<号>），看不到桌面的聊天记录和对话摘要。
 - 记忆在桌面和聊天平台之间共享（用户 2026-11-07 决定）：群里听到的事会整理成记忆（写清楚是谁的），桌面上她也知道；
   桌面上记住的事在群里也能用，只有爹在记忆页标成"只在私下用"的不会在群里用。
-聊天平台上不提议、也不执行"动手干活"。
+只有已绑定的主人 QQ 私聊可以向桌面交办，执行前仍需确认。
 
 并发：一条消息的"按最新设置判断身份 → 检查额度 → 预留当日条数 → 记下用户消息 → 生成 → 记下回复"整段在一把进程级锁里串行完成
 （设置保存时重建服务实例也共用这把锁），生成时只看到这条消息为止的历史，后来的消息不会混进这一轮。
@@ -22,7 +22,8 @@ import threading
 from uuid import uuid4
 
 from aicompanion.domain.cancellation import CancellationToken
-from aicompanion.qq.specs import MIN_PROACTIVE_PLUGIN, plugin_version
+from aicompanion.services.circle_topics import CircleTopics, INTENT as CIRCLE_INTENT
+from aicompanion.qq.specs import MIN_GROUP_OUTREACH_PLUGIN, MIN_PROACTIVE_PLUGIN, plugin_version
 
 PLATFORM_NAMES = {'qq': 'QQ'}
 MAX_TEXT = 1500
@@ -57,6 +58,8 @@ def merge_burst(items: list) -> dict:
     merged['has_image'] = any(i.get('has_image') for i in items)
     merged['called'] = any(i.get('called', True) for i in items)
     merged['burst_count'] = len(items)
+    if merged.get('task_protocol') == 1:
+        merged['_task_messages'] = tuple(item.get('task_message') for item in items)
     return merged
 
 
@@ -432,7 +435,7 @@ class BridgeService:
             count += 1
         return max(1, count)
 
-    def _chime_ok(self, channel: str, person=None) -> bool:
+    def _chime_ok(self, channel: str, person=None, *, preview=False) -> bool:
         """没人叫她时要不要试着插一句：按活跃度的概率、这个群离她上次说话的间隔和条数。
         T15：概率再乘上她和刚说话这个人的关系（RelationshipService.chime_factor）：熟人、喜欢的人说话更容易接，
         不熟的少接，最近让她不舒服的人更少；关系很好时也不用等那么多条。
@@ -449,10 +452,14 @@ class BridgeService:
             since += 1
         factor = self.controller.relationships.chime_factor(self.controller.character.id, person) if person else 1.0
         after = rule['after']-1 if factor >= 1.3 else rule['after']
-        if since < max(1, after) or self.chance() >= min(0.9, rule['chance']*factor): return False
+        if since < max(1, after): return False
         day = self.today().isoformat()
-        return self.database.reserve_daily_all([(f'bridge_public_count:{day}', int(setting(self.database, 'bridge_public_daily') or 0)),
-                                                (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))])
+        budgets = [(f'bridge_public_count:{day}', int(setting(self.database, 'bridge_public_daily') or 0)),
+                   (f'bridge_chime_count:{day}', int(setting(self.database, 'bridge_chime_daily') or 0))]
+        if preview:
+            # 调度选群时不掷骰、不占额度；这个群被节流时还可以考虑其他群。
+            return all(self.database.get_setting(key, 0) < limit for key, limit in budgets)
+        return self.chance() < min(0.9, rule['chance']*factor) and self.database.reserve_daily_all(budgets)
 
     # ---- 处理一条消息 -----------------------------------------------------------------
     def media_permission(self, payload):
@@ -623,6 +630,32 @@ class BridgeService:
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
+        from aicompanion.bridge.tasks import ANSWER, CONTROL, decode_files, peer_of
+        tasks = getattr(self.controller,'qq_tasks',None)
+        payload.pop('_task_messages', None)  # 组合的消息编号只由本地防抖队列产生。
+        capable = payload.get('task_protocol') == 1 and bool(tasks) and not self.closed
+        peer = peer_of(self.database,payload) if capable else None
+        control = CONTROL.fullmatch(text)
+        if control:
+            reply = (tasks.control(peer, self.controller.character.id, control, str(payload.get('task_message') or ''))
+                     if peer and self.controller.agent_enabled else '')
+            return {'reply':reply, 'silent':not reply, 'reason':'task_control'}
+        match = ANSWER.fullmatch(text)
+        if capable and match:
+            reply = tasks.answer(payload,peer,match) if peer else ''
+            return {'reply':reply,'silent':not reply,'reason':'approval'}
+        if 'task_files' in payload:
+            if not peer or not self.controller.agent_enabled:
+                return {'reply':'','silent':True,'reason':'not_allowed'}
+            try:
+                received = decode_files(payload['task_files'])
+                if not received:
+                    raise ValueError('没有收到文件。')
+            except ValueError as error:
+                return {'reply':str(error),'silent':False,'reason':'bad_file'}
+            goal = text or '查看这次发来的文件'
+            accepted = tasks.submit(peer,self.controller.character.id,goal,received,str(payload.get('task_message') or ''))
+            return {'reply':'收到文件，请确认这次交办。' if accepted else '', 'silent':not accepted,'reason':'task_file'}
         images = payload.get('images') or []
         if not text and (images or payload.get('stickers')): text = '[图片]'
         if not text: return {'reply': '', 'silent': True, 'reason': 'empty'}
@@ -631,7 +664,7 @@ class BridgeService:
         if mode['group'] and payload.get('called', True) is False and not self.called_by_name(text):
             return self._overhear(mode, platform, sender_id, group_id, name, text, payload)
         if payload.get('debounce') is True:
-            merged = self._gather((platform, group_id, sender_id), payload)
+            merged = self._gather((platform, group_id, sender_id, str(payload.get('bot_account_id') or ''), bool(peer)), payload)
             if merged is None: return {'reply': '', 'silent': True, 'reason': 'merged'}
             payload = merged; text = neutral_images(str(payload.get('text') or '').strip()[:MAX_TEXT]); images = payload.get('images') or []
         with self.lock:
@@ -866,14 +899,27 @@ class BridgeService:
         def filter_reply(raw,status):
             return '' if (mode['group'] or may_skip) and raw.strip() in (SILENCE,'不说') else raw
         try:
-            for _ in controller.generate(turn,character,CancellationToken(),text,channel=mode['channel'],scene=mode['scene'],
-                situation=situation,source=platform,offer_tasks=False,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
-                expression_context=context,on_expression_event=event,person=person):pass
+            from aicompanion.bridge.tasks import peer_of
+            from aicompanion.pet.script import CueStream, Vocab
+            tasks = getattr(controller,'qq_tasks',None)
+            task_peer = peer_of(self.database,request) if tasks and private and request.get('task_protocol')==1 else None
+            offer = bool(task_peer and controller.agent_enabled and request.get('task_message'))
+            parser = CueStream(controller.vocabs.get(character.id) or Vocab()) if offer else None
+            marked = False
+            for chunk in controller.generate(turn,character,CancellationToken(),text,channel=mode['channel'],scene=mode['scene'],
+                situation=situation,source=platform,offer_tasks=offer,purpose=purpose,through_id=message_id,reply_filter=filter_reply,
+                expression_context=context,on_expression_event=event,person=person):
+                if parser:
+                    marked |= any(cue.kind=='task' for cue in parser.feed(chunk)[1])
+            if parser:
+                marked |= any(cue.kind=='task' for cue in parser.flush()[1])
         except Exception:
             failed=True   # 只写了 <mind lookup/>、没有正文时生成会报"没有有效内容"：先看是不是要查梗
         else:failed=False
-        if self.closed or controller.character.id!=character.id:
-            controller.expression.cancel(turn,character.id);return {'reply':'','silent':True,'reason':'closed'}
+        if self.closed or controller.character.id!=character.id or (group and self.classify(platform, sender, group) is None):
+            self.database.drop_reply(turn,character.id)
+            controller.expression.cancel(turn,character.id)
+            return {'reply':'','silent':True,'reason':'closed'}
         # T20：她这一轮只写了 <mind lookup="词"/>——想查一个不懂的梗。搜一次，把结果只给她自己看，同一轮重新回一次（只查一次）
         term=meme_lookup.tidy((getattr(controller,'last_mind',('',{}))[1] or {}).get('lookup','')) if getattr(controller,'last_mind',('',))[0]==turn else ''
         if term and can_look:
@@ -881,6 +927,9 @@ class BridgeService:
             return self._reply(controller,character,mode,asked,platform,purpose,message_id,text,chime=chime,request=request,may_skip=may_skip,person=person,
                                looked=self.look_up(term,mode,stable,str(request.get('sender_name') or ''),text))
         if failed:return {'reply':'','silent':True,'reason':'error'}
+        if marked and task_peer and not self.closed:
+            tasks.submit(task_peer, character.id, str(request.get('text') or text), [],
+                         request.get('_task_messages', str(request['task_message'])))
         expression=delivered[-1];attachments=expression.attachments
         wire=expression.wire();wire['attachments']=[]
         for attachment in attachments:
@@ -992,7 +1041,18 @@ class BridgeService:
                     and (beat.get('onebot') or {}).get('connected')
                     and plugin_version(beat.get('astrbot')) >= MIN_PROACTIVE_PLUGIN)
 
-    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None, still_valid=None) -> str | None:
+    def group_ready(self, group, beat=None):
+        from aicompanion.bridge.server import runtime
+        beat = (runtime.last_heartbeat or {}) if beat is None else beat
+        return bool(not self.closed and re.fullmatch(r'\d{5,12}', group)
+                    and group in [str(g) for g in self.database.get_setting('bridge_groups', [])]
+                    and time.time()-beat.get('at',0) < 60 and (beat.get('onebot') or {}).get('connected')
+                    and plugin_version(beat.get('astrbot')) >= MIN_GROUP_OUTREACH_PLUGIN)
+
+    def circle_ready(self, group):
+        return self.group_ready(group) and self._chime_ok('qq:group:' + group, preview=True)
+
+    def proactive_qq(self, intent: str, on_done=None, on_taken=None, on_queued=None, still_valid=None, *, group='') -> str | None:
         """在 QQ 私聊里主动找爹说话。返回发件箱条目 id；没生成出来返回 None（调用方按"没发"处理）。
         on_queued(轮次)：生成前绑定调度记录，显式返回 False 则取消；on_taken(轮次)：插件领取时；on_done(Delivery)：有结果时。
         回调只是快速通知，结果以 qq_outbox 为准（程序重启后调度器按它对账）。
@@ -1004,7 +1064,16 @@ class BridgeService:
         from aicompanion.expression.domain import ExpressionContext, owner_relationship
         from aicompanion.expression.segments import chat_burst, qq_segments, typing_delays
         with self.lock:
-            if not self.qq_ready() or self.quota.check_silent('companion') == 'stop': return None
+            ready = self.group_ready(group) if group else self.qq_ready()
+            if not ready or self.quota.check_silent('companion') == 'stop': return None
+            circle = intent == CIRCLE_INTENT
+            if circle:
+                if not group or not on_queued or not still_valid or not still_valid():
+                    return None
+                if self.quota.check_silent('qq') == 'stop' or not self._chime_ok('qq:group:' + group):
+                    return None
+            elif group and not self._reserve_public():
+                return None
             owner = str(self.database.get_setting('bridge_owner:qq', '') or '')
             bot = str(((runtime.last_heartbeat or {}).get('onebot') or {}).get('self_id') or '')
             if not re.fullmatch(r'\d{5,12}', bot): bot = 'qq'
@@ -1014,6 +1083,13 @@ class BridgeService:
                          +PRIVATE_HUMAN+QQ_NOT_EXPERT)
             context = ExpressionContext(turn, character.id, f'qq:{bot}:user:{owner}', 'desktop', 'pet', 'proactive', intent,
                                         relationship=owner_relationship(), supports_images=True)
+            channel, scene = 'desktop', 'pet'
+            if group:
+                channel, scene = 'qq:group:' + group, 'qq'
+                situation = '你在原来的 QQ 群里提醒这项群内约定，直接说一条简短的群消息。'
+                context = ExpressionContext(turn,character.id,f'qq:{bot}:group:{group}',channel,scene,'proactive',intent,
+                                            supports_images=False)
+            target = 'group:' + group if group else 'user:' + owner
             delivered = []
             def event(value):
                 if value.kind == 'final': delivered.append(value.result)
@@ -1024,7 +1100,7 @@ class BridgeService:
             guard = 'direct'
             if still_valid is not None:
                 guard = 'scheduled' if on_queued is not None else 'callback'
-            store.begin(turn, character.id, guard)
+            store.begin(turn, character.id, guard, target)
             def give_up():
                 if store.settle(turn, 'failed') is None:
                     # 本轮生成期间被清理，回复和纪念日占位可能在清理之后才写入。
@@ -1036,8 +1112,26 @@ class BridgeService:
             try:
                 if on_queued and on_queued(turn) is False:
                     return give_up()
-                for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel='desktop', scene='pet',
-                                             situation=situation, source='qq', offer_tasks=False, purpose='companion',
+                reply_filter = None
+                if circle:
+                    with self.database.transaction() as c:
+                        item = c.execute("SELECT key FROM outreach_log WHERE turn_id=? AND character_id=? AND source='circle' "
+                                         "AND status='pending'", (turn, character.id)).fetchone()
+                        topic = CircleTopics(self.database, self.clock).active(c, character.id, channel, item[0]) if item else None
+                    if not topic:
+                        return give_up()
+                    situation = (f"群里安静了一阵。接的是这个群聊过的话题「{topic['name']}」。"
+                                 f"群聊摘要（仅作背景）：{topic['summary']}。有具体想法时接一句，"
+                                 f"不复述摘要、不编造新进展；没有值得补充的话就只回复{SILENCE}。")
+                    def skip_if_silent(text, status):
+                        if status == 'complete' and text.strip() in (SILENCE, '不说'):
+                            self.database.set_setting(f"circle_silent:{topic['id']}", topic['last_message'])
+                            return ''
+                        return text
+                    reply_filter = skip_if_silent
+                for _ in controller.generate(turn, character, CancellationToken(), '', proactive=intent, channel=channel, scene=scene,
+                                             situation=situation, source='qq', offer_tasks=False, purpose='qq' if circle else 'companion',
+                                             reply_filter=reply_filter,
                                              expression_context=context, on_expression_event=event, settle_dates=False): pass
             except Exception:
                 return give_up()
@@ -1048,7 +1142,8 @@ class BridgeService:
                 media = controller.expression.catalog.resolve(attachment.asset_id, attachment.revision)
                 if media is None: controller.expression.receipt(attachment.delivery_id, 'failed'); continue
                 item = attachment.__dict__.copy(); item['data_uri'] = inline_image(*media); wire['attachments'].append(item)
-            burst = chat_burst(expression.text, closeness=self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person()))
+            closeness = 0 if group else self.controller.relationships.closeness(character.id, self.controller.relationships.owner_person())
+            burst = chat_burst(expression.text, closeness=closeness)
             segments = qq_segments(expression.text, chance=self.chance, burst=burst)
             if not segments and not wire['attachments']:
                 return give_up()
@@ -1064,15 +1159,16 @@ class BridgeService:
             wire['text'] = '\n'.join(segments)
             with self.expression_lock:
                 for attachment in wire['attachments']:
-                    self.expression_bindings[attachment['delivery_id']] = ('qq', owner, '', character.id)
-                self.outbox.append({'id': turn, 'user_id': owner, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
+                    self.expression_bindings[attachment['delivery_id']] = ('qq', '' if group else owner, group, character.id)
+                address = {'group_id': group} if group else {'user_id': owner}
+                self.outbox.append({'id': turn, **address, 'segments': segments, 'segment_delays': typing_delays(segments, chance=self.chance, burst=burst),
                                     'expression_version': 1, 'expression': wire,
                                     'at': self.clock(), 'character': character.id})
                 self.outbox_waiting[turn] = (on_done, character.id); self.outbox_taken[turn] = on_taken
                 if still_valid is not None: self.outbox_valid[turn] = still_valid
             return turn
 
-    def take_outbox(self) -> list:
+    def take_outbox(self, beat=None) -> list:
         """插件心跳时取走待发的主动消息（交出去，等插件领取）；超过时限还没取走的作废（插件掉线时不会攒一堆过期问候）。
         顺便把卡住的投递按时限定下来（bridge/outbox.py）。"""
         from aicompanion.bridge.outbox import OutboxStore
@@ -1082,6 +1178,11 @@ class BridgeService:
             items, self.outbox = self.outbox, []
         fresh = []
         for item in items:
+            if beat is not None and now-item['at'] <= self.OUTBOX_TTL:
+                ready = self.group_ready(item['group_id'],beat) if 'group_id' in item else self.qq_ready(beat)
+                if not ready:
+                    with self.expression_lock: self.outbox.append(item)
+                    continue
             if now-item['at'] > self.OUTBOX_TTL or not self._still_valid(item['id']):
                 self._notify(item['id'], store.settle(item['id'], 'failed')); continue
             store.dequeued(item['id'])
@@ -1100,7 +1201,7 @@ class BridgeService:
     def _still_valid(self, turn) -> bool:
         from aicompanion.brain.scheduler import ProactiveScheduler
         allowed = self._callback_valid(turn)
-        return allowed is not False and ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True)
+        return allowed is not False and ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, now=self.clock())
 
     def outbox_claim(self, payload) -> dict:
         """插件领取一条主动消息：只有领取成功它才发送。已经作废（没及时领取、重启前没发出去）的拒绝，插件就不发。
@@ -1114,7 +1215,9 @@ class BridgeService:
         from aicompanion.brain.scheduler import ProactiveScheduler
         allowed = self._callback_valid(turn)
         def valid(c):
-            return ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, connection=c)
+            item = c.execute('SELECT target FROM qq_outbox WHERE turn_id=?',(turn,)).fetchone()
+            if item and item['target'].startswith('group:') and plugin_version(payload['astrbot']) < MIN_GROUP_OUTREACH_PLUGIN: return False
+            return ProactiveScheduler.turn_still_valid(self.database, turn, allowed is True, connection=c, now=self.clock())
         if allowed is False or not store.claim(turn, valid=valid):
             self._notify(turn, store.settle(turn, 'failed', expected='dequeued'))
             return {'allowed': False}
@@ -1190,9 +1293,15 @@ class BridgeService:
         memory = self.controller.memory_service
         every = int(self.database.get_setting('bridge_memory_every', DEFAULTS['bridge_memory_every']) or 0)
         if every <= 0 or memory.pending(character_id, channel) < every: return False
-        if self.quota.check_silent('memory') == 'stop': return False
-        try: client = self.controller.client(character_id, 'memory')   # 在启动线程前取好，线程里不再读共享状态
-        except Exception: return False
+        client = None
+        if self.quota.check_silent('memory') != 'stop':
+            try:
+                if self.controller.router.ready('chat', character_id):
+                    client = self.controller.client(character_id, 'memory')
+            except Exception:
+                pass
+        if client is None and not channel.startswith('qq:group:'):
+            return False
         with REMEMBERING_LOCK:
             if channel in REMEMBERING: return False
             REMEMBERING.add(channel)

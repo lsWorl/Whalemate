@@ -186,6 +186,7 @@ class SelfExitTests(unittest.TestCase):
         box.reserve_effect = self.db.reserve_agent_effect
         box.task = Task(run_id=run, allowed=[self.root])
         args = dict(path=str(self.root/'one.txt'), content='第一步')
+        box.approve = Mock(return_value='once')
         self.assertFalse(box.call('write_file', args)[1])
         # 模拟“文件已写、步骤结果尚未写入”时关窗和迟到的取消回调。
         self.db.pause_agent_work(run, [(CID, '尚未开始的提议')])
