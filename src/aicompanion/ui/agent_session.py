@@ -469,6 +469,10 @@ class AgentSession(QObject):
         w.task_card.clear_approval()
         w.task_card.hide()
         w.pet.agent_busy = False
+        selector = getattr(w, 'approval_mode', None)
+        if selector is not None:
+            default_mode = w.database.get_setting('approval_mode', 'ask')
+            selector.setCurrentIndex(max(0, selector.findData(default_mode)))
         if not getattr(self, 'got_result', True):
             # 线程异常退出且没有结果：也要把界面从"干活中"恢复过来
             w.pet.hide_activity(); w.pet.close_confirm(); w.pet.dispatch('waiting', active=False)

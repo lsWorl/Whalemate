@@ -157,8 +157,10 @@ class Approvals:
         self.clock, self.changed = clock, changed
 
     def add(self, run, kind, title, detail='', rule=None, peer=None, timeout=120):
-        req = Request(run,kind,title,detail,rule,peer,self.clock()+timeout)
         with self.lock:
+            req = Request(run, kind, title, detail, rule, peer, self.clock() + timeout)
+            while req.code in self.pending:
+                req.code = secrets.token_hex(4).upper()
             self.pending[req.code] = req
         self.changed()
         return req

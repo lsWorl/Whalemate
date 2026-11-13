@@ -349,6 +349,11 @@ class RedesignTests(unittest.TestCase):
             self.assertIn(last.code, confirm.call_args.args[2])
             self.assertNotIn(hard.code, confirm.call_args.args[2])
             self.assertEqual((first.decision, last.decision, hard.decision), ('once', 'once', ''))
+            queue.answer(hard.code, 'timeout')
+            win.approval_mode.setCurrentIndex(win.approval_mode.findData('auto'))
+            self.assertEqual(win.agent.box.task.mode, 'auto')
+            win.agent._worker_finished()
+            self.assertEqual(win.approval_mode.currentData(), 'ask')
         finally:
             win.pet.shutdown()
             win.pet.deleteLater()
