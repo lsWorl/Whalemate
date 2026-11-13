@@ -237,15 +237,6 @@ class ProductionQueueTests(unittest.TestCase):
         self.assertEqual(said, texts); self.assertEqual(errors, [])                        # 第二个云端失败不会打断本地朗读
         self.assertGreaterEqual(len(client.calls), 2)                                     # 确实有两句同时在云端合成
 
-    def test_completed_full_reply_can_queue_more_than_twelve_sentences(self):
-        owner, client, said, played, errors = self.make(lambda text: wav())
-        sentences = [f'这是一轮的第{i}句。' for i in range(16)]
-        for sentence in sentences:
-            owner.enqueue(sentence, 'long-full', completed_reply=True)
-        self.run_until(lambda: len(played) == len(sentences) and not owner.busy)
-        self.assertEqual(played, sentences)
-        self.assertEqual(errors, [])
-
     def test_each_agent_result_gets_its_own_turn(self):
         from aicompanion.ui.main_window import MainWindow
         state = {'ok': False}

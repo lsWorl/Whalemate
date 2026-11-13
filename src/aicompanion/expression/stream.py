@@ -303,6 +303,7 @@ class ExpressionStream:
     def feed(self, chunk):
         if self.cancelled or self.finished: return ''
         out = []
+        self.say.observe_start(str(chunk))
         self._read(str(chunk), out)
         return ''.join(out)
 

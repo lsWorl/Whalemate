@@ -264,7 +264,8 @@ class ExpressionUITests(unittest.TestCase):
             text=''.join(p[1] for _,p in events if p[0]=='text')
             self.assertEqual(text,'好耶！');self.assertNotIn('sticker',text);self.assertEqual(model.calls,1)
             final = events[-1][1][1]
-            self.assertEqual((final.kind, final.result.text, final.spoken_summary), ('final', '好耶！', '语音专用'))
+            self.assertEqual((final.kind, final.result.text), ('final', '好耶！'))
+            self.assertFalse(any(p[1].spoken_summary for _,p in events if p[0]=='expression'))
             worker.deleteLater();self.app.processEvents()
 
     def finish_library_task(self,page):

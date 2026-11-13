@@ -123,7 +123,7 @@ class ChatController:
             prompt+=self._community(character,query,channel)
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
-            if local_voice:
+            if local_reply:
                 prompt += SAY_PROMPT
             marks['other']=len(prompt)
             if self.agent_enabled and not proactive and offer_tasks:
@@ -143,10 +143,14 @@ class ChatController:
             client=self.client(character.id,client_purpose)
             # 计划书 v4 功能六：整份请求预算。人格、记忆、召回、关系、表情候选、办事说明都已拼好，超了从最早的历史裁
             history=self._fit(character.id,client_purpose,history,prompt,sections,marks)
+            summary_sent = False
             with using(purpose,character.id,turn_id):
                 for token in client.generate_reply_stream(history,prompt,cancellation):
                     cancellation.check()
                     clean=parser.feed(token)
+                    if local_reply and on_expression_event and not summary_sent and parser.say.leading_summary:
+                        summary_sent = True
+                        on_expression_event(ExpressionEvent('spoken_summary', turn_id, spoken_summary=parser.say.leading_summary))
                     if context.early_before and attachment is None and parser.selection and parser.selection[1]=='before_text':
                         attachment=self.expression.attachment(turn_id,context,choices[parser.selection[0]],'before_text')
                         cancellation.check()
@@ -202,8 +206,7 @@ class ChatController:
                                          delivered=on_expression_event is not None,rejected=parser.rejected if parser else ())
             if on_expression_event:
                 reason = parser.leave_reason if local_reply and status == 'complete' and content and parser else ''
-                summary = parser.say.summary if local_voice and parser and status == 'complete' and content else ''
-                on_expression_event(ExpressionEvent('final',turn_id,result=result,leave_reason=reason,spoken_summary=summary))
+                on_expression_event(ExpressionEvent('final',turn_id,result=result,leave_reason=reason))
             self._after_turn(character,channel,scene,person,context,parser,status,turn_id,proactive=bool(proactive))
 
     def _settle_dates(self,character,turn_id,status):

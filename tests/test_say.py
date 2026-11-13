@@ -61,7 +61,7 @@ class SayTests(unittest.TestCase):
         def event(kind, text): return {'sessionUpdate': kind, 'content': {'type': 'text', 'text': text}}
         runtime = FakeRuntime([event('agent_thought_chunk', '私有推理'), event('agent_message_chunk', '过程<say>旧摘要</say>'),
                                {'sessionUpdate': 'tool_call', 'toolCallId': 'c', 'title': 'list_dir'}] +
-                              [event('agent_message_chunk', ch) for ch in '办事结果<say>做完啦</say>'])
+                              [event('agent_message_chunk', ch) for ch in '<say>做完啦</say>办事结果'])
         agent = DshAgent(launcher=lambda env: runtime)
         self.addCleanup(agent.close)
         parts = []
@@ -82,7 +82,7 @@ class SayTests(unittest.TestCase):
         speech.current_id = queued[0][1]
         MainWindow._speech_subtitle(win, '专用口播')
         queued.clear()
-        MainWindow.speak_reply(win, '办事正文<say>直接口播</say>')
+        MainWindow.speak_reply(win, '<say>直接口播</say>办事正文')
         self.assertEqual([s for s, _ in queued], ['直接口播'])
         queued.clear()
         MainWindow.speak_reply(win, '原规则仍念这句。')
@@ -94,12 +94,13 @@ class SayTests(unittest.TestCase):
 
 class ChatSayTests(BridgeFixture):
     def test_one_generation_clean_bubble_history_and_private_summary(self):
-        self.model.replies.append('屏幕正文<say>语音专用</say>')
+        self.model.replies.append('<say>语音专用</say>屏幕正文')
         events = []
         shown = ''.join(self.controller.generate('local', self.character, CancellationToken(), '解释一下',
                                                  on_expression_event=events.append))
         event = events[-1]
-        self.assertEqual((shown, event.result.text, event.spoken_summary), ('屏幕正文', '屏幕正文', '语音专用'))
+        self.assertEqual((shown, event.result.text), ('屏幕正文', '屏幕正文'))
+        self.assertEqual([e.spoken_summary for e in events if e.kind == 'spoken_summary'], ['语音专用'])
         self.assertEqual(self.db.recent_messages(1, CID)[-1]['content'], shown)
         self.assertEqual(len(self.model.prompts), 1)
         self.assertIn('<say>', self.model.prompts[0])

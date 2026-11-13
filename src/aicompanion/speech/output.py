@@ -195,13 +195,12 @@ class SpeechOutput(QObject):
         values.frombytes(chunk[:len(chunk)//2*2])
         return math.sqrt(sum(x*x for x in values)/len(values))/32768 if values else 0.0
 
-    def enqueue(self, text, generation_id='', target=None, *, completed_reply=False):
+    def enqueue(self, text, generation_id='', target=None):
         """target：调用方直接指定这句用哪个云端账户和音色（设置页试听未保存的候选音色），不传则按当前配置取。"""
         text = spoken_text(text)
         if not self.enabled or not text or generation_id == self.failed_generation:
             return
-        # 整轮结束后才知道是否有口播。全文模式可能一次交来十几句，仍只预取当前句和下一句。
-        if len(self.queue) >= 12 and not completed_reply:
+        if len(self.queue) >= 12:
             self._error('语音队列已满，本轮后续内容仅显示文字。')
             return
         voice, target = self.voice, None

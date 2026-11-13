@@ -16,7 +16,7 @@ MAX_TASK = 1500   # 任务说明可能带一整段文字，太短会让标记解
 EXPRESSION_TAGS = ('<sticker', '<meme', '<expression', '<mind')
 SAY_OPEN, SAY_CLOSE = '<say>', '</say>'
 MAX_SAY = 1200   # 超过这个长度按原文显示；真正朗读另用 speech.smart.TOTAL
-SAY_PROMPT = '\n长回复或办事结果可以附带 <say>几句口语化的总结</say>，正文仍写完整。'
+SAY_PROMPT = '\n长回复或办事结果需要口播时，在正文最前面写 <say>几句口语化的总结</say>，随后写完整正文。'
 CONTROL_TAGS = EXPRESSION_TAGS + ('<img', '<leave', TASK_OPEN, SAY_OPEN)
 
 
@@ -287,6 +287,14 @@ class SayBlock:
         self.buffer = ''
         self.literal_tail = None
         self.summary = ''
+        self.leading_summary = ''
+        self.prefix = ''  # 只看开头第一个非空白标记，之后的口播只隐藏。
+
+    def observe_start(self, chunk):
+        if self.prefix is not None and len(self.prefix) < len(SAY_OPEN):
+            if not self.prefix:
+                chunk = chunk.lstrip()
+            self.prefix += chunk[:len(SAY_OPEN) - len(self.prefix)]
 
     def __bool__(self):
         return bool(self.buffer) or self.literal_tail is not None
@@ -299,16 +307,21 @@ class SayBlock:
         self.buffer += ch
         if self.buffer.endswith(SAY_OPEN):
             # 第二个起始标记说明前一段没有闭合。先还回原文，新段仍有机会成为口播。
+            self.prefix = None
             raw, self.buffer = self.buffer[:-len(SAY_OPEN)], SAY_OPEN
             return raw
         if self.buffer.endswith(SAY_CLOSE):
             raw, self.buffer = self.buffer, ''
             body = raw[len(SAY_OPEN):-len(SAY_CLOSE)]
+            leading = self.prefix == SAY_OPEN
+            self.prefix = None
             if len(body) > MAX_SAY: return raw
             if not self.summary and not re.search(r'</?[a-zA-Z][^>]*>', body):
                 self.summary = body.strip()
+                if leading: self.leading_summary = self.summary
         elif len(self.buffer) >= len(SAY_OPEN) + MAX_SAY + len(SAY_CLOSE):
             raw, self.buffer = self.buffer, ''
+            self.prefix = None
             self.literal_tail = raw[-(len(SAY_CLOSE) - 1):]
             return raw
         return ''
@@ -330,6 +343,7 @@ class CueStream:
 
     def feed(self, token: str, final: bool = False) -> tuple[str, list[Cue]]:
         text, cues = [], []
+        if self.summary_only: self.say.observe_start(token)
         # 委托正文内可以包含文件名和代码，交给下游的内容仍是原文。
         for ch, literal in self.markdown.feed(token, lambda: not (self.say or self.pending.startswith(TASK_OPEN)), final=final):
             if self.say:

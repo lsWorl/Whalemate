@@ -403,7 +403,7 @@ class DshAgent:
         if status == 'cancelled': reply_text = '好，我停下了。'   # 停下时的半句话是过程，不当回复
         elif not reply_text: reply_text = '做完了。' if status == 'done' else f'没有做完（{reason}）。'
         return DshResult(status, reply_text, steps, usage, '' if status in ('done', 'cancelled') else '\n'.join((conn.stderr if conn else [])[-15:]),
-                         spoken_summary=parser.say.summary if status == 'done' else '')
+                         spoken_summary=parser.say.leading_summary if status == 'done' else '')
 
     def _final_usage(self, on_event, context) -> Usage:
         """优先用 DSH 记的准确用量；它的缓存文件常常还没写到最新（实测），这时按每次请求的上下文大小估算：
