@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QFormLayout, QHBoxLayout, QLa
 
 from aicompanion.providers.admin import ModelAdmin
 from aicompanion.services import stages
-from aicompanion.services.semantic import DIMENSIONS, SETTING, target_for
+from aicompanion.services.semantic import DIMENSIONS, LOCAL, SETTING, target_for
 
 
 class SemanticCard(QWidget):
@@ -13,17 +13,22 @@ class SemanticCard(QWidget):
         super().__init__()
         self.service = controller.semantic
         self.cid = controller.character.id
+        self.mode = QComboBox()
+        self.mode.addItem('云端', 'cloud')
+        self.mode.addItem('本地 · BGE 中文（512 维）', 'local')
+        self.mode.setCurrentIndex(int(self.service.db.get_setting(SETTING) == vars(LOCAL)))
         self.model, self.dimension = QComboBox(), QComboBox()
         self.dimension.setEditable(True)
         self.status = QLabel()
         self.status.setWordWrap(True)
         form = QFormLayout(self)
+        form.addRow('向量计算位置', self.mode)
         form.addRow('云端模型', self.model)
         form.addRow('向量维度', self.dimension)
         form.addRow('当前状态', self.status)
         buttons = QHBoxLayout()
         self.enable = QPushButton('确认并启用')
-        self.disable = QPushButton('关闭云端')
+        self.disable = QPushButton('关闭语义召回')
         self.originals = QPushButton('查看阶段摘要和原文')
         for button in (self.enable, self.disable, self.originals):
             buttons.addWidget(button)
@@ -32,13 +37,16 @@ class SemanticCard(QWidget):
         self.disable.clicked.connect(self.deactivate)
         self.originals.clicked.connect(self.show_sources)
         self.model.currentIndexChanged.connect(self.dimensions)
+        self.mode.currentIndexChanged.connect(self.show_mode)
         self.timer = QTimer(self)
         self.timer.setInterval(2000)
         self.timer.timeout.connect(self.refresh_status)
         self.reload()
 
     def refresh_status(self):
-        self.status.setText(self.service.state)
+        choice = self.service.db.get_setting(SETTING)
+        active = ('本地' if choice == vars(LOCAL) else '云端') if choice else ''
+        self.status.setText((active + ' · ' if active else '') + self.service.state)
         self.disable.setEnabled(bool(self.service.db.get_setting(SETTING)))
 
     def reload(self):
@@ -57,8 +65,16 @@ class SemanticCard(QWidget):
             self.model.addItem('请先在“模型与 Key”添加百炼、智谱或自定义向量模型', None)
         self.model.setCurrentIndex(max(0, self.model.findData(previous)))
         self.dimensions()
-        self.enable.setEnabled(bool(self.profiles))
+        self.show_mode()
         self.refresh_status()
+
+    def show_mode(self):
+        local = self.mode.currentData() == 'local'
+        form = self.layout()
+        form.setRowVisible(self.model, not local)
+        form.setRowVisible(self.dimension, not local)
+        self.enable.setEnabled(local or bool(self.profiles))
+        self.enable.setText('启用本地 / 重试' if local else '确认并启用云端')
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -80,6 +96,13 @@ class SemanticCard(QWidget):
             self.dimension.setCurrentText(str(saved['dimension'] if saved.get('profile') == model.id else 1024))
 
     def confirm(self):
+        if self.mode.currentData() == 'local':
+            if QMessageBox.question(self, '启用本地语义召回',
+                    '首次启用将从 Hugging Face 下载约 24.5 MB 模型文件。记忆和查询在本机计算。'
+                    '可用“关闭语义召回”取消下载，或稍后重试。继续？') == QMessageBox.StandardButton.Yes:
+                self.service.enable_local()
+                self.refresh_status()
+            return
         try:
             target, account = target_for(self.service.router, self.model.currentData(), int(self.dimension.currentText()))
             if QMessageBox.question(self, '启用云端语义召回',

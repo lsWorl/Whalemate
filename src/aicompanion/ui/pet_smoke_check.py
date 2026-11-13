@@ -287,6 +287,9 @@ def schedule_pet_smoke_check(window, database, output):
             semantic = dialog.semantic_card
             state['semantic_settings'] = ('未开启' in semantic.status.text() and not semantic.disable.isEnabled()
                                           and semantic.originals.isEnabled())
+            semantic.mode.setCurrentIndex(semantic.mode.findData('local'))
+            state['local_embedding_option'] = (semantic.enable.isEnabled() and semantic.model.isHidden()
+                                               and '本地' in semantic.enable.text())
             card = dialog.dates_card
             card.kind.setCurrentIndex(card.kind.findData('custom'))
             card.title.setText('自检纪念日')
@@ -638,7 +641,7 @@ def schedule_pet_smoke_check(window, database, output):
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'outreach_logged', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
         required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
-        required.extend(['storage_locations_ready', 'semantic_settings'])
+        required.extend(['storage_locations_ready', 'semantic_settings', 'local_embedding_option'])
         required.extend(['self_exit_default_on', 'self_exit_switch_saved', 'self_exit_disabled_reply'])
         if animation:
             required.extend(['animation_body_hit','animation_background_decode','legacy_setting_keeps_aboutme','pose_transition_flow','personality_flow','walk_flow','reference_flow','animation_version_rollback'])

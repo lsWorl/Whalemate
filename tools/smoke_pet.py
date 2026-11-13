@@ -66,7 +66,11 @@ def main():
     parser.add_argument('--posepack', metavar='DIR', help='用十姿态分层包（pose-layered-v2 目录）自检，优先于 --rig')
     parser.add_argument('--without-aboutme', action='store_true', help='用包含自绘骨骼和立绘的临时角色包验证未安装 Aboutme 的状态')
     parser.add_argument('--output-dir', type=Path, default=ROOT/'docs/pet-v2/smoke', help='自检截图和报告目录')
+    parser.add_argument('--local-embedding-dir', type=Path, help='内存测量用的已校验模型缓存，只从磁盘读取')
+    parser.add_argument('--measure-ready', type=Path, help='向内存测量脚本报告预览已就绪')
     args = parser.parse_args()
+    if (args.local_embedding_dir or args.measure_ready) and not args.preview:
+        parser.error('内存测量参数需要 --preview')
     if args.without_aboutme and (args.posepack or args.rig != 'auto'):
         parser.error('--without-aboutme 与骨骼专项选项不能同时使用')
     from aicompanion.body.webengine_flags import apply_webengine_flags
@@ -89,7 +93,21 @@ def main():
             # 预览：角色常驻 90 秒，可以亲手戳、拖、双击输入、右键菜单。
             QTimer.singleShot(1200, window.pet.drop_in); QTimer.singleShot(90000, window.request_exit)
             # 预览里自动说一句话，展示用户气泡、思考图标、回复气泡和台词里的表情动作
-            QTimer.singleShot(30000, lambda: window.submit('你好呀，今天过得怎么样？'))
+            if args.measure_ready:
+                service = controller.semantic
+                if args.local_embedding_dir:
+                    database.upsert_memory('合成测量：水族馆里的鲸鱼', controller.character.id, 'perf:whale')
+                    service.local_root = args.local_embedding_dir
+                    service.enable_local(download=False)
+                    app.aboutToQuit.connect(service.close)
+                def ready():
+                    if args.local_embedding_dir and service.state != '向量索引就绪':
+                        QTimer.singleShot(150, ready)
+                        return
+                    args.measure_ready.write_text('ready', encoding='ascii')
+                ready()
+            else:
+                QTimer.singleShot(30000, lambda: window.submit('你好呀，今天过得怎么样？'))
             state = None
         else: state = schedule_pet_smoke_check(window, database, args.output_dir)
         code = app.exec()
