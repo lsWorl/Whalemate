@@ -15,6 +15,7 @@
 | PR42-冲突 | 合入当前目标分支 #41，保留关系设定与声线修复记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计另行记录 |
 | PR41-冲突 | 合入最新协作基线，保留默认声线与群聊实施记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计结果另行记录 |
 | PR40-冲突 | 接入已合并 PR #39 的基线，保留语音与群聊两份实施记录 | Codex | 已解决（负责人决定合并 PR） | 仅 Markdown 冲突；负责人明确不做回归测试 |
+| V4-7b | 已绑定主人 QQ 私聊交办与双端审批 | Codex 实现、Claude 审查 | 进行中 | [任务说明](tasks/V4-7b-qq-tasks.md) |
 | V4-7c | 桌面把文件交给她办事 | Codex 实现、Claude 审查 | 待审查 | [任务说明](tasks/V4-7c-attachments.md) |
 | V4-7a | 约定识别、分渠道到期提醒与设置 | Codex 实现、Claude 审查 | 待审查 | [任务说明](tasks/V4-7a-promises.md) |
 | V4-8c | 长回复附带口播版 | Codex 实现、Claude 审查 | 两项 P2 已修，待 Claude 复审（#58） | [任务说明](tasks/V4-8c-say.md) |
