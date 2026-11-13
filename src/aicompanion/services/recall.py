@@ -126,8 +126,11 @@ class RecallService:
             for row in c.execute("SELECT * FROM memory_archive WHERE character_id=? AND reason IN ('forgotten','trimmed') "
                                  "ORDER BY id DESC LIMIT ?", (character_id, SCAN_ARCHIVE)):
                 key = row['fact_key']
-                if key in current or key in tombs or key in seen or not visible_in(row['scope'], scene): continue
+                if key in current or key in tombs or key in seen:
+                    continue
                 seen.add(key)
+                if not visible_in(row['scope'], scene):
+                    continue
                 if row['scope'] in ('qq', 'bili') and source_channel(c, character_id, row) != channel:
                     continue
                 s = score(query, row['content']) + matches.get(key, 0)

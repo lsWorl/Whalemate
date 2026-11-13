@@ -86,6 +86,33 @@ class VectorTests(Base):
         self.assertFalse(self.db.upsert_memory('旧楼', CID, 'home'))
         self.assertFalse(self.recall.recall(CID, '住所', semantic_hits=hits))
 
+    def test_deleting_memory_during_query_cancels_stale_prompt(self):
+        from aicompanion.domain.cancellation import ReplyCancelled
+        mid = self.add('之前住的旧楼', 'home')
+        self.ready()
+        self.db.add_message('user', '新住所在哪里', CID)
+        character = next(c for c in self.db.characters() if c.id == CID)
+        original = self.index.client
+        def during_request(*args):
+            self.db.delete_memory(mid, CID)
+            return original(*args)
+        with patch.object(self.index, 'client', side_effect=during_request):
+            with self.assertRaises(ReplyCancelled):
+                ContextService(self.db, MemoryService(self.db), self.index).build_with_sections(
+                    character, '住所', vector_query=True, cancellation=self.token)
+
+    def test_archive_uses_latest_scope_even_when_previously_public(self):
+        self.add('海边小楼', 'home', old=True)
+        self.add('海边私人小楼', 'home', old=True, private=True)
+        self.assertFalse(self.recall.recall(CID, '海边小楼', 'qq', 'qq:group:1'))
+
+    def test_public_extraction_cannot_overwrite_other_group(self):
+        self.add('甲群的合成记忆', 'qq#1:job', 'qq:group:1')
+        mid = self.db.add_message('user', '乙群消息', CID, channel='qq:group:2')
+        content = '乙群想写入同一个事实键'
+        guard = MemoryService.public_guard(content, CID, 'qq:group:2')
+        self.assertFalse(self.db.upsert_memory(content, CID, 'qq#1:job', source_ids=[mid], scope='qq', guard=guard))
+
     def test_new_dimension_and_model_wait_until_batch_complete(self):
         for i in range(12):
             self.add(f'海边楼房{i}', f'f{i}')

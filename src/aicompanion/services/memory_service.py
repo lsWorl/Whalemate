@@ -53,12 +53,14 @@ class MemoryService:
         return changed
 
     @staticmethod
-    def public_guard(content, character_id):
+    def public_guard(content, character_id, channel=None):
         """公开来源能写的记忆（在写事务里按此刻的数据检查）：不能落在已有的非公开事实键上（桌面 / 私下记住的只由桌面那边更新），
         也不能和"只在私下用"的记忆内容高度重合（防止换个键把私下的事复制成共享；整理期间才被标成私下的也算）。"""
         def guard(connection, key):
-            row = connection.execute("SELECT scope FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
-            if row is not None and row['scope'] not in ('qq', 'bili', 'public'): return False
+            from aicompanion.services.semantic import shared_here
+            row = connection.execute("SELECT scope,source_ids FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
+            if row is not None and (row['scope'] not in ('qq', 'bili', 'public') or (channel is not None and not shared_here(connection, character_id, row, channel))):
+                return False
             private = connection.execute("SELECT content FROM memories WHERE character_id=? AND scope='private'", (character_id,)).fetchall()
             return not any(similar(content, r['content']) for r in private)
         return guard
@@ -161,6 +163,6 @@ class MemoryService:
             if not isinstance(importance,int) or not isinstance(confidence,(float,int)):
                 continue
             self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources,scope='qq' if public else 'pet',
-                                        guard=self.public_guard(content,character_id) if public else None)
+                                        guard=self.public_guard(content,character_id,channel) if public else None)
         self.database.set_setting(marker,last_id)
 

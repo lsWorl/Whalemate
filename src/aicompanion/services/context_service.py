@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from aicompanion.llm.base import ChatTurn
 
 
@@ -27,23 +28,25 @@ class ContextService:
         except Exception:
             mood_text = '当前心情：平静。'
         emotion = self.database.load_emotion(character.id)
-        summary=self.database.load_summary(character.id) if private and not self.database.has_deleted_memories(character.id) else ''
         relationship=self.database.relationship(character.id)
         # 计划书 v4 功能六：记忆卡之外，相关时想起存档里的旧事、更早的聊天、以前办过的事
-        memory_text = self.memory.build_memory_context(query,character.id,scene,channel)
         from aicompanion.services import stages
         first = history[0]['id'] if history else ((through_id + 1) if through_id else 1 << 62)
+        hits = []
+        if vector_query and self.semantic and history and history[-1]['role'] == 'user':
+            hits = self.semantic.search(character.id, history[-1]['content'], scene, channel, cancellation)
+            # 云端请求可能跨过一次删除；等待期间失效的历史、摘要和记忆卡不能再随回复发出。
+            latest = self.database.get_setting(f'context_after:{character.id}', 0)
+            if latest > watermark:
+                from aicompanion.domain.cancellation import ReplyCancelled
+                raise ReplyCancelled('生成期间删除了记忆')
         summaries = stages.recent(self.database, character.id, channel, first)
-        if summaries:
-            summary = ''  # 有可回查的阶段摘要后，旧版滚动摘要留库，不再重复注入。
+        summary = self.database.load_summary(character.id) if private and not summaries and not self.database.has_deleted_memories(character.id) else ''
+        memory_text = self.memory.build_memory_context(query, character.id, scene, channel)
         recall_text = ''
         try:
             from aicompanion.services.recall import RecallService
             ask = query or next((r['content'] for r in reversed(history) if r['role']=='user'), '')
-            import json
-            hits = []
-            if vector_query and self.semantic and history and history[-1]['role'] == 'user':
-                hits = self.semantic.search(character.id, history[-1]['content'], scene, channel, cancellation)
             covered = {mid for stage in summaries for mid in json.loads(stage['source_ids'])}
             known = [line[2:] for line in memory_text.splitlines() if line.startswith('- ')]
             recall_text = RecallService(self.database).recall(character.id, ask, scene, channel, first, known, hits, covered).render()
