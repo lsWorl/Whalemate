@@ -29,12 +29,17 @@ def group_names() -> dict:
 def glance(database, character_id: str, minutes: int = WINDOW_MINUTES) -> str:
     watermark = database.get_setting(f'context_after:{character_id}', 0) or 0
     with database.transaction() as c:
+        channels = ['qq:group:' + str(g) for g in database.setting_in(c, 'bridge_groups', [])]
+        if not channels:
+            return ''
+        params = ','.join('?' for _ in channels)
         rows = c.execute(
-            "SELECT id, role, content, channel, created_at FROM chat_messages WHERE character_id=? AND channel LIKE 'qq:group:%' "
+            f"SELECT id, role, content, channel, created_at FROM chat_messages WHERE character_id=? AND channel IN ({params}) "
             "AND id>? AND created_at >= datetime('now', ?) "
             # 她自己的话只算真正完成的回复：生成失败、被打断、被压下的草稿没发到群里，不能当成她在群里说过（Codex PR #40 第二轮第 2 项）
+            "AND NOT EXISTS (SELECT 1 FROM outreach_log o WHERE o.turn_id=chat_messages.turn_id AND o.source='circle') "
             "AND (role!='assistant' OR status='complete') ORDER BY id DESC LIMIT 200",
-            (character_id, watermark, f'-{int(minutes)} minutes')).fetchall()
+            (character_id, *channels, watermark, f'-{int(minutes)} minutes')).fetchall()
     if not rows: return ''
     groups: dict[str, list] = {}
     for row in rows:                                   # 新的在前：按最近说话的群排序

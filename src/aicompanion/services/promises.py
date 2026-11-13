@@ -126,6 +126,12 @@ class Promises:
         return self.db.locked(update)
 
     def due(self, cid, group_ready=None):
+        for row in self.due_rows(cid):
+            if row['scope']=='desktop' or group_ready is None or group_ready(row['scope'].rsplit(':', 1)[1]):
+                return row
+
+    def due_rows(self, cid):
+        """按到期时间取候选，主人与各群的调度共用本轮快照，占位时再核验。"""
         now = self.clock()
         def select(c):
             c.execute("UPDATE promises SET status='expired' WHERE character_id=? AND status='pending' AND expires_at<=? "
@@ -135,10 +141,7 @@ class Promises:
                              "AND (expires_at IS NULL OR expires_at>?) AND NOT EXISTS (SELECT 1 FROM outreach_log o "
                              "WHERE o.character_id=p.character_id AND o.key='promise:'||p.id||':'||p.revision) "
                              "ORDER BY due_at,id", (cid,now,now)).fetchall()
-        for row in self.db.locked(select):
-            if row['scope']=='desktop' or group_ready is None or group_ready(row['scope'].split(':')[-1]):
-                return row
-        return None
+        return self.db.locked(select)
 
     @staticmethod
     def active(c, cid, key, now):

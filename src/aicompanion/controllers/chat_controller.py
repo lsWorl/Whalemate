@@ -51,8 +51,14 @@ class ChatController:
         base=marks.get('base',len(prompt)); rel=marks.get('relationship',base); other=marks.get('other',rel); tools=marks.get('tools',other)
         detail=dict(sections,relationship=rel-base,other=other-rel,tools=tools-other,expression=len(prompt)-tools)
         start = detail.pop('_optional_start', base)
+        circle_size = detail.get('circle', 0)
+        limit = budget.limit_for(purpose, window, max_output)
+        if circle_size and len(prompt) + sum(len(t.content) for t in history) > limit:
+            prompt = prompt[:base-circle_size] + prompt[base:]
+            base -= circle_size
+            detail['circle'] = 0
         mandatory = len(prompt) + (len(history[-1].content) if history else 0)
-        if start < base and mandatory > budget.limit_for(purpose, window, max_output):
+        if start < base and mandatory > limit:
             prompt = prompt[:start] + prompt[base:]
             detail.update(stages=0, recall=0)
         kept,report=budget.fit(history,prompt,purpose,window,max_output,detail)

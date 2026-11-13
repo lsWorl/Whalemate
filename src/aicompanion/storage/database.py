@@ -81,10 +81,13 @@ class Database:
                     if "reminder" not in columns:
                         connection.execute("ALTER TABLE companion_dates ADD COLUMN reminder TEXT NOT NULL DEFAULT 'day'")
                         connection.execute("UPDATE companion_dates SET reminder='both' WHERE kind IN ('birthday','her_birthday')")
+                backfill_outreach_scope = False
                 if "outreach_log" in tables:
                     # 早期 v13/v14 缺取件时间、对应轮次，或这次分享已结算的回执类型；按缺哪列补哪列。
                     existing = {r[1] for r in connection.execute("PRAGMA table_info(outreach_log)")}
-                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL"), ("share_delivery", "TEXT NOT NULL DEFAULT ''")):
+                    backfill_outreach_scope = "scope" not in existing
+                    for name, definition in (("turn_id", "TEXT"), ("handed_at", "REAL"), ("share_delivery", "TEXT NOT NULL DEFAULT ''"),
+                                             ("scope", "TEXT NOT NULL DEFAULT 'desktop'")):
                         if name not in existing:
                             connection.execute(f"ALTER TABLE outreach_log ADD COLUMN {name} {definition}")
                 if "qq_outbox" in tables and "guard" not in {r[1] for r in connection.execute("PRAGMA table_info(qq_outbox)")}:
@@ -96,6 +99,14 @@ class Database:
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():
                         connection.execute(statement)
+                if backfill_outreach_scope:
+                    # 旧记录的 channel 只区分桌面与 QQ。用稳定的约定 id（即使已改版）或实际收件群恢复会话。
+                    connection.execute("""UPDATE outreach_log AS o SET scope=coalesce(
+                        (SELECT 'qq:'||q.target FROM qq_outbox q WHERE q.turn_id=o.turn_id AND q.target LIKE 'group:%'),
+                        (SELECT p.scope FROM promises p WHERE p.character_id=o.character_id
+                         AND p.id=CAST(substr(o.key,9) AS INTEGER)), 'desktop') WHERE source='promise'""")
+                    connection.execute("""UPDATE outreach_log SET scope='qq:group:'||
+                        substr(key,8,instr(substr(key,8),':')-1) WHERE source='circle' AND key GLOB 'circle:*:*:*'""")
                 if version < 18:
                     # 仅迁移桌面明确配置的主人账号。新版插件首次心跳再绑定实际机器人。
                     owner = str(self.setting_in(connection, 'bridge_owner:qq', '') or '')
