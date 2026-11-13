@@ -84,7 +84,14 @@ class ProactiveScheduler:
         now = outreach.payload.get('chosen_at') or self.clock()
         def work(c):
             scope = 'desktop'
-            if outreach.source == 'circle':
+            if outreach.source == 'task_resume':
+                if (channel != 'desktop' or not self._resume_active(c, character_id, outreach)
+                        or self._in_flight(c, character_id, scope)
+                        or self.today_count(character_id, connection=c) >= self.limit()
+                        or c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND source='task_resume' AND key=?",
+                                     (character_id, outreach.key)).fetchone()):
+                    return 0
+            elif outreach.source == 'circle':
                 scope = outreach.payload['scope']
                 topics = CircleTopics(self.db, self.clock)
                 if not topics.active(c, character_id, scope, outreach.key) or topics.already_chosen(c, character_id, outreach.key):
@@ -407,7 +414,7 @@ class ProactiveScheduler:
         return min(end, nxt) if nxt is not None else end
 
     # ---- 决定 --------------------------------------------------------------------------------
-    def next(self, character_id: str, system_idle: float, seconds_since_user: float, *, group_ready=None, circle_ready=None) -> Outreach | None:
+    def next(self, character_id: str, system_idle: float, seconds_since_user: float, *, group_ready=None, circle_ready=None, resume_ready=True) -> Outreach | None:
         if not self.db.get_setting('proactive_enabled', True): return None
         now = datetime.fromtimestamp(self.clock())
         if is_focused(self.db, now) or in_quiet_hours(self.db, now.hour): return None
@@ -420,12 +427,12 @@ class ProactiveScheduler:
         due = Promises(self.db, self.clock).due_rows(character_id)
         seconds_since_user = min(seconds_since_user, self.seconds_since_user(character_id))
         if seconds_since_user >= RECENT_TALK_SECONDS:
-            owner = self._owner_next(character_id, system_idle, seconds_since_user, now, due)
+            owner = self._owner_next(character_id, system_idle, seconds_since_user, now, due, resume_ready)
             if owner:
                 return owner
         return self._group_next(character_id, due, group_ready, circle_ready or group_ready)
 
-    def _owner_next(self, character_id, system_idle, seconds_since_user, now, due):
+    def _owner_next(self, character_id, system_idle, seconds_since_user, now, due, resume_ready):
         with self.db.transaction() as c:
             if self._in_flight(c, character_id, 'desktop') or self.today_count(character_id, connection=c) >= self.limit():
                 return None
@@ -442,8 +449,44 @@ class ProactiveScheduler:
             if promise['scope'] == 'desktop':
                 if last is not None and last['status'] in ('followed','let_go'): return None
                 return self._promise(promise)
-        return (self._date(character_id, now) or self._purpose(character_id, system_idle, seconds_since_user)
+        return (self._date(character_id, now) or (resume_ready and self._resume_reminder(character_id, now))
+                or self._purpose(character_id, system_idle, seconds_since_user)
                 or self._share(character_id, system_idle) or self._greeting(character_id, seconds_since_user))
+
+    def _resume_reminder(self, cid, now):
+        day = now.date().isoformat()
+        with self.db.transaction() as c:
+            row = c.execute("""SELECT id,revision,goal,pause_reason FROM agent_runs r
+                               WHERE character_id=? AND status='paused' AND date(ended_at)<?
+                               AND NOT EXISTS (SELECT 1 FROM outreach_log o WHERE o.character_id=r.character_id
+                                   AND o.source='task_resume' AND o.key=r.id||':'||?)
+                               ORDER BY ended_at,id LIMIT 1""", (cid, day, day)).fetchone()
+        if row:
+            return Outreach('task_resume', f"{row['id']}:{day}",
+                            f"上次的「{row['goal'][:80]}」还没办完。{row['pause_reason'][:160]}。要继续吗？",
+                            {'run_id': row['id'], 'revision': row['revision']})
+
+    def _resume_active(self, c, cid, outreach):
+        day = datetime.fromtimestamp(self.clock()).date().isoformat()
+        run = outreach.payload['run_id']
+        return outreach.key == f'{run}:{day}' and c.execute(
+            "SELECT 1 FROM agent_runs WHERE id=? AND character_id=? AND revision=? AND status='paused' AND date(ended_at)<?",
+            (run, cid, outreach.payload['revision'], day)).fetchone()
+
+    def answered_resume(self, cid, rid):
+        with self.db.transaction() as c:
+            c.execute("UPDATE outreach_log SET status='answered', settled_at=? WHERE character_id=? AND id=? "
+                      "AND source='task_resume' AND status='sent'", (self.clock(), cid, rid))
+
+    def show_resume(self, cid, rid, outreach):
+        def show(c):
+            row = c.execute("SELECT * FROM outreach_log WHERE id=? AND key=? AND character_id=? AND source='task_resume' "
+                            "AND status='pending' AND channel='desktop'", (rid, outreach.key, cid)).fetchone()
+            if not row or not self._resume_active(c, cid, outreach):
+                return False
+            self._settle_in(c, row, 'sent', 'desktop', self.clock())
+            return True
+        return self.db.locked(show)
 
     @staticmethod
     def _promise(row):
@@ -468,7 +511,7 @@ class ProactiveScheduler:
                 return Outreach('circle', key, CIRCLE_INTENT, {'character_id': cid, 'scope': scope})
 
     def _follow_up(self, character_id, last, now_ts, system_idle) -> Outreach | None:
-        if last['source'] in ('follow','promise','circle') or last['parent_id']: return None             # 追问过了就不再追
+        if last['source'] in ('follow','promise','circle','task_resume') or last['parent_id']: return None             # 追问过了就不再追
         with self.db.transaction() as c:                                                 # 同一个话题已经有追问（含发送中、结果未知的）
             if c.execute('SELECT 1 FROM outreach_log WHERE parent_id=? LIMIT 1', (last['id'],)).fetchone(): return None
         if last['source'] == 'share' and not self._life_on():

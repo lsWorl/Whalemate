@@ -96,6 +96,9 @@ class McpToolServer:
                 self.box.call, name, args, abandon_on_cancel=True)
             return CallToolResult(content=[TextContent(text=text)], is_error=error)
 
+        async def task_stage(action: str, summary: str, steps: list[str] | None = None, files: list[str] | None = None):
+            return await call('task_stage', action=action, summary=summary, steps=steps, files=files)
+
         async def list_dir(path: str):
             return await call('list_dir', path=path)
 
@@ -123,11 +126,11 @@ class McpToolServer:
         async def delete_path(path: str, reason: str = ''):
             return await call('delete_path', path=path, reason=reason)
 
-        async def run_powershell(command: str, cwd: str | None = None, reason: str = ''):
-            return await call('run_powershell', command=command, cwd=cwd, reason=reason)
+        async def run_powershell(command: str, cwd: str | None = None, reason: str = '', outputs: list[str] | None = None):
+            return await call('run_powershell', command=command, cwd=cwd, reason=reason, outputs=outputs)
 
         descriptions = {tool['name']: tool['description'] for tool in ToolBox.TOOLS}
-        for function in (list_dir, glob, grep, read_file, write_file, edit_file, make_dir, move_path,
+        for function in (task_stage, list_dir, glob, grep, read_file, write_file, edit_file, make_dir, move_path,
                          delete_path, run_powershell):
             mcp.tool(description=descriptions[function.__name__], structured_output=False)(function)
 

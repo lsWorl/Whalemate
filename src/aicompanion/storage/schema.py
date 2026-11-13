@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 20  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单；v18：主人 QQ 交办与审批规则；v19：向量索引与阶段摘要；v20：群内话题
+SCHEMA_VERSION = 21  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单；v18：主人 QQ 交办与审批规则；v19：向量索引与阶段摘要；v20：群内话题；v21：跨天办事检查点
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -101,8 +101,19 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, goal TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running', started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     ended_at TEXT, steps INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
-    result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT ''
+    result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', workspace TEXT NOT NULL DEFAULT '',
+    plan TEXT NOT NULL DEFAULT '[]', pause_reason TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS agent_effect_notes (
+    run_id INTEGER NOT NULL REFERENCES agent_runs(id), signature TEXT NOT NULL, description TEXT NOT NULL,
+    PRIMARY KEY(run_id, signature)
+);
+CREATE TABLE IF NOT EXISTS agent_checkpoints (
+    id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES agent_runs(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), summary TEXT NOT NULL,
+    artifacts TEXT NOT NULL DEFAULT '[]', removed TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS ix_agent_checkpoints_run ON agent_checkpoints(run_id,id);
 CREATE TABLE IF NOT EXISTS agent_rules (
     project TEXT NOT NULL, category TEXT NOT NULL, pattern TEXT NOT NULL, effect TEXT NOT NULL,
     hits INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(project, category, pattern, effect)

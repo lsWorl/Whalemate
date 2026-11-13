@@ -351,17 +351,25 @@ class DshAgent:
                 chunk = (update.get('content') or {}).get('text') or ''
                 context['chars'] += len(chunk)
                 visible(parser.feed(chunk)[0])
+            elif kind == 'plan':
+                entries = update.get('entries')
+                if isinstance(entries, list):
+                    plan_steps = [item['content'][:300] for item in entries if isinstance(item, dict)
+                             and isinstance(item.get('content'), str) and item['content'].strip()]
+                    if plan_steps:
+                        on_event('plan', {'steps': plan_steps[:80]})
             elif kind == 'tool_call':
                 name = tool_name(str(update.get('title') or 'tool')); args = update.get('rawInput') or {}
-                calls[update.get('toolCallId')] = name
                 visible(parser.flush()[0])
                 parser = CueStream(Vocab(), summary_only=True)
                 context['final_from'] = len(text)   # 工具调用前说的话是过程，最后回复只取最后一次工具调用之后的
                 context['chars'] += len(json.dumps(args, ensure_ascii=False))
                 line = describe_tool(name, args if isinstance(args, dict) else {})
-                steps.append((name, line, args)); on_event('tool', {'tool': name, 'summary': line})
+                calls[update.get('toolCallId')] = (name, line)
+                steps.append((name, line, args)); on_event('tool', {'tool': name, 'summary': line, 'call_id': update.get('toolCallId')})
             elif kind == 'tool_call_update' and update.get('status') in ('completed', 'failed'):
-                on_event('step', {'ok': update.get('status') == 'completed', 'tool': calls.get(update.get('toolCallId'), '')})
+                name, line = calls.pop(update.get('toolCallId'), ('', ''))
+                on_event('step', {'ok': update.get('status') == 'completed', 'tool': name, 'summary': line, 'call_id': update.get('toolCallId')})
             elif kind == 'usage_update':
                 context['used'].append(int(update.get('used') or 0))   # 每次请求一条：这次请求的上下文大小
 

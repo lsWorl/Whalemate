@@ -81,6 +81,13 @@ class Database:
                     if "reminder" not in columns:
                         connection.execute("ALTER TABLE companion_dates ADD COLUMN reminder TEXT NOT NULL DEFAULT 'day'")
                         connection.execute("UPDATE companion_dates SET reminder='both' WHERE kind IN ('birthday','her_birthday')")
+                if version < 21 and 'agent_runs' in tables:
+                    columns = {r[1] for r in connection.execute('PRAGMA table_info(agent_runs)')}
+                    for name, definition in (('workspace', "TEXT NOT NULL DEFAULT ''"), ('plan', "TEXT NOT NULL DEFAULT '[]'"),
+                                             ('pause_reason', "TEXT NOT NULL DEFAULT ''"), ('revision', 'INTEGER NOT NULL DEFAULT 0')):
+                        if name not in columns:
+                            connection.execute(f'ALTER TABLE agent_runs ADD COLUMN {name} {definition}')
+                    connection.execute("UPDATE agent_runs SET pause_reason='上次暂停', ended_at=COALESCE(ended_at,started_at) WHERE status='paused'")
                 backfill_outreach_scope = False
                 if "outreach_log" in tables:
                     # 早期 v13/v14 缺取件时间、对应轮次，或这次分享已结算的回执类型；按缺哪列补哪列。
@@ -133,7 +140,7 @@ class Database:
                 # 超时的旧生成线程可能刚写完回复就退出，还没来得及自行清理。
                 connection.execute("DELETE FROM chat_messages WHERE role='assistant' AND turn_id IN "
                                    "(SELECT turn_id FROM qq_outbox WHERE status='failed')")
-                connection.execute("UPDATE agent_runs SET status='paused',ended_at=datetime('now','localtime') WHERE status='running'")
+                connection.execute("UPDATE agent_runs SET status='paused',pause_reason='程序中断',revision=revision+1,ended_at=datetime('now','localtime') WHERE status='running'")
                 # 重启后未确认的外部发送不能自动重发；尚未开始的待发结果作废。
                 connection.execute("UPDATE expression_deliveries SET status='unknown' WHERE status='sending'")
                 connection.execute("UPDATE expression_deliveries SET status='cancelled' WHERE status='pending'")
@@ -417,7 +424,7 @@ class Database:
     def add_agent_run(self, character_id, goal, *, attachments=(), workspace=None, peer=None):
         from uuid import uuid4
         with self.transaction() as connection:
-            run_id = connection.execute("INSERT INTO agent_runs(character_id,goal) VALUES (?,?)", (character_id, goal)).lastrowid
+            run_id = connection.execute("INSERT INTO agent_runs(character_id,goal,workspace) VALUES (?,?,?)", (character_id, goal, str(workspace or ''))).lastrowid
             if peer:
                 connection.execute("INSERT INTO agent_qq_runs VALUES (?,?,?)",(run_id,*peer))
             if attachments:
@@ -432,22 +439,42 @@ class Database:
         with self.transaction() as connection:
             return connection.execute("SELECT * FROM agent_attachments WHERE run_id=? ORDER BY copy", (run_id,)).fetchall()
 
-    def pause_agent_work(self, run_id, offers, *, connection=None):
+    def pause_agent_work(self, run_id, offers, *, reason="程序退出", connection=None):
         """关窗口后仍有进行中的任务或尚未开始的提议，供用户在操作日志里接续。"""
         with (self.transaction() if connection is None else nullcontext(connection)) as c:
-            c.execute("UPDATE agent_runs SET status='paused', steps=(SELECT COUNT(*) FROM agent_steps WHERE run_id=?) "
-                      "WHERE id=? AND status='running'", (run_id, run_id))
-            c.executemany("INSERT INTO agent_runs(character_id,goal,status) VALUES (?,?,'paused')", offers)
+            c.execute("UPDATE agent_runs SET status='paused', pause_reason=?, ended_at=datetime('now','localtime'), revision=revision+1, steps=(SELECT COUNT(*) FROM agent_steps WHERE run_id=?) "
+                      "WHERE id=? AND status='running'", (reason, run_id, run_id))
+            c.executemany("INSERT INTO agent_runs(character_id,goal,status,pause_reason,ended_at) "
+                          "VALUES (?,?,'paused','退出前尚未开始',datetime('now','localtime'))", offers)
 
-    def resume_agent_run(self, run_id, character_id):
+    def resume_agent_run(self, run_id, character_id, revision=None, remaining=''):
         def claim(c):
             if not c.execute("UPDATE agent_runs SET status='running', ended_at=NULL "
-                             "WHERE id=? AND character_id=? AND status='paused'", (run_id, character_id)).rowcount:
+                             "WHERE id=? AND character_id=? AND status='paused' AND (? IS NULL OR revision=?)", (run_id, character_id, revision, revision)).rowcount:
                 return None
+            if remaining:
+                c.execute('INSERT INTO agent_checkpoints(run_id,summary) VALUES (?,?)', (run_id, '主人补充：' + remaining))
             return c.execute("SELECT COALESCE(MAX(seq),0) FROM agent_steps WHERE run_id=?", (run_id,)).fetchone()[0]
         return self.locked(claim)
 
-    def reserve_agent_effect(self, run_id, signature, resuming):
+    def agent_run(self, run_id):
+        with self.transaction() as c:
+            return c.execute('SELECT * FROM agent_runs WHERE id=?', (run_id,)).fetchone()
+
+    def agent_checkpoints(self, run_id):
+        with self.transaction() as c:
+            return c.execute('SELECT * FROM agent_checkpoints WHERE run_id=? ORDER BY id', (run_id,)).fetchall()
+
+    def abandon_agent_run(self, run_id, character_id, revision):
+        with self.transaction() as c:
+            changed = c.execute("UPDATE agent_runs SET status='cancelled',result='主人已放弃',ended_at=datetime('now','localtime') "
+                                "WHERE id=? AND character_id=? AND revision=? AND status='paused'",
+                                (run_id, character_id, revision)).rowcount
+            if changed:
+                c.execute("DELETE FROM app_settings WHERE key=?", (f'agent_effects:{run_id}',))
+            return bool(changed)
+
+    def reserve_agent_effect(self, run_id, signature, resuming, description=""):
         """动手前先留指纹。即使在文件已写、工具结果尚未入审计时退出，也不能在接续时重放。"""
         def reserve(c):
             row = c.execute("SELECT status FROM agent_runs WHERE id=?", (run_id,)).fetchone()
@@ -460,6 +487,7 @@ class Database:
                     raise PermissionError('这一步在暂停前或接续时已经尝试过，请先核对结果')
             else:
                 self.set_setting_in(c, key, [*seen, signature])
+                c.execute('INSERT OR IGNORE INTO agent_effect_notes VALUES (?,?,?)', (run_id, signature, description[:500]))
         self.locked(reserve)
 
     def finish_agent_run(self, run_id, status, result='', error='', steps=0, tokens=0, cost=0.0):
@@ -482,9 +510,9 @@ class Database:
             connection.execute("UPDATE agent_steps SET result_summary=?,error=?,undo_json=?,ended_at=datetime('now','localtime') WHERE id=?",
                                (result_summary, error, undo_json, step_id))
 
-    def agent_runs(self, limit=50):
+    def agent_runs(self, limit=50, character=None):
         with self.transaction() as connection:
-            return connection.execute("SELECT * FROM agent_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return connection.execute("SELECT * FROM agent_runs WHERE (? IS NULL OR character_id=?) ORDER BY id DESC LIMIT ?", (character, character, limit)).fetchall()
 
     def agent_steps(self, run_id):
         with self.transaction() as connection:

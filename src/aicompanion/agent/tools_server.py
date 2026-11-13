@@ -211,6 +211,7 @@ class Task:
     originals: dict[Path, Path] = field(default_factory=dict)  # 原件 → 本任务副本
     copies: set[Path] = field(default_factory=set)
     captions: dict[Path, str] = field(default_factory=dict)
+    journey: object | None = None
     read_chars: int = 3600
 
 
@@ -233,6 +234,10 @@ class ToolBox:
 
     # ---- MCP 工具清单 ----------------------------------------------------------------
     TOOLS = [
+        {'name': 'task_stage', 'description': '登记对用户公开的计划、阶段产物、等待材料或最终交付清单。用绝对路径，纯文字交付的 files 为空。',
+         'inputSchema': {'type': 'object', 'properties': {'action': {'enum': ['plan','checkpoint','wait','deliver']},
+                         'summary': {'type': 'string'}, 'steps': {'type': 'array', 'items': {'type':'string'}},
+                         'files': {'type': 'array', 'items': {'type':'string'}}}, 'required': ['action','summary']}},
         {'name': 'list_dir', 'description': '列出文件夹里的文件和子文件夹（名字、大小、修改时间）。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string', 'description': '绝对路径'}}, 'required': ['path']}},
         {'name': 'glob', 'description': '按通配符找文件，例如 **/*.md。返回绝对路径列表（最多 500 个）。',
@@ -252,8 +257,9 @@ class ToolBox:
         {'name': 'delete_path', 'description': '删除文件或文件夹：会先问用户，同意后移到回收区（可找回）。',
          'inputSchema': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'reason': {'type': 'string', 'description': '一句话说明为什么要删'}}, 'required': ['path']}},
         {'name': 'run_powershell', 'description': '运行 PowerShell 命令并返回输出。只读命令直接运行，会改东西的命令先给用户看、同意后才运行。'
-                                                  '要长时间运行的程序（如本地预览服务器）请用 Start-Process 放到后台。单条命令最长 120 秒。',
+                                                  '把预期生成或修改的文件绝对路径填入 outputs，程序会在命令成功后逐一留存检查点。单条命令最长 120 秒。',
          'inputSchema': {'type': 'object', 'properties': {'command': {'type': 'string'}, 'cwd': {'type': 'string', 'description': '在哪个文件夹运行（默认工作区）'},
+                                                          'outputs': {'type': 'array', 'items': {'type':'string'}},
                                                           'reason': {'type': 'string', 'description': '一句话说明这条命令要做什么'}}, 'required': ['command']}},
     ]
 
@@ -275,13 +281,23 @@ class ToolBox:
         with self._calls_lock:
             self._active_calls += 1
         record = {'tool': name, 'args': args, 'decision': 'auto', 'result': '', 'error': '', 'run_id': task.run_id}
+        entered = False
         try:
+            if task.journey:
+                task.journey.enter()
+                entered = True
             if task.cancelled.is_set(): raise PermissionError('任务已经停止')
             if task.peer and self.peer_valid and not self.peer_valid(task.peer):
                 raise PermissionError('主人 QQ 绑定已失效')
             handler = getattr(self, f'_t_{name}', None)
             if handler is None: raise ValueError(f'没有这个工具：{name}')
             text = handler(record, **{k: v for k, v in (args or {}).items() if v is not None})
+            if task.journey and name != 'task_stage':
+                try:
+                    task.journey.completed(record)
+                except Exception as error:
+                    task.journey.pause(f'无法记录 {name} 的检查点：{error}')
+                    raise
             record['result'] = text[:300]
             return text, False
         except PermissionError as error:
@@ -291,6 +307,8 @@ class ToolBox:
             record['error'] = f'{type(error).__name__}: {error}'
             return f'出错：{type(error).__name__}: {error}', True
         finally:
+            if entered:
+                task.journey.leave()
             self._local.task = None
             try: self.on_call(record)
             except Exception: pass
@@ -299,6 +317,15 @@ class ToolBox:
                     self._active_calls -= 1
 
     # ---- 把关 ------------------------------------------------------------------------
+    def _t_task_stage(self, record, action, summary, steps=None, files=None):
+        if not self.current.journey:
+            raise ValueError('没有活动的跨天任务')
+        try:
+            return self.current.journey.stage(action, summary, steps or [], files or [])
+        except (ValueError, OSError) as error:
+            self.current.journey.delivery_error = str(error)
+            raise
+
     def _before_effect(self, record, *operation):
         task = self.current
         if task.cancelled.is_set():
@@ -308,7 +335,14 @@ class ToolBox:
         if self.reserve_effect and task.run_id:
             # 用实际路径、命令和内容计算指纹，不把文件正文、命令或凭据写入恢复记录。
             payload = json.dumps([record['tool'], *operation], ensure_ascii=False)
-            self.reserve_effect(task.run_id, hashlib.sha256(payload.encode()).hexdigest(), task.resuming)
+            args = record['args']
+            target = str(operation[0])
+            if record['tool'] == 'run_powershell':
+                target += ' ' + (args.get('reason') or command_prefix(args['command']) or '自定义命令')
+            if record['tool'] == 'move_path':
+                target += ' → ' + str(operation[1])
+            signature = hashlib.sha256(payload.encode()).hexdigest()
+            self.reserve_effect(task.run_id, signature, task.resuming, record['tool'] + ' ' + target)
 
     def _check_read(self, path: Path):
         reason = _secret_reason(path, self.secrets)
@@ -467,6 +501,7 @@ class ToolBox:
         self._before_effect(record, os.path.normcase(p), content)
         backup = self._backup(p) if p.exists() else ''
         p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding='utf-8')
+        record['output'] = p
         return f'已写入 {p}（{len(content)} 字）'+(f'；旧版本留底在 {backup}' if backup else '')
 
     def _t_edit_file(self, record, path, old_text, new_text, replace_all=False):
@@ -478,12 +513,14 @@ class ToolBox:
         self._before_effect(record, os.path.normcase(p), old_text, new_text, bool(replace_all))
         backup = self._backup(p)
         p.write_text(text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1), encoding='utf-8')
+        record['output'] = p
         return f'已修改 {p}（替换 {count if replace_all else 1} 处）；旧版本留底在 {backup}'
 
     def _t_make_dir(self, record, path):
         p = _norm(path); self._check_write(record, p, '新建文件夹')
         self._before_effect(record, os.path.normcase(p))
         p.mkdir(parents=True, exist_ok=True)
+        record['output'] = p
         return f'已建好 {p}'
 
     def _protected_tree(self, root):
@@ -528,6 +565,7 @@ class ToolBox:
         self._before_effect(record, os.path.normcase(src), os.path.normcase(dst))
         backup = self._backup(src)
         dst.parent.mkdir(parents=True, exist_ok=True); shutil.move(str(src), str(dst))
+        record['output'], record['removed'] = target, src
         return f'已移动到 {dst}'+(f'；原样留底在 {backup}' if backup else '')
 
     def _t_delete_path(self, record, path, reason=''):
@@ -544,10 +582,15 @@ class ToolBox:
         target = self._backup(p)
         if p.is_dir(): shutil.rmtree(p)
         else: p.unlink()
+        record['removed'] = p
         return f'已删除 {p}（移到了回收区 {target}）'
 
     # ---- 命令 ------------------------------------------------------------------------
-    def _t_run_powershell(self, record, command, cwd=None, reason=''):
+    def _t_run_powershell(self, record, command, cwd=None, reason='', outputs=None):
+        if outputs:
+            if not self.current.journey or not isinstance(outputs, list) or len(outputs) > 100:
+                raise ValueError('命令产物需要对应活动任务，每步最多 100 个路径')
+            record['outputs'] = [self.current.journey.declared_path(path) for path in outputs]
         folder = _norm(cwd) if cwd else (self.current.allowed[0] if self.current.allowed else Path.home())
         for p in [folder, *self._paths_in(command)]:
             secret = _secret_reason(p, self.secrets)
@@ -588,7 +631,11 @@ class ToolBox:
                         deny_scopes=[Rule('command', name) for name in families if name])
         if self.current.resuming or not read_only:
             self._before_effect(record, os.path.normcase(folder), command.strip())
-        return self.run_command(command, folder)
+        output = self.run_command(command, folder)
+        if self.current.journey and (re.search(r'\[退出码 (?!0\])-?\d+\]\s*$', output)
+                                     or output.startswith(('任务已停止，', '命令超过 '))):
+            raise RuntimeError(output[-1000:])
+        return output
 
     @staticmethod
     def _paths_in(command: str) -> list[Path]:
