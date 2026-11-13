@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 15  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机
+SCHEMA_VERSION = 16  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -217,10 +217,20 @@ CREATE INDEX IF NOT EXISTS ix_outreach_parent ON outreach_log(parent_id);
 CREATE TABLE IF NOT EXISTS qq_outbox (
  turn_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, status TEXT NOT NULL, date_keys TEXT NOT NULL DEFAULT '[]',
  date_day TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, dequeued_at REAL, claimed_at REAL, first_sent_at REAL, settled_at REAL,
- guard TEXT NOT NULL DEFAULT 'scheduled'
+ guard TEXT NOT NULL DEFAULT 'scheduled', target TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_log ON outreach_log(character_id, sent_at);
--- v14 计划书 v4 功能四 有自己的生活：她按兴趣去看的东西。必须有真实来源（标题、链接、摘录），没做完的不算做过
+-- v16 聊天约定及其原始人物、会话和投递版本
+CREATE TABLE IF NOT EXISTS promises (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL REFERENCES characters(id),
+ person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, scope TEXT NOT NULL, source TEXT NOT NULL, turn_id TEXT NOT NULL,
+ title TEXT NOT NULL, due_at REAL, condition TEXT NOT NULL DEFAULT '', expires_at REAL,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','cancelled','expired')),
+ revision INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, UNIQUE(character_id,turn_id)
+);
+CREATE INDEX IF NOT EXISTS ix_promises_due ON promises(character_id,status,due_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_promise_delivery ON outreach_log(character_id,key) WHERE source='promise';
+-- v14 她自己看过的活动和来源
 CREATE TABLE IF NOT EXISTS activities (
  id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'read', interest TEXT NOT NULL,
  query TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'doing', title TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',

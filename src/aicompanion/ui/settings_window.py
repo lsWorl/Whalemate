@@ -271,6 +271,9 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.dates_card import DatesCard
         self.dates_card=DatesCard(self.database,cid,self, defer=self.queue_setting)
         relation_page.add(Section('我们的日子','她记得你们认识了多少天、哪些日子值得纪念；到了那天她会在和你聊天时自然提一句，一天只提一次。',self.dates_card))
+        from aicompanion.ui.promises_card import PromisesCard
+        self.promises_card = PromisesCard(self.database,cid,self)
+        relation_page.add(Section('我们的约定','在约定的时间或再次聊天时提醒。群里的约定只发回原群。',self.promises_card))
         relation_page.finish()
         self.bridge_page=BridgePage(self.database); self.community_page=CommunityPage(self.database,cid,self)
         platforms_page=TabPage('QQ 与社区','让她在 QQ 上和你、和群友聊天（通过 AstrBot + NapCat 插件），以及她从群里学到的梗。')

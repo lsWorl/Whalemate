@@ -82,7 +82,7 @@ class BridgeServer:
         runtime.last_heartbeat = beat
         from aicompanion.bridge.service import setting
         take = getattr(self.service, 'take_outbox', None)
-        outbox = take() if take and self.service.qq_ready(beat) else []
+        outbox = take(beat) if take else []
         reply = {'ok': True, 'groups': [str(g) for g in setting(self.service.database, 'bridge_groups') or []],
                 # 插件据此决定要不要下载别人发的图：识图关了或现在接的模型不收图片，就不传（只标一个中性的 [图片]）
                 'media': {'vision': (self.service.vision_ready() if hasattr(self.service, 'vision_ready') else bool(self.service.database.get_setting('qq_vision_enabled', True))),

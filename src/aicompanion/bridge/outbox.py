@@ -53,11 +53,11 @@ class OutboxStore:
     def __init__(self, database, clock=time.time):
         self.db, self.clock = database, clock
 
-    def begin(self, turn: str, character_id: str, guard: str = 'direct') -> None:
+    def begin(self, turn: str, character_id: str, guard: str = 'direct', target: str = '') -> None:
         """开始生成前先记一条：生成出来的回复写进聊天记录后、放进发件箱前程序退出，启动时能认出这条回复没发出去。"""
         with self.db.transaction() as c:
-            c.execute('INSERT INTO qq_outbox(turn_id, character_id, status, created_at, guard) VALUES (?,?,?,?,?)',
-                      (turn, character_id, 'generating', self.clock(), guard))
+            c.execute('INSERT INTO qq_outbox(turn_id, character_id, status, created_at, guard, target) VALUES (?,?,?,?,?,?)',
+                      (turn, character_id, 'generating', self.clock(), guard, target))
 
     def add(self, turn: str, character_id: str, date_keys=(), day: str = '') -> bool:
         """生成完成后入队。清理器可能已判定这一轮过期，旧线程恢复时不能覆盖结果。"""

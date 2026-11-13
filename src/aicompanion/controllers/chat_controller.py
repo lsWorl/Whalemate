@@ -19,6 +19,8 @@ class ChatController:
         self.character = database.characters()[0] if database.characters() else DEFAULT_CHARACTER
         self.context = ContextService(database,memory_service)
         self.emotions = EmotionService(database)
+        from aicompanion.services.promises import Promises
+        self.promises = Promises(database)
         # 每个角色的表情 / 动作词表（来自角色包）；模型可在台词里标注，存库前去掉
         self.vocabs = {}
         # P5：允许在回复里用 <task> 提议动手（由界面根据设置打开）
@@ -92,6 +94,15 @@ class ChatController:
         local_voice = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice')
                        and context.scope == 'desktop:'+character.id and context.channel == 'desktop' and context.scene == 'pet')
         local_reply = local_voice and not proactive and context.trigger == 'user_reply'
+        from aicompanion.services.promises import INTENT as PROMISE_INTENT
+        promises = self.promises
+        promise_write = None
+        promise_scope = ''
+        if channel.startswith('qq:group:') and source=='qq' and context.channel==channel:
+            promise_scope = channel
+        elif channel=='desktop' and scene=='pet' and (local_voice or (source=='qq' and context.relationship.link_state=='bound')):
+            promise_scope = 'desktop'
+        promise_person = None
         self.database.start_turn(turn_id,character.id)
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
@@ -105,6 +116,10 @@ class ChatController:
                                '不要写分析过程。普通聊天不用这个标记，求助、办事和涉及安全时先认真回应。')
                 else:
                     prompt += '\n想暂时离开时，可以告诉用户你想安静一会儿。'
+            if proactive == PROMISE_INTENT:
+                reminder = promises.reminder(character.id, promise_scope, turn_id)
+                if not reminder: raise ReplyCancelled('约定已变更或会话不匹配')
+                prompt += '\n' + reminder
             if proactive:
                 from aicompanion.services.companion_dates import DATE_EVE_INTENT, CompanionDates
                 if proactive == DATE_EVE_INTENT:
@@ -115,6 +130,9 @@ class ChatController:
                 prompt+='\n现在是你主动开启话题：'+proactive+'。像真人发消息那样开个头：一句也行，想说的多就连着说几句（一句一行，每行单独发出去；句子中间停顿用逗号，别用空格），不编造经历。'
             # T15：她和对方的关系、此刻的心情精力、对方最近多常找她做事——给同一个大脑做判断的依据，不规定回应方式
             person_id=self._person(person,channel,scene,context)
+            if promise_scope and person_id and not proactive and context.trigger == 'user_reply':
+                promise_person = person_id
+                prompt += promises.prompt(character.id, person_id, promise_scope)
             if person_id:
                 from aicompanion.relationship.service import scope_of
                 emotion=self.database.load_emotion(character.id)
@@ -130,6 +148,9 @@ class ChatController:
                 from aicompanion.pet.script import TASK_PROMPT
                 prompt+=TASK_PROMPT
             marks['tools']=len(prompt)
+            if proactive == PROMISE_INTENT:
+                context = replace(context,supports_images=False)
+                prompt += '\n用文字直接提醒。'
             candidates,report=self.expression.prepare_report(context,character,query,history)
             prompt+=self.expression.prompt(candidates,proactive=bool(proactive),qq=context.scope.startswith('qq:'))
             if context.more_memes and candidates:prompt+='\n对方说过喜欢你多发表情包；合适的时候可以更常用，但仍由你自己决定。'
@@ -168,6 +189,13 @@ class ChatController:
             if attachment is None and parser.selection:
                 aid,placement=parser.selection
                 attachment=self.expression.attachment(turn_id,context,choices[aid],placement)
+            if promise_person and not (parser.mind or {}).get('lookup'):
+                promise_write, clarify = promises.prepare(character.id,promise_person,promise_scope,source,turn_id,query,parser.promise_marker)
+                if clarify:
+                    extra = ('\n' if parts else '') + clarify
+                    parts.append(extra)
+                    yield extra
+            cancellation.check()
             if not ''.join(parts).strip() and attachment is None:
                 if local_reply and parser.leave_reason:
                     parts.append('我想先安静一会儿。')
@@ -199,7 +227,11 @@ class ChatController:
             if attachment and self.expression.catalog.resolve(attachment.asset_id,attachment.revision) is None:
                 self.expression.receipt(attachment.delivery_id,'cancelled');attachment=None
             result=self.expression.result(turn_id,context,content,attachment,status,parser.diagnostics if parser else ())
-            self.database.finish_turn(turn_id,character.id,content,status,error,channel=channel,source=source)
+            def commit_promises(c):
+                promises.conversation(c,character.id,promise_person,promise_scope,turn_id,query)
+                if promise_write: promise_write(c)
+            save = commit_promises if promise_person and status=='complete' and content and not (parser.mind or {}).get('lookup') else None
+            self.database.finish_turn(turn_id,character.id,content,status,error,channel=channel,source=source,on_complete=save)
             self.expression.record_trace(turn_id,context,report,parser.diagnostics if parser else (),
                                          parser.markers if parser else 0,parser.selection if parser else None,
                                          result.attachments[0] if result.attachments else None,status,

@@ -26,7 +26,7 @@ except ImportError:   # pragma: no cover
     AstrBotConfig = dict
 
 HEARTBEAT_SECONDS = 15
-PLUGIN_VERSION = '0.10.2'
+PLUGIN_VERSION = '0.11.0'
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 1024 * 1024
 MAX_STICKERS = 3
@@ -533,11 +533,11 @@ class AICompanionBridge(Star):
                             f'@ 她自己 {self.called(event)}，文字 {len((event.message_str or "").strip())} 字，'
                             f'自己的账号 {"有" if getattr(event, "get_self_id", lambda: "")() else "无"}）')
             return
+        platform_id = getattr(event, 'get_platform_id', lambda: '')()
+        if isinstance(platform_id, str) and platform_id: self.platform_id = platform_id
         if not payload['group_id']:
             origin = getattr(event, 'unified_msg_origin', None)
             if isinstance(origin, str) and origin: self.private_origins[payload['sender_id']] = origin
-            platform_id = getattr(event, 'get_platform_id', lambda: '')()
-            if isinstance(platform_id, str) and platform_id: self.platform_id = platform_id
         # 交给桌宠以后，AstrBot 自己的模型和其他插件都不再处理这条消息（不出现第二个人格）
         self.swallow(event)
         payload['expression_version']=1
@@ -579,7 +579,9 @@ class AICompanionBridge(Star):
         import hashlib
         if not isinstance(item, dict): return
         key = str(item.get('id') or ''); user = str(item.get('user_id') or '')
-        if not re.fullmatch(r'[a-f0-9]{32}', key) or not re.fullmatch(r'\d{5,12}', user) or key in self.outbox_sent: return
+        group = str(item.get('group_id') or '')
+        if bool(group) == bool(user) or not re.fullmatch(r'\d{5,12}', group or user): return
+        if not re.fullmatch(r'[a-f0-9]{32}', key) or key in self.outbox_sent: return
         self.outbox_sent.add(key)
         if len(self.outbox_sent) > 512: self.outbox_sent = {key}
         claim_request = {'id': key}
@@ -598,7 +600,8 @@ class AICompanionBridge(Star):
         delays = self.delays_of(item, len(segments))
         expression = item.get('expression') if isinstance(item.get('expression'), dict) else {}
         attachments = [a for a in (expression.get('attachments') or [])[:1] if isinstance(a, dict)]
-        origin = self.private_origins.get(user) or f'{self.platform_id}:FriendMessage:{user}'
+        origin = (f'{self.platform_id}:GroupMessage:{group}' if group else
+                  self.private_origins.get(user) or f'{self.platform_id}:FriendMessage:{user}')
         from astrbot.api.event import MessageChain
         from astrbot.api.message_components import Image, Plain
         class Refused(Exception): pass

@@ -56,6 +56,9 @@ class ExpressionStream:
         self.leave_tag = ''
         self.leave_quote = ''
         self.say = SayBlock()
+        self.promise_block = ''
+        self.promise_marker = None
+        self.promise_discard = False
         self.markers = 0; self.visible = ''; self.has_text = False; self.cancelled = False; self.finished = False
         self.markdown = MarkdownLiterals()
         self.json_depth = 0; self.json_string = False; self.escape = False
@@ -160,7 +163,44 @@ class ExpressionStream:
             if position == 'after_text': actual = 'after_text'
         self.reserved = True; self.selection = (asset, actual)
 
+    def _promise_char(self, ch):
+        self.promise_block += ch
+        block = self.promise_block
+        if self.promise_discard:
+            if block.endswith('</promise>'):
+                self.promise_discard = False
+                self.promise_block = ''
+            else:
+                self.promise_block = block[-10:]
+            return
+        closed = block.endswith('</promise>') or ('>' not in block[:-1] and block.endswith('/>'))
+        if not closed:
+            if len(block) > 600:
+                self.promise_discard = True
+                self.promise_block = block[-10:]
+                if self.promise_marker is None: self.promise_marker = {}
+            return
+        self.promise_block = ''
+        if self.promise_marker is not None: return
+        self.promise_marker = {}
+        match = re.fullmatch(r'<promise\s+([^<>]{1,140}?)(?:\s*/>|>([^<>]{1,240})</promise>)', block)
+        if not match: return
+        attrs = {}
+        rest = match[1].strip()
+        while rest:
+            attr = re.match(r"""(due|condition|until|cancel)\s*=\s*(["'])([^<>"'\r\n]*)\2(?:\s+|$)""", rest)
+            if not attr or attr[1] in attrs: return
+            attrs[attr[1]] = attr[3]
+            rest = rest[attr.end():]
+        if match[2] and 'cancel' not in attrs:
+            self.promise_marker = dict(attrs, title=match[2])
+        elif match[2] is None and set(attrs) == {'cancel'}:
+            self.promise_marker = attrs
+
     def _char(self, ch, out):
+        if self.promise_block:
+            self._promise_char(ch)
+            return
         if self.leave_tag:
             self.leave_tag += ch
             if ch in '\r\n' or len(self.leave_tag) > LEAVE_LIMIT:
@@ -228,6 +268,10 @@ class ExpressionStream:
         if self.pending:
             self.pending += ch
             low = self.pending.lower()
+            if self.pending[:-1] == '<promise' and (ch.isspace() or ch in '/>'):
+                self.promise_block, self.pending = '<promise', ''
+                self._promise_char(ch)
+                return
             if low[:-1] == '<leave' and (ch.isspace() or ch in '/>'):
                 self.leave_tag, self.pending = self.pending[:-1], ''
                 self._char(ch, out)
@@ -288,7 +332,7 @@ class ExpressionStream:
 
     def _markdown_enabled(self):
         in_tag = self.pending.lower().startswith(RESERVED + ('<img', '['))
-        return not (in_tag or self.leave_tag or self.say or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
+        return not (in_tag or self.promise_block or self.leave_tag or self.say or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
 
     def _read(self, chunk, out, *, final=False):
         for ch, literal in self.markdown.feed(chunk, self._markdown_enabled, final=final):
@@ -320,6 +364,9 @@ class ExpressionStream:
             else: self.markers += 1; self.diagnose('unfinished_marker')
         if self.task:
             self._emit(re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task), out)
+        if self.promise_block:
+            self.promise_marker = self.promise_marker or {}
+            self.promise_block = ''
         self._emit(self.say.finish(), out)
         if self.bracket: self._emit(self.bracket, out)
         if self.img: self.markers += 1; self.diagnose('html_img_tag')   # 没闭合的 <img 标签：整段不显示

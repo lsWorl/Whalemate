@@ -265,6 +265,19 @@ def schedule_pet_smoke_check(window, database, output):
             state['date_reminder_editable'] = (timing.count() == 4 and card.reminder.currentData() == 'day'
                                                 and card.dates.user_dates(card.cid)[0]['reminder'] == 'eve')
             card.table.selectRow(0); card.remove()
+            promises = dialog.promises_card
+            who = window.controller.relationships.owner_person()
+            insert, _ = promises.service.prepare(card.cid, who, 'desktop', 'text', 'smoke-promise', '',
+                                                  {'condition':'下次聊天','title':'自检约定'})
+            database.locked(insert)
+            promises.refresh()
+            promises.table.selectRow(0)
+            promises.title.setText('修改后的自检约定')
+            promises.save.click()
+            promises.table.selectRow(0)
+            promises.cancel.click()
+            row = promises.service.rows(card.cid)[0]
+            state['promise_settings'] = row['title'] == '修改后的自检约定' and row['status'] == 'cancelled'
             # 计划书 v4 功能二：人格编辑器能载入当前人格
             state['persona_ready'] = bool(dialog.persona_editor.current_id) and bool(dialog.persona_editor.description.toPlainText())
             # 计划书 v4 功能三：心情卡能读出当前心情
@@ -582,7 +595,7 @@ def schedule_pet_smoke_check(window, database, output):
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
-        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'date_reminder_editable', 'persona_ready', 'mood_ready', 'speech_default_on'])
+        required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')

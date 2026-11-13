@@ -78,6 +78,14 @@ class ProactiveScheduler:
         不会在回执到之前又选中同一句追问（Codex PR #46 第 1 项）。说成了 confirm，没说成 release。"""
         now = outreach.payload.get('chosen_at') or self.clock()
         def work(c):
+            if outreach.source == 'promise':
+                if c.execute("SELECT 1 FROM outreach_log WHERE character_id=? AND status IN ('pending','delivering') LIMIT 1",
+                             (character_id,)).fetchone(): return 0
+                from aicompanion.services.promises import Promises
+                if not Promises.active(c, character_id, outreach.key, self.clock()) or c.execute(
+                        'SELECT 1 FROM outreach_log WHERE character_id=? AND source=? AND key=?',
+                        (character_id, 'promise', outreach.key)).fetchone():
+                    return 0
             return c.execute('INSERT INTO outreach_log(character_id, source, key, channel, status, parent_id, sent_at) VALUES (?,?,?,?,?,?,?)',
                              (character_id, outreach.source, outreach.key, channel, 'pending', outreach.payload.get('parent_id'), now)).lastrowid
         return self.db.locked(work)
@@ -101,6 +109,17 @@ class ProactiveScheduler:
         at：对方最早能看到的时刻。QQ 用插件回报的第一段实际发出时间（取件、领取都只是发送尝试的开始，Codex PR #46 第三轮）；
         桌面不传，用开始说的时间。"""
         self.settle_delivery(character_id, outreach_id, outreach, True, channel, first_at=at)
+
+    def show_desktop_promise(self, cid, outreach_id, key):
+        # 先持久确认再把首段交给 Qt。关闭、打断及崩溃恢复不能重放已经开始展示的提醒。
+        from aicompanion.services.promises import Promises
+        def show(c):
+            row = c.execute("SELECT * FROM outreach_log WHERE id=? AND character_id=? AND key=? "
+                            "AND source='promise' AND channel='desktop' AND status='pending'", (outreach_id,cid,key)).fetchone()
+            if not row or not Promises.active(c,cid,key,self.clock()): return False
+            self._settle_in(c,row,'sent','desktop',self.clock())
+            return True
+        return self.db.locked(show)
 
     def release(self, outreach_id: int) -> None:
         """没说成（生成失败、被打断、QQ 确定没发出去）：撤掉占位，不算说过。"""
@@ -155,6 +174,9 @@ class ProactiveScheduler:
     def _settle_in(self, c, row, status, channel, first_at=None):
         """心事、问候、父子追问和调度状态在同一个写事务结算。任一步被锁或中断，QQ 回执仍可完整重放。"""
         cid, rid, parent = row['character_id'], row['id'], row['parent_id']
+        if row['source'] == 'promise' and status in ('sent', 'partial'):
+            c.execute("UPDATE promises SET status='done' WHERE character_id=? AND status='pending' "
+                      "AND 'promise:'||id||':'||revision=?", (cid,row['key']))
         if row['source'] == 'share' and self.life is not None and row['key'].startswith('share:'):
             # 这条开口可能只是一句寒暄。活动和开口分开结算；同一篇文章后来另一次完整送达的记录要保留。
             activity = int(row['key'].split(':', 1)[1])
@@ -171,6 +193,7 @@ class ProactiveScheduler:
             if status == 'failed': self.purposes.release(pid, connection=c)
             else: self.purposes.delivered(pid, connection=c)
         if status == 'failed':
+            if row['source']=='promise' and channel=='desktop' and row['status']!='pending': return
             if row['source'] in ('date', 'date_eve', 'greeting'): self.db.release_proactive(cid, row['key'], connection=c)
             c.execute('DELETE FROM outreach_log WHERE id=?', (rid,))
             if parent:
@@ -188,7 +211,7 @@ class ProactiveScheduler:
             return
         # 回执暂失期间的 answered 可能来自首达前的无关消息。按真实首达重新认领，仍保留首达后的回复。
         reopen = row['status'] == 'answered' and first_at is not None and not self._user_spoke_since(
-            cid, first_at, self._window_end(cid, row, since=first_at, connection=c), connection=c)
+            cid, first_at, self._window_end(cid, row, since=first_at, connection=c), connection=c, channel=self._reply_channel(c,row))
         if row['status'] in ('pending', 'delivering', 'unknown') or reopen:
             c.execute("UPDATE outreach_log SET status='sent', channel=?, sent_at=COALESCE(?,sent_at), settled_at=NULL WHERE id=?",
                       (channel, first_at, rid))
@@ -226,7 +249,9 @@ class ProactiveScheduler:
                              " OR (o.source='share' AND o.share_delivery!=q.status)"
                              " OR (q.status IN ('sent','partial') AND q.first_sent_at IS NOT NULL AND (o.sent_at!=q.first_sent_at OR o.channel!='qq'))"
                              " OR (o.status='answered' AND q.status IN ('sent','partial') AND q.first_sent_at IS NOT NULL AND NOT EXISTS ("
-                             " SELECT 1 FROM chat_messages m WHERE m.character_id=o.character_id AND m.channel='desktop' AND m.role='user'"
+                             " SELECT 1 FROM chat_messages m WHERE m.character_id=o.character_id AND m.role='user' "
+                             " AND m.channel=COALESCE((SELECT scope FROM promises p WHERE o.source='promise' AND p.character_id=o.character_id "
+                             " AND o.key='promise:'||p.id||':'||p.revision),'desktop')"
                              " AND m.created_at>=strftime('%Y-%m-%d %H:%M:%S',CAST(q.first_sent_at AS INTEGER),'unixepoch')))"
                              " OR (o.source='purpose' AND EXISTS (SELECT 1 FROM purposes p WHERE p.character_id=o.character_id "
                              " AND o.key='purpose:'||p.id AND p.status!='delivered')))", (character_id,)).fetchall()
@@ -273,7 +298,7 @@ class ProactiveScheduler:
         except ValueError: return float('inf')
         return max(0.0, self.clock()-when)
 
-    def _user_spoke_since(self, character_id: str, since: float, until: float | None = None, *, connection=None) -> bool:
+    def _user_spoke_since(self, character_id: str, since: float, until: float | None = None, *, connection=None, channel='desktop') -> bool:
         utc = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
         stamp, end = utc(since), utc(until) if until is not None else '9999'
         # 新消息保留微秒。旧消息只知道整秒，落在换话题的这一秒时归给该秒内最后开始的话题。
@@ -281,8 +306,16 @@ class ProactiveScheduler:
         with (self.db.transaction() if connection is None else nullcontext(connection)) as c:
             return c.execute("SELECT 1 FROM (SELECT CASE WHEN length(created_at)=19 THEN created_at||'.999999' "
                              "ELSE substr(created_at||'000000',1,26) END AS message_at FROM chat_messages "
-                             "WHERE character_id=? AND channel='desktop' AND role='user') WHERE message_at>=? AND message_at<? LIMIT 1",
-                             (character_id, stamp, end)).fetchone() is not None
+                             "WHERE character_id=? AND channel=? AND role='user') WHERE message_at>=? AND message_at<? LIMIT 1",
+                             (character_id, channel, stamp, end)).fetchone() is not None
+
+    @staticmethod
+    def _reply_channel(c, row):
+        if row['source'] == 'promise':
+            target = c.execute("SELECT scope FROM promises WHERE character_id=? AND 'promise:'||id||':'||revision=?",
+                               (row['character_id'],row['key'])).fetchone()
+            if target: return target[0]
+        return 'desktop'
 
     def settle(self, character_id: str) -> None:
         """更新还在等回应的主动消息：他回了 → answered；太久没回 → ignored（记一点点委屈）。
@@ -296,7 +329,9 @@ class ProactiveScheduler:
             waiting = c.execute("SELECT * FROM outreach_log WHERE character_id=? AND status IN ('sent','followed','let_go','unknown') ORDER BY id",
                                 (character_id,)).fetchall()
         for row in waiting:
-            if self._user_spoke_since(character_id, row['sent_at'], self._window_end(character_id, row)):
+            with self.db.transaction() as c:
+                scope = self._reply_channel(c,row)
+            if self._user_spoke_since(character_id, row['sent_at'], self._window_end(character_id, row), channel=scope):
                 self._set(row, 'answered', now)
             elif row['status'] == 'unknown':
                 # 发没发到都不知道：太久没动静就悄悄放下（dropped，终态），不记委屈（不能拿不确定的事说他没理她）。
@@ -306,7 +341,7 @@ class ProactiveScheduler:
             elif now-row['sent_at'] >= GIVE_UP_SECONDS:
                 if not self._set(row, 'ignored', now): continue
                 # 一件事只记一次小委屈：记在最早那条上（追问那句没回不再另记）
-                if row['parent_id']: continue
+                if row['parent_id'] or scope != 'desktop': continue
                 try:
                     from aicompanion.services.mood_service import MoodService
                     MoodService(self.db, clock=self.clock).event(character_id, 'ignored', reason='主动找他说话没回', scale=0.4)
@@ -342,7 +377,7 @@ class ProactiveScheduler:
         return min(end, nxt) if nxt is not None else end
 
     # ---- 决定 --------------------------------------------------------------------------------
-    def next(self, character_id: str, system_idle: float, seconds_since_user: float) -> Outreach | None:
+    def next(self, character_id: str, system_idle: float, seconds_since_user: float, *, group_ready=None) -> Outreach | None:
         if not self.db.get_setting('proactive_enabled', True): return None
         now_ts = self.clock(); now = datetime.fromtimestamp(now_ts)
         if is_focused(self.db, now) or in_quiet_hours(self.db, now.hour): return None
@@ -359,11 +394,18 @@ class ProactiveScheduler:
             # “算了”、没等到回应的那条：从放下它的时候起算间隔，不会刚说完“算了”就换个话题又来
             since = last['settled_at'] if last['status'] in ('let_go', 'ignored', 'dropped') and last['settled_at'] else last['sent_at']
             if now_ts-since < self.gap_seconds(character_id): return None
+        from aicompanion.services.promises import INTENT, Promises
+        promise = Promises(self.db,self.clock).due(character_id,group_ready)
+        if promise:
+            if last is not None and last['status'] in ('followed','let_go'):
+                return None
+            key = f"promise:{promise['id']}:{promise['revision']}"
+            return Outreach('promise',key,INTENT,{'character_id':character_id,'scope':promise['scope']})
         return (self._date(character_id, now) or self._purpose(character_id, system_idle, seconds_since_user)
                 or self._share(character_id, system_idle) or self._greeting(character_id, seconds_since_user))
 
     def _follow_up(self, character_id, last, now_ts, system_idle) -> Outreach | None:
-        if last['source'] == 'follow' or last['parent_id']: return None             # 追问过了就不再追
+        if last['source'] in ('follow','promise') or last['parent_id']: return None             # 追问过了就不再追
         with self.db.transaction() as c:                                                 # 同一个话题已经有追问（含发送中、结果未知的）
             if c.execute('SELECT 1 FROM outreach_log WHERE parent_id=? LIMIT 1', (last['id'],)).fetchone(): return None
         if last['source'] == 'share' and not self._life_on():
@@ -428,6 +470,10 @@ class ProactiveScheduler:
     def still_valid(self, outreach: Outreach) -> bool:
         """选中以后、真正说出来（桌面第一个字显示出来、QQ 交给插件 / 插件领取）之前还该不该说。这段时间里关掉过“自己的生活”
         （哪怕又打开了），分享和追问分享的那句就撤回（Codex PR #48 第二、三轮）；已经说出来 / 交给插件的不追回。"""
+        if outreach.source == 'promise':
+            from aicompanion.services.promises import Promises
+            with self.db.transaction() as c:
+                return bool(Promises.active(c,outreach.payload['character_id'],outreach.key,self.clock()))
         if outreach.source == 'date_eve':
             from aicompanion.services.companion_dates import CompanionDates
             dates = CompanionDates(self.db, self.clock)
@@ -440,17 +486,30 @@ class ProactiveScheduler:
         return True
 
     @staticmethod
-    def turn_still_valid(database, turn_id: str, callback_valid=False, *, connection=None) -> bool:
+    def turn_still_valid(database, turn_id: str, callback_valid=False, *, connection=None, now=None) -> bool:
         """领取时从同一事务读取保护方式、来源与当前开关。没有来源的调度条目在重启后仍不得交给 QQ。"""
         from contextlib import nullcontext
         with (database.transaction() if connection is None else nullcontext(connection)) as c:
-            item = c.execute('SELECT guard FROM qq_outbox WHERE turn_id=?', (turn_id,)).fetchone()
+            item = c.execute('SELECT guard,target FROM qq_outbox WHERE turn_id=?', (turn_id,)).fetchone()
             if item is None: return False
+            target = item['target']
+            if target.startswith('group:') and target[6:] not in [str(g) for g in database.setting_in(c, 'bridge_groups', [])]:
+                return False
+            if target.startswith('user:') and target[5:] != str(database.setting_in(c, 'bridge_owner:qq', '')):
+                return False
             if item['guard'] == 'direct': return True
             if item['guard'] == 'callback': return callback_valid
-            row = c.execute('SELECT source, parent_id, sent_at FROM outreach_log WHERE turn_id=?', (turn_id,)).fetchone()
+            row = c.execute('SELECT source, parent_id, sent_at, character_id, key FROM outreach_log WHERE turn_id=?', (turn_id,)).fetchone()
             if row is None or item['guard'] != 'scheduled': return False
             source = row['source']
+            if source == 'promise':
+                from aicompanion.services.promises import Promises
+                promise = Promises.active(c, row['character_id'], row['key'], time.time() if now is None else now)
+                if not promise: return False
+                if promise['scope'].startswith('qq:group:'):
+                    group = promise['scope'].split(':')[-1]
+                    return target == 'group:' + group
+                return promise['scope'] == 'desktop' and target.startswith('user:')
             if source == 'follow':
                 parent = c.execute('SELECT source FROM outreach_log WHERE id=?', (row['parent_id'],)).fetchone()
                 if parent is None: return False
