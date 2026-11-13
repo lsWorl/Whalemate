@@ -2095,3 +2095,9 @@ Windows 上在代码提交 `16ec3ff` 运行 `tools\run_checks.bat`，退出 0。
 两次 `qq_task_approval`、`task_attachment_ready`、`tools_gate` 和 `passed` 均为 true，失败列表为空，退出时剩余工作线程为 0。另以 Qt 离屏运行 QQ 交办和审批界面专项 14 项通过。Windows 上两条回环 HTTP 拒绝响应回归连续运行 15 轮，30 项全部通过。
 
 测试使用临时文件、合成旧库、回环 HTTP 及模拟模型和 OneBot。真实 QQ 账号收发、跨端撤回、真实云端办事与识图、本机项目脚本及负责人真机体验待验收。
+
+### V4-7e 审查修订（2026-11-13）
+
+未配置审批模式时，任务、桌面输入栏、设置和恢复入口统一使用 workspace。专项测试实际写入放开的目录并断言没有触发审批。显式选择的模式仍按其规则执行。
+
+Windows 对代码提交 f47a4b24ed208014ba7abbcee6a27a9242a32a54 运行两套检查。tools/run_checks.bat 退出 0，1331 项用时 333.566 秒（7 跳过）；tools/run_agent_checks.bat --offline 退出 0，1331 项用时 242.408 秒（7 跳过）。两次桌宠 smoke 均通过，失败列表为空。未接真实 QQ 或调用真实办事模型。
