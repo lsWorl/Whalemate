@@ -17,7 +17,9 @@ class ChatController:
         from aicompanion.providers.router import FixedRouter
         self.router = models if hasattr(models,'resolve') else FixedRouter(database,models)
         self.character = database.characters()[0] if database.characters() else DEFAULT_CHARACTER
-        self.context = ContextService(database,memory_service)
+        from aicompanion.services.semantic import SemanticRecall
+        self.semantic = SemanticRecall(database, self.router)
+        self.context = ContextService(database, memory_service, self.semantic)
         self.emotions = EmotionService(database)
         from aicompanion.services.promises import Promises
         self.promises = Promises(database)
@@ -48,16 +50,22 @@ class ChatController:
         except Exception: pass
         base=marks.get('base',len(prompt)); rel=marks.get('relationship',base); other=marks.get('other',rel); tools=marks.get('tools',other)
         detail=dict(sections,relationship=rel-base,other=other-rel,tools=tools-other,expression=len(prompt)-tools)
+        start = detail.pop('_optional_start', base)
+        mandatory = len(prompt) + (len(history[-1].content) if history else 0)
+        if start < base and mandatory > budget.limit_for(purpose, window, max_output):
+            prompt = prompt[:start] + prompt[base:]
+            detail.update(stages=0, recall=0)
         kept,report=budget.fit(history,prompt,purpose,window,max_output,detail)
         budget.save(self.database,character_id,report)
         if report.blocked:   # 确定超过已知模型上限：不发（不删人格、不删当前这句话）
             raise budget.BudgetExceeded(budget.refusal(report,getattr(resolved,'label','')))
-        return kept
+        return kept, prompt
 
     def use_client(self,client,**options):
         """测试与桌宠自检：所有能力都改用这个客户端（options 传给 FixedRouter，例如 vision_model）。"""
         from aicompanion.providers.router import FixedRouter
         self.router=FixedRouter(self.database,client,**options)
+        self.semantic.router = self.router
 
     def search_factory(self,character_id):
         """查梗 / 学梗用的搜索服务工厂：按这个角色的搜索设置，而不是聊天接口的主机名。"""
@@ -107,7 +115,8 @@ class ChatController:
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
         try:
-            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id,turn_id=turn_id)
+            history,prompt,sections=self.context.build_with_sections(character,query,channel,scene,situation,through_id,turn_id=turn_id,
+                vector_query=not proactive and context.trigger == 'user_reply', cancellation=cancellation)
             marks={'base':len(prompt)}
             if local_reply:
                 if self.database.get_setting('self_exit_enabled', True):
@@ -163,7 +172,7 @@ class ChatController:
             client_purpose='proactive' if proactive else ('qq' if channel.startswith('qq:') else purpose)
             client=self.client(character.id,client_purpose)
             # 计划书 v4 功能六：整份请求预算。人格、记忆、召回、关系、表情候选、办事说明都已拼好，超了从最早的历史裁
-            history=self._fit(character.id,client_purpose,history,prompt,sections,marks)
+            history,prompt=self._fit(character.id,client_purpose,history,prompt,sections,marks)
             summary_sent = False
             with using(purpose,character.id,turn_id):
                 for token in client.generate_reply_stream(history,prompt,cancellation):

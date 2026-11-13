@@ -8,7 +8,7 @@
    用户删过记忆以后，删除之前的办事记录不再召回（办事记录本身留作审计）：删掉的事实内容已经没有了，
    没法判断旧任务里有没有提到它，所以保守地整段不用，和聊天记录的“删除水位线”一致（Codex PR #38 第 2 项）。
 
-关键词靠中文二字 / 三字片段的重合度，不需要分词库，也不调模型（不额外花钱、不增加延迟）。同义词和省略说法要等语义检索（阶段四）。
+关键词靠中文二字 / 三字片段的重合度，不需要分词库，也不调模型（不额外花钱、不增加延迟）。启用语义召回后，另合并同频道的向量候选。
 """
 from __future__ import annotations
 
@@ -45,28 +45,40 @@ def score(query: str, text: str) -> int:
 @dataclass
 class Recalled:
     archive: list = field(default_factory=list)    # [(row, score)]
+    facts: list = field(default_factory=list)
     chats: list = field(default_factory=list)      # [(row, score)]
     tasks: list = field(default_factory=list)      # [(row, score)]
 
     def render(self, now: datetime | None = None, limit_chars: int = 1200) -> str:
         """写进提示词的一段；超过 limit_chars 时从相关度低的开始丢。"""
         now = now or datetime.now()
-        lines = []
-        for row, _ in self.archive:
-            lines.append(f"- （旧事，记不太清了）{row['content']}")
-        for row, _ in self.tasks:
+        from aicompanion.services.memory_service import similar
+        ranked = []
+        for row, weight in self.archive:
+            ranked.append((weight, row['content'], f"- （旧事，记不太清了）{row['content']}"))
+        for row, weight in self.facts:
+            ranked.append((weight, row['content'], f"- （以前记下的事）{row['content']}"))
+        for row, weight in self.tasks:
             state = {'done': '做完了', 'failed': '没做成', 'cancelled': '中途停了', 'interrupted': '被打断了'}.get(row['status'], row['status'])
-            lines.append(f"- （{ago(row['started_at'], now)}帮对方办过事，{state}）{row['goal'][:80]}")
-        for row, _ in self.chats:
+            ranked.append((weight, row['goal'], f"- （{ago(row['started_at'], now)}帮对方办过事，{state}）{row['goal'][:80]}"))
+        for row, weight in self.chats:
             who = '对方' if row['role'] == 'user' else '你'
             text = ' '.join(row['content'].split())
-            text = text[:CHAT_SNIPPET]+('…' if len(text) > CHAT_SNIPPET else '')
-            lines.append(f"- （{ago(row['created_at'], now)}聊过）{who}：{text}")
-        while lines and sum(len(l) for l in lines) > limit_chars: lines.pop()
+            snippet = text[:CHAT_SNIPPET]+('…' if len(text) > CHAT_SNIPPET else '')
+            ranked.append((weight, text, f"- （{ago(row['created_at'], now)}聊过）{who}：{snippet}"))
+        lines, seen = [], []
+        for _, content, line in sorted(ranked, key=lambda entry: entry[0], reverse=True):
+            if len(line) > limit_chars or any(similar(content, other) for other in seen):
+                continue
+            lines.append(line)
+            seen.append(content)
+            limit_chars -= len(line) + 1
+            if len(lines) >= 6:
+                break
         return '\n'.join(lines)
 
     def __bool__(self):
-        return bool(self.archive or self.chats or self.tasks)
+        return bool(self.archive or self.facts or self.chats or self.tasks)
 
 
 def ago(stamp: str, now: datetime) -> str:
@@ -85,14 +97,28 @@ class RecallService:
         self.db = database
 
     def recall(self, character_id: str, query: str, scene: str = 'pet', channel: str = 'desktop',
-               before_id: int | None = None, known=()) -> Recalled:
+               before_id: int | None = None, known=(), semantic_hits=(), summarized=()) -> Recalled:
         """query：这一轮要回应的话（可含最近一两句）；before_id：当前历史窗口里最早一条消息的 id，比它早的才算“更早的聊天”；
         known：已经在记忆卡里带上的内容，召回时去重。"""
         result = Recalled()
         query = (query or '').strip()
         if len(query) < 2: return result
         from aicompanion.services.memory_service import similar
+        from aicompanion.services.semantic import candidates as indexed_facts, digest, source_channel
         with self.db.transaction() as c:
+            c.execute('BEGIN')
+            matches = {}
+            if semantic_hits:
+                facts = dict(indexed_facts(c, character_id))
+                for key, fingerprint, similarity in semantic_hits:
+                    if key not in facts:
+                        continue
+                    row, old, origin = facts[key]
+                    if origin != channel or not visible_in(row['scope'], scene) or digest(row['content']) != fingerprint:
+                        continue
+                    matches[key] = 8 * similarity
+                    if not old and not any(similar(row['content'], k) for k in known):
+                        result.facts.append((row, matches[key] + score(query, row['content'])))
             # 1. 存档里的旧事：当前记忆卡里没有这个事实键、没被删除（删除会连同存档一起删，墓碑另外再挡一次）
             current = {r['fact_key'] for r in c.execute('SELECT fact_key FROM memories WHERE character_id=?', (character_id,))}
             tombs = {r['fact_key'] for r in c.execute('SELECT fact_key FROM memory_tombstones WHERE character_id=?', (character_id,))}
@@ -102,7 +128,9 @@ class RecallService:
                 key = row['fact_key']
                 if key in current or key in tombs or key in seen or not visible_in(row['scope'], scene): continue
                 seen.add(key)
-                s = score(query, row['content'])
+                if row['scope'] in ('qq', 'bili') and source_channel(c, character_id, row) != channel:
+                    continue
+                s = score(query, row['content']) + matches.get(key, 0)
                 if s >= 2: picked.append((row, s))
             picked.sort(key=lambda item: (item[1], item[0]['importance']), reverse=True)
             for row, s in picked:
@@ -112,7 +140,7 @@ class RecallService:
             # 2. 更早的聊天：同一频道、删除记忆的水位线之后、当前历史窗口之前。
             #    三字片段走全文索引；两个字的词（“团子”“青岛”）trigram 搜不到，用 LIKE 逐个查，命中少的算“专有的词”加分
             if before_id:
-                watermark = int(self.db.get_setting(f'context_after:{character_id}', 0) or 0)
+                watermark = int(self.db.setting_in(c, f'context_after:{character_id}', 0) or 0)
                 candidates = {r['id']: r for r in fts.search(c, sorted(grams(query, 3))[:24], character_id, channel, before_id, watermark, 30)}
                 rare = set()
                 for gram in sorted(grams(query, 2))[:10]:
@@ -123,6 +151,8 @@ class RecallService:
                     for r in rows: candidates.setdefault(r['id'], r)
                 scored = []
                 for row in candidates.values():
+                    if row['id'] in summarized:
+                        continue
                     text = row['content'].lower()
                     scored.append((row, score(query, row['content'])+2*sum(1 for g in rare if g in text)))
                 scored.sort(key=lambda item: (item[1], item[0]['id']), reverse=True)

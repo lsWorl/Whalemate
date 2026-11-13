@@ -13,10 +13,14 @@ import threading
 
 PURPOSES = {
     'companion': '陪伴聊天', 'agent': '干活', 'memory': '记忆整理', 'purpose': '心事', 'life': '自己的生活', 'voice': '语音翻译',
-    'qq': 'QQ', 'bili': 'B站',
+    'qq': 'QQ', 'bili': 'B站', 'embedding': '记忆向量',
 }
 # 默认价目（元 / 百万词元）。各家会调价，请在设置里按官网更新。
 DEFAULT_PRICES = {
+    'text-embedding-v4': {'input': 0.5, 'output': 0},
+    'embedding-3': {'input': 0.5, 'output': 0},
+    'qwen3.7-text-embedding': {'input': 0.5, 'output': 0},
+    'qwen3.7-text-embedding-flash': {'input': 0.125, 'output': 0},
     'deepseek': {'input': 2.0, 'cached': 0.2, 'output': 3.0},
     'qwen': {'input': 0.8, 'cached': 0.16, 'output': 2.0},
     'glm': {'input': 2.0, 'cached': 0.5, 'output': 8.0},

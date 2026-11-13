@@ -187,7 +187,10 @@ class SettingsWindow(QDialog):
         memory_page.add(Section('想得起旧事','聊到相关的事时，她会想起淡忘的旧记忆、30 条之外更早的聊天、以前帮你办过的事；'
                                 '你删掉的记忆不会再想起来，群里的聊天也不会出现在桌面上。每次请求有字数预算，超了先丢最早的聊天记录，'
                                 '人格和你刚说的话不会被丢。',self.context_report))
-        memory_page.add(ComingSoon('换个说法也想得起','同义词和省略说法也能对上（语义检索）；很早以前的聊天用有来源的摘要代替，需要时能查回原话。'))
+        from aicompanion.ui.semantic_card import SemanticCard
+        self.semantic_card = SemanticCard(controller)
+        memory_page.add(Section('语义召回与阶段摘要', '开启云端后，记忆和你说的话会发给所选厂商计算向量。'
+                                '默认关闭，仍可按关键词找回旧事。阶段摘要可查回原话。', self.semantic_card))
         memory_page.finish()
 
         # ---- 主动与提醒 ---------------------------------------------------------------------
@@ -594,9 +597,6 @@ class SettingsWindow(QDialog):
     def delete_memory(self):
         selected={index.row() for index in self.table.selectedIndexes()}
         for row in selected: self.database.delete_memory(self.table.item(row,0).data(Qt.ItemDataRole.UserRole),self.controller.character.id)
-        if selected:
-            history=self.database.recent_messages(1,self.controller.character.id)
-            self.database.set_setting(f'context_after:{self.controller.character.id}',history[-1]['id'] if history else 0)
         self.refresh()
 
     def queue_setting(self, group, save):
