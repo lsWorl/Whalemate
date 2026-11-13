@@ -43,7 +43,11 @@ class BridgeServer:
                 self._send(200, {'ok': True, 'name': server.service.controller.character.name})
 
             def do_POST(self):
-                if not self._authorized(): return self._send(401, {'error': 'unauthorized'})
+                if not self._authorized():
+                    self._send(401, {'error': 'unauthorized'})
+                    from aicompanion.net import finish_rejected_post
+                    finish_rejected_post(self)
+                    return
                 if self.path not in ('/v1/chat', '/v1/task-files', '/v1/task-permission', '/v1/task-claim', '/v1/heartbeat', '/v1/media-permission','/v1/expression/claim','/v1/expression/ack','/v1/outbox/claim','/v1/outbox/ack'): return self._send(404, {'error': 'not_found'})
                 try:
                     length = int(self.headers.get('Content-Length') or 0)

@@ -4,7 +4,6 @@ import base64
 import hashlib
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
 from threading import Barrier, Event, Thread
 from unittest.mock import AsyncMock, Mock, patch
 
