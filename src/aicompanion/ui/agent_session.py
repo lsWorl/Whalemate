@@ -197,9 +197,11 @@ class AgentSession(QObject):
         project = Path(__file__).resolve().parents[3]
         from aicompanion.domain.bond import current as current_bond
         bond = current_bond(database, character.id)
+        from aicompanion.pet.script import SAY_PROMPT
         lines = [bond.fill(f'你是{character.name}。{(character.description or "")[:900]}', character.name), bond.prompt(),
                  bond.fill(f'说话方式：{(character.speaking_style or "")[:600]}', character.name),
                  '最后给用户的回复要保持上面的人设：一两句口语，像同事口头交代做了什么、结果在哪，不写报告、不列清单、不用 Markdown 标题，除非用户要细节。',
+                 SAY_PROMPT.strip(),
                  '做事要求：用户的电脑是 Windows。看文件、改文件、删文件、跑 PowerShell 都用 aicompanion 开头的那组工具；'
                  '尽量在后台完成，不要让用户手动操作；用户点名的路径、文件名、程序就用那个，不要擅自换；一句话里有几件事要按顺序全部做完。',
                  f'当前工作区：{cwd}。放开写的文件夹：{"；".join(str(a) for a in allowed) or "无"}——在这些里面写和改不用问；'
@@ -322,7 +324,7 @@ class AgentSession(QObject):
                           + f'\n（{len(result.steps)} 步 · {result.tokens} 词元 · 约 {result.cost:.3f} 元）')
         # 结果写进聊天记录，之后聊天时她知道自己做过什么
         w.database.add_message('assistant', f'[干活] {self.goal}\n{result.text}', w.controller.character.id, source='agent')
-        w.speak_reply(result.text, [c.name for c in cues if c.kind == 'expression'])
+        w.speak_reply(result.text, [c.name for c in cues if c.kind == 'expression'], result.spoken_summary)
         if result.tokens > TOKEN_BURN:
             from PySide6.QtCore import QTimer
             QTimer.singleShot(16000, lambda: w.pet.say_line('token_burn', force=True))

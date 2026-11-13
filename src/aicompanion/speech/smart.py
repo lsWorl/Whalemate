@@ -1,7 +1,6 @@
 """智能朗读（计划书 v4 功能八）：短回复全念；长回复只念适合听的部分，分成几段先后播放，其余看气泡。
 
-为什么不额外调模型：回复是流式生成的，第一段一出来就要念（首次出声不能变慢）；而且“一个大脑”原则下不为口播单独再问一次。
-所以这里按规则取舍：
+首句应在生成中出声。完整或智能朗读遇到开头的口播，闭合后立即按长度上限分段；其余回复逐句交给原朗读模式。SmartReader 的取舍规则如下。
 - 先念开头：累计念到 SHORT 字以前的句子都念（120 字以内的回复因此全念）；
 - 之后只念要紧的：问你的问题、需要你做决定或去处理的事、结论；结尾那句短的情绪话留到最后补上；
 - 压缩：清单只念条数和第一条；表格念成“我做了张表”；代码已由 SentenceBuffer 念成“一段代码”；
@@ -45,6 +44,12 @@ def _clauses(text: str) -> list[str]:
         current += part
     if current: out.append(current)
     return [c for c in out if c.strip()]
+
+
+def summary_segments(summary: str) -> list[str]:
+    """口播原本就是给人听的，只清理格式、分段，并遵守整轮字数上限。"""
+    text = spoken_text(summary)[:TOTAL].strip()
+    return [text[i:i + SEGMENT_MAX] for i in range(0, len(text), SEGMENT_MAX)]
 
 
 class SmartReader:

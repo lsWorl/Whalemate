@@ -292,7 +292,8 @@ def schedule_pet_smoke_check(window, database, output):
                 self.calls+=1
                 handle=re.search(r'^(s\d+)｜',prompt,re.M).group(1)   # 本轮候选短编号
                 yield '<sticker id="'+handle+'"/>'
-                yield '【开心】好耶，表达自检完成！<挥手>'
+                yield '【开心】好耶，表达自检完成！<挥手><sa'
+                yield 'y>语音专用自检词</say>'
                 yield '<lea'
                 yield 've reason="想休息一下"/>'
         model=ExpressionModel();window.controller.use_client(model)
@@ -320,6 +321,9 @@ def schedule_pet_smoke_check(window, database, output):
                 state['expression_clean_text']='sticker' not in window.texts.get(generation,'')
                 state['self_exit_disabled_reply'] = (window.texts[generation] == '好耶，表达自检完成！'
                                                       and window.departure is None and not window.closing)
+                with database.transaction() as c:
+                    row = c.execute("SELECT content FROM chat_messages WHERE turn_id=? AND role='assistant'", (generation,)).fetchone()
+                state['say_hidden'] = bool(row and row['content'] == window.texts[generation] == '好耶，表达自检完成！')
                 state['expression_trace_ready']=state['expression_trace_stage']=='OK_displayed'
                 from aicompanion.ui.library_page import LibraryPage
                 page=LibraryPage(database,window.controller.character.id)
@@ -579,7 +583,7 @@ def schedule_pet_smoke_check(window, database, output):
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.append('qq_media_settings_ready')
         required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'settings_pages_ready', 'date_reminder_editable', 'persona_ready', 'mood_ready', 'speech_default_on'])
-        required.extend(['expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
+        required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
         if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')

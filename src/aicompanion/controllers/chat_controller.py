@@ -81,7 +81,7 @@ class ChatController:
         from dataclasses import replace
         from aicompanion.expression.domain import ExpressionContext,ExpressionEvent
         from aicompanion.expression.stream import ExpressionStream
-        from aicompanion.pet.script import Vocab,strip_cues
+        from aicompanion.pet.script import SAY_PROMPT,Vocab,strip_cues
         context=expression_context or ExpressionContext(turn_id,character.id,'desktop:'+character.id,
             channel,scene,'proactive' if proactive else 'user_reply',proactive,supports_images=bool(on_expression_event))
         if context.generation_id!=turn_id or context.character_id!=character.id:
@@ -89,9 +89,9 @@ class ChatController:
         context=replace(context,supports_images=context.supports_images and on_expression_event is not None,
                         early_before=context.early_before and reply_filter is None)
         # 绑定主人的 QQ 私聊也复用 desktop 历史频道，必须同时检查实际来源。
-        local_reply = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice') and not proactive
-                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop'
-                       and context.scene == 'pet' and context.trigger == 'user_reply')
+        local_voice = (channel == 'desktop' and scene == 'pet' and source in ('text', 'voice')
+                       and context.scope == 'desktop:'+character.id and context.channel == 'desktop' and context.scene == 'pet')
+        local_reply = local_voice and not proactive and context.trigger == 'user_reply'
         self.database.start_turn(turn_id,character.id)
         parts=[];status='complete';error='';attachment=None;parser=None;candidates=();held=''
         report=dict(enabled=False,reason='not_prepared',library=0,eligible=0,filtered={},candidates=0)
@@ -123,6 +123,8 @@ class ChatController:
             prompt+=self._community(character,query,channel)
             vocab=self.vocabs.get(character.id)
             if vocab:prompt+=vocab.prompt()
+            if local_reply:
+                prompt += SAY_PROMPT
             marks['other']=len(prompt)
             if self.agent_enabled and not proactive and offer_tasks:
                 from aicompanion.pet.script import TASK_PROMPT
@@ -141,10 +143,14 @@ class ChatController:
             client=self.client(character.id,client_purpose)
             # 计划书 v4 功能六：整份请求预算。人格、记忆、召回、关系、表情候选、办事说明都已拼好，超了从最早的历史裁
             history=self._fit(character.id,client_purpose,history,prompt,sections,marks)
+            summary_sent = False
             with using(purpose,character.id,turn_id):
                 for token in client.generate_reply_stream(history,prompt,cancellation):
                     cancellation.check()
                     clean=parser.feed(token)
+                    if local_reply and on_expression_event and not summary_sent and parser.say.leading_summary:
+                        summary_sent = True
+                        on_expression_event(ExpressionEvent('spoken_summary', turn_id, spoken_summary=parser.say.leading_summary))
                     if context.early_before and attachment is None and parser.selection and parser.selection[1]=='before_text':
                         attachment=self.expression.attachment(turn_id,context,choices[parser.selection[0]],'before_text')
                         cancellation.check()

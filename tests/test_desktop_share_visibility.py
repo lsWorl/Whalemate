@@ -66,7 +66,7 @@ class DesktopShareVisibilityTests(unittest.TestCase):
         self.app.processEvents()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
-    def start(self, first='', last='一起一百天啦，给你分享鲸鱼的报道。'):
+    def start(self, first='', last='一起一百天啦，给你分享鲸鱼的报道。', user_turn=''):
         entered, resume = threading.Event(), threading.Event()
         self.addCleanup(resume.set)
         prompts = []
@@ -80,10 +80,18 @@ class DesktopShareVisibilityTests(unittest.TestCase):
                     raise TimeoutError('测试没有放行工作线程')
                 yield last
         self.controller.client = lambda *a, **kw: Model()
-        self.win._deliver_outreach(self.cid, self.share)
+        if user_turn:
+            self.win.coordinator.active = user_turn
+            self.win._start(user_turn, '给我讲讲吧')
+        else:
+            self.win._deliver_outreach(self.cid, self.share)
         worker, = self.win.workers
         self.assertTrue(entered.wait(5))
-        self.assertIn('100', prompts[0])
+        if user_turn:
+            self.assertIn('正文最前面', prompts[0])
+        else:
+            self.assertIn('100', prompts[0])
+            self.assertNotIn('正文最前面', prompts[0])
         self.app.processEvents()
         return worker, resume
 
@@ -114,6 +122,66 @@ class DesktopShareVisibilityTests(unittest.TestCase):
         self.finish(worker, resume)
         self.assert_withdrawn(turn)
 
+    def test_first_sentence_is_queued_before_final_in_each_mode(self):
+        self.win.speech.enabled = True
+        first = '这里是第一句。'
+        for mode in ('full', 'smart', 'brief', 'interjection'):
+            with self.subTest(mode=mode):
+                self.db.set_setting('speech_style', mode)
+                self.win.speech.enqueue.reset_mock()
+                worker, resume = self.start(first, '第二句。', user_turn='normal-' + mode)
+                calls = self.win.speech.enqueue.call_args_list
+                self.assertTrue(calls)
+                self.assertEqual(self.win.reply_status[worker.generation_id], 'generating')
+                if mode in ('full', 'smart'):
+                    self.assertEqual(calls[0].args, (first, worker.generation_id))
+                else:
+                    self.assertTrue(all(c.args[1].startswith('interjection:') for c in calls))
+                self.finish(worker, resume)
+
+    def test_leading_summary_respects_all_modes_on_desktop_and_agent(self):
+        self.win.speech.enabled = True
+        body, summary = '这是屏幕正文。', '这是语音总结。'
+        for mode in ('full', 'smart', 'brief', 'interjection'):
+            with self.subTest(mode=mode):
+                self.db.set_setting('speech_style', mode)
+                self.win.speech.enqueue.reset_mock()
+                worker, resume = self.start('<say>' + summary + '</say>', body, user_turn='leading-' + mode)
+                turn = worker.generation_id
+                if mode in ('full', 'smart'):
+                    self.win.speech.enqueue.assert_called_once_with(summary, 'say:' + turn)
+                else:
+                    self.win.speech.enqueue.assert_not_called()
+                self.finish(worker, resume)
+                self.assertEqual(self.win.items[turn].content, body)
+                for agent in (False, True):
+                    if agent:
+                        self.win.speech.enqueue.reset_mock()
+                        self.win.speak_reply(body, spoken_summary=summary)
+                    calls = self.win.speech.enqueue.call_args_list
+                    words = [c.args[0] for c in calls]
+                    if mode in ('full', 'smart'):
+                        self.assertEqual(words, [summary])
+                    else:
+                        self.assertTrue(all(c.args[1].startswith('interjection:') for c in calls))
+                        self.assertEqual(len(words), 2 if mode == 'brief' else 1)
+                        self.assertNotIn(summary, words)
+                        if mode == 'brief': self.assertIn(body, words)
+
+    def test_late_summary_is_hidden_when_body_is_in_same_chunk(self):
+        self.win.speech.enabled = True
+        self.db.set_setting('speech_style', 'full')
+        body = '关于这篇报道，我把细节写在这里。'
+        worker, resume = self.start(body + '<say>只隐藏</say>', '', user_turn='late')
+        turn = worker.generation_id
+        self.win.speech.enqueue.assert_called_once_with(body, turn)
+        self.finish(worker, resume)
+        self.win.speech.enqueue.assert_called_once_with(body, turn)
+        self.assertEqual(self.win.items[turn].content, body)
+        with self.db.transaction() as c:
+            row = c.execute("SELECT content FROM chat_messages WHERE turn_id=? AND role='assistant'", (turn,)).fetchone()
+        self.assertEqual(row[0], body)
+
     def test_share_without_native_speech_backend(self):
         worker, resume = self.start()
         self.finish(worker, resume)
@@ -132,7 +200,7 @@ class DesktopShareVisibilityTests(unittest.TestCase):
         self.win.vocab = self.controller.vocabs[self.cid] = Vocab({'开心': 'happy'})
         self.db.set_setting('speech_style', 'full')
         self.win.speech.enabled = True
-        self.win.speech.enqueue.side_effect = lambda text, turn: self.win._sentence_started(spoken_text(text))
+        self.win.speech.enqueue.side_effect = lambda text, turn, **_: self.win._sentence_started(spoken_text(text))
         # 跳过启动 Agent 前的界面等待，调用真实 _offer_task，只替换外部执行入口。
         timer = SimpleNamespace(singleShot=lambda delay, callback: callback())
         with patch('aicompanion.ui.main_window.QTimer', timer), patch.object(self.win.agent, 'start') as start, \

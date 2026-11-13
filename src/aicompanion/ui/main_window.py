@@ -15,6 +15,7 @@ from aicompanion.characters import choose_renderer
 from aicompanion.pet.script import CueStream, Vocab, strip_cues
 from aicompanion.pet import interjection
 from aicompanion.speech.output import spoken_text
+from aicompanion.speech.smart import summary_segments
 from aicompanion.ui.desktop_pet import DesktopPetWindow
 from aicompanion.ui.sprite_view import SpriteAvatar, PlaceholderAvatar
 from aicompanion.speech.client import SpeechClient
@@ -517,6 +518,7 @@ class MainWindow(QMainWindow):
 
     def _start(self,generation,query='',proactive='',key=None):
         self.sentences=SentenceBuffer(); self.texts[generation]=''
+        self.summary_generation = None
         if not hasattr(self,'reply_queries'): self.reply_queries={}
         self.reply_queries[generation]=query   # 识别到要动手时，把用户原话交给干活的她
         # 只有用户自己发起的这一轮可以接 <task> 去办事。主动开口（分享网页、心事、问候、追问）的轮次一律丢掉这个标记：
@@ -555,6 +557,8 @@ class MainWindow(QMainWindow):
         if event.generation_id!=generation:return
         if not self._still_wanted(generation,visible=False):return
         if event.kind=='attachment_ready':self._display_attachment(generation,event.attachment,media)
+        elif event.kind=='spoken_summary':
+            self._speak_leading_summary(generation, event.spoken_summary)
         elif event.kind=='final':
             self.expression_results[generation]=(event.result,media)
             if event.leave_reason:
@@ -609,8 +613,7 @@ class MainWindow(QMainWindow):
         self.texts[generation]+=token
         self.items[generation].set_text(self.texts[generation]); self.chat_list.scrollToBottom()
         for sentence in self.sentences.feed(token): self._enqueue_sentence(sentence,generation)
-        if not self.reply_voice.get(generation):
-            # 桌宠头顶的气泡跟着显示正在说的那一条
+        if not self.reply_voice.get(generation) or self.summary_generation == generation:
             from aicompanion.expression.segments import split_segments
             self._pet_subtitle((split_segments(self.texts[generation]) or [''])[-1][-180:])
 
@@ -772,7 +775,7 @@ class MainWindow(QMainWindow):
             if generation in getattr(self,'task_turns',()): self.pending_tasks[generation]=tasks[-1].name
             cues=[c for c in cues if c.kind!='task']
             if not cues: return
-        if self.speech.enabled and self.reply_voice.get(generation):
+        if self.speech.enabled and self.reply_voice.get(generation) and self.summary_generation != generation:
             self.pending_cues.setdefault(generation,[]).extend(cues)   # 等下一句话开始播放
         else:
             for cue in cues: self.pet.perform(cue)
@@ -798,11 +801,21 @@ class MainWindow(QMainWindow):
             extra=interjection.brief_text(strip_cues(sentence,self.vocab))
             if extra: self.speech.enqueue(extra,'interjection:'+str(generation))
 
-    def speak_reply(self,text,expressions=()):
-        """干活结果等一次性文字：完整朗读模式念全文，否则只发一声。"""
+    def speak_reply(self,text,expressions=(),spoken_summary=None):
+        """办事结果优先念同轮口播；缺省使用当前朗读模式。"""
         if not self.speech.enabled or not text: return
         # 每份结果一个独立的朗读轮次：上一份退回本地朗读 / 出错，不影响下一份（Codex PR #39 第 2 项）
         generation='agent:'+uuid4().hex
+        if spoken_summary is None:
+            from aicompanion.pet.script import SAY_OPEN
+            if SAY_OPEN in text:
+                parser = CueStream(Vocab(), summary_only=True)
+                text, _ = parser.feed(text, final=True)
+                spoken_summary = parser.say.leading_summary
+        segments = summary_segments(spoken_summary or '') if self._full_voice() else []
+        if segments:
+            for segment in segments: self.speech.enqueue(segment, 'say:' + generation)
+            return
         if self._full_voice() and self._speech_style()=='smart':
             # 办事结果常常很长：同样按智能朗读取舍、分段
             from aicompanion.speech.smart import SmartReader
@@ -816,10 +829,21 @@ class MainWindow(QMainWindow):
 
     def _speech_subtitle(self,text):
         # 语气词不覆盖气泡里的整段回复
-        if str(self.speech.current_id).startswith('interjection:'): return
+        if str(self.speech.current_id).startswith(('interjection:', 'say:')): return
         self.subtitle.setText(text); self.subtitle.setVisible(bool(text)); self._pet_subtitle(text); self._sentence_started(text)
 
+    def _speak_leading_summary(self, generation, summary):
+        if not self.reply_voice.get(generation) or not self._full_voice(): return
+        segments = summary_segments(summary)
+        if not segments: return
+        self.summary_generation = generation
+        self.readers.pop(generation, None)
+        self.voiced_first.add(generation)
+        for segment in segments: self.speech.enqueue(segment, 'say:' + generation)
+        self.database.record_usage(self.controller.character.id, 'voice_characters', sum(map(len, segments)))
+
     def _enqueue_sentence(self,sentence,generation):
+        if self.summary_generation == generation: return
         if not self.reply_voice.get(generation):
             self._voice_reaction(generation,sentence); return
         reader=self.readers.get(generation)
@@ -834,6 +858,7 @@ class MainWindow(QMainWindow):
             except Exception: pass
 
     def _speak_segment(self,segment,generation):
+        self.voiced_first.add(generation)
         cues=self.pending_cues.get(generation)
         if cues and self.speech.enabled:
             self.sentence_cues.setdefault(spoken_text(segment),[]).extend(cues); self.pending_cues[generation]=[]

@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 import re
-from aicompanion.pet.script import CONTROL_TAGS, EXPRESSION_TAGS, MarkdownLiterals
+from aicompanion.pet.script import CONTROL_TAGS, EXPRESSION_TAGS, SAY_OPEN, MarkdownLiterals, SayBlock
 from .domain import ASSET_ID
 
 ATTR = re.compile(r"""([a-z_]+)\s*=\s*(?:"([^"<>\n]*)"|'([^'<>\n]*)'|([^\s"'<>/]+))""")
@@ -55,6 +55,7 @@ class ExpressionStream:
         self.leave_reason = ''
         self.leave_tag = ''
         self.leave_quote = ''
+        self.say = SayBlock()
         self.markers = 0; self.visible = ''; self.has_text = False; self.cancelled = False; self.finished = False
         self.markdown = MarkdownLiterals()
         self.json_depth = 0; self.json_string = False; self.escape = False
@@ -188,6 +189,9 @@ class ExpressionStream:
             if ch == '>': self.drop_line = False
             elif ch == '\n': self.drop_line = False; self._emit(ch, out)
             return
+        if self.say:
+            self._emit(self.say.feed(ch), out)
+            return
         if self.task:
             self.task += ch
             if self.task.endswith('</task>'):
@@ -244,6 +248,8 @@ class ExpressionStream:
             if low[:5] == '<mind' and len(low) == 6 and not (ch.isspace() or ch in '/>'):
                 raw = self.pending; self.pending = ''; self._emit(raw, out); return   # <minds> 之类是普通文字
             reserved = low.startswith(RESERVED)
+            if self.pending == SAY_OPEN:
+                self.say.buffer = self.pending; self.pending = ''; return
             if self.pending == '<task>':
                 self.task = self.pending; self.pending = ''; return
             if reserved and (ch == '>' or ch == '\n' or len(self.pending) > 512):
@@ -282,7 +288,7 @@ class ExpressionStream:
 
     def _markdown_enabled(self):
         in_tag = self.pending.lower().startswith(RESERVED + ('<img', '['))
-        return not (in_tag or self.leave_tag or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
+        return not (in_tag or self.leave_tag or self.say or self.task or self.json_depth or self.img or self.drop_annotation or self.drop_line)
 
     def _read(self, chunk, out, *, final=False):
         for ch, literal in self.markdown.feed(chunk, self._markdown_enabled, final=final):
@@ -297,6 +303,7 @@ class ExpressionStream:
     def feed(self, chunk):
         if self.cancelled or self.finished: return ''
         out = []
+        self.say.observe_start(str(chunk))
         self._read(str(chunk), out)
         return ''.join(out)
 
@@ -313,6 +320,7 @@ class ExpressionStream:
             else: self.markers += 1; self.diagnose('unfinished_marker')
         if self.task:
             self._emit(re.sub(r'<(?:sticker|meme|expression)\b[^>\n]*>?', '', self.task), out)
+        self._emit(self.say.finish(), out)
         if self.bracket: self._emit(self.bracket, out)
         if self.img: self.markers += 1; self.diagnose('html_img_tag')   # 没闭合的 <img 标签：整段不显示
         if self.selection and self.after_text_seen: self.diagnose('mid_text_marker')
@@ -323,6 +331,7 @@ class ExpressionStream:
         self.leave_tag = self.leave_quote = ''
         self.leave_reason = ''
         self.markdown = MarkdownLiterals()
+        self.say = SayBlock()
         self.cancelled = True; self.selection = None; self.pending = self.task = self.bracket = ''; self.img = 0; self.img_quote = ''
 
 
