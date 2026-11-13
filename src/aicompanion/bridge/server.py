@@ -43,15 +43,30 @@ class BridgeServer:
                 self._send(200, {'ok': True, 'name': server.service.controller.character.name})
 
             def do_POST(self):
-                if not self._authorized(): return self._send(401, {'error': 'unauthorized'})
-                if self.path not in ('/v1/chat', '/v1/heartbeat', '/v1/media-permission','/v1/expression/claim','/v1/expression/ack','/v1/outbox/claim','/v1/outbox/ack'): return self._send(404, {'error': 'not_found'})
+                if not self._authorized():
+                    self._send(401, {'error': 'unauthorized'})
+                    from aicompanion.net import finish_rejected_post
+                    finish_rejected_post(self)
+                    return
+                if self.path not in ('/v1/chat', '/v1/task-files', '/v1/task-permission', '/v1/task-claim', '/v1/heartbeat', '/v1/media-permission','/v1/expression/claim','/v1/expression/ack','/v1/outbox/claim','/v1/outbox/ack'): return self._send(404, {'error': 'not_found'})
                 try:
                     length = int(self.headers.get('Content-Length') or 0)
-                    if length <= 0 or length > MAX_BODY: return self._send(413, {'error': 'too_large'})
+                    limit = 23*1024*1024 if self.path == '/v1/task-files' else MAX_BODY
+                    if length <= 0 or length > limit: return self._send(413, {'error': 'too_large'})
                     payload = json.loads(self.rfile.read(length))
                     if not isinstance(payload, dict): raise ValueError
                 except ValueError:
                     return self._send(400, {'error': 'bad_json'})
+                if self.path == '/v1/task-files' and 'task_files' not in payload:
+                    return self._send(400, {'error': 'no_files'})
+                if self.path in ('/v1/task-permission','/v1/task-claim'):
+                    from aicompanion.bridge.tasks import peer_of
+                    tasks = getattr(server.service.controller,'qq_tasks',None)
+                    if not tasks or server.service.closed:
+                        return self._send(200,{})
+                    if self.path == '/v1/task-claim':
+                        return self._send(200,tasks.claim(str(payload.get('bot') or ''),str(payload.get('id') or '')))
+                    return self._send(200,{'allowed':bool(server.service.controller.agent_enabled and peer_of(server.service.database,payload))})
                 if self.path == '/v1/expression/claim': return self._send(200,server.service.expression_claim(payload))
                 if self.path == '/v1/expression/ack': return self._send(200,server.service.expression_ack(payload))
                 if self.path == '/v1/outbox/claim':
@@ -89,6 +104,13 @@ class BridgeServer:
                           # 插件据此决定要不要把别人发的表情包原图附上来（关掉收集就不传图）
                           'collect': bool(self.service.database.get_setting('sticker_collect_enabled', True)),
                           'name': getattr(getattr(self.service.controller, 'character', None), 'name', '鲸鲸')}}
+        from aicompanion.bridge.tasks import activate_binding
+        from aicompanion.bridge.service import plugin_version
+        tasks = getattr(getattr(self.service,'controller',None),'qq_tasks',None)
+        if tasks and onebot.get('connected') and plugin_version(beat['astrbot']) >= (0,12,0):
+            bot = beat['onebot']['self_id']
+            activate_binding(self.service.database,bot)
+            reply['tasks'] = tasks.heartbeat(bot)
         if outbox:
             reply['outbox'] = [dict(item, require_plugin_version=True) for item in outbox]
         return reply

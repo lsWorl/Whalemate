@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 17  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单
+SCHEMA_VERSION = 18  # v10：聊天记录全文索引（storage/fts.py 建，不在下面的 SQL 里）；v11：持续情绪；v12：陪伴日期；v13：主动开口记录；v14：她自己的活动；v15：用户日期提醒时机；v16：约定；v17：办事附件清单
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     status TEXT NOT NULL DEFAULT 'running', started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     ended_at TEXT, steps INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
     result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS agent_rules (
+    project TEXT NOT NULL, category TEXT NOT NULL, pattern TEXT NOT NULL, effect TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(project, category, pattern, effect)
+);
+CREATE TABLE IF NOT EXISTS qq_task_turns (
+    bot TEXT NOT NULL, owner TEXT NOT NULL, message TEXT NOT NULL, PRIMARY KEY(bot,owner,message)
+);
+CREATE TABLE IF NOT EXISTS agent_qq_runs (
+    run_id INTEGER PRIMARY KEY REFERENCES agent_runs(id), bot TEXT NOT NULL, owner TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS agent_attachments (
     run_id INTEGER NOT NULL REFERENCES agent_runs(id), original TEXT NOT NULL, copy TEXT NOT NULL UNIQUE,

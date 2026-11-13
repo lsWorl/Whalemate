@@ -429,9 +429,11 @@ def schedule_pet_smoke_check(window, database, output):
         import tempfile
         inside = _Path(tempfile.mkdtemp()); outside = _Path(tempfile.mkdtemp())/'x.txt'
         session.box.task = Task(run_id=0, allowed=[inside])
+        # 工作区自动接受由普通路径专项覆盖；临时目录在 C 盘用户目录时必须单独询问。
+        from aicompanion.agent.approval import system_location
         _, inside_error = session.box.call('write_file', {'path': str(inside/'ok.txt'), 'content': 'hi'})
         _, outside_error = session.box.call('write_file', {'path': str(outside), 'content': 'hi'})
-        state['tools_gate'] = (not inside_error) and outside_error and asked == ['write'] and not outside.exists()
+        state['tools_gate'] = inside_error == system_location(inside) and outside_error and asked == ['write']*(1+int(inside_error)) and not outside.exists()
         session.auto_approve = None
         # 自检只验证清理结果的接口，不清理用户真实的回收区或 DSH 会话。
         from aicompanion.agent.housekeeping import Report
@@ -444,6 +446,27 @@ def schedule_pet_smoke_check(window, database, output):
         window._offer_task('整理下载文件夹')
         state['task_offer_shown'] = window.pet.confirm is not None and window.pet.confirm.isVisible()
         window.pet.close_confirm()
+        from aicompanion.agent.approval import Rule
+        from aicompanion.bridge.tasks import bind_owner, activate_binding, ANSWER
+        peer = ('90009','10001')
+        bind_owner(database,peer[1],peer[0])
+        activate_binding(database,peer[0])
+        bridge = window.agent.tasks
+        req = bridge.approvals.add(window.agent.box.task.run_id,'command','Set-Content smoke.txt OK',rule=Rule('command','set-content'),peer=peer)
+        window.agent._refresh_approvals()
+        card = window.task_card
+        visible = (not card.reuse.isHidden() and not card.persist.isHidden() and req.code in card.detail.text()
+                   and window.approval_mode.count()==3 and not card.batch.isHidden())
+        window.agent._send_request(req)
+        notices = bridge.heartbeat(peer[0])
+        for notice in notices['ids']:
+            bridge.claim(peer[0], notice)
+        packet = {'task_message':'smoke-approval','shown_approvals':[req.code]}
+        bridge.answer(packet,peer,ANSWER.fullmatch('同意全部'))
+        window.agent._refresh_approvals()
+        state['qq_task_approval'] = visible and req.decision=='once' and not bridge.approvals.items()
+        card.hide()
+        bind_owner(database,'')
         database.set_setting('quota_daily_total', 0.01)
         database.add_token_usage('companion', 'smoke', 1, 1, cost=0.02)
         before = len(window.workers)
@@ -622,7 +645,7 @@ def schedule_pet_smoke_check(window, database, output):
 
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
-        required.append('qq_media_settings_ready')
+        required.extend(['qq_media_settings_ready','qq_task_approval'])
         required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]

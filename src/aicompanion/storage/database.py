@@ -96,6 +96,11 @@ class Database:
                 for statement in SCHEMA_SQL.split(";"):
                     if statement.strip():
                         connection.execute(statement)
+                if version < 18:
+                    # 仅迁移桌面明确配置的主人账号。新版插件首次心跳再绑定实际机器人。
+                    owner = str(self.setting_in(connection, 'bridge_owner:qq', '') or '')
+                    if owner:
+                        self.set_setting_in(connection, 'qq_task_binding', [owner, ''])
                 self._insert_character(connection, DEFAULT_CHARACTER)
                 if version == 0 and "emotion_state" in tables:
                     connection.execute("INSERT OR REPLACE INTO emotion_state(character_id,mood,affection,loneliness,energy,updated_at) SELECT 'deepseek-whale',mood,affection,loneliness,energy,updated_at FROM legacy_emotion WHERE id=1")
@@ -393,10 +398,12 @@ class Database:
                                       (since, limit)).fetchall()
 
     # ---- P5：agent 审计 --------------------------------------------------------
-    def add_agent_run(self, character_id, goal, *, attachments=(), workspace=None):
+    def add_agent_run(self, character_id, goal, *, attachments=(), workspace=None, peer=None):
         from uuid import uuid4
         with self.transaction() as connection:
             run_id = connection.execute("INSERT INTO agent_runs(character_id,goal) VALUES (?,?)", (character_id, goal)).lastrowid
+            if peer:
+                connection.execute("INSERT INTO agent_qq_runs VALUES (?,?,?)",(run_id,*peer))
             if attachments:
                 folder = Path(workspace)/'attachments'/f'{run_id}-{uuid4().hex}'
                 for index, (original, size) in enumerate(attachments, 1):

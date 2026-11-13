@@ -1,6 +1,6 @@
 """聊天面板的展示层，发送、通话和角色切换沿用主窗口的入口。"""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QComboBox
 from aicompanion.agent import attachments
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
@@ -90,14 +90,26 @@ class TaskCard(QFrame):
         self.actions = QWidget()
         row = QHBoxLayout(self.actions)
         row.setContentsMargins(0, 0, 0, 0)
-        self.allow = QPushButton('同意')
+        self.allow = QPushButton('同意这一次')
         self.allow.setAccessibleName('同意本次操作')
-        self.deny = QPushButton('让她停下')
+        self.deny = QPushButton('拒绝')
         self.deny.setObjectName('Danger')
         row.addWidget(self.allow)
         row.addWidget(self.deny)
         row.addStretch()
+        self.reuse = QPushButton('本次都同意这类')
+        self.persist = QPushButton('以后都允许')
+        self.queue_count = QLabel()
+        self.queue_count.hide()
+        box.addWidget(self.queue_count)
+        self.batch = QPushButton('全部同意')
+        row.insertWidget(1,self.reuse)
+        row.insertWidget(2,self.persist)
+        self.reuse.clicked.connect(lambda:self.respond('always'))
+        self.persist.clicked.connect(lambda:self.respond('persist'))
         box.addWidget(self.actions)
+        box.addWidget(self.batch)
+        self.batch.hide()
         self.answer = None
         self.allow.clicked.connect(lambda: self.respond('once'))
         self.deny.clicked.connect(lambda: self.respond('no'))
@@ -168,6 +180,7 @@ def build(window):
     w.chat_list = ChatView('你')
     layout.addWidget(w.chat_list, 1)
     w.task_card = TaskCard()
+    w.task_card.batch.clicked.connect(w.agent.approve_batch)
     task_row = QHBoxLayout()
     task_row.setContentsMargins(36, 0, 4, 4)
     task_row.addWidget(w.task_card)
@@ -197,6 +210,14 @@ def build(window):
     w.chat_mode.clicked.connect(lambda: (w.agent_toggle.setChecked(False), w.chat_mode.setChecked(True)))
     w.agent_toggle.toggled.connect(lambda on: w.chat_mode.setChecked(not on))
     w.chat_mode.setChecked(True)
+    from aicompanion.agent.approval import DEFAULT_MODE, MODES
+    w.approval_mode = QComboBox()
+    w.approval_mode.setAccessibleName('当前办事审批模式')
+    for value,label in MODES.items():
+        w.approval_mode.addItem(label,value)
+    w.approval_mode.setCurrentIndex(max(0,w.approval_mode.findData(w.database.get_setting('approval_mode', DEFAULT_MODE))))
+    w.approval_mode.currentIndexChanged.connect(lambda _:setattr(w.agent.box.task,'mode',w.approval_mode.currentData()))
+    modes.addWidget(w.approval_mode)
     wrap.addWidget(segments, 0, Qt.AlignmentFlag.AlignLeft)
     bar = QWidget()
     bar.setObjectName('InputBar')

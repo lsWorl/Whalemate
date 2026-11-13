@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget, QHeaderView, QInputDialog)
 
@@ -34,6 +34,14 @@ class AgentPage(QWidget):
         pick = QPushButton('选择…'); pick.clicked.connect(lambda: self._pick(self.workspace))
         row = QHBoxLayout(); row.addWidget(self.workspace, 1); row.addWidget(pick)
         form.addRow('默认工作区', row)
+        from aicompanion.agent.approval import DEFAULT_MODE, MODES
+        self.mode = QComboBox()
+        for value,label in MODES.items(): self.mode.addItem(label,value)
+        self.mode.setCurrentIndex(max(0,self.mode.findData(database.get_setting('approval_mode', DEFAULT_MODE))))
+        form.addRow('默认审批模式',self.mode)
+        rules = QPushButton('管理项目审批规则…')
+        rules.clicked.connect(self._rules)
+        form.addRow('允许与拒绝',rules)
         form.addRow('干活用的模型', QLabel('在“模型与 Key”页的“办事”一项里选择'))
         self.blog = QLineEdit(database.get_setting('blog_root', '')); self.blog.setPlaceholderText(r'例如 D:\MyBlog（写博客时告诉她在哪）')
         pick_blog = QPushButton('选择…'); pick_blog.clicked.connect(lambda: self._pick(self.blog))
@@ -51,12 +59,74 @@ class AgentPage(QWidget):
         layout.addLayout(form)
         self.clean_note = QLabel(database.get_setting('trash_last_clean', '') or '回收区：她改文件前的旧版本、删掉的文件，超过保留天数或总量上限会自动清理。')
         self.clean_note.setWordWrap(True); layout.addWidget(self.clean_note)
-        layout.addWidget(QLabel('DeepSeek Harness 负责想和安排（也负责搜网页、分身）；读写文件、删除、跑命令由桌宠自己执行，执行前把关：\n'
-                                '· 你话里点名的文件夹和工作区里，写和改直接做，覆盖前旧版本留底在回收区；\n'
-                                '· 在外面写、删除任何文件、运行会改东西的命令，先弹确认气泡问你；删除是移到回收区，可以找回；\n'
-                                '· .env、数据库、凭据和浏览器数据她读不到；命令以低权限运行，改不了 C 盘的系统和用户目录。\n'
-                                '已关闭 DSH 默认的"随请求上传会话日志"和遥测。说"停"或右键"让她停下手里的活"会立即停止。'))
+        layout.addWidget(QLabel('可在聊天输入栏切换办事模式。删除、原件和范围外操作需要单独确认。'))
         layout.addStretch()
+
+    def _rules(self):
+        from aicompanion.agent.approval import CATEGORIES, PREFIXES, Rule, Rules
+        root = Path(self.workspace.text().strip() or Path.home()).expanduser().resolve()
+        dialog = QDialog(self)
+        dialog.setWindowTitle('项目审批规则')
+        box = QVBoxLayout(dialog)
+        project = QLineEdit(str(root))
+        box.addWidget(QLabel('工作区根目录'))
+        box.addWidget(project)
+        table = QListWidget()
+        box.addWidget(table)
+        form = QFormLayout()
+        kind, effect = QComboBox(), QComboBox()
+        for key,label in CATEGORIES.items(): kind.addItem(label,key)
+        for key,label in [('allow','允许'),('deny','拒绝')]: effect.addItem(label,key)
+        pattern = QLineEdit()
+        form.addRow('类别',kind)
+        form.addRow('规则',pattern)
+        form.addRow('处理',effect)
+        box.addLayout(form)
+        def store(): return Rules(self.database,project.text())
+        def refresh():
+            table.clear()
+            for row in store().rows():
+                table.addItem(f"{'拒绝' if row['effect']=='deny' else '允许'} · {CATEGORIES[row['category']]} · {row['pattern']} · 命中 {row['hits']} 次")
+                table.item(table.count()-1).setData(Qt.ItemDataRole.UserRole,dict(row))
+        def selected():
+            item = table.currentItem()
+            return item.data(Qt.ItemDataRole.UserRole) if item else None
+        def load():
+            row = selected()
+            if row:
+                kind.setCurrentIndex(kind.findData(row['category']))
+                effect.setCurrentIndex(effect.findData(row['effect']))
+                pattern.setText(row['pattern'])
+        def save(replace=False):
+            repository = store()
+            rule = Rule(kind.currentData(),pattern.text().strip())
+            try:
+                repository.put(rule,effect.currentData())
+            except ValueError as error:
+                QMessageBox.information(dialog,'规则无效',str(error))
+                return
+            row = selected()
+            if replace and row and (row['category'],row['pattern'],row['effect'])!=(rule.category,rule.pattern,effect.currentData()):
+                repository.remove(Rule(row['category'],row['pattern']),row['effect'])
+            refresh()
+        def remove():
+            row = selected()
+            if row:
+                store().remove(Rule(row['category'],row['pattern']),row['effect'])
+                refresh()
+        table.itemSelectionChanged.connect(load)
+        project.editingFinished.connect(refresh)
+        kind.currentIndexChanged.connect(lambda:pattern.setPlaceholderText(' / '.join(PREFIXES)
+                                          if kind.currentData()=='command' else '文件夹绝对路径'))
+        buttons = QHBoxLayout()
+        for label,fn in [('添加',lambda:save()),('更新选中规则',lambda:save(True)),('删除选中规则',remove)]:
+            button = QPushButton(label)
+            button.clicked.connect(fn)
+            buttons.addWidget(button)
+        box.addLayout(buttons)
+        refresh()
+        dialog.resize(580,420)
+        dialog.exec()
 
     def _clean(self):
         from aicompanion.agent import housekeeping
@@ -70,6 +140,7 @@ class AgentPage(QWidget):
         if path: edit.setText(str(Path(path)))
 
     def save(self):
+        self.database.set_setting('approval_mode', self.mode.currentData())
         self.database.set_setting('agent_enabled', self.enabled.isChecked())
         self.database.set_setting('agent_auto', self.auto.isChecked())
         self.database.set_setting('dsh_workspace', self.workspace.text().strip())

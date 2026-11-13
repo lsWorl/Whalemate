@@ -323,10 +323,16 @@ class SettingsWindow(QDialog):
         theme.prepare_controls(self)
 
     def _resume_task(self, run_id, remaining):
-        if self.parent().agent.start(remaining, paused_run=run_id):
-            self.accept()
-        else:
-            QMessageBox.information(self, '任务仍暂停', '请确认当前角色、办事模型和任务状态，再试一次。')
+        agent = self.parent().agent
+        if agent.busy or agent.offer_callbacks:
+            QMessageBox.information(self,'任务仍暂停','请先处理手上的任务。')
+            return
+        with self.database.transaction() as c:
+            row = c.execute('SELECT bot,owner FROM agent_qq_runs WHERE run_id=?',(run_id,)).fetchone()
+        peer = tuple(row) if row else agent.tasks.current_peer()
+        agent.confirm_offer(remaining,peer,lambda value: agent.start(remaining,paused_run=run_id)
+                            if value=='once' else None,kind='resume')
+        self.accept()
 
     def open_page(self, key):
         return self.nav.show_page(key)

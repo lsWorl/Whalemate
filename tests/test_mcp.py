@@ -184,14 +184,15 @@ class McpServerTests(unittest.TestCase):
         from types import SimpleNamespace
         from aicompanion.ui.agent_session import AgentSession
         original = self.box.task
-        def ask(spec, box):
+        from aicompanion.agent.approval import Approvals
+        notices = []
+        def send(req):
             original.cancelled.set()
             self.box.task = Task(run_id=2, allowed=[self.inside])
-        notices = []
-        session = SimpleNamespace(box=self.box, bridge=SimpleNamespace(
-            ask=SimpleNamespace(emit=ask), event=SimpleNamespace(emit=lambda *args: notices.append(args))))
+        session = SimpleNamespace(box=self.box, auto_approve=None, _send_request=send,
+                                  tasks=SimpleNamespace(approvals=Approvals(),current_peer=lambda:None))
         started = time.monotonic()
-        self.assertEqual(AgentSession._wait_ui(session, {}), 'no')
+        self.assertEqual(AgentSession._request(session,'write','操作','',None)[0], 'no')
         self.assertLess(time.monotonic()-started, .5)
         self.assertFalse(self.box.task.cancelled.is_set())
         self.assertEqual(notices, [])
@@ -206,7 +207,7 @@ class McpServerTests(unittest.TestCase):
             bridge=SimpleNamespace(ask=SimpleNamespace(emit=lambda *args: None),
                                    event=SimpleNamespace(emit=lambda *args: None)))
         started = time.monotonic()
-        self.assertEqual(AgentSession._wait_ui(session, {}), 'no')
+        self.assertEqual(AgentSession._request(session,'write','操作','',None)[0], 'no')
         self.assertLess(time.monotonic()-started, .5)
         self.assertFalse(current.cancelled.is_set())
 
@@ -217,12 +218,13 @@ class McpServerTests(unittest.TestCase):
         entered = threading.Event()
         original = self.box.task
         seen = []
-        def ask(spec, answer):
+        from aicompanion.agent.approval import Approvals
+        def send(req):
             seen.append(self.box.current)
             entered.set()
-        session = SimpleNamespace(box=self.box, bridge=SimpleNamespace(
-            ask=SimpleNamespace(emit=ask), event=SimpleNamespace(emit=lambda *args: None)))
-        self.box.approve = lambda *args: AgentSession._wait_ui(session, {})
+        session = SimpleNamespace(box=self.box,auto_approve=None,_send_request=send,
+                                  tasks=SimpleNamespace(approvals=Approvals(),clock=time.monotonic,current_peer=lambda:None))
+        self.box.request_approval = lambda *args: AgentSession._request(session,*args)
         target = self.outside/'old-task.txt'
         async def check():
             async with tool_client(self.server, mode='legacy') as client:
