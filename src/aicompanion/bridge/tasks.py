@@ -11,6 +11,7 @@ from aicompanion.agent import attachments
 from aicompanion.agent.approval import Approvals
 
 ANSWER = re.compile(r'(同意全部|同意这类|以后都允许|同意|拒绝)(?:\s+([A-F0-9]{8}))?(?:\s+(.{1,300}))?',re.I)
+CONTROL = re.compile(r'(继续|放弃)\s+([1-9][0-9]{0,15})-([0-9]{1,10})')
 ID = re.compile(r'[0-9]{5,12}')
 
 
@@ -108,6 +109,9 @@ class Offer:
     character: str
     goal: str
     files: list
+    action: str = ""
+    run_id: int = 0
+    revision: int = 0
 
 
 class TaskBridge:
@@ -133,6 +137,20 @@ class TaskBridge:
             c.executemany('INSERT INTO qq_task_turns VALUES (?,?,?)', [(*peer, key) for key in set(ids)])
             return True
         return self.db.locked(reserve_turns)
+
+    def control(self, peer, character, match, message):
+        if not self.reserve(peer, message):
+            return '这条回复没有生效。'
+        verb, number, version = match.groups()
+        run_id, revision = int(number), int(version)
+        with self.db.transaction() as c:
+            row = c.execute("SELECT r.goal FROM agent_runs r JOIN agent_qq_runs q ON q.run_id=r.id "
+                            "WHERE r.id=? AND r.revision=? AND r.status='paused' AND r.character_id=? AND q.bot=? AND q.owner=?",
+                            (run_id, revision, character, *peer)).fetchone()
+        if not row:
+            return '编号已失效或没有这项暂停的交办。'
+        self.offer(Offer(peer, character, row['goal'], [], verb, run_id, revision))
+        return '已收到。'
 
     def submit(self, peer, character, goal, files, message):
         if not self.reserve(peer,message):

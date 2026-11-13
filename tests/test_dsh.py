@@ -568,7 +568,7 @@ class ToolBoxTest(unittest.TestCase):
         async def check():
             async with tool_client(server, mode='legacy') as client:
                 self.assertEqual(client.server_info.name, 'aicompanion')
-                self.assertEqual(len((await client.list_tools()).tools), 10)
+                self.assertEqual(len((await client.list_tools()).tools), 11)
                 (self.inside/'r.txt').write_text('hello')
                 reply = await client.call_tool('read_file', {'path': str(self.inside/'r.txt')})
                 self.assertFalse(reply.is_error)

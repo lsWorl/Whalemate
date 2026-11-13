@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget, QHeaderView, QInputDialog)
+                               QVBoxLayout, QWidget, QHeaderView)
 
 from aicompanion.usage import meter
 
@@ -152,10 +152,11 @@ class AgentPage(QWidget):
 class AuditPage(QWidget):
     """每次干活的记录：任务、状态、用到的工具和审批。"""
 
-    def __init__(self, database, parent=None, *, resume=None):
+    def __init__(self, database, parent=None, *, resume=None, abandon=None, pause=None, character=None):
         super().__init__(parent)
         self.database = database
-        self.resume = resume
+        self.resume, self.abandon, self.pause = resume, abandon, pause
+        self.character = character
         layout = QVBoxLayout(self)
         self.runs = QTableWidget(0, 6); self.runs.setHorizontalHeaderLabels(['开始', '任务', '状态', '步数', '词元', '花费（元）'])
         self.runs.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers); self.runs.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -164,18 +165,37 @@ class AuditPage(QWidget):
         self.steps = QTableWidget(0, 4); self.steps.setHorizontalHeaderLabels(['#', '工具', '审批', '内容'])
         self.steps.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.steps.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch); layout.addWidget(self.steps, 3)
+        self.detail = QPlainTextEdit()
+        self.detail.setReadOnly(True)
+        layout.addWidget(self.detail, 2)
+        self.materials = QLineEdit()
+        self.materials.setPlaceholderText('接续时补充材料的路径或剩余事项（可留空）')
+        layout.addWidget(self.materials)
         row = QHBoxLayout()
         refresh = QPushButton('刷新'); refresh.clicked.connect(self.refresh); row.addWidget(refresh)
         self.resume_button = QPushButton('继续选中的暂停任务')
         self.resume_button.clicked.connect(self._resume)
         self.resume_button.setEnabled(False)
         row.addWidget(self.resume_button)
+        self.abandon_button = QPushButton('放弃任务')
+        self.abandon_button.clicked.connect(self._abandon)
+        row.addWidget(self.abandon_button)
+        self.pause_button = QPushButton('暂停任务')
+        self.pause_button.clicked.connect(self._pause)
+        row.addWidget(self.pause_button)
         export = QPushButton('导出 JSON…'); export.clicked.connect(self._export); row.addWidget(export)
         row.addStretch(); layout.addLayout(row)
         self.refresh()
 
     def refresh(self):
-        rows = self.database.agent_runs(100); self.runs.setRowCount(len(rows))
+        self.runs.clearSelection()
+        self.detail.clear()
+        self.steps.setRowCount(0)
+        self.resume_button.setEnabled(False)
+        self.pause_button.setEnabled(False)
+        self.abandon_button.setEnabled(False)
+        rows = self.database.agent_runs(100, self.character)
+        self.runs.setRowCount(len(rows))
         for i, r in enumerate(rows):
             for j, v in enumerate((r['started_at'][5:16], r['goal'], STATUS.get(r['status'], r['status']), r['steps'], r['tokens'], f'{r["cost"]:.4f}')):
                 item = QTableWidgetItem(str(v)); item.setData(Qt.ItemDataRole.UserRole, r['id']); self.runs.setItem(i, j, item)
@@ -186,6 +206,23 @@ class AuditPage(QWidget):
         self.resume_button.setEnabled(bool(self.resume and status and status.text() == STATUS['paused']))
         if row < 0 or not self.runs.item(row, 0): return
         run_id = self.runs.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        run = self.database.agent_run(run_id)
+        self.selected_revision = run['revision']
+        self.pause_button.setEnabled(bool(self.pause and run['status'] == 'running'))
+        self.abandon_button.setEnabled(bool(self.abandon and run['status'] == 'paused'))
+        points = self.database.agent_checkpoints(run_id)
+        lines = [f"任务 {run_id}-{run['revision']}　{run['goal']}"]
+        if run['plan']:
+            lines.extend(f'{i}. {step}' for i, step in enumerate(json.loads(run['plan']), 1))
+        for point in points:
+            lines.append(f"{point['created_at']}　{point['summary']}")
+            for stamp in json.loads(point['artifacts']):
+                lines.append(f"　{stamp['path']}　{stamp.get('size', '目录')}　{stamp.get('sha256', '')}")
+        if run['status'] == 'paused':
+            lines.append('暂停原因：' + run['pause_reason'])
+        lines.append(run['result'] or run['error'])
+        self.detail.setPlainText('\n'.join(lines))
+        self.detail.verticalScrollBar().setValue(self.detail.verticalScrollBar().maximum())
         files = self.database.agent_attachments(run_id)
         steps = self.database.agent_steps(run_id)
         self.steps.setRowCount(len(steps)+len(files))
@@ -204,17 +241,29 @@ class AuditPage(QWidget):
         row = self.runs.currentRow()
         if row < 0 or not self.resume_button.isEnabled(): return
         run_id = self.runs.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        remaining, ok = QInputDialog.getMultiLineText(self, '接着办这件事',
-            '请核对下面的操作日志和实际结果，再填写还需要她做的部分。确认后才开始。')
-        if ok and remaining.strip():
-            self.resume(run_id, remaining.strip())
+        self.resume(run_id, self.selected_revision, self.materials.text().strip())
+        self.refresh()
+
+    def _pause(self):
+        if self.pause_button.isEnabled():
+            run = self.runs.item(self.runs.currentRow(), 0).data(Qt.ItemDataRole.UserRole)
+            self.pause(run)
+            self.refresh()
+
+    def _abandon(self):
+        if not self.abandon_button.isEnabled():
+            return
+        run = self.runs.item(self.runs.currentRow(), 0).data(Qt.ItemDataRole.UserRole)
+        revision = self.selected_revision
+        if QMessageBox.question(self, '放弃任务', '结束这项任务并将附件副本移到回收区？') == QMessageBox.StandardButton.Yes:
+            self.abandon(run, revision)
             self.refresh()
 
     def _export(self):
         path, _ = QFileDialog.getSaveFileName(self, '导出操作日志', 'agent-audit.json', 'JSON (*.json)')
         if not path: return
-        data = [dict(r, steps=[dict(s) for s in self.database.agent_steps(r['id'])],
-                     attachments=[dict(f) for f in self.database.agent_attachments(r['id'])]) for r in self.database.agent_runs(1000)]
+        data = [dict(r, checkpoints=[dict(point) for point in self.database.agent_checkpoints(r['id'])], steps=[dict(s) for s in self.database.agent_steps(r['id'])],
+                     attachments=[dict(f) for f in self.database.agent_attachments(r['id'])]) for r in self.database.agent_runs(1000, self.character)]
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 
 

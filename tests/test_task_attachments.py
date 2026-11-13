@@ -299,6 +299,7 @@ class AttachmentTests(Base):
                 self.assertFalse(failed)
                 approve.assert_not_called()
                 self.assertEqual(result.read_text(encoding='utf-8'), '已整理')
+            self.assertFalse(session.box.call('task_stage', {'action':'deliver', 'summary':'已整理', 'files':[str(result)]})[1])
             return DshResult('done', '已整理')
         session.dsh.run.side_effect = harness
         with patch('aicompanion.ui.agent_session.problem',return_value=''), \
@@ -310,6 +311,27 @@ class AttachmentTests(Base):
         self.assertTrue(Path(first['recycled']).exists())
         window.input_box.clear.assert_called_once()
         self.assertEqual(self.db.recent_messages(1,CID)[0]['content'],'列出内容')
+
+        # Harness 声称交付之后、程序最终核对之前，文件被第三方替换。
+        session.worker = None
+        def tamper(prompt, cwd, target, on_event):
+            artifact = self.workspace/'receipt.txt'
+            session.box.approve = lambda *args: 'once'
+            self.assertFalse(session.box.call('write_file', {'path':str(artifact),'content':'一'})[1])
+            self.assertFalse(session.box.call('task_stage', {'action':'deliver','summary':'已交付','files':[str(artifact)]})[1])
+            artifact.write_text('二', encoding='utf-8')
+            return DshResult('done', '完成了', spoken_summary='完成了')
+        session.dsh.run.side_effect = tamper
+        with patch('aicompanion.ui.agent_session.problem',return_value=''), \
+             patch('aicompanion.ui.agent_session.dependency_problem',return_value=''), \
+             patch.object(TaskWorker, 'start', lambda worker: worker.function(worker.cancellation)):
+            self.assertTrue(session.start('生成收据'))
+        paused = self.db.agent_runs()[0]
+        self.assertEqual(paused['status'], 'paused')
+        self.assertIn('receipt.txt', paused['pause_reason'])
+        self.assertEqual(paused['result'], '')
+        displayed = session.bridge.event.emit.call_args.args[1]
+        self.assertEqual((displayed.status, displayed.spoken_summary), ('paused', ''))
 
     def test_drop_only_local_files(self):
         mime = QMimeData()

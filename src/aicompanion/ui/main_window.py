@@ -806,6 +806,10 @@ class MainWindow(QMainWindow):
         if not self.controller.agent_enabled:
             self.agent.tasks.notify(offer.peer, '桌面已关闭办事，这次没有开始。')
             return
+        if offer.action:
+            if not self.agent.control_paused(offer.action, offer.run_id, offer.revision, remote=offer.peer):
+                self.agent.tasks.notify(offer.peer, '任务状态已改变或现在无法接续，请查看桌面办事页。')
+            return
         self._offer_task(offer.goal,remote=offer)
 
     def _offer_task(self,task,remote=None):
@@ -994,6 +998,8 @@ class MainWindow(QMainWindow):
         service = getattr(runtime.server, 'service', None)
         group_ready = getattr(service,'group_ready',None) if self.database.get_setting('proactive_qq_enabled',True) else None
         outreach=self.outreach_scheduler.next(character_id,system_idle_seconds(),monotonic()-self.last_interaction,
+                                              resume_ready=(self.controller.agent_enabled and not self.agent.busy
+                                                            and not self.agent.offer_callbacks and not self.open_offer),
                                               group_ready=group_ready or (lambda group: False),
                                               circle_ready=getattr(service, 'circle_ready', None))
         if outreach: self._deliver_outreach(character_id,outreach)
@@ -1005,6 +1011,27 @@ class MainWindow(QMainWindow):
         # 选中就先占位（pending）：走 QQ 要等插件回执，期间不会再选中同一句（Codex PR #46 第 1 项）
         reserved=self.outreach_scheduler.reserve(character_id,outreach)
         if not reserved: return
+
+        if outreach.source == 'task_resume':
+            agent = self.agent
+            if (not self.controller.agent_enabled or agent.busy or agent.offer_callbacks or self.open_offer
+                    or not self.outreach_scheduler.show_resume(character_id, reserved, outreach)):
+                self.outreach_scheduler.release(reserved)
+                return
+            run, revision = outreach.payload['run_id'], outreach.payload['revision']
+            self._append_message('办事提醒', outreach.intent)
+            with self.database.transaction() as c:
+                origin = c.execute('SELECT bot,owner FROM agent_qq_runs WHERE run_id=?', (run,)).fetchone()
+            peer = tuple(origin) if origin else None
+            message = outreach.intent + (f'（编号 {run}-{revision}）' if peer else '')
+            def answered(value):
+                if value in ('once', 'no'):
+                    self.outreach_scheduler.answered_resume(character_id, reserved)
+                if value == 'once' and character_id == self.controller.character.id:
+                    agent.start('', paused_run=run, revision=revision)
+            agent.confirm_offer(message, peer, answered, kind='resume', resume_key=(run, revision))
+            agent._refresh_approvals()
+            return
 
         def done(result,channel,o=outreach,cid=character_id,rid=reserved):
             # 桌面传 True / False；QQ 传投递结果（发出 / 部分 / 失败 / 未知，bridge/outbox.py）。心事、问候、纪念日的占位一起收尾

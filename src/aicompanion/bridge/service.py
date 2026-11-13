@@ -630,11 +630,16 @@ class BridgeService:
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
         if group_id and not re.fullmatch(r'[\w@.:-]{1,64}', group_id):
             return {'reply': '', 'silent': True, 'reason': 'bad_request'}
-        from aicompanion.bridge.tasks import ANSWER, decode_files, peer_of
+        from aicompanion.bridge.tasks import ANSWER, CONTROL, decode_files, peer_of
         tasks = getattr(self.controller,'qq_tasks',None)
         payload.pop('_task_messages', None)  # 组合的消息编号只由本地防抖队列产生。
         capable = payload.get('task_protocol') == 1 and bool(tasks) and not self.closed
         peer = peer_of(self.database,payload) if capable else None
+        control = CONTROL.fullmatch(text)
+        if control:
+            reply = (tasks.control(peer, self.controller.character.id, control, str(payload.get('task_message') or ''))
+                     if peer and self.controller.agent_enabled else '')
+            return {'reply':reply, 'silent':not reply, 'reason':'task_control'}
         match = ANSWER.fullmatch(text)
         if capable and match:
             reply = tasks.answer(payload,peer,match) if peer else ''

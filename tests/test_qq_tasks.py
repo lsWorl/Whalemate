@@ -59,6 +59,56 @@ class TaskTests(BridgeFixture):
         bind_owner(self.db,'')
         self.assertFalse(authorized(self.db,PEER))
 
+    def test_paused_controls_private_owner_origin_revision_and_replay(self):
+        run = self.db.add_agent_run(CID, '整理文件', peer=PEER)
+        self.db.pause_agent_work(run, (), reason='等材料')
+        rev = self.db.agent_run(run)['revision']
+        for verb in ('继续', '放弃'):
+            packet = dict(self.packet, text=f'{verb} {run}-{rev}', task_message=verb+'1')
+            bind_owner(self.db, '')
+            self.assertTrue(self.service.handle(packet)['silent'])
+            self.bind()
+            for changed in ({'group_id':'30003'}, {'sender_id':'20002'}, {'bot_account_id':'91111'}, {'task_protocol':0}):
+                self.assertTrue(self.service.handle(dict(packet, **changed))['silent'])
+            for foreign in (self.db.add_agent_run(CID, '桌面任务'), self.db.add_agent_run('other', '其他角色', peer=PEER)):
+                self.db.pause_agent_work(foreign, ())
+                invalid = dict(packet, text=f'{verb} {foreign}-1', task_message=f'{verb}{foreign}foreign')
+                self.assertIn('失效', self.service.handle(invalid)['reply'])
+            self.assertIn('失效', self.service.handle(dict(packet, text=f'{verb} {run}-0', task_message=verb+'old'))['reply'])
+            count = len(self.offers)
+            self.service.handle(packet)
+            self.service.handle(packet)
+            self.assertEqual(len(self.offers), count+1)
+            action = self.offers[-1]
+            self.assertEqual((action.action, action.run_id, action.revision, action.peer), (verb, run, rev, PEER))
+        self.assertEqual(self.db.agent_run(run)['status'], 'paused')
+
+    def test_numbered_reply_answers_existing_resume_prompt_and_stale_offer_cannot_restart(self):
+        from aicompanion.ui.agent_session import AgentSession
+        from aicompanion.ui.main_window import MainWindow
+        self.bind()
+        run = self.db.add_agent_run(CID, '整理', peer=PEER)
+        self.db.pause_agent_work(run, ())
+        rev = self.db.agent_run(run)['revision']
+        window = Mock(database=self.db, closing=False, controller=self.controller)
+        agent = window.agent
+        agent.window = window
+        agent.tasks = self.tasks
+        agent.busy = False
+        agent.offer_callbacks, agent.resume_requests = {}, {}
+        agent.control_paused.side_effect = lambda *a, **k: AgentSession.control_paused(agent, *a, **k)
+        req = self.tasks.approvals.add(0,'resume','接着办吗',peer=PEER)
+        agent.resume_requests[(run,rev)] = req
+        agent.offer_callbacks[req.code] = (req, Mock())
+        self.service.handle(dict(self.packet, text=f'继续 {run}-{rev}'))
+        MainWindow._qq_offer(window, self.offers[-1])
+        self.assertEqual(req.decision, 'once')
+        self.assertFalse(self.tasks.approvals.answer(req.code,'once',peer=PEER))
+        self.assertIsNotNone(self.db.resume_agent_run(run, CID, rev))
+        self.db.pause_agent_work(run, ())
+        self.assertFalse(agent.control_paused('放弃',run,rev,remote=PEER))
+        self.assertEqual(self.db.agent_run(run)['status'], 'paused')
+
     def test_v17_owner_keeps_history_and_requires_plugin_binding(self):
         pid = self.person(user=PEER[1])
         self.db.add_message('user', '旧任务仍可查', CID)

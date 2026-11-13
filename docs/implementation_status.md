@@ -2140,3 +2140,13 @@ Windows 在代码 `412a423c01128b121aecf76bee3a831f5a2d059b` 运行 `tools\run_c
 主人桌面与绑定 QQ 私聊共用主动记录，每个 QQ 群的圈子接话与原群约定各按本群记录结算。每群同时一条在途、每天两条、至少间隔 90 分钟。主人提醒和问候可以在群里等待回应期间照常发送。新增目标会话字段，按旧投递和约定记录回填；同一份回执仍只结算一次。
 
 Windows `tools\run_checks.bat` 退出码 0，运行 1372 项单测，用时 243.289 秒，失败 0，跳过 7。桌宠 smoke 的 `circle_topics_settings` 和 `passed` 均为 `true`，失败列表为空。调度专项 `python -m unittest test_circle_topics test_promises test_scheduler test_outreach_recovery_regressions` 运行 105 项，用时 11.073 秒，全部通过。 未使用真实 QQ 或线上模型。
+
+## 2026-11-13　V4-7f 跨天办事
+
+任务保存原目标、计划、检查点、暂停原因和最终结果。程序在工具成功后登记产物，在交付前比对大小、SHA-256 并检查支持的文件格式。次日提醒、办事页和原主人 QQ 私聊可以接续同一任务，已尝试的副作用沿用指纹防重放。测试覆盖无审批不执行、旧编号失效和交付前文件被替换的情况。[任务说明](tasks/V4-7f-long-tasks.md)
+
+- `tools\run_checks.bat` 退出码 0。1383 项单测，用时 242.474 秒，失败 0，跳过 7。
+- `tools\run_agent_checks.bat --offline` 退出码 0。1383 项单测，用时 241.681 秒，失败 0，跳过 7。
+- 两次桌宠 smoke 的 `long_task_checkpoint`、`passed` 均为 true，`failed_checks` 均为空。离线模式跳过真实模型步骤。
+
+未使用线上 Harness、真实 QQ 账号或 NapCat/AstrBot 验证；跨日、异常退出和副作用重放使用可控时钟、临时库与模拟运行器验证。

@@ -289,6 +289,19 @@ def schedule_pet_smoke_check(window, database, output):
             from PySide6.QtWidgets import QMessageBox
             circle = dialog.circle_topics
             cid = window.controller.character.id
+            from aicompanion.agent.checkpoints import Journey
+            run = database.add_agent_run(cid, '自检：跨天办事')
+            journey = Journey(database, run, [], [], None)
+            journey.plan(['准备材料', '交付'])
+            journey.checkpoint('找到了清单')
+            database.pause_agent_work(run, (), reason='等待材料')
+            audit = dialog.audit_page
+            audit.refresh()
+            audit.runs.selectRow(0)
+            state['long_task_checkpoint'] = (audit.resume_button.isEnabled() and audit.abandon_button.isEnabled()
+                                             and '找到了清单' in audit.detail.toPlainText()
+                                             and '等待材料' in audit.detail.toPlainText())
+            database.abandon_agent_run(run, cid, database.agent_run(run)['revision'])
             scope = 'qq:group:30003'
             saved_groups = database.get_setting('bridge_groups', [])
             database.set_setting('bridge_groups', ['30003'])
@@ -670,7 +683,7 @@ def schedule_pet_smoke_check(window, database, output):
         required = ['pet_visible', 'chat_hidden', 'expected_renderer_shown', 'native_view', 'webengine_not_created', 'always_on_top', 'translucent',
                     'mask_active', 'mask_excludes_corner', 'bubble_after_poke', 'scale_keeps_feet', 'hidden_by_user', 'summoned',
                     'geometry_saved', 'chat_flow', 'forced_ok', 'bubble_text_fits', 'fell', 'landed_on_ground', 'reply_saved_clean', 'cues_performed', 'user_bubble_shown', 'thinking_icon', 'interaction_memory', 'purpose_started', 'purpose_delivered', 'outreach_logged', 'voice_page_ready', 'voice_sink_web', 'voice_sink_restored', 'agent_session_ready', 'task_offer_shown', 'quota_blocks_model', 'switched_to_other', 'switched_back']
-        required.extend(['env_blocked', 'tools_gate', 'housekeep_ok'])
+        required.extend(['env_blocked', 'tools_gate', 'housekeep_ok', 'long_task_checkpoint'])
         required.extend(['storage_locations_ready', 'semantic_settings', 'local_embedding_option', 'local_embedding_sources'])
         required.extend(['self_exit_default_on', 'self_exit_switch_saved', 'self_exit_disabled_reply'])
         if animation:
@@ -685,7 +698,7 @@ def schedule_pet_smoke_check(window, database, output):
         required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'circle_topics_settings', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]
-        if state.get('tools_listed') != 10: state['failed_checks'].append('tools_listed')
+        if state.get('tools_listed') != 11: state['failed_checks'].append('tools_listed')
         if state.get('corner_alpha') != 0: state['failed_checks'].append('corner_alpha')
         if state.get('center_alpha', 0) < (150 if placeholder else 200): state['failed_checks'].append('center_alpha')
         if state.get('pose_after_poke') != 'poked': state['failed_checks'].append('pose_after_poke')

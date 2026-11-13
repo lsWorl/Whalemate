@@ -254,12 +254,15 @@ class SettingsWindow(QDialog):
         from aicompanion.ui.community_page import CommunityPage           # T18
         from aicompanion.ui.storage_page import StoragePage
         self.agent_page=AgentPage(self.database)
-        self.audit_page=AuditPage(self.database, resume=self._resume_task if getattr(parent, 'agent', None) else None)
+        agent = getattr(parent, 'agent', None)
+        self.audit_page = AuditPage(self.database, character=cid, resume=self._resume_task if agent else None,
+                                    abandon=(lambda run, rev: agent.control_paused('放弃', run, rev)) if agent else None,
+                                    pause=(lambda run: agent.stop() if run == agent.run_state['run_id'] else None) if agent else None)
         agent_page=TabPage('办事','让她动手帮你做电脑上的事：读写文件、整理资料、写博客。改动文件前会先问你。')
         agent_settings=QWidget(); agent_box=QVBoxLayout(agent_settings); agent_box.setContentsMargins(0,6,0,0)
         agent_box.addWidget(self.agent_page)
         agent_box.addWidget(QLabel('在桌面聊天输入栏点“＋”或拖入文件，再写下任务。她会处理工作区里的副本。'))
-        agent_box.addWidget(ComingSoon('跨天的任务','任务有进度和检查点，重启后从断点继续；你也可以在 QQ 私聊里交办，审批发到你那里确认。'))
+        agent_box.addWidget(QLabel('在操作日志中查看办事进度、补充材料、接续或放弃暂停的任务。'))
         agent_box.addStretch(1)
         agent_page.box.addWidget(tabs((scrolled(agent_settings),'设置'),(self.audit_page,'操作日志')),1)
         self.library_page=LibraryPage(self.database,cid,self,controller=controller, defer=self.queue_setting)
@@ -328,17 +331,11 @@ class SettingsWindow(QDialog):
         self.open_page(page or 'overview')
         theme.prepare_controls(self)
 
-    def _resume_task(self, run_id, remaining):
-        agent = self.parent().agent
-        if agent.busy or agent.offer_callbacks:
-            QMessageBox.information(self,'任务仍暂停','请先处理手上的任务。')
-            return
-        with self.database.transaction() as c:
-            row = c.execute('SELECT bot,owner FROM agent_qq_runs WHERE run_id=?',(run_id,)).fetchone()
-        peer = tuple(row) if row else agent.tasks.current_peer()
-        agent.confirm_offer(remaining,peer,lambda value: agent.start(remaining,paused_run=run_id)
-                            if value=='once' else None,kind='resume')
-        self.accept()
+    def _resume_task(self, run_id, revision, remaining):
+        if self.parent().agent.control_paused('继续', run_id, revision, remaining):
+            self.accept()
+        else:
+            QMessageBox.information(self, '任务仍暂停', '请检查当前任务状态、审批和主人绑定。')
 
     def open_page(self, key):
         return self.nav.show_page(key)
