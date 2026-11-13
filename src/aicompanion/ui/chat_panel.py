@@ -1,11 +1,67 @@
 """聊天面板的展示层，发送、通话和角色切换沿用主窗口的入口。"""
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFileDialog
+from aicompanion.agent import attachments
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
 from aicompanion.ui import theme
 from aicompanion.ui.chat_view import Backdrop, ChatView
 from aicompanion.ui.icons import app_icon, icon_button
+
+
+class AttachmentPicker(QWidget):
+    """只有桌面输入栏持有待发送清单，其他渠道和自动办事入口拿不到它。"""
+    def __init__(self, window):
+        super().__init__()
+        self.window = window
+        self.paths = []
+        self.dialog = None
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.names = QLabel()
+        self.names.setTextFormat(Qt.TextFormat.PlainText)
+        self.names.setWordWrap(True)
+        row.addWidget(self.names, 1)
+        clear = QPushButton('清空附件')
+        clear.clicked.connect(self.clear)
+        row.addWidget(clear)
+        self.hide()
+
+    def open(self):
+        if self.dialog:
+            self.dialog.raise_()
+            return
+        dialog = self.dialog = QFileDialog(self.window, '把文件交给她 · '+attachments.LIMIT_HINT)
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        dialog.setOption(QFileDialog.Option.DontResolveSymlinks, True)
+        dialog.setNameFilters(['支持的文件 ('+' '.join('*.'+e for e in sorted(
+            attachments.TEXT | attachments.DOCUMENTS | attachments.IMAGES.keys()))+')', '全部文件 (*)'])
+        dialog.filesSelected.connect(self.add)
+        dialog.finished.connect(lambda _: setattr(self, 'dialog', None))
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.open()
+
+    def add(self, paths):
+        try:
+            files = attachments.selection(list(dict.fromkeys([*self.paths, *map(str, paths)])),
+                                          self.window.agent.box.secrets)
+        except (ValueError, OSError) as error:
+            self.window._status(str(error))
+            self.window.pet.show_bubble(str(error), 7)
+            return
+        if not files:
+            return
+        self.paths = [str(path) for path, _ in files]
+        self.names.setText('、'.join(path.name for path, _ in files))
+        self.names.setToolTip('\n'.join(self.paths))
+        self.window.agent_toggle.setChecked(True)
+        self.show()
+
+    def clear(self):
+        self.paths.clear()
+        self.names.clear()
+        self.hide()
 
 
 class TaskCard(QFrame):
@@ -147,10 +203,14 @@ def build(window):
     row = QHBoxLayout(bar)
     row.setContentsMargins(4, 4, 4, 4)
     row.setSpacing(2)
-    w.attach_button = icon_button('attach', '即将支持把文件交给她办事')
-    w.attach_button.setEnabled(False)
+    w.attachments = AttachmentPicker(w)
+    wrap.addWidget(w.attachments)
+    w.setAcceptDrops(True)
+    w.attach_button = icon_button('plus', '添加办事附件，可拖入文件。'+attachments.LIMIT_HINT)
+    w.attach_button.clicked.connect(w.attachments.open)
     row.addWidget(w.attach_button)
     w.input_box = QLineEdit()
+    w.input_box.setAcceptDrops(False)
     w.input_box.setObjectName('Input')
     w.input_box.returnPressed.connect(w._send_current_message)
     row.addWidget(w.input_box, 1)
@@ -165,7 +225,7 @@ def build(window):
     send.clicked.connect(w._send_current_message)
     row.addWidget(send)
     wrap.addWidget(bar)
-    w.mode_hint = QLabel('她会动手操作电脑，改文件前都会先问你。')
+    w.mode_hint = QLabel('可添加或拖入附件。'+attachments.LIMIT_HINT)
     w.mode_hint.setObjectName('Hint')
     wrap.addWidget(w.mode_hint)
     w.agent_toggle.toggled.connect(w._agent_mode_changed)

@@ -120,7 +120,7 @@ class QQMedia:
         if REJECTED.search(str(error)):
             self.db.set_setting(UNSUPPORTED_KEY, {'key': self.vision_key(profile), 'until': self.clock()+UNSUPPORTED_HOURS*3600})
 
-    def _vision_call(self, profile, content, max_tokens, purpose):
+    def _vision_call(self, profile, content, max_tokens, purpose, *, character_id=None):
         """按快照建识图客户端并调用一次。必须思考的模型按快照给足输出额度，避免推理吃光正文。"""
         from aicompanion.providers.router import thaw
         key = self.controller.router.secret(profile)
@@ -128,13 +128,25 @@ class QQMedia:
         vision = self.vision_factory(base_url=profile.base_url, api_key=key, model=profile.model_id,
                                      temperature=0.0, timeout_seconds=min(profile.timeout_seconds, 40),
                                      **({"extra": thaw(profile.extra)} if profile.extra else {}))
-        with meter.using(purpose, self.controller.character.id):
+        with meter.using(purpose, character_id or self.controller.character.id):
             result = vision.chat([{'role': 'user', 'content': content}], max_tokens=max(max_tokens, profile.max_output or 0),
                                  cancellation=CancellationToken())
         caption = str(result.get('content') or '').strip()
         if not caption and result.get('finish_reason') == 'length':
             raise MediaError('输出额度在推理阶段用完')   # 不是“模型不支持看图”，不记拒绝标记
         return caption
+
+    def describe_task_image(self, data, mime, goal, character_id):
+        try:
+            profile = self.controller.router.resolve('vision', character_id, 'vision')
+            content = [{'type': 'text', 'text': '为桌面办事提取图片中与任务有关的可见信息和文字。任务：'+goal[:1200]},
+                       {'type': 'image_url', 'image_url': {'url': inline_image(data, mime)}}]
+            caption = self._vision_call(profile, content, 900, 'agent', character_id=character_id)
+            # 部分兼容接口把思考标签塞回 content，连未闭合的尾段一起过滤。
+            return re.sub(r'<think\b[^>]*>.*?(?:</think\s*>|$)', '', caption, flags=re.I | re.S).strip()
+        except Exception:
+            # 接口错误可能包含图片数据、请求体或凭据，不进操作日志和气泡。
+            raise MediaError('未能读取任务图片，请在设置中检查识图模型与连接') from None
 
     def describe(self, images, question: str, purpose: str, avatar=False) -> str:
         """识别图片，把视觉描述接在消息后面；看不了（没开、模型不支持、这次失败、图片坏了）只留中性的 [图片] 标记。"""

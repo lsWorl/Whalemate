@@ -6,9 +6,11 @@ DSH 负责想和调度（还有网页搜索、分身）；读写文件、删除�
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
+from aicompanion.agent import attachments as task_files
 from aicompanion.agent.dsh_backend import DshAgent, pick_workspace, problem
 from aicompanion.agent.paths import protected_reason, task_folders
 from aicompanion.agent.tools_server import Task, ToolBox
@@ -59,7 +61,7 @@ class AgentSession(QObject):
         return self.worker is not None or self.box.working
 
     # ---- 开始 / 停止 ---------------------------------------------------------------
-    def start(self, goal: str, announce: bool = True, *, paused_run=None) -> bool:
+    def start(self, goal: str, announce: bool = True, *, paused_run=None, attachments=()) -> bool:
         w = self.window
         if w.closing: return False
         if self.busy: w.pet.show_bubble('我手上还有活没做完，等我一下～', 5); return False
@@ -75,6 +77,13 @@ class AgentSession(QObject):
         database = w.database; character = w.controller.character
         self.goal = goal
         cwd = pick_workspace(goal, database.get_setting('dsh_workspace', ''))
+        rows = database.agent_attachments(paused_run) if paused_run is not None else []
+        if rows:
+            cwd = Path(rows[0]['copy']).parents[2]
+        try:
+            files = task_files.selection(attachments, self.box.secrets)
+        except (ValueError, OSError) as exc:
+            w.pet.show_bubble(str(exc), 8); w._status(str(exc)); return False
         model = target.model_id
         allowed = self._allowed(goal, cwd)
         resuming = paused_run is not None
@@ -84,10 +93,14 @@ class AgentSession(QObject):
             seq = database.resume_agent_run(run_id, character.id)
             if seq is None: return False
         else:
-            run_id = database.add_agent_run(character.id, goal)
+            run_id = database.add_agent_run(character.id, goal, attachments=files, workspace=cwd)
+            if files:
+                rows = database.agent_attachments(run_id)
             seq = 0
         state = self.run_state = {'run_id': run_id, 'seq': seq}
-        self.box.task = Task(run_id=run_id, allowed=allowed, resuming=resuming)
+        task = self.box.task = Task(run_id=run_id, allowed=allowed, resuming=resuming,
+                                    originals={Path(row['original']): Path(row['copy']) for row in rows},
+                                    copies={Path(row['copy']) for row in rows})
 
         def on_event(kind, data):
             if kind == 'usage':
@@ -104,11 +117,34 @@ class AgentSession(QObject):
 
         def run(token):
             try:
+                active_prompt = prompt
+                if rows:
+                    from aicompanion.bridge.media import QQMedia
+                    from aicompanion.services import budget
+                    media = QQMedia(database, w.controller)
+                    def describe(data, mime):
+                        if w.quota.check_silent('agent') == 'stop':
+                            raise ValueError('今天的办事额度已用完')
+                        with meter.using('agent', character.id, f'agent:{run_id}'):
+                            return media.describe_task_image(data, mime, goal, character.id)
+                    previews, task.captions = task_files.prepare(
+                        database, rows, resuming=resuming, secrets=self.box.secrets, cancelled=task.cancelled,
+                        describe=describe)
+                    if w.quota.check_silent('agent') == 'stop':
+                        raise ValueError('今天的办事额度已用完')
+                    active_prompt, report = task_files.prompt_for(prompt, rows, previews, target)
+                    budget.save(database, character.id, report)
+                    task.read_chars = max(512, min(task.read_chars, report.limit//4))
                 self.dsh.mcp_servers = [self.server.acp_entry()]
+                if task.cancelled.is_set():
+                    raise ValueError('任务已停止')
+                result = self.dsh.run(active_prompt, cwd, target, on_event)
             except Exception as error:
-                database.finish_agent_run(run_id, 'failed', '', str(error)[:12000], 0, 0, 0.0)
+                database.finish_agent_run(run_id, 'cancelled' if task.cancelled.is_set() else 'failed',
+                                          '', str(error)[:12000], state['seq'], *self._usage(run_id))
+                if rows:
+                    self.housekeep()
                 raise
-            result = self.dsh.run(prompt, cwd, target, on_event)
             tokens, cost = self._usage(run_id)
             result.run_id, result.tokens, result.cost, result.cwd = run_id, tokens, cost, str(cwd)
             database.finish_agent_run(run_id, result.status, result.text[:2000], '' if result.status in ('done', 'cancelled') else (result.text[:500]+'\n'+result.raw)[:12000],
@@ -146,10 +182,15 @@ class AgentSession(QObject):
             from aicompanion.agent import housekeeping
             from aicompanion.agent.dsh_backend import dsh_home
             database = self.window.database
+            try:
+                task_files.recycle_finished(database, self.box.trash)
+                attachment_error = ''
+            except (OSError, ValueError) as error:
+                attachment_error = str(error)
             report = housekeeping.clean(float(database.get_setting('trash_keep_days', housekeeping.DEFAULT_KEEP_DAYS) or 0),
                                         int(float(database.get_setting('trash_max_mb', 2048) or 2048)*1024*1024),
                                         [database.get_setting('blog_root', '')], dsh_home())
-            database.set_setting('trash_last_clean', report.text())
+            database.set_setting('trash_last_clean', report.text()+attachment_error)
             return report
         except Exception as error:
             return error
@@ -157,7 +198,6 @@ class AgentSession(QObject):
     # ---- 放开的文件夹、私密位置 -------------------------------------------------------------
     def _secrets(self):
         """她的工具碰不到的位置：项目的 .env、数据库所在文件夹、DSH 的会话记录、本应用的本机数据。"""
-        from pathlib import Path
         import os
         from aicompanion.agent.sandbox import low_root
         w = self.window; project = Path(__file__).resolve().parents[3]
@@ -169,7 +209,6 @@ class AgentSession(QObject):
 
     def _allowed(self, goal, cwd):
         """放开写的文件夹：原话里点名的（带扩展名的取所在文件夹）+ 工作区。包含私密数据或整个用户目录的不放开。"""
-        from pathlib import Path
         out = []
         for folder in [*task_folders(goal), Path(cwd)]:
             try: folder = folder.resolve()
@@ -193,7 +232,6 @@ class AgentSession(QObject):
         """交给 DSH 的输入：人设 + 环境说明 + 最近聊天 + 用户原话。"""
         w = self.window; character = w.controller.character; database = w.database
         blog = database.get_setting('blog_root', '')
-        from pathlib import Path
         project = Path(__file__).resolve().parents[3]
         from aicompanion.domain.bond import current as current_bond
         bond = current_bond(database, character.id)
