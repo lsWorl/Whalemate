@@ -15,6 +15,7 @@
 | PR42-冲突 | 合入当前目标分支 #41，保留关系设定与声线修复记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计另行记录 |
 | PR41-冲突 | 合入最新协作基线，保留默认声线与群聊实施记录 | Codex | 已解决（功能审计另行记录） | 仅 Markdown 冲突；功能审计结果另行记录 |
 | PR40-冲突 | 接入已合并 PR #39 的基线，保留语音与群聊两份实施记录 | Codex | 已解决（负责人决定合并 PR） | 仅 Markdown 冲突；负责人明确不做回归测试 |
+| V4-7a | 约定识别、分渠道到期提醒与设置 | Codex 实现、Claude 审查 | 进行中 | [任务说明](tasks/V4-7a-promises.md) |
 | V4-8c | 长回复附带口播版 | Codex 实现、Claude 审查 | 两项 P2 已修，待 Claude 复审（#58） | [任务说明](tasks/V4-8c-say.md) |
 | V4-8 回复带语音 | 计划书 v4 功能八：回复默认带语音、长回复分段取舍、大肥鱼声线。**先修 Codex 在 #38 实机发现的基线问题**：已经 complete 且展示完的回复，被下一轮 submit 或退出时 `_end_call → interrupt` 改成 cancelled，重启后显示“被打断”，也会让全文索引（只查 complete）漏掉这些旧消息。实机先验证系统朗读回退；云端声线（音色试听）未配置前不算完成 | Claude 实现；Codex 审查 | 待审查（第一版，`task/v4-8-voice`，从 #38 的 6775d81 拉出） | docs/tasks/V4-8-voice.md |
 | V4-8b 鲸鲸默认声线 | 负责人 2026-11-11：鲸鲸默认用网上 AI 视频那种有感情的少女声线。角色声线设定（`domain/voice_profile.py`）；MiniMax 语音客户端（和聊天共用 MiniMax 账户）；没在模型页配语音时用角色默认声线，候选音色在设置里换；心情明显时指定情绪，其余交给模型按台词自动选。音色听感由负责人试听拍板 | Claude 实现；Codex 审查 | 待审查（`task/v4-8b-whale-voice`，叠在 #39 之上） | docs/tasks/V4-8b-whale-voice.md |
