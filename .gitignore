@@ -67,3 +67,7 @@ desktop.ini
 
 # Aboutme 第三方贴图只安装到本机，不随 PR 分发。
 /src/aicompanion/characters/deepseek-whale/animation-aboutme/
+
+# T23 蓝底参考及其衍生备份仅留在本机，待负责人核实出处。
+/art/deepseek-whale-q/references/blue-original.png
+/art/deepseek-whale-q/backup-q/

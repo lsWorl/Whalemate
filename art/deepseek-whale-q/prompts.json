@@ -1,0 +1,174 @@
+{
+  "task": "T23",
+  "date": "2026-11-14",
+  "tool": "Codex 内置 image_gen",
+  "transparent_background": false,
+  "selection": {
+    "master": "master.png",
+    "candidate": "candidates/a.png",
+    "decision": "负责人选定主组 A。蓝底图和相关备份留在本机核实来源。",
+    "proportions": "主组按负责人指定保留长身造型，头部所占高度小于 T6 §2 的约六成；大头 Q 版另存。"
+  },
+  "references": [],
+  "archive": [
+    {
+      "stage": 1,
+      "retained": false,
+      "reason": "负责人反馈形象不够 Q 萌。",
+      "input_images": [
+        "src/aicompanion/characters/deepseek-whale/sprites/idle.png"
+      ],
+      "input_sha256": "57cdfbf0baa0c555ffb46a7a2963ada3dd38e02aedd4b7e9699deaff71ed7ab6",
+      "shared_prompt": "Use case: stylized-concept. Create ONE original finished 2D chibi videogame desktop companion character illustration. Treat the provided self-drawn sprite only as Jingjing's identity reference. Completely re-pose and redraw her as an animation-ready model in three-quarter view to SCREEN RIGHT: face, nose, chest, and both shoes turn right, both eyes visible, nearer eye on image left bigger. Upright neutral idle with two feet planted on the SAME ground line, separated by a slim green gap, arms hanging relaxed slightly away from skirt with clear wrist/sleeve breaks, hands visible. No tilted head pose, no walking or raised hand. Near whale ear fin and near arm are on SCREEN LEFT, far counterparts on SCREEN RIGHT. The long back hair hangs behind toward SCREEN LEFT; a separate unmistakable forked whale tail grows from the rear waist and extends to SCREEN LEFT, with the tip visible in clean negative space clear of hair. Keep the white maid headband, single curved ahoge, deep navy-to-cobalt-to-aqua gradient long hair, blue eyes, whale ear fins on both sides (rounded aquatic fins), dark navy maid dress, white apron bearing ONE cobalt-blue whale silhouette with its tiny spout as on the reference, blue ribbons, white stockings, dark Mary Jane shoes. Long flared skirt covers hips and thighs but leaves a small pair of short shins and feet visible. Strong coherent silhouette, 2.5-head chibi proportions, emphatic readable face, clear graphic shapes that remain readable in a 300 px sprite, large shape design over fine noise. Polished hand-inked game illustration with navy outlines. Deliver a square full-body painting on a completely flat, solid #00FF00 opaque chroma-green background, including all holes. No shadow on ground, oval base, texture, scenery, particles, halo, white sticker rim, ground line, guides, text, labels, panels or cropped extremities. Target 2048 by 2048 composition: vertical body axis BETWEEN shoes x=1024, soles touch y=1984, ahoge top around y=100. The head including hair takes about the top 60% with body and legs in the lower 40%. Leave enough room left for the flukes, center the body and feet rather than the overall silhouette.",
+      "variants": [
+        {
+          "id": "a",
+          "prompt_suffix": "Design A — a soft round bell silhouette: use broad, simple rounded scallops on the apron edge, a soft domed navy skirt, generous airy S-waves in the long back hair with aqua tips, rounded downturned ear fins edged in white, small sapphire bows with a single gold center, large open round sapphire eyes and a gentle tiny closed smile. Use deep ink-blue and cornflower blue, warm blush, milk-white apron. Restrained gold piping near the hem like the reference. Hair rhythm is broad, graceful curved arcs. Heavy outer line and clean two-tone cel shading. Make the whale flukes on the left clearly distinct from the curled hair tips."
+        },
+        {
+          "id": "b",
+          "prompt_suffix": "Design B — a jaunty maritime maid with a graphic triangular A-line silhouette: short WHITE SAILOR COLLAR over the inky bodice, crisp blue neckerchief with a modest gold clasp, structured navy pleated longish A-line skirt, white apron with a simple angular hem and a large readable whale badge. Long back hair in two or three sharply swept tapering locks with a cobalt-to-aqua band, clean pointed whale ear fins extending sideways, clear small white maid frill, one confident flick of ahoge. A plucky little closed-mouth smile, large alert bright blue eyes under slightly lifted brows. Thick clean dark contour and decisive graphic flat shadow shapes like a traditional cel-animated game sprite. Show the separate broad upward-curving forked whale tail on the left with a pale underside. Keep haircut, fin ears, badge and face unmistakably Jingjing."
+        },
+        {
+          "id": "c",
+          "prompt_suffix": "Design C — a quiet storybook interpretation with a narrower teardrop skirt and soft rounded shapes. Shape the long, heavy gradient back hair into JUST TWO large plush spiral curls with distinct light blue ribbon-like undersides, readable at miniature size. Give her a soft gathered ivory mobcap-style maid headband sitting behind a single curled ahoge, a petal-edged white pinafore apron over a dark iris-blue long rounded skirt, modest pale periwinkle waist bow visible, rounded paddle-shaped fin ears with a white underside, sleepy-soft open blue eyes and a sweet tiny smile. Hair shines in broad indigo and pale periwinkle blocks, ink the silhouette dark navy; crisp cel-shaded edges, no fuzzy watercolor on background. Give the small whale tail its own silhouette in the lower left negative space, clearly forked and separated from the curls, with pale underside. Use a few large elegant details rather than lace noise."
+        }
+      ],
+      "prompt_joiner": "\n"
+    },
+    {
+      "stage": 2,
+      "retained": false,
+      "reason": "负责人否决放大眼睛与脸宽的做法。",
+      "input_images": [
+        "src/aicompanion/characters/deepseek-whale/sprites/idle.png"
+      ],
+      "input_sha256": "57cdfbf0baa0c555ffb46a7a2963ada3dd38e02aedd4b7e9699deaff71ed7ab6",
+      "shared_prompt": "Create a NEW super-deformed chibi game sprite of Jingjing (鲸鲸), a tiny blue whale maid, in the style of a carefully inked Japanese miniature mascot. The attached original self-drawn idle sprite is the ONLY image reference; keep her identity and blue whale emblem, but reinvent the proportions from scratch. The owner wants much more Q萌: a genuinely teeny, puffy bean of a character, rounded infant-doll cheeks, oversized soft bobble head, little button nose, tiny curved mouth, gentle lower-set wide blue eyes, a small blush. PRIORITIZE the silhouette: the head with crown, hair and ahoge takes 60 percent of the total height; head as wide as or WIDER than her entire bell-shaped dress. Compress the petite torso into one little bow and a short row of fabric, with almost no visible waist. Puffy skirt goes nearly to the floor and hides the legs up to the ankles. Only a sliver of white sock and TWO TINY round-toed bean-like Mary Janes peek out, both level, NO big shoes, no long shins, no lanky torso. Tiny relaxed mitten-like hands next to the skirt, each extending from its visible sleeve cuff. Big abundant long hair hugs the little body; deep navy roots, cobalt and aqua ends. Two actual whale-like ear fins, one curly ahoge, milk-white maid headdress, white maid apron with a small clear blue whale silhouette with a tiny blowhole spout, one forked whale tail, restrained gold/blue bows. Strong large shape design intended to read beautifully even at 150 px high. Inky blue outlines with soft cel fills, no busy specular hair shine or realistic texture. Stand neutral, tilted three-quarter toward SCREEN RIGHT: body and nose point right; image-left eye and ear fin visibly larger than the far eye and fin. Both arms visible, near arm on screen left, limbs easily distinguishable. Long back hair goes down left, short forked whale flukes peek clearly out at SCREEN LEFT from behind the waist, with a narrow gap between fluke and hair. Both soles on a common ground level, tiny gap between shoes. FULL BODY, entire silhouette uncropped. Square 2048x2048 canvas, body midline between the tiny shoes x=1024, soles at y=1984, ahoge near y=100. Give breathing space left of the tail. Opaque PERFECTLY FLAT uniform pure chroma green #00FF00 background through every hole. No ground or cast shadow, highlight aura, decorative objects, floating symbols, divider, letters, watermark, outlines outside the sprite, gradients or pattern in the backdrop. Only one cute small character.",
+      "variants": [
+        {
+          "id": "a",
+          "prompt_suffix": "Variant A, mochi dumpling. A broad round sea-blue bobble head and very low-set round sparkly sapphire eyes, chubby peach cheeks, playful little catlike closed smile, a tiny single upward-curled ahoge. Make the side hair like two plump flowing mochi shapes with scalloped aqua tips, nearly touching her tiny shoes; soft dimpled white maid frills, rounded puff sleeves, round milk-white petal scallops around a bubble-hem navy skirt, little round apron, gold piped hem, white and blue rounded ear fins. Two simple gold-centered cobalt bows. Use deep blueberry and clear powder-blue, playful milky shading, broad matte highlights, a tidy soft dark outline. Entire skirt noticeably narrower than the head. The effect should be plush, squat and huggable."
+        },
+        {
+          "id": "b",
+          "prompt_suffix": "Variant B, a lively pocket-sized sailor maid, shaped like a small round chick. Slightly squashed, extra wide rounded head framing big glinting sea-blue eyes, subtle arched eyebrows, smiling tiny open mouth with a pink tongue. A bent water-droplet ahoge and compact white maid frill. Make the dark blue back hair one compact thick swept fan ending in a few rounded aqua points, with a separate flipped little fluke. Oversized white sailor collar with blue piping immediately above the high-waisted tiny A-line pleated dress, neckerchief with a single gold button, shield-shaped whale apron, barely any legs, miniature bean shoes. Strong graphic navy contours, simple ocean-blue and milk-white cel color blocks, a small warm gold accent. Keep screen-left ear fin obviously whale-like. The silhouette should be comically top heavy and energetic."
+        },
+        {
+          "id": "c",
+          "prompt_suffix": "Variant C, a sleepy little cloud doll, plump soft cheeks, huge pillowy head and soft open half-lidded blue eyes, a small sweet curved mouth. Her defining silhouette is a pair of generous low grape-shaped C-shaped curls backed against the mini skirt, finished with muted pale aqua. Round white cloud-puff maid cap with a single looped ahoge arching over it, a little periwinkle waist bow, petal-shaped ivory bib apron and a short-LOOKING but ankle-covering deep indigo puffball skirt. One separate paddle-ended forked whale tail peeking out low on the left. Use soft iris, lavender, navy, cream and a tiny bit of gold, soft animation cel shading and rounded navy outlines. Velvety miniature proportions like a small collectible doll; don't lengthen her body or limbs. Small sleepy face is still clearly readable."
+        }
+      ],
+      "prompt_joiner": "\n"
+    }
+  ],
+  "drawings": [
+    {
+      "output": "candidates/a.png",
+      "thumbnail": "candidates/a-300.png",
+      "name": "静静",
+      "group": "primary",
+      "input_images": [],
+      "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 A。眼神自然平视，小嘴轻轻收圆；发梢沿裙侧落下，再向外轻轻回钩。裙褶柔和，奶白蕾丝和精巧金绣清楚可辨。人物像一位安静站在桌角的小女仆。",
+      "raw_id": "exec-e94bad1d-d9a7-448c-819a-5b1213599064.png",
+      "raw_sha256": "ccee2540a6c97aa6673b2ae8cd7879c98a4ce06af6e8d222f8476bd8aeccca92",
+      "raw_size": [
+        1254,
+        1254
+      ],
+      "raw_foot_axis_x": 634,
+      "raw_shoe_sample_y": 1218,
+      "raw_crop": [
+        88,
+        27,
+        933,
+        1241
+      ],
+      "raw_sole_adjustment_px_left_right": [
+        0,
+        2
+      ],
+      "placed_box": [
+        176,
+        100,
+        1488,
+        1985
+      ],
+      "output_sha256": "c2f12eb3232e08885b1900d5da95519fc71896cb41ea54e9221e11296fb5b28c",
+      "thumbnail_sha256": "a6718c8eecac0e158b03e885f4dd26741e0702beb3549d763fba0b984a5d53cb"
+    },
+    {
+      "output": "candidates/b.png",
+      "thumbnail": "candidates/b-300.png",
+      "name": "微晴",
+      "group": "primary",
+      "input_images": [],
+      "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 B。保持同一张小脸与同一套服装，眼神稍稍抬起，针尖小嘴轻轻抿出极浅的笑意。长发下半段松散向画面左侧拂开一点，使小鲸尾和发梢之间留一线背景。裙褶张开一点，看得清双腕。",
+      "raw_id": "exec-30db4971-aa60-45b3-83a4-512882a3ccc6.png",
+      "raw_sha256": "6b8725af1cc7bdfe2d27d22b67a60a3681eb8f8899a3a2cd7f8f435f3213e66f",
+      "raw_size": [
+        1254,
+        1254
+      ],
+      "raw_foot_axis_x": 656,
+      "raw_shoe_sample_y": 1212,
+      "raw_crop": [
+        101,
+        17,
+        990,
+        1235
+      ],
+      "raw_sole_adjustment_px_left_right": [
+        0,
+        0
+      ],
+      "placed_box": [
+        165,
+        100,
+        1541,
+        1985
+      ],
+      "output_sha256": "0e679a2d02410b69412ad65833f67e728a8ca4593fab6e83b930eb8880e406ed",
+      "thumbnail_sha256": "4d3a41be8ef2072f87f233cab6306f57e66c2a53e3c8c38fdc7fef324b31e6af"
+    },
+    {
+      "output": "candidates/c.png",
+      "thumbnail": "candidates/c-300.png",
+      "name": "听潮",
+      "group": "primary",
+      "input_images": [],
+      "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 C。保持同一张小脸与同一套服装，上眼睑轻轻放低一点，神情安宁若有所思，两眼都睁开。两撮发梢沿裙面往内卷，裙子安静垂成一个略收拢的钟形，左侧小鲸尾向外略翘。",
+      "raw_id": "exec-c19e2771-5082-4b5a-a19f-ed2352cdeaa1.png",
+      "raw_sha256": "87b40c9d0808f169d40d5bce5010b12a06f833786cb20b1774a640caa57429f9",
+      "raw_size": [
+        1254,
+        1254
+      ],
+      "raw_foot_axis_x": 628,
+      "raw_shoe_sample_y": 1214,
+      "raw_crop": [
+        78,
+        25,
+        938,
+        1237
+      ],
+      "raw_sole_adjustment_px_left_right": [
+        0,
+        2
+      ],
+      "placed_box": [
+        168,
+        100,
+        1506,
+        1985
+      ],
+      "output_sha256": "f8540615883ae77b187198db1c789bb274026f49702b6d35d649b4188ecc4f79",
+      "thumbnail_sha256": "d687636406ce1f0e8223d9039dddfb24ad7eb4fe78d6fb3ee61878e4a9b35464"
+    }
+  ],
+  "postprocess": {
+    "tool": "Pillow 12.3.0 与 NumPy；8 位 sRGB RGBA，alpha 均为 255。",
+    "method": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+    "artwork": "所有角色像素来自内置 image_gen。主图逐字节复制自负责人选定的 A。"
+  }
+}

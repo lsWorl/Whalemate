@@ -2150,3 +2150,15 @@ Windows `tools\run_checks.bat` 退出码 0，运行 1372 项单测，用时 243.
 - 两次桌宠 smoke 的 `long_task_checkpoint`、`passed` 均为 true，`failed_checks` 均为空。离线模式跳过真实模型步骤。
 
 未使用线上 Harness、真实 QQ 账号或 NapCat/AstrBot 验证；跨日、异常退出和副作用重放使用可控时钟、临时库与模拟运行器验证。
+
+## 2026-11-14　T23 鲸鲸主图选定与 Windows Rive CLI 检查
+
+负责人选定长裙组 A 作为后续绘画的主图。与本轮最后贴出的第一张图逐像素比对，1254×1254 的生成原图一致。沿用负责人选中的较长身形，主组三张由内置 image_gen 按文字描述生成。蓝底图及其衍生备份仅保存在本机，来源待负责人向 Claude 核实。详细提示词、输入来源、原始图哈希和逐图配准参数见[生成记录](../art/deepseek-whale-q/prompts.json)。
+
+六张图均已导出为 2048×2048 的 8 位 sRGB RGBA 不透明 PNG，统一绿底 `#00FF00`。缩略图为整张画布等比缩到 300×300。程序逐张核对了缩略图像素、两脚之间的中线 x=1024、呆毛顶端 y=100 和两只鞋底 y=1984；选定的 `master.png` 与主组 A 的 SHA-256 一致。[主图](../art/deepseek-whale-q/master.png) · [长裙组](../art/deepseek-whale-q/candidates/)
+
+Windows x64 便携安装验证使用官方稳定版压缩包 `rive-windows-x64.tar.gz`，SHA-256 为 `469aa097fc2a665b5271ffad3537e792c06bc5b635c8e89eb90205ec92ea25ca`，与官方清单相符。解出 `rive.exe` 后，在此 worktree 中运行 `output\t23-cli\rive.exe --version` 得到 `rive 1.9.2`，`--help` 正常列出命令，两者退出码均为 0。命令行可直接在 Windows 运行。[Rive 官方下载](https://rive.app/downloads) · [版本清单](https://releases.rive.app/cli/v1.9.2/manifest.json)
+
+当前待 Claude 审图。分层补画、RML、骨骼绑定、运行时渲染和真机动作验收均待后续阶段。
+
+Windows `tools\run_checks.bat` 退出 0。单测 1383 项，1376 项通过、7 项跳过，用时 251.957 秒。桌宠 smoke 返回 `passed=true`、`failed_checks=[]`、`remaining_workers=0`。首次运行因独立虚拟环境漏载现有 pywin32 路径而失败，补齐该环境的路径后全量复跑通过。
