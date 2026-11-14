@@ -39,8 +39,45 @@ class LayerReviewTest(unittest.TestCase):
         stats, _, _ = check.difference(master, result)
         self.assertEqual(stats["master_pixels"], 4096)
         self.assertEqual(stats["outside_master"], 1)
-        self.assertEqual(stats["worst_64px_box"], [64, 0, 128, 64])
+        # 两格均差同为 85，左侧格仅有一个额外轮廓像素，也必须参加统计。
+        self.assertEqual(stats["worst_64px_box"], [0, 0, 64, 64])
         self.assertEqual(stats["mean_abs_rgb"], 85)
+        self.assertEqual(
+            {tuple(t["box"]) for t in stats["tiles_over_limit"]},
+            {(0, 0, 64, 64), (64, 0, 128, 64)},
+        )
+
+    def test_small_islands_use_eight_neighbors_and_strict_area(self):
+        alpha = Image.new("L", (32, 32))
+        for i in range(16):
+            alpha.putpixel((i, i), 1)
+        alpha.paste(255, (20, 20, 25, 23))
+        self.assertEqual(check.island_boxes(alpha), [[20, 20, 25, 23]])
+
+    def test_tile_threshold_is_inclusive(self):
+        master = Image.new("RGB", (64, 64), (0, 0, 0))
+        composite = Image.new("RGBA", master.size, (40, 40, 40, 255))
+        stats, _, _ = check.difference(master, composite)
+        self.assertEqual(stats["tiles_over_limit"], [])
+        composite.putpixel((0, 0), (41, 40, 40, 255))
+        stats, _, _ = check.difference(master, composite)
+        self.assertGreater(stats["tiles_over_limit"][0]["mean"], 40)
+
+    def test_blink_compares_curve_not_only_bounding_boxes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            art = Path(temp)
+            root = art / "layers" / "face"
+            for name in ("neutral", "sleep"):
+                (root / name).mkdir(parents=True)
+            for side in ("eyeL", "eyeR"):
+                line = Image.new("RGBA", (20, 20))
+                for x in range(2, 17):
+                    line.putpixel((x, 3), (10, 10, 10, 255))
+                line.save(root / "neutral" / (side + "_lash.png"))
+                line.putpixel((8, 3), (0, 0, 0, 0))
+                line.putpixel((8, 8), (10, 10, 10, 255))
+                line.save(root / "sleep" / (side + ".png"))
+            self.assertEqual(check.blink_errors(art), {"eyeL": 5, "eyeR": 5})
 
     def test_missing_layer_is_reported_before_rendering(self):
         with tempfile.TemporaryDirectory() as temp:

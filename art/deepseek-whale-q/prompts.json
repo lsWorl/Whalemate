@@ -6,10 +6,16 @@
   "selection": {
     "master": "master.png",
     "candidate": "candidates/a.png",
-    "decision": "负责人选定主组 A。蓝底图和相关备份留在本机核实来源。",
+    "decision": "负责人选定主组 A。蓝底原图由负责人用 AI 生成，允许提交；大头 Q 版保留作备份。",
     "proportions": "主组按负责人指定保留长身造型，头部所占高度小于 T6 §2 的约六成；大头 Q 版另存。"
   },
-  "references": [],
+  "references": [
+    {
+      "path": "references/blue-original.png",
+      "sha256": "bb5044151595d8ac305b77134fe267f38ef7332de35091adbbe00aeececaaf05",
+      "source": "负责人确认由本人使用 AI 生成，允许随本项目提交。"
+    }
+  ],
   "archive": [
     {
       "stage": 1,
@@ -164,6 +170,114 @@
       ],
       "output_sha256": "f8540615883ae77b187198db1c789bb274026f49702b6d35d649b4188ecc4f79",
       "thumbnail_sha256": "d687636406ce1f0e8223d9039dddfb24ad7eb4fe78d6fb3ee61878e4a9b35464"
+    },
+    {
+      "output": "backup-q/a.png",
+      "thumbnail": "backup-q/a-300.png",
+      "name": "原画站姿",
+      "group": "q_backup",
+      "input_images": [
+        "references/blue-original.png"
+      ],
+      "prompt": "EDIT THE SUPPLIED BLUE-BACKGROUND DRAWING. Preserve THIS EXACT character: make the same artist's next on-model still of Jingjing. The one attached image is the identity and rendering model sheet. Extremely important: match the reference as literally as possible. Retain exact face/head shape, little blue eyes with the upper dark and lower blue highlights, tiny mouth, the same muted indigo chunky three-part bangs and highlights, her height and the same tiny torso and tiny feet, thin curled ahoge, drooping fin ears with their white undersides, small teal bows and white maid headband. Match the brushwork, line widths, restrained shading, colors, and small details; keep the same navy dress, thin gold hem motif, small gold-dark bows, white lace apron with the reference's blue whale, white socks and Mary Janes. Maintain the very chibi silhouette and exact visual age. Neither stretch her torso/legs nor widen her cheeks/eyes. This is a pose adjustment of the existing illustration, not a style transformation. \nPose: lower both arms naturally just beside the dress, visible relaxed small hands at the cuffs, elbows slightly apart. Set BOTH feet flat on the same ground, a little gap between the shoes, toes slightly right. Spine upright, no leap or waving. Turn head AND body to a gentle but readable THREE-QUARTER VIEW FACING SCREEN RIGHT (show both eyes, a larger near eye and ear on image left); swing her separate blue whale tail gently out to SCREEN LEFT behind the waist with both flukes visible in negative space; long back hair hangs toward image left. Retain both long sidelocks; skirt covers hips and almost all of her short shins as on the reference. At desktop size she looks like the supplied illustrated character. \nReplace the blue background and floor shadow completely with uniform opaque solid key green #00FF00 everywhere outside the figure. Full body single character in a square 2048×2048 composition, between-feet midline x=1024, feet y=1984, top of ahoge y≈100. Enough margin for all hair and tail. Exact reference head proportion, about top 60% including ahoge and headband. No ground line, floor, shadow, props, lettering or guides.\nA: faithful neutral model-sheet pose; same tiny slightly parted mouth and calm straight gaze as reference. Keep soft pendulous hair tips and the skirt hanging naturally.",
+      "raw_id": "exec-9d97cc12-4091-453d-ad45-167fb080fd59.png",
+      "raw_sha256": "3d446983516336b035115b176994f1472728988a76e25d515c0d1e79cfc7d3ce",
+      "raw_size": [
+        1254,
+        1254
+      ],
+      "raw_foot_axis_x": 698,
+      "raw_shoe_sample_y": 1193,
+      "raw_crop": [
+        131,
+        29,
+        1064,
+        1216
+      ],
+      "raw_sole_adjustment_px_left_right": [
+        0,
+        6
+      ],
+      "placed_box": [
+        123,
+        100,
+        1605,
+        1985
+      ],
+      "output_sha256": "2bb669122b50ea9ac16048eaacca69731c9209d76fc96a5a3b8d5bfb1f1bd46a",
+      "thumbnail_sha256": "a6e583756270cb6e23851a2e4b5781461d2ef8b406a0c1bd3fa78b56c7c4c6b1"
+    },
+    {
+      "output": "backup-q/b.png",
+      "thumbnail": "backup-q/b-300.png",
+      "name": "抬眼浅笑",
+      "group": "q_backup",
+      "input_images": [
+        "references/blue-original.png"
+      ],
+      "prompt": "EDIT THE SUPPLIED BLUE-BACKGROUND DRAWING. Preserve THIS EXACT character: make the same artist's next on-model still of Jingjing. The one attached image is the identity and rendering model sheet. Extremely important: match the reference as literally as possible. Retain exact face/head shape, little blue eyes with the upper dark and lower blue highlights, tiny mouth, the same muted indigo chunky three-part bangs and highlights, her height and the same tiny torso and tiny feet, thin curled ahoge, drooping fin ears with their white undersides, small teal bows and white maid headband. Match the brushwork, line widths, restrained shading, colors, and small details; keep the same navy dress, thin gold hem motif, small gold-dark bows, white lace apron with the reference's blue whale, white socks and Mary Janes. Maintain the very chibi silhouette and exact visual age. Neither stretch her torso/legs nor widen her cheeks/eyes. This is a pose adjustment of the existing illustration, not a style transformation. \nPose: lower both arms naturally just beside the dress, visible relaxed small hands at the cuffs, elbows slightly apart. Set BOTH feet flat on the same ground, a little gap between the shoes, toes slightly right. Spine upright, no leap or waving. Turn head AND body to a gentle but readable THREE-QUARTER VIEW FACING SCREEN RIGHT (show both eyes, a larger near eye and ear on image left); swing her separate blue whale tail gently out to SCREEN LEFT behind the waist with both flukes visible in negative space; long back hair hangs toward image left. Retain both long sidelocks; skirt covers hips and almost all of her short shins as on the reference. At desktop size she looks like the supplied illustrated character. \nReplace the blue background and floor shadow completely with uniform opaque solid key green #00FF00 everywhere outside the figure. Full body single character in a square 2048×2048 composition, between-feet midline x=1024, feet y=1984, top of ahoge y≈100. Enough margin for all hair and tail. Exact reference head proportion, about top 60% including ahoge and headband. No ground line, floor, shadow, props, lettering or guides.\nB: the exact same girl and outfit in the same three-quarter-right idle pose, a very slight, closed-mouth smile and eyes looking a touch higher. Let the ends of her back hair gently drift to screen left, exposing the near wrist and tail tip. Keep the changes subtle.",
+      "raw_id": "exec-536d05b1-6265-4b8c-a49e-62cd096e7c8a.png",
+      "raw_sha256": "0549032df7fa602f4fd156a17d83ed5641ca3c8ddff677b850c168216a14e88e",
+      "raw_size": [
+        1254,
+        1254
+      ],
+      "raw_foot_axis_x": 666,
+      "raw_shoe_sample_y": 1182,
+      "raw_crop": [
+        90,
+        32,
+        1065,
+        1205
+      ],
+      "raw_sole_adjustment_px_left_right": [
+        0,
+        5
+      ],
+      "placed_box": [
+        98,
+        100,
+        1665,
+        1985
+      ],
+      "output_sha256": "70996219ddc1e3f87acc3834df9c705c117a0f9cbd751cbae16fcfad7182b3c1",
+      "thumbnail_sha256": "fb72bcb9db697c36df6c5678b86d789f4b8f7c67bebaf5515cbc25d51878adc4"
+    },
+    {
+      "output": "backup-q/c.png",
+      "thumbnail": "backup-q/c-300.png",
+      "name": "垂眸听潮",
+      "group": "q_backup",
+      "input_images": [
+        "references/blue-original.png"
+      ],
+      "prompt": "EDIT THE SUPPLIED BLUE-BACKGROUND DRAWING. Preserve THIS EXACT character: make the same artist's next on-model still of Jingjing. The one attached image is the identity and rendering model sheet. Extremely important: match the reference as literally as possible. Retain exact face/head shape, little blue eyes with the upper dark and lower blue highlights, tiny mouth, the same muted indigo chunky three-part bangs and highlights, her height and the same tiny torso and tiny feet, thin curled ahoge, drooping fin ears with their white undersides, small teal bows and white maid headband. Match the brushwork, line widths, restrained shading, colors, and small details; keep the same navy dress, thin gold hem motif, small gold-dark bows, white lace apron with the reference's blue whale, white socks and Mary Janes. Maintain the very chibi silhouette and exact visual age. Neither stretch her torso/legs nor widen her cheeks/eyes. This is a pose adjustment of the existing illustration, not a style transformation. \nPose: lower both arms naturally just beside the dress, visible relaxed small hands at the cuffs, elbows slightly apart. Set BOTH feet flat on the same ground, a little gap between the shoes, toes slightly right. Spine upright, no leap or waving. Turn head AND body to a gentle but readable THREE-QUARTER VIEW FACING SCREEN RIGHT (show both eyes, a larger near eye and ear on image left); swing her separate blue whale tail gently out to SCREEN LEFT behind the waist with both flukes visible in negative space; long back hair hangs toward image left. Retain both long sidelocks; skirt covers hips and almost all of her short shins as on the reference. At desktop size she looks like the supplied illustrated character. \nReplace the blue background and floor shadow completely with uniform opaque solid key green #00FF00 everywhere outside the figure. Full body single character in a square 2048×2048 composition, between-feet midline x=1024, feet y=1984, top of ahoge y≈100. Enough margin for all hair and tail. Exact reference head proportion, about top 60% including ahoge and headband. No ground line, floor, shadow, props, lettering or guides.\nC: the exact same girl and outfit in three-quarter-right idle, upper lids subtly lowered while eyes remain open and her tiny mouth is relaxed. Hair tips curl gently inward closer to the sides of the hanging skirt; give the tail fin on screen left a slight upward curl. No other redesign.",
+      "raw_id": "exec-df8f5808-7d28-466c-b7a5-a925316e07cd.png",
+      "raw_sha256": "4e99caa46ca8ed6e37968133626066235152f5937be03421af223f40f8f18534",
+      "raw_size": [
+        1254,
+        1254
+      ],
+      "raw_foot_axis_x": 697,
+      "raw_shoe_sample_y": 1204,
+      "raw_crop": [
+        149,
+        27,
+        1077,
+        1227
+      ],
+      "raw_sole_adjustment_px_left_right": [
+        0,
+        9
+      ],
+      "placed_box": [
+        163,
+        100,
+        1621,
+        1985
+      ],
+      "output_sha256": "52e0eba4fff533db4a0d1dcc872022f0e25158d45d30f7cdf3c79c1deaf3b76a",
+      "thumbnail_sha256": "fbc50b4faf070748227171b939a35b7ce2f87d094777dc46ae781211f5f67e95"
     }
   ],
   "postprocess": {
@@ -719,6 +833,425 @@
         ],
         "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 以挂接点对齐独立呆毛，整条线条沿用定稿走向。"
       }
-    ]
+    ],
+    "historical_commit": "7cf147c02a0a01b972f2e3f31510df0e22663691",
+    "note": "保存第 2 轮审查前的交付清单及当时哈希。静态五官校样随第 3 步正式贴片替换，现行哈希见 step3。"
+  },
+  "step3": {
+    "source": "master.png",
+    "sha256": "c2f12eb3232e08885b1900d5da95519fc71896cb41ea54e9221e11296fb5b28c",
+    "review": "review-claude-r2.md",
+    "repairs": [
+      {
+        "id": "ahoge",
+        "file": "layers/ahoge.png",
+        "sha256": "3f08e43ba5a39fb9e938818041857f7071c6acd2d6559bd199c6e33298bbee35",
+        "prior_sha256": "c3e2560c27da75d5a2c1ae7e9c6ec9170eded301cd5e71957a73f9d5a0de8cbc",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. One isolated top cowlick hair strand, exactly the single hook silhouette in A, stem rises from lower left in a long arch then hooks down and points back left at the far right. Dark navy purple with violet highlight and smoothly tapered organic tip and smoothly curved root; all edges delicately anti-aliased. No hair mass. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+        "generated_id": "exec-d70a2ab2-f967-41e6-9372-4988dd665812.png",
+        "generated_sha256": "ee78671583bd71e4b5b94400e228f4b49aa7457c03c9e9a293a4b4f6e2fd3ae5",
+        "notes": "将新生成呆毛定位到 A 的顶部弧线；沿可见部分对原画覆盖率做中值去噪和亚像素平滑，保留完整收尖。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "arm_far",
+        "file": "layers/arm_far.png",
+        "sha256": "5e0c5e74a73e8bef6d97f3e8a5ee03e8e329766e1b8a5fbf7b77968754ae0f32",
+        "prior_sha256": "9639b100bc48beda8dedb287dd2f87d8b8110c0437ea5042b22296ef7f7d6df9",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "按主图重划远侧手指与门襟的遮挡边界。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "arm_near",
+        "file": "layers/arm_near.png",
+        "sha256": "08daa391369c756f962e6c519b099557e87570f4869e515d0ba9d2b057c2f2aa",
+        "prior_sha256": "7fe411f88654578b1797ee5f7ece2cdc5a090021ed2dc9277f1c3580cc13b9a1",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "按主图复位近袖与手指间隙。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "bangs",
+        "file": "layers/bangs.png",
+        "sha256": "10db51880e13bdffc83571fa7deb68159f5d47a10b55cf8c48fa78ddeaa677be",
+        "prior_sha256": "aab176b9c07e626acaec9a484ff0f3c915ee86c015046089e737ae18b8b30f5f",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": " 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "body",
+        "file": "layers/body.png",
+        "sha256": "37c1205537bc52d743606585b5901674341ef6e76ec951f0f78f7b38088a51a5",
+        "prior_sha256": "b4b6de154c0ff0c11e2f59d6d07253bfd5f4ce3ca3a61c68afb033f9beaf2204",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "可见门襟归到衣身，保留抬臂后露出的胸部和肩饰。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "face",
+        "file": "layers/face.png",
+        "sha256": "f568eb8e375d38ddd07723ccd78a7a1804de69c808418dc1077fc0589e1ac447",
+        "prior_sha256": "065ec2adbdb9a5c8e6bf85a633348e15ce2b2a29815a46f67e53efeb8e50ed7d",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. An entirely FEATURELESS bald face base, an anime doll faceplate in same skin color and slightly right-facing jaw silhouette with both ears; paint unbroken blank complexion with subtle blush and gentle skin gradients. Absolutely NO eyes, sockets, nose, mouth, brows, guide lines or eyelids even faintly. No hair, neck or accessories. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+        "generated_id": "exec-30a71bfa-c576-4bd8-9d02-89c39f4bf48d.png",
+        "generated_sha256": "4bbea55b1e615a647cf71d9a4f94e73047ec311ebe58b4ac1f32cff54abf4615",
+        "notes": "使用新的无五官净脸生成稿和原主图下颌轮廓配准，在整片皮肤上做低频色调匹配。耳、腮、额头保留，脸上不烙原中性五官。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "fin_far",
+        "file": "layers/fin_far.png",
+        "sha256": "9c94aa4188ce4b7956fffcdf4bb22ea255d5ced8599ff4a3cc8dbef186118d98",
+        "prior_sha256": "b39a05ed368b5e6fa17e14d0e997c4568804bcefd0bf562fc0b17d2cba24938b",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. One isolated screen RIGHT whale ear-fin, dark muted indigo upper surface and scalloped pale lavender underside, soft BLUE bow at its concealed LEFT root. Outside tip points right and slightly down. Paint the hidden left edge as a continuous organic round fin outline merging with the bow, a flowing diagonal, no straight crop edges. Whole component only. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+        "generated_id": "exec-a9022211-fbd6-43d5-8cc5-4cab13a61458.png",
+        "generated_sha256": "179079056d71f5b11035cbc6b6d7d5bea0cd8d342eb3a927c53f19ffa4ae9341",
+        "notes": "新生成的完整蓝结和鳍根与主图鳍尖配准，按弧线收合下缘。根部色边、结外的发隙按 A 清理。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "fin_near",
+        "file": "layers/fin_near.png",
+        "sha256": "a33317d3c61b912e27c86c7447e1952b6ee79de4e0a1daafaa8972b768bb0cda",
+        "prior_sha256": "013498ce6e227218dc7ee5e5383576532d368c35e5bac0e76b5863dc086a9844",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": " 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "hair_back",
+        "file": "layers/hair_back.png",
+        "sha256": "6141d921e26369b28ab305cbe59eabd76ebf4c603da287ab247c574df10e2712",
+        "prior_sha256": "958176f02df59e3338c6133739f6b7f3537b80ba30a1f6710328059392e4f170",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "在右肩和尾干后补回 A 原有的后发发丝与暗色，修整极限姿态中会分离的小碎片。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "hair_back_curl",
+        "file": "layers/hair_back_curl.png",
+        "sha256": "a1cd19323418cab3d7c998caf101fb1b61c6a9c56f8d78972beb5c0ff186790a",
+        "prior_sha256": "dc2109774ffc4872ef9b57bb75a834899258edfc8d514ce537c53cf477c8f21f",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "按主图修复尾干与左后发卷交界的发纹。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "hair_front_left",
+        "file": "layers/hair_front_left.png",
+        "sha256": "7581945ef07b03cc1c73db29bc5dc50a158c189e0d463c55dddfe4ebb26fc659",
+        "prior_sha256": "c1a12cdd1dda1e4f72cea6aae437e829f583feabafc58fc659184548e92a0fac",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": " 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "hair_front_right",
+        "file": "layers/hair_front_right.png",
+        "sha256": "e9ce300d891d899f18384ff3d813b1c2802802703b427db14045f5a01a2b9177",
+        "prior_sha256": "0a1e147a1b88bfb797161c97f8cd767f763bea084ead82d5306c3e50ea41ebd4",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. Just the SINGLE narrow S-curled dark indigo shoulder-front lock on the screen RIGHT of A, from hidden root by jaw to tapered inward-pointing tip. Restore all its boundaries, especially gently bowed screen-left edge and curved tip. Avoid flat cut lines; fully isolated single lock, no body, face or ribbon. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+        "generated_id": "exec-a4ebee54-b8cf-4904-9077-8aac2e7911fc.png",
+        "generated_sha256": "5877531de160e11c5c0bc99ff01433a45146fd88fb3e32ba62786df26bdd3bbf",
+        "notes": "用新生成的发束纹理填入渐变宽度的 S 形轮廓，按主图回贴可见发纹和末端暗色线条。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "headdress",
+        "file": "layers/headdress.png",
+        "sha256": "8348888fd9e500a0d1b3c1eaa421ba06982cd4968337f73da73031e431f65724",
+        "prior_sha256": "4809104b15fcaaab6c64c8d37f7622e33510e8bcd897ad194809563955979661",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": " 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "leg_back",
+        "file": "layers/leg_back.png",
+        "sha256": "96343d66362d7ac9cbb937a4f7c5eab7ff87279c99996d6852487feb16b0c153",
+        "prior_sha256": "96343d66362d7ac9cbb937a4f7c5eab7ff87279c99996d6852487feb16b0c153",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": false,
+        "notes": "沿用上轮原件。"
+      },
+      {
+        "id": "leg_front",
+        "file": "layers/leg_front.png",
+        "sha256": "e83a339918d33553c41db5decd1e01da8b9219342d52015e62827a406bbeeb6f",
+        "prior_sha256": "e83a339918d33553c41db5decd1e01da8b9219342d52015e62827a406bbeeb6f",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": false,
+        "notes": "沿用上轮原件。"
+      },
+      {
+        "id": "sidelocks",
+        "file": "layers/sidelocks.png",
+        "sha256": "50c0525370e3abc9ed0f2daaab7cea966e3640692f565f4cf7c5061d971fbfe1",
+        "prior_sha256": "4b10f34ebbb00a6155dd457c3277ae4d9d72e8895738ebd2bee4fd217df4103c",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "清理回拼及极限姿态中会脱离主体的细边。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "skirt",
+        "file": "layers/skirt.png",
+        "sha256": "57ce20fec6f86ac6cc552050453a2358b0602364f1eec737e468811dd44935a3",
+        "prior_sha256": "c1c8b3f909aa2cb0b9a1833e4efbdee12bfdd066dd753abef7efcc27f875f174",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": " 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "tail",
+        "file": "layers/tail.png",
+        "sha256": "1c8a9271fb1669a99259d585908e8551577eb2fb0c03ba8813381e361d6aec2f",
+        "prior_sha256": "2fc6c6f5844828a19cfb53a87b54b3caee6be89ebb91dac228b9f61da6ed79b4",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. Whale tail only. EXACT identity and geometry of A: on the screen LEFT a pair of deeply forked flukes arch up, navy with lavender underside; after the fork the thick stem sweeps DOWN and to the RIGHT then gently up toward the body's waist on the far right. The tail's stem is uninterrupted and longer than the flukes, with muted all-indigo shadow at the far RIGHT root. No blocky highlights or vertical joining line; tip of the root softly rounded. Isolate with no hair/body. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+        "generated_id": "exec-27e92f1c-1eaa-4945-b5e1-eea144081667.png",
+        "generated_sha256": "dcbfefce38a7396bda9029d4a7fadf5b735087efaa3d8bedc2066898a129182a",
+        "notes": "左右尾鳍沿 A 的轮廓，重新生成的尾干延长到腰后，以连续截面过渡阴影、压暗远端腹面。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      },
+      {
+        "id": "waist_bow",
+        "file": "layers/waist_bow.png",
+        "sha256": "fd03afaf7bcde8cc2816dc210b79b8332df82088b7f4cebdf0bca8a7ca9efc14",
+        "prior_sha256": "c2a074aa1113c8febbfa4934f650ace4a556730921d663c6d2083ded6d08e2c2",
+        "input_images": [
+          "master.png"
+        ],
+        "changed": true,
+        "notes": "将左端系带沿褶线收成软尖，复位腰带可见的亮色折痕。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+      }
+    ],
+    "expressions": [
+      {
+        "id": "neutral",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Neutral attentive. Reproduce A's original rich indigo-to-pale-blue anime irises, dark pupil, white catchlights, broad tapered upper lash. Include open whites around irises so gaze can move. Small neutral mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-ec61f1fb-b716-45df-ac8d-e17e5d5a4cee.png",
+        "generated_sha256": "61e12bcecd7caa2eab1d4ecdcfe4bb572e4998e019181996f3a37e4451f6889b",
+        "outputs": {
+          "layers/face/neutral/brows.png": "3ab6adb68657c9f893b32ca4780e47f90b38326eb87562106e169237e4f1818e",
+          "layers/face/neutral/eyeL_ball.png": "66e324537effc57544f74360e4845cd44f9cadb484ffcdc96a7b1615418a23d6",
+          "layers/face/neutral/eyeL_hl.png": "28af9f1cd61972640e7efd32aea3935672c09aea19beb3720cf91666fd5372c3",
+          "layers/face/neutral/eyeL_iris.png": "b3d2992927f3c5eb0383ba45f3c4bc78b8fd6a91866842874e2b8c55182dc304",
+          "layers/face/neutral/eyeL_lash.png": "c0469121e839af2524d6dd4a862efaee235ecf88db066762a59da67eab41da33",
+          "layers/face/neutral/eyeR_ball.png": "dd61fad132442b985bb9ce6bae663df64faa8bc342ff5b2108948e5682165c02",
+          "layers/face/neutral/eyeR_hl.png": "aa6081543ae3abce42943b3bf21fa50e624aa15079f83f3074b776ca25a062a4",
+          "layers/face/neutral/eyeR_iris.png": "885db1296e1a45b3732b3a545f539c84f49f6ec3c066937f4d3b77b9eaea200b",
+          "layers/face/neutral/eyeR_lash.png": "3ebb07b70f17b09338c4b5807b85956d205999d66e1a1095e53b239b57a3455e",
+          "layers/face/neutral/mouth.png": "9ca48b3976979caf570ec280ef58385342645b5879cf784a30a3cb6cc2172bc7"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。 眼白按 A 的真实眼裂补齐，虹膜与高光配合主图同位纹理分出、补底和内收，按编译器的实际视线活动范围收边。上眼线按 A 配准。"
+      },
+      {
+        "id": "happy",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Joyful closed crescent eyes rising in two bold smiling arches, open warm coral smiling mouth with small pink tongue. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-3006c7bc-0684-4906-bdfd-86ff14983cd9.png",
+        "generated_sha256": "4d1c04412327244abc748cf5b9e994e154916af4e2777c2f7829e0b865f2799b",
+        "outputs": {
+          "layers/face/happy/brows.png": "87e253e0685298b1f16601e4288ba5790251adb637deee199e0348b6da96eba6",
+          "layers/face/happy/eyeL.png": "d986d90b56ee91148629ba6c0d811370577c54a83b8cd7e7eb40fd9f5cc7005b",
+          "layers/face/happy/eyeR.png": "f4b11d46ae5d1f02512157cbb3cedffbbf82589a2c765f0327a864a77262926f",
+          "layers/face/happy/mouth.png": "8983baab9cfcb88a2fc8da8f4cf2e2eb05f879292740f0d790389ec3ea137395"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "love",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Adoring big open blue anime eyes with clearly visible coral-pink heart-shaped pupils; delighted small open smile. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-9c081dfc-dec0-486f-9cf4-419ac430cfd0.png",
+        "generated_sha256": "27283d61e426b407a987cc4d9584cacda085593edf14c4fecfcd8ef047c23fa9",
+        "outputs": {
+          "layers/face/love/brows.png": "7c1503d184c37d137e28eede6eecf12d70a7715ad41ed4740a2b5ae25f109e1e",
+          "layers/face/love/eyeL.png": "f5d678c9635ebc6bbf1858fdf0387ceaed291811e16074903f0fd7bc0d1fa443",
+          "layers/face/love/eyeR.png": "1944fb775ee8cd9be635290d855d6b833ebdc643860acf3b61428d7832b26ae9",
+          "layers/face/love/mouth.png": "6e0551898b828d23384ad609e49411e29b85dbf53588e68bb3ce7670657600b0"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "surprised",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Startled wide round outlined eyes, small dark blue pupils surrounded by lots of white, raised brows, round open O mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-02f1a409-edd5-4ff9-9309-265660e59c23.png",
+        "generated_sha256": "4272dfa59a39d3a2f8d9cc4afb62fc03fc33a885d50e1cb371309821e8adac44",
+        "outputs": {
+          "layers/face/surprised/brows.png": "6d9e11e2317dd42da921b9ed1063a4b47bf1c21cc72251f476d4a75cf6a1617e",
+          "layers/face/surprised/eyeL.png": "8a3f1c167ccfe51cfb4cb029fb261dbdbf9e93f78e1f9f5c13a73fd63230857d",
+          "layers/face/surprised/eyeR.png": "b1fb6be29135ef6ae1321e6d1e97cc1457d4c92194462191c46328ddff90cbd7",
+          "layers/face/surprised/mouth.png": "589afde1db5ef5195b7725650acd14246b5dcc8aae1c1c92c74ff87b6aef1f2c"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "sleep",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Peaceful closed eyes. Two gracefully tapered dark curved single lash lines sloping subtly down toward inner corners, soft quiet closed mouth. No iris, whites or upper lid second lines. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-d7d5a2ff-1779-4c3d-9b54-9829cecb27b0.png",
+        "generated_sha256": "36a5da8ceefcae1fa898c23fa9db217e9bccdec33c8d544bb7c0ad660b2788c8",
+        "outputs": {
+          "layers/face/sleep/brows.png": "bbcf8fbb131dd5493082dafb2a16e57efca69c13aa3a32409d3e68d3d01b2005",
+          "layers/face/sleep/eyeL.png": "aafb1551d26fbb413ed2ce38deaa9906f48db2373d746a97fc54c613bfa7c752",
+          "layers/face/sleep/eyeR.png": "d78c841201791c21e8d92f79232a876132947f1c4d5c661626663cb13ce3d3c9",
+          "layers/face/sleep/mouth.png": "b72f1a259b65fd3335fd495ece0547194c3a42e990244ce460806074d223b036"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。 两侧闭眼上沿与各自 neutral/lash 共用定稿曲线；厚度、下缘和嘴型单独处理。"
+      },
+      {
+        "id": "drag",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Panicky tightly squeezed bold > and < angle eyes, worried wavy mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-74b6a6e6-b479-4c63-af5a-f1e32ee006ed.png",
+        "generated_sha256": "37691e3a7f94e181d3b351c4927ac56790c8f8c3f0f3570f0f6c8560e861673e",
+        "outputs": {
+          "layers/face/drag/brows.png": "6c6d76eb27b171fd50944ba3e01fdfc145af43682f60afdb278359030efda6ef",
+          "layers/face/drag/eyeL.png": "d5b454e5c2855fcad06405fd1358613e0a7aff3d8c2e27128c790a0a17307532",
+          "layers/face/drag/eyeR.png": "88189d42232a18a4ace692135b88d1f48340101e1e78e38faf3dc4fc2337a4bd",
+          "layers/face/drag/mouth.png": "9fc9382a3dfd083d2ade452ba64df3b9de1fed6a82abecc2d408d063e03342bf"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "dizzy",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Dazed: two bold hand-inked indigo SPIRALS as eyes, easy to read at small size, slack asymmetrical open mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-ecefe31c-f970-49dc-8c5e-eb647d0fc512.png",
+        "generated_sha256": "0c918d0acd3cda98a7c8e70195b0b473c90cfebb7a106ce7559d01c04e32b14c",
+        "outputs": {
+          "layers/face/dizzy/brows.png": "d82227fb4bedaa219d2e33090fff9422200dcafac90567d1243f845eb7772ba6",
+          "layers/face/dizzy/eyeL.png": "5928b1165f1384c0852bd8a359f73e624446eb137925c429be81f3587b77a5cc",
+          "layers/face/dizzy/eyeR.png": "a3d0fb8df8fe8b15359b980be750e966ba1240f7a449540aa0d6ac99bfbc92fe",
+          "layers/face/dizzy/mouth.png": "6592de5eee42ef7088cede8f99297edf80145b8718e85b58884853a2a76fceeb"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "shy",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Bashful gaze clearly averted toward screen left, pupils very distinctly off centre, worried brows and small pressed mouth; no cheek or blush patches. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-ee332056-f43d-4107-912d-e708eab10282.png",
+        "generated_sha256": "9f8843cf838d410c2b416cd3fcbbce63edd25b581549d6141bafc87377494e83",
+        "outputs": {
+          "layers/face/shy/brows.png": "5089bceef3b8f38462e3d68929753b09336d53787fb0ec603e47a2f86086b51f",
+          "layers/face/shy/eyeL.png": "8648cf410b9154f8f538a1d3cdb580856f6cfd3ed0225e38dd6dcb83816ca343",
+          "layers/face/shy/eyeR.png": "bd81d4fe06994534bb465bab6552e75425dc88de1f3198d0c71e526df6d50f1d",
+          "layers/face/shy/mouth.png": "e3e69dccbfab5849ce3434a61cdeb90412333bac1103b02895827536862acd92"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "smug",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Smug half-lidded blue eyes with graphic lowered upper lashes and glancing irises, asymmetric brow lift and lopsided upturned smirk. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+        "transparent_background": true,
+        "generated_id": "exec-d1482847-d1e4-439c-88eb-8fa014fa3b27.png",
+        "generated_sha256": "8a921048bac00c2da34ee1c77efc5a29cc5929f1cb4c8fa461c9f47a11397903",
+        "outputs": {
+          "layers/face/smug/brows.png": "f5d3f380a62cd100b0bda403196a729edc253d860ec850dac0228772af9f356f",
+          "layers/face/smug/eyeL.png": "95bf60203a77b0c6083f36eb5dc74b12d2209f382c338868da7e8bf177138538",
+          "layers/face/smug/eyeR.png": "6f09039e7cc2a276764c8f4c752c0675d63dfd762391a934dbf590deb1e989b0",
+          "layers/face/smug/mouth.png": "ea511c1e8cca04cd53ad8341ad7f4364d38a81182a3b4a7dc9107a671bc863ce"
+        },
+        "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+      },
+      {
+        "id": "talk",
+        "tool": "Codex 内置 image_gen（编辑）",
+        "input_images": [
+          "master.png"
+        ],
+        "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Only one isolated small vertically open speaking anime mouth, gentle almond-shaped opening, coral tongue inside a deep rose outline, no eyes or other features. ",
+        "transparent_background": true,
+        "generated_id": "exec-a111c016-2518-45e3-8866-7fea99d3f0ec.png",
+        "generated_sha256": "86187e4dccec2233f2ed282eca14db608da04febbb22781d70265e58e6b9e83b",
+        "outputs": {
+          "layers/face/talk/mouth_open.png": "cb1a56ddba69c825f7d16a463ae67dcf8ec203794a6d8ca6a0228d5d2fc67b73"
+        },
+        "notes": "从单独生成的说话口型提取张嘴，保持原画嘴中心，显示时复用默认眼、眉。"
+      }
+    ],
+    "status": "骨骼路线暂停，当前进度原样保留作后备。"
   }
 }

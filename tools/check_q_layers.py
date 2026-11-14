@@ -13,7 +13,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps, ImageStat
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from aicompanion.body.rig_pack import LAYERS
+from aicompanion.body.rig_pack import EYE_LAYERS, EXPRESSIONS, LAYERS
 
 EXTRA = {
     "tail",
@@ -27,6 +27,14 @@ EXTRA = {
 GREEN = (0, 255, 0)
 WHITE = (255, 255, 255)
 DARK = (29, 30, 43)
+MAX_MEAN = 3
+MAX_TILE = 40
+MAX_GREEN = 0
+MAX_PALE = 100
+MAX_GAPS = 0
+MIN_COMPONENT = 16
+MAX_ISLANDS = 0
+MAX_BLINK_SHIFT = 4
 
 
 def read_json(path):
@@ -41,6 +49,64 @@ def flat(im, color):
 
 def count(mask):
     return sum(mask.histogram()[1:])
+
+
+def small_components(alpha):
+    """逐行扫描非零 alpha 的连续段；邻接行相接或斜接都属于同一块。"""
+    bounds = alpha.getbbox()
+    if bounds is None:
+        return []
+    tile = alpha.crop(bounds)
+    data = tile.tobytes()
+    width = tile.width
+    parent = []
+    runs = []
+    previous = []
+
+    def root(i):
+        while i != parent[i]:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for y in range(tile.height):
+        current = []
+        cursor = 0
+        for match in re.finditer(rb"[^\x00]+", data[y * width : (y + 1) * width]):
+            start, end = match.span()
+            i = len(parent)
+            parent.append(i)
+            current.append((start, end, i))
+            runs.append((start + bounds[0], end + bounds[0], y + bounds[1]))
+            while cursor < len(previous) and previous[cursor][1] < start:
+                cursor += 1
+            j = cursor
+            while j < len(previous) and previous[j][0] <= end:
+                parent[root(previous[j][2])] = root(i)
+                j += 1
+        previous = current
+    areas = {}
+    for i, (start, end, _) in enumerate(runs):
+        group = root(i)
+        areas[group] = areas.get(group, 0) + end - start
+    small = {group: [] for group, size in areas.items() if size < MIN_COMPONENT}
+    for i, run in enumerate(runs):
+        group = root(i)
+        if group in small:
+            small[group].append(run)
+    return list(small.values())
+
+
+def island_boxes(alpha):
+    return [
+        [
+            min(s for s, _, _ in group),
+            group[0][2],
+            max(e for _, e, _ in group),
+            group[-1][2] + 1,
+        ]
+        for group in small_components(alpha)
+    ]
 
 
 def edge_counts(im):
@@ -61,7 +127,7 @@ def edge_counts(im):
 
 def load_layers(art, pack):
     required = {name for name, spec in LAYERS.items() if spec["required"]} | EXTRA
-    listed = pack["parts"] | pack["review_layers"]
+    listed = pack["parts"] | pack.get("review_layers", {})
     missing = required - listed.keys()
     paths = {p.stem: p for p in (art / "layers").glob("*.png")}
     if missing or set(paths) != set(listed):
@@ -122,13 +188,16 @@ def difference(master, merged):
         raise ValueError("主图只有背景色")
     stats = ImageStat.Stat(delta, mask)
     worst = None
+    over_limit = []
     for y in range(0, master.height, 64):
         for x in range(0, master.width, 64):
             box = (x, y, min(x + 64, master.width), min(y + 64, master.height))
             active = union.crop(box)
-            if count(active) < 64:
+            if not active.getbbox():
                 continue
             value = sum(ImageStat.Stat(delta.crop(box), active).mean) / 3
+            if value > MAX_TILE:
+                over_limit.append({"box": list(box), "mean": value})
             if worst is None or value > worst[0]:
                 worst = value, box
     channels = delta.split()
@@ -145,7 +214,8 @@ def difference(master, merged):
         "master_mixed_green_excess_12": count(
             ImageChops.darker(mask, surplus.point(lambda v: 255 if v > 12 else 0))
         ),
-        "mean_abs_rgb": round(sum(stats.mean) / 3, 4),
+        "mean_abs_rgb": sum(stats.mean) / 3,
+        "tiles_over_limit": over_limit,
         "per_channel_mean": [round(n, 4) for n in stats.mean],
         "max_channel_error": max(b[1] for b in stats.extrema),
         "worst_64px_box": list(worst[1]),
@@ -331,6 +401,7 @@ def stress(images, pack, dest):
     crop = (-200, -240, 2248, 2250)
     panels = []
     measured = {}
+    islands = {}
     joints = {
         "arms": ["armNear", "armFar"],
         "legs": ["legFront", "legBack"],
@@ -348,7 +419,9 @@ def stress(images, pack, dest):
             def z(name):
                 if group == "arms" and angle > 60 and name in ("arm_near", "arm_far"):
                     return 12.6 + (pack["parts"][name]["z"] - 6) * 0.01
-                return (pack["parts"] | pack["review_layers"])[name]["z"]
+                if name == "neutral_features":
+                    return 8.3
+                return (pack["parts"] | pack.get("review_layers", {}))[name]["z"]
 
             key = f"{group}-{'plus' if sign > 0 else 'minus'}"
             composed = Image.new("RGBA", (1224, 1245))
@@ -374,7 +447,7 @@ def stress(images, pack, dest):
                     tex = im.crop(bounds[name])
                     tex = tex.resize(
                         (max(1, round(tex.width / 2)), max(1, round(tex.height / 2))),
-                        Image.Resampling.LANCZOS,
+                        Image.Resampling.BILINEAR,
                     )
                     projected.paste(
                         tex,
@@ -442,18 +515,91 @@ def stress(images, pack, dest):
                     )
                     joint_result[joint]["part_pixels_near_joint"] = count_part
             measured[key] = joint_result
+            islands[key] = island_boxes(composed.getchannel("A"))
             # 全姿态在相同画框下查看。另存无标注、可放大的截图。
             image = flat(composed, DARK)
             image.save(dest / (key + ".png"))
             panels.append((key, plate(image, 270, 280, DARK)))
     sheet(panels, dest / "extremes.png", 4, 270, 280)
-    return limits, measured
+    return limits, measured, islands
+
+
+def expression_parts(art, name, canvas):
+    directory = art / "layers" / "face"
+    base = "neutral" if name == "talk" else name
+    eyes = (
+        [f"{side}_{layer}" for side in ("eyeL", "eyeR") for layer in EYE_LAYERS]
+        if base == "neutral"
+        else ["eyeL", "eyeR"]
+    )
+    files = [directory / base / (piece + ".png") for piece in eyes]
+    brow = directory / base / "brows.png"
+    if brow.is_file():
+        files.append(brow)
+    files.append(
+        directory / "talk/mouth_open.png"
+        if name == "talk"
+        else directory / base / "mouth.png"
+    )
+    feature = Image.new("RGBA", canvas)
+    for path in files:
+        with Image.open(path) as im:
+            if im.mode != "RGBA" or im.size != canvas or not im.getbbox():
+                raise ValueError(f"表情纹理的尺寸、通道或透明度错误 {path}")
+            feature.alpha_composite(im)
+    return feature
+
+
+def blink_errors(art):
+    """检查共同横向范围内的上眼线位置；同时检查两端位置，避免错位眼线仅中心重合。"""
+    result = {}
+    for side in ("eyeL", "eyeR"):
+
+        def contour(path):
+            with Image.open(path) as im:
+                alpha = im.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+            left, top, right, bottom = alpha.getbbox()
+            return {
+                x: top + b[1]
+                for x in range(left, right)
+                if (b := alpha.crop((x, top, x + 1, bottom)).getbbox())
+            }
+
+        face = art / "layers/face"
+        a = contour(face / "neutral" / (side + "_lash.png"))
+        b = contour(face / "sleep" / (side + ".png"))
+        common = a.keys() & b.keys()
+        if not common:
+            raise ValueError(f"{side} 闭眼与中性眼线无重叠")
+        result[side] = max(
+            abs(min(a) - min(b)),
+            abs(max(a) - max(b)),
+            max(abs(a[x] - b[x]) for x in common),
+        )
+    return result
 
 
 def run(art, dest):
     dest.mkdir(parents=True, exist_ok=True)
     pack = read_json(art / "pack.json")
     layers = load_layers(art, pack)
+    has_faces = (art / "layers/face").is_dir()
+    if not has_faces and "neutral_ink" not in layers:
+        raise ValueError("缺少正式表情目录 layers/face")
+    if has_faces:
+        if "neutral_ink" in layers:
+            raise ValueError("已经有正式五官，不能再叠加静态五官校样")
+        layers["neutral_features"] = expression_parts(
+            art, "neutral", tuple(pack["canvas"])
+        )
+        layers = dict(
+            sorted(
+                layers.items(),
+                key=lambda item: 8.3
+                if item[0] == "neutral_features"
+                else pack["parts"][item[0]]["z"],
+            )
+        )
     with Image.open(art / "master.png") as source:
         master = source.convert("RGB")
     merged = Image.new("RGBA", master.size)
@@ -516,7 +662,75 @@ def run(art, dest):
                 (bgname + " / " + name, plate(image.crop(box), 300, 300, bg))
             )
     sheet(edge_views, dest / "edges.png", 4, 300, 300)
-    limits, joints = stress(layers, pack, dest)
+    reasons = pack.get("review_tile_notes", {})
+    for tile in errors["tiles_over_limit"]:
+        x, y, _, _ = tile["box"]
+        tile["reason"] = reasons.get(f"{x},{y}")
+        tile["image"] = f"tile-{x}-{y}.png"
+        sheet(
+            [
+                (tag, im.crop(tile["box"]).resize((256, 256), Image.Resampling.NEAREST))
+                for tag, im in views
+            ],
+            dest / tile["image"],
+            3,
+            256,
+            256,
+        )
+    limits, joints, pose_islands = stress(layers, pack, dest)
+    islands = {k: island_boxes(im.getchannel("A")) for k, im in layers.items()}
+    islands["composite"] = island_boxes(merged.getchannel("A"))
+    blink = {}
+    if has_faces:
+        blink = blink_errors(art)
+        panels = []
+        for path in sorted((art / "layers/face").glob("*/*.png")):
+            with Image.open(path) as im:
+                key = path.relative_to(art / "layers").as_posix()
+                islands[key] = island_boxes(im.getchannel("A"))
+                edges[key] = edge_counts(im)
+        for name in [*EXPRESSIONS, "talk"]:
+            version = Image.new("RGBA", master.size)
+            features = expression_parts(art, name, master.size)
+            for key, im in layers.items():
+                version.alpha_composite(features if key == "neutral_features" else im)
+            cropped = version.crop(version.getbbox())
+            h = 300
+            scaled = cropped.resize(
+                (round(h * cropped.width / cropped.height), h), Image.Resampling.LANCZOS
+            )
+            panels.append((name, scaled))
+        width = max(im.width for _, im in panels) + 12
+        sheet(
+            [(name, plate(im, width, 300, DARK)) for name, im in panels],
+            dest / "expressions-300.png",
+            len(panels),
+            width,
+            300,
+        )
+    violations = []
+    if errors["mean_abs_rgb"] > MAX_MEAN:
+        violations.append("回拼平均误差超限")
+    if any(not tile["reason"] for tile in errors["tiles_over_limit"]):
+        violations.append("局部误差超限且缺少逐格说明")
+    if any(
+        e["green_excess_12"] > MAX_GREEN or e["near_white_translucent"] > MAX_PALE
+        for e in edges.values()
+    ):
+        violations.append("偏绿或近白半透明像素超限")
+    if any(
+        s["transparent_in_7x7"] > MAX_GAPS
+        for group in joints.values()
+        for s in group.values()
+    ):
+        violations.append("支点窗口有透明像素")
+    if any(
+        len(boxes) > MAX_ISLANDS
+        for boxes in [*islands.values(), *pose_islands.values()]
+    ):
+        violations.append("存在面积小于 16 px 的孤立块")
+    if any(v > MAX_BLINK_SHIFT for v in blink.values()):
+        violations.append("闭眼与中性眼线上沿偏差超过 4 px")
     result = {
         "layer_count": len(layers),
         "difference": errors,
@@ -524,6 +738,21 @@ def run(art, dest):
         "edge_regions": regions,
         "spring_limits": limits,
         "joint_samples": joints,
+        "isolated_boxes": islands,
+        "pose_isolated_boxes": pose_islands,
+        "blink_max_error_px": blink,
+        "thresholds": {
+            "mean_abs_rgb": MAX_MEAN,
+            "tile_mean": MAX_TILE,
+            "green_pixels": MAX_GREEN,
+            "near_white_pixels": MAX_PALE,
+            "joint_gap_pixels": MAX_GAPS,
+            "isolated_components": MAX_ISLANDS,
+            "component_min_area_px": MIN_COMPONENT,
+            "blink_px": MAX_BLINK_SHIFT,
+        },
+        "violations": violations,
+        "passed": not violations,
     }
     (dest / "report.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -537,5 +766,16 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, default=ROOT / "output/t23-layers")
     args = parser.parse_args()
     result = run(args.art, args.output)
-    print(json.dumps(result["difference"], ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "passed": result["passed"],
+                "violations": result["violations"],
+                "mean_abs_rgb": result["difference"]["mean_abs_rgb"],
+                "over_limit_tiles": len(result["difference"]["tiles_over_limit"]),
+            },
+            ensure_ascii=False,
+        )
+    )
     print(args.output.resolve())
+    raise SystemExit(0 if result["passed"] else 1)
