@@ -4,7 +4,8 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| T23 | Q 版鲸鲸分层骨骼形象试点 | Codex 出图与 Rive 接入、Claude 审查 | 骨骼路线暂停，保留作后备；视频生成序列帧路线待 Claude 任务说明 | [原任务说明](tasks/T23-q-whale-rig.md) · [暂停时的产物](../art/deepseek-whale-q/review-step3/) |
+| T24 | 鲸鲸视频生成序列帧试点 | Codex 出图、调用视频模型、后期处理与接入 / Claude 审片 | 进行中 | [任务说明](tasks/T24-whale-video-sprites.md) |
+| T23 | Q 版鲸鲸分层骨骼形象试点 | Codex 出图与 Rive 接入、Claude 审查 | 骨骼路线暂停，保留作后备；视频路线见 T24 | [原任务说明](tasks/T23-q-whale-rig.md) · [暂停时的产物](../art/deepseek-whale-q/review-step3/) |
 | V4-7f | 跨天办事 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7f-long-tasks.md) |
 | V4-7d | 圈子长期话题 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7d-circle-topics.md) |
 | V4-6b | 混合语义召回与有来源的阶段摘要 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-6b-semantic-recall.md) |
