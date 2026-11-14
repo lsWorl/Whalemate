@@ -65,7 +65,9 @@ class PurposeEngine:
             sources = [i for i in item.get('memory_ids', []) if isinstance(i, int) and i in known]
             if kind not in KINDS or not isinstance(content, str) or not content.strip() or len(content) > 120 or not sources: continue
             if not isinstance(opener, str): opener = ''
-            ids.append(self.database.add_purpose(character_id, kind, content.strip(), opener.strip()[:120], sources, self._due_time()))
+            purpose_id = self.database.add_purpose(character_id, kind, content.strip(), opener.strip()[:120], sources, self._due_time())
+            if purpose_id is not None:
+                ids.append(purpose_id)
         return ids
 
     def _from_rules(self, memories):

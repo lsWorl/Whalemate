@@ -239,6 +239,16 @@ def schedule_pet_smoke_check(window, database, output):
     def ui_refresh():
         # 界面翻新（2026-11-11）：应用图标、聊天面板的办事开关与文件选择器、分组设置窗口能逐页打开
         from aicompanion.ui.settings_window import SettingsWindow
+        from aicompanion.ui.chat_records import ChatRecords
+        from aicompanion.ui.persona_trial import PersonaTrial
+        from unittest.mock import patch
+        seen = []
+        def inspect_dialog(active):
+            seen.append((type(active), active.messages.count() if isinstance(active, ChatRecords) else active.picker.count()))
+        with patch.object(ChatRecords, 'exec', inspect_dialog), patch.object(PersonaTrial, 'exec', inspect_dialog):
+            for action in window.conversations.menu().actions():
+                action.trigger()
+        state['chat_management'] = [kind for kind, count in seen if count] == [ChatRecords, PersonaTrial]
         state['app_icon_ready'] = not window.windowIcon().isNull() and not window.tray.icon().isNull()
         state['panel_controls_ready'] = (window.agent_toggle.isCheckable() and window.attach_button.isEnabled()
                                          and window.speak_toggle.isCheckable())
@@ -274,6 +284,8 @@ def schedule_pet_smoke_check(window, database, output):
         state['menu_groups_ready'] = sections == ['和她说话', '让她帮忙', '她的样子']
         menu.deleteLater()
         wizard = Onboarding(window)
+        wizard.show()
+        state['wizard_taskbar'] = taskbar_ready(wizard)
         visited = []
         for _ in range(5):
             visited.append(wizard.pages.currentIndex())
@@ -282,9 +294,12 @@ def schedule_pet_smoke_check(window, database, output):
         wizard.deleteLater()
         dialog = SettingsWindow(window.controller, window.settings, window, page='models')
         try:
+            dialog.show()
+            state['settings_taskbar'] = taskbar_ready(dialog)
             state['settings_pages_ready'] = (dialog.nav.current() == 'models'
                                              and all(dialog.open_page(key) for key in SettingsWindow.PAGES))
-            from unittest.mock import patch
+            dialog.open_page('relationship')
+            state['mood_auto_refresh'] = dialog.mood_card.timer.isActive()
             from aicompanion.services.circle_topics import switch_key
             from PySide6.QtWidgets import QMessageBox
             circle = dialog.circle_topics
@@ -366,11 +381,28 @@ def schedule_pet_smoke_check(window, database, output):
                 dialog.library_page.analyzer.wait(5000)
         finally:
             dialog.reject(); dialog.deleteLater()
+    def taskbar_ready(dialog):
+        if dialog.windowIcon().isNull():
+            return False
+        import sys
+        if sys.platform == 'win32':
+            from ctypes import windll
+            from ctypes.wintypes import HWND
+            return bool(windll.user32.GetWindowLongW(HWND(int(dialog.winId())), -20) & 0x40000)
+        return True
+
     later(21600, ui_refresh)
 
     def expression_start():
         import re
         from uuid import uuid4
+        # 先让上一项的心事回复完成送达，再占用桌面生成轮次。
+        if window.outreaches:
+            deadline = state.setdefault('purpose_wait_until', time.monotonic() + 8)
+            if time.monotonic() < deadline:
+                QTimer.singleShot(100, expression_start)
+                return
+            state['errors'].append('心事在表达自检开始前未完成送达')
         original=window.controller.router
         # 该计数器只测一次表达回复。临时库停用回复完成后独立触发的记忆和关系分析，
         # 否则它们也会使用下面的合成客户端，给同一个计数器再加一次。
@@ -649,19 +681,21 @@ def schedule_pet_smoke_check(window, database, output):
                     state['errors'].append('动作过渡未按时衔接：'+pose);finish_checks()
                 else:QTimer.singleShot(25,wait_pose)
             QTimer.singleShot(25,wait_pose)
-        settled_deadline=time.monotonic()+3.
+        # 表情回载和同轮的 MCP 进程收尾也属于 window.tasks，要给它们机会退出。
+        settled_deadline=time.monotonic()+12.
         def wait_chat_done():
             if not window.workers and not window.tasks and not window.speech.workers:
                 pet.view._cue=None;pet.view._cue_until=0.;pet.view.set_walking(0);next_target(0)
             elif time.monotonic()>=settled_deadline:
-                state['errors'].append('聊天线程未释放，无法独立验收过渡');finish_checks()
+                state['errors'].append(f'动作验收等待超时：聊天 {len(window.workers)}、后台任务 {len(window.tasks)}、语音 {len(window.speech.workers)}')
+                finish_checks()
             else:QTimer.singleShot(25,wait_chat_done)
         wait_chat_done()
     def safety_exit():
         # 兜底：表达检查本身出异常、串联没走到时，也要退出并留下报告，而不是一直挂着
         if not state.get('after_expression_ran'):
             state['errors'].append('表达自检没有走完，兜底退出'); after_expression()
-    later(24200+int(EXPRESSION_TIMEOUT*1000)+6000, safety_exit)
+    later(24200+int(EXPRESSION_TIMEOUT*1000)+14000, safety_exit)
 
     def finish():
         rows = database.recent_messages(10, 'deepseek-whale')
@@ -695,6 +729,7 @@ def schedule_pet_smoke_check(window, database, output):
         if rig and state.get('aboutme_installed') is False:
             required.extend(('fallback_sprite_shown', 'fallback_rig_restored'))
         required.extend(['qq_media_settings_ready','qq_task_approval'])
+        required.extend(['wizard_taskbar', 'settings_taskbar', 'mood_auto_refresh', 'chat_management'])
         required.extend(['menu_groups_ready', 'wizard_complete', 'app_icon_ready', 'panel_controls_ready', 'task_attachment_ready', 'settings_pages_ready', 'circle_topics_settings', 'date_reminder_editable', 'promise_settings', 'persona_ready', 'mood_ready', 'speech_default_on'])
         required.extend(['say_hidden','expression_flow','expression_single_request','expression_clean_text','expression_library_ready','expression_library_background_ready','expression_history_ready','expression_trace_ready'])
         state['failed_checks'] = [key for key in required if not state.get(key)]

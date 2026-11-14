@@ -178,6 +178,15 @@ class MemoryService:
         if group_topics:
             group_summaries = topics.collect(character_id, channel, users, data.get('topics'), analyzed_after=floor)
         source_ids = {r['id'] for r in users}
+        batch_ids = json.dumps([r['id'] for r in rows])
+
+        def still_present(connection):
+            # 等模型回复时可能有人删了这一批中的原话；模型看过的内容必须在写事务里重新核对。
+            missing = connection.execute("""SELECT 1 FROM json_each(?) AS source WHERE NOT EXISTS
+                    (SELECT 1 FROM chat_messages WHERE id=source.value AND character_id=? AND channel=?) LIMIT 1""",
+                    (batch_ids, character_id, channel)).fetchone()
+            return missing is None
+
         for item in data['memories'][:12]:
             cancellation.check()
             if not isinstance(item,dict):
@@ -201,7 +210,10 @@ class MemoryService:
             importance, confidence = item.get('importance',2), item.get('confidence',0.8)
             if not isinstance(importance,int) or not isinstance(confidence,(float,int)):
                 continue
+            public_check = self.public_guard(content, character_id, channel) if public else None
+            def guard(connection, fact_key, check=public_check):
+                return still_present(connection) and (check is None or check(connection, fact_key))
             self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources,scope='qq' if public else 'pet',
-                                        guard=self.public_guard(content,character_id,channel) if public else None)
+                                        guard=guard)
         self.database.set_setting(marker,last_id)
 

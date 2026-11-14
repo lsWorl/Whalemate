@@ -34,6 +34,14 @@ WHALE = VoiceProfile(
         ('Arrogant_Miss', '傲娇小姐'),
         ('Chinese (Mandarin)_BashfulGirl', '害羞少女'),
         ('Chinese (Mandarin)_Crisp_Girl', '清脆少女'),
+        ('Chinese (Mandarin)_Warm_Bestie', '暖心闺蜜'),
+        ('Chinese (Mandarin)_IntellectualGirl', '知性女生'),
+        ('Chinese (Mandarin)_Mature_Woman', '成熟女声'),
+        ('Chinese (Mandarin)_Gentle_Youth', '温柔青年'),
+        ('Chinese (Mandarin)_Unrestrained_Young_Man', '洒脱男声'),
+        ('Chinese (Mandarin)_Humorous_Elder', '幽默长者'),
+        ('Chinese (Mandarin)_Radio_Host', '电台主持'),
+        ('Chinese (Mandarin)_News_Anchor', '新闻主播'),
     ),
 )
 

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
                                QPushButton, QSlider, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from aicompanion.domain.persona import WARN_CHARS, PersonaError, export_own, export_sillytavern, prompt_extras, read_card
+from aicompanion.domain.persona import WARN_CHARS, PersonaError, export_own, export_sillytavern, read_card, trial_prompt
 from aicompanion.services.persona_service import PersonaService
 
 PREVIEW_ASK = '今天加班到好晚，好累啊'
@@ -357,9 +357,7 @@ class PersonaEditor(QWidget):
         except PersonaError as error: self.preview_text.setText(str(error)); return
         ask = self.ask.text().strip() or PREVIEW_ASK
         name = self.controller.character.name
-        bond = draft.relation()
-        prompt = bond.fill(f'你正在扮演 {name}。\n人设：{draft.description}\n{bond.prompt()}\n说话风格：{draft.speaking_style}\n'
-                           + prompt_extras(draft, ask) + '\n这是一次说话风格的预览，像平时聊天那样自然地回一句。', name)
+        prompt = trial_prompt(draft, name, ask)
         # 预览也是一次聊天请求，按陪伴用途走日金额额度（Codex PR #35 R1）；到限就不发
         from aicompanion.usage.meter import Quota
         state, note = Quota(self.db).check('companion')

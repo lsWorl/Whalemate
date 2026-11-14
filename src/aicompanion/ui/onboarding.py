@@ -4,7 +4,7 @@ import json
 import sys
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, Qt
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout,
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QFrame, QHBoxLayout,
                                QLabel, QLineEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea,
                                QStackedWidget, QVBoxLayout, QWidget)
 
@@ -13,6 +13,7 @@ from aicompanion.ui import desktop_integration as desktop, theme
 from aicompanion.ui.aboutme_preview import AboutmePreview
 from aicompanion.ui.chat_worker import TaskWorker
 from aicompanion.ui.icons import app_icon, line_icon, portrait
+from aicompanion.ui.taskbar_dialog import TaskbarDialog
 from aicompanion.ui.settings_window import play_voice_preview
 
 
@@ -78,7 +79,7 @@ class VoiceCard(QFrame):
             super().mouseReleaseEvent(event)
 
 
-class Onboarding(QDialog):
+class Onboarding(TaskbarDialog):
     titles = ('你好，我是鲸鲸！', '给她连上“大脑”', '选一个她说话的声音', '她在桌面上长什么样？', '都准备好了')
     poses = ('celebrate', 'thinking', 'talking', 'idle', 'celebrate')
     captions = ('', '我需要一个“大脑”才能想事情和说话。它来自网上的 AI 服务，按用量付费，平时聊天花得很少。',

@@ -91,6 +91,9 @@ class MainWindow(QMainWindow):
         self.pump=QTimer(self); self.pump.setInterval(100); self.pump.timeout.connect(self._pump); self.pump.timeout.connect(self._refresh_reply_actions); self.pump.start()
         self.pump.timeout.connect(self._poll_self_exit)
         self.scheduler=QTimer(self); self.scheduler.setInterval(60000); self.scheduler.timeout.connect(self._proactive); self.scheduler.start()
+        self.mood_timer = QTimer(self)
+        self.mood_timer.setInterval(3000)
+        self.mood_timer.timeout.connect(self._refresh_chat_mood)
         self.speech.subtitle.connect(self._speech_subtitle)
         self.speech.mouth.connect(lambda value:self.avatar.set_state(self.mood,value))
         self.speech.speaking.connect(self._speaking)
@@ -476,6 +479,23 @@ class MainWindow(QMainWindow):
             text, color = '离线试用', '#8A4A00'
         self.presence.setText(f'<span style="color:{color}">●</span> {text}')
         self.pet.presence = text
+
+    def _refresh_chat_mood(self):
+        from aicompanion.services.mood_service import MoodService
+        mood = MoodService(self.database).current(self.controller.character.id).label()
+        if mood != self.mood:
+            self.mood = mood
+            self._refresh_presence()
+            self.avatar.set_state(mood)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh_chat_mood()
+        self.mood_timer.start()
+
+    def hideEvent(self, event):
+        self.mood_timer.stop()
+        super().hideEvent(event)
 
     AGENT_PREFIXES=('/做','／做','/do ','做件事：')
     STOP_WORDS={'停','停下','停一下','别做了','不用做了','停止'}
@@ -1277,6 +1297,18 @@ class MainWindow(QMainWindow):
         self.controller.agent_enabled=bool(self.database.get_setting('agent_enabled',True))
         self._apply_backdrop()
         # 通话中改了收音设置由 _settings 只重启收音；这里不再挂断重开，否则会打断正在进行的回复
+
+    def _open_chat_records(self):
+        from aicompanion.ui.chat_records import ChatRecords
+        dialog = ChatRecords(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _open_persona_trial(self):
+        from aicompanion.ui.persona_trial import PersonaTrial
+        dialog = PersonaTrial(self)
+        dialog.exec()
+        dialog.deleteLater()
 
     def _settings(self,page=None):
         # 打开设置不打断正在进行的回复、办事或通话（负责人 2026-11-11 实机反馈）：

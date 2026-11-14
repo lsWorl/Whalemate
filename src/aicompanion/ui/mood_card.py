@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 from aicompanion.domain.mood import LABELS, MOODS
@@ -18,16 +19,27 @@ class MoodCard(QWidget):
         top = QHBoxLayout()
         self.soothe_button = QPushButton('哄好她'); self.soothe_button.setToolTip('委屈和生气马上清零（开心、撒娇不变）')
         self.soothe_button.clicked.connect(self.soothe)
-        refresh = QPushButton('刷新'); refresh.clicked.connect(self.refresh)
         self.summary = QLabel(); self.summary.setWordWrap(True)
-        top.addWidget(self.soothe_button); top.addWidget(refresh); top.addWidget(self.summary, 1); box.addLayout(top)
+        top.addWidget(self.soothe_button); top.addWidget(self.summary, 1); box.addLayout(top)
         grid = QGridLayout(); self.bars = {}
         for row, mood in enumerate(MOODS):
             bar = QProgressBar(); bar.setRange(0, 100); bar.setTextVisible(False); bar.setFixedHeight(8)
             grid.addWidget(QLabel(LABELS[mood]), row, 0); grid.addWidget(bar, row, 1); self.bars[mood] = bar
         box.addLayout(grid)
         self.events = QLabel(); self.events.setObjectName('Hint'); self.events.setWordWrap(True); box.addWidget(self.events)
+        self.timer = QTimer(self)
+        self.timer.setInterval(2000)
+        self.timer.timeout.connect(self.refresh)
         self.refresh()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refresh()
+        self.timer.start()
+
+    def hideEvent(self, event):
+        self.timer.stop()
+        super().hideEvent(event)
 
     def refresh(self):
         mood = self.service.current(self.cid); label = mood.label()

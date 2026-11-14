@@ -4,6 +4,7 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| V4-UI-实测 | 在聊天窗口删除消息与记忆、人格试聊、向导和设置的任务栏图标、云端声线选择、心情自动更新 | Codex 实现，Claude 审查 | 待审查与用户真机验收 | [任务说明](tasks/V4-ui-test-feedback.md) |
 | V4-7f | 跨天办事 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7f-long-tasks.md) |
 | V4-7d | 圈子长期话题 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7d-circle-topics.md) |
 | V4-6b | 混合语义召回与有来源的阶段摘要 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-6b-semantic-recall.md) |
