@@ -1,0 +1,155 @@
+{
+  "task": "T24",
+  "step": 1,
+  "tool": "Codex 内置 image_gen",
+  "use_case": "identity-preserve",
+  "model_version": null,
+  "seed": null,
+  "tool_metadata": "内置工具未返回模型版本和种子。",
+  "transparent_background": false,
+  "input_images": [
+    {
+      "path": "art/deepseek-whale-q/references/blue-original.png",
+      "sha256": "bb5044151595d8ac305b77134fe267f38ef7332de35091adbbe00aeececaaf05",
+      "role": "唯一输入图，用于保留脸、眼型、描边、比例和配色。负责人确认是自己用 AI 生成的原画。"
+    }
+  ],
+  "canvas": {
+    "size": [
+      1920,
+      1080
+    ],
+    "color_space": "sRGB",
+    "background": "#00FF00",
+    "top_y": 216,
+    "sole_y": 918,
+    "shoe_axis_x": 960,
+    "thumbnail_size": [
+      533,
+      300
+    ]
+  },
+  "preparation": "Pillow 12.3.0。按 G−max(R,B)<130 定位角色，≥190 的原画背景归一为纯绿，低于该阈值的混色边缘保留。将前景外接框等比缩至高 703 px，以两鞋中间对齐画布中线；Lanczos 缩放后将色差 ≥215 的像素归一为纯绿。缩略图用 Lanczos 直接缩放整个定稿画面。坐标原点为左上，边界框右、下端不包含在内。",
+  "candidates": [
+    {
+      "id": "A",
+      "prompt": "Edit the attached character illustration. Use this image as the actual model sheet. Keep the exact identity and the deliberately simple, hand-inked chibi drawing. Redraw only what is necessary to turn this raised-arm, floating pose into a neutral, straight-on standing animation anchor. Preserve the original very wide, huge head, low wide baby face with a tiny point mouth and a faint blush, tiny compact body and stubby legs. Keep the exact eye shape, spacing and gaze: heavy black upper lash, rounded blue eyes, dark vertical pupils, large sky-blue lower iris bands and small white catchlights. Keep center pointed fringe between the eyes, broad low outer bangs, navy periwinkle hair with a few broad blue highlight shapes, single curved ahoge, horizontal whale fins with white undersides and blue bows, simple thick dark-navy contour with slightly thinner interior strokes. Preserve the reference's navy maid dress, scalloped white headband, white apron with flat blue whale emblem, chest ribbon with tiny blue gem, gold bows at skirt hem, white stockings and glossy Mary Janes. No detailed strand rendering; keep the clean flat color blocks and soft cel shading of the input. Shoulders and hips square to camera, chin level, eyes looking directly at viewer, both arms lowered naturally along sides, two hands visible, both feet resting at same level. Keep the single forked whale tail on viewer's RIGHT behind her dress and broad flowing hair on viewer's left. Produce ONE full-body character in a horizontal 16:9 canvas. Head and feet centered on a vertical axis. Uppermost tip of her ahoge at 20% of the entire frame and bottom edges of shoes at 85%. Leave generous uninterrupted negative space left and right. Edge-to-edge single exact solid chroma green RGB(0,255,0) #00FF00. No scene, floor, reflection, contact shadow, gradients, green rim light, labels, text, framing, or other graphic.\nA: Trace the character's facial design and broad fluffy silhouette particularly closely. A poised neutral stance with wrists just alongside the skirt, feet slightly apart; tail flukes peek out at lower right. Keep the tiny surprised dot mouth.",
+      "visual_difference": "圆点嘴，双鞋平行微分，左侧后发展开最宽，右侧尾鳍贴着裙摆。",
+      "generator_output": "exec-f022bc4a-3502-4a3c-9abe-c35d8b11c77e.png",
+      "generator_output_sha256": "490baf00a29daef160db90d7ae1b63a2d671868a205ff6df129d57bc2df3957b",
+      "source_size": [
+        1672,
+        941
+      ],
+      "source_crop_ltrb": [
+        439,
+        22,
+        1199,
+        904
+      ],
+      "source_shoe_axis_x": 835,
+      "paste_xy": [
+        644,
+        216
+      ],
+      "resized_to": [
+        606,
+        703
+      ],
+      "visible_bounds_ltrb": [
+        644,
+        216,
+        1250,
+        919
+      ],
+      "shoe_soles_y": [
+        918,
+        918
+      ],
+      "file": "anchor/a.png",
+      "sha256": "a7ec66bb94cbf60ce9038bba01fd031a6d01ccd03575c04df453dd83ee59bd9d",
+      "thumbnail": "anchor/a-300.png",
+      "thumbnail_sha256": "d0dbce7050934cd13adce2778e1a11e4bfd4f4ccd899566e2e460bcdfe606758"
+    },
+    {
+      "id": "B",
+      "prompt": "Edit the attached character illustration. Use this image as the actual model sheet. Keep the exact identity and the deliberately simple, hand-inked chibi drawing. Redraw only what is necessary to turn this raised-arm, floating pose into a neutral, straight-on standing animation anchor. Preserve the original very wide, huge head, low wide baby face with a tiny point mouth and a faint blush, tiny compact body and stubby legs. Keep the exact eye shape, spacing and gaze: heavy black upper lash, rounded blue eyes, dark vertical pupils, large sky-blue lower iris bands and small white catchlights. Keep center pointed fringe between the eyes, broad low outer bangs, navy periwinkle hair with a few broad blue highlight shapes, single curved ahoge, horizontal whale fins with white undersides and blue bows, simple thick dark-navy contour with slightly thinner interior strokes. Preserve the reference's navy maid dress, scalloped white headband, white apron with flat blue whale emblem, chest ribbon with tiny blue gem, gold bows at skirt hem, white stockings and glossy Mary Janes. No detailed strand rendering; keep the clean flat color blocks and soft cel shading of the input. Shoulders and hips square to camera, chin level, eyes looking directly at viewer, both arms lowered naturally along sides, two hands visible, both feet resting at same level. Keep the single forked whale tail on viewer's RIGHT behind her dress and broad flowing hair on viewer's left. Produce ONE full-body character in a horizontal 16:9 canvas. Head and feet centered on a vertical axis. Uppermost tip of her ahoge at 20% of the entire frame and bottom edges of shoes at 85%. Leave generous uninterrupted negative space left and right. Edge-to-edge single exact solid chroma green RGB(0,255,0) #00FF00. No scene, floor, reflection, contact shadow, gradients, green rim light, labels, text, framing, or other graphic.\nB: Same face and costume. Give the resting hands a little more space from the skirt on both sides, feet a little farther apart. Let the tip of the tail curve up beside the right hem so the two lobes are readable. Keep the tiny quiet expression.",
+      "visual_difference": "脸颊有短腮红线，双脚间距最大，右侧尾鳍向上翘起。",
+      "generator_output": "exec-7ca6223c-9fa1-441f-94a3-af6a33f79f3f.png",
+      "generator_output_sha256": "a9cae43d57e54200d7c3d1bfbbd67c8c8775c8ff64e4a3d501acce462381a5e4",
+      "source_size": [
+        1672,
+        941
+      ],
+      "source_crop_ltrb": [
+        466,
+        28,
+        1188,
+        880
+      ],
+      "source_shoe_axis_x": 838,
+      "paste_xy": [
+        653,
+        216
+      ],
+      "resized_to": [
+        596,
+        703
+      ],
+      "visible_bounds_ltrb": [
+        653,
+        216,
+        1249,
+        919
+      ],
+      "shoe_soles_y": [
+        918,
+        918
+      ],
+      "file": "anchor/b.png",
+      "sha256": "00e7bba01131fd81ae8238623139c4a0714f2629c0f5d1a6d126e92f8d57ca2d",
+      "thumbnail": "anchor/b-300.png",
+      "thumbnail_sha256": "5c3f79b46cc20dfb29ebfe056bb7e71b7ae2c3631abac37f55c6c499ead4be45"
+    },
+    {
+      "id": "C",
+      "prompt": "Edit the attached character illustration. Use this image as the actual model sheet. Keep the exact identity and the deliberately simple, hand-inked chibi drawing. Redraw only what is necessary to turn this raised-arm, floating pose into a neutral, straight-on standing animation anchor. Preserve the original very wide, huge head, low wide baby face with a tiny point mouth and a faint blush, tiny compact body and stubby legs. Keep the exact eye shape, spacing and gaze: heavy black upper lash, rounded blue eyes, dark vertical pupils, large sky-blue lower iris bands and small white catchlights. Keep center pointed fringe between the eyes, broad low outer bangs, navy periwinkle hair with a few broad blue highlight shapes, single curved ahoge, horizontal whale fins with white undersides and blue bows, simple thick dark-navy contour with slightly thinner interior strokes. Preserve the reference's navy maid dress, scalloped white headband, white apron with flat blue whale emblem, chest ribbon with tiny blue gem, gold bows at skirt hem, white stockings and glossy Mary Janes. No detailed strand rendering; keep the clean flat color blocks and soft cel shading of the input. Shoulders and hips square to camera, chin level, eyes looking directly at viewer, both arms lowered naturally along sides, two hands visible, both feet resting at same level. Keep the single forked whale tail on viewer's RIGHT behind her dress and broad flowing hair on viewer's left. Produce ONE full-body character in a horizontal 16:9 canvas. Head and feet centered on a vertical axis. Uppermost tip of her ahoge at 20% of the entire frame and bottom edges of shoes at 85%. Leave generous uninterrupted negative space left and right. Edge-to-edge single exact solid chroma green RGB(0,255,0) #00FF00. No scene, floor, reflection, contact shadow, gradients, green rim light, labels, text, framing, or other graphic.\nC: Same face and costume. A compact, calm resting silhouette: arms hang close, shoes close together with a small gap, long back hair pools into two gently inward-curving locks, tail tip rests low beyond the right hem. Keep the eyes wide open and the tiny reference mouth.",
+      "visual_difference": "双手贴近裙侧，双鞋最靠拢，头发轮廓收窄，尾鳍低低向右展开。",
+      "generator_output": "exec-6ef606fd-7cf2-4a8b-85e5-8e17f334a035.png",
+      "generator_output_sha256": "49748698f144e085b34e05811c7553a74351db111f513ce62cc8b06e51c9e823",
+      "source_size": [
+        1672,
+        941
+      ],
+      "source_crop_ltrb": [
+        493,
+        35,
+        1179,
+        901
+      ],
+      "source_shoe_axis_x": 842,
+      "paste_xy": [
+        677,
+        216
+      ],
+      "resized_to": [
+        557,
+        703
+      ],
+      "visible_bounds_ltrb": [
+        677,
+        216,
+        1234,
+        919
+      ],
+      "shoe_soles_y": [
+        918,
+        918
+      ],
+      "file": "anchor/c.png",
+      "sha256": "a9111dda9fa4cb06440f4f281e4600d6733acfc8eeb8721e1999aaed74b41bc0",
+      "thumbnail": "anchor/c-300.png",
+      "thumbnail_sha256": "a336b767eff477a053e2c34fa9b289cc216b28dad8bb4d12e3cb92ff92a43e49"
+    }
+  ]
+}
