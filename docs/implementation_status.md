@@ -2162,3 +2162,11 @@ Windows x64 便携安装验证使用官方稳定版压缩包 `rive-windows-x64.t
 当前待 Claude 审图。分层补画、RML、骨骼绑定、运行时渲染和真机动作验收均待后续阶段。
 
 Windows `tools\run_checks.bat` 退出 0。单测 1383 项，1376 项通过、7 项跳过，用时 251.957 秒。桌宠 smoke 返回 `passed=true`、`failed_checks=[]`、`remaining_workers=0`。首次运行因独立虚拟环境漏载现有 pywin32 路径而失败，补齐该环境的路径后全量复跑通过。
+
+## 2026-11-14　T23 主图 A 第 2 步拆层与补画送审
+
+Claude 第 1 轮通过主图 A。本轮内置 image_gen 只输入 `master.png`，生成 19 个透明部件；中性五官另从 A 提取一张静态位置校样。前后发、远近袖、尾根、鳍根、净脸、裙下腿根已分层配准。蓝底参考及其备份留在本地，来源待负责人确认。[第 1 轮审图](../art/deepseek-whale-q/review-claude-r1.md) · [部件总览](../art/deepseek-whale-q/review-step2/layers-overview.png)
+
+回拼平均绝对色差为 2.3756 / 255，最明显的局部差异在远侧鳍根的窄缝。回拼偏绿像素为 0，16 张极限姿态共 26 个支点窗口均未出现透明像素。白底、深底、差分热图与极限姿态大图随报告交付。[审图报告与图集](../art/deepseek-whale-q/review-step2/report.md)
+
+Windows `tools\run_checks.bat` 退出 0，1386 项单测用时 262.926 秒，失败 0、跳过 7；桌宠 smoke 返回 `passed=true`、`failed_checks=[]`、`remaining_workers=0`。最终美术产物上另行复跑了分层自检和 3 项针对性测试。当前停在第 2 步待 Claude 审图；回拼阈值、Rive 实机动作和表情辨识度仍待后续审查和验证。

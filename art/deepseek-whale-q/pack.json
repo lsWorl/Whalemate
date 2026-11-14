@@ -2,7 +2,7 @@
   "format": "AICompanionPackSource",
   "version": 1,
   "id": "deepseek-whale-q",
-  "name": "鲸鲸 · T23 选图稿",
+  "name": "鲸鲸 · T23 长裙分层送审稿",
   "canvas": [
     2048,
     2048
@@ -51,6 +51,384 @@
       "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 C。保持同一张小脸与同一套服装，上眼睑轻轻放低一点，神情安宁若有所思，两眼都睁开。两撮发梢沿裙面往内卷，裙子安静垂成一个略收拢的钟形，左侧小鲸尾向外略翘。",
       "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
       "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    },
+    {
+      "role": "鲸尾",
+      "by": "Codex",
+      "files": [
+        "layers/tail.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: The single forked blue WHALE TAIL only (not a fish or hair), its two flukes at screen LEFT as in master; both point up, one up-left one up-right. Continue the now hidden flexible thick stalk smoothly toward the RIGHT all the way to its attachment at the back waist. Fill the entire right root; no truncated flukes. Deep indigo back, pale lavender underside.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 将双叶尾鳍和腰后根部分段配准，沿露出的尾干轮廓过渡到新的腰后尾干。"
+    },
+    {
+      "role": "后发",
+      "by": "Codex",
+      "files": [
+        "layers/hair_back.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: The ONE complete curtain of BACK HAIR hanging behind the head AND entire body. Reconstruct the middle now covered by the head, dress and arms as continuous shaded indigo long hair from crown to lower ends. A large single uninterrupted swathe with narrow cascading strands, soft blue tips and the same asymmetric sweep to screen left. Exclude forelocks, bangs, detachable outer curled tip, face, headband and ALL clothing. No central head-shaped or body-shaped hole.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 补全颅后、身后中央大块后发，保留尾鳍外露空隙。"
+    },
+    {
+      "role": "左后发卷",
+      "by": "Codex",
+      "files": [
+        "layers/hair_back_curl.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: A single long curling terminal lock from the lower LEFT of the back hair. Isolate a graceful downward S shaped tapered indigo-to-pale-blue lock, curling back on its tip, with a fully painted continuous upper root that disappears into the rear hair curtain. Nothing else.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 左下回卷沿暗部纹理接回后发，在尾干上方。"
+    },
+    {
+      "role": "右腿",
+      "by": "Codex",
+      "files": [
+        "layers/leg_front.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single separate leg on SCREEN RIGHT, its tiny white ruffled ankle sock and dark Mary Jane shoe, all in one piece. Draw skin from under the skirt at upper thigh down to ankle, same standing pose, toes slightly towards screen right, same small lack of foreshortening. Complete the covered upper leg; no skirt or second leg.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 腿根补到 y=1631，向下接原腿的裙底投影、袜与鞋。"
+    },
+    {
+      "role": "左腿",
+      "by": "Codex",
+      "files": [
+        "layers/leg_back.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single separate leg on SCREEN LEFT, with its little ruffled white ankle sock and the navy Mary Jane with side buckle matching master. Draw a continuous complete leg from upper thigh beneath skirt to shoe sole, slight turn to screen right. No skirt, other leg or body.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 腿根补到 y=1637，向下接原腿的裙底投影、袜与鞋。"
+    },
+    {
+      "role": "上身",
+      "by": "Codex",
+      "files": [
+        "layers/body.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only sleeveless compact UPPER TORSO together with its actual ivory neckline, white ruffles of the two apron straps on shoulders, narrow white button placket, large dark chest bow and blue brooch. Include neck skin and complete rounded shoulder caps and hidden sides underneath both detached arm sleeves. Lower edge extends just below waist into skirt by several centimeters. No head, arms, hands, hips, skirt, waist bow or hair. Draw precisely the same fitted bodice under the hair.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 胸针、原领口和门襟按 A 复位，隐蔽肩顶和衣身由单件补画承接。"
+    },
+    {
+      "role": "裙与围裙",
+      "by": "Codex",
+      "files": [
+        "layers/skirt.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the complete bell-shaped dark-indigo SKIRT from the waist to the ivory ruffled lower hem, including the full attached white front pinafore panel bearing the blue whale and water spout, gold vine embroidery and BOTH small navy/gold bows sewn at the lower hem. Fill the side panels that the hanging sleeves/arms cover. Include full back left silhouette behind the arms and hair. No waist sash, blouse, arms, legs or hair. Waistline at top and full hem at bottom.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 保存鲸标、刺绣和裙褶，按裙摆下缘复位蕾丝线稿。"
+    },
+    {
+      "role": "腰带与后腰结",
+      "by": "Codex",
+      "files": [
+        "layers/waist_bow.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the IVORY HORIZONTAL WAIST SASH with the small BACK BOW peeking from behind the near sleeve to the left, simple silk band that wraps the waist above the apron. Reconstruct its hidden bow loops and center knot at image LEFT. Do not draw the blue brooch bow at neck, the navy decorative hem bows, skirt, apron panel or any clothing other than this horizontal waist bow/sash.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 分别配准后腰结与腰带，以同一层接合。"
+    },
+    {
+      "role": "远侧手臂",
+      "by": "Codex",
+      "files": [
+        "layers/arm_far.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the full small ARM ON SCREEN RIGHT, from the hidden shoulder through its long dark-indigo puff sleeve, to the ivory ruffled cuff and bare hand with relaxed fingers pointing down and a little outward RIGHT. Complete the shoulder as a rounded closed sleeve cap. Visible hand and sleeve join continuously. No torso, dress, hair or second arm.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 依远侧肩、肘、袖口和手的截面配准，分出前发盖住的袖山。"
+    },
+    {
+      "role": "近侧手臂",
+      "by": "Codex",
+      "files": [
+        "layers/arm_near.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the full ARM ON SCREEN LEFT, anatomical near arm, its long navy puff sleeve, cream ruffled cuff and hand with gently extended fingers angled down and to image LEFT. Complete the upper shoulder region UNDER the white apron strap and the hidden sleeve side. Rounded sleeve shoulder cap, continuous arm from shoulder to hand, no torso, hair or skirt.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 依近侧袖从肩头到手指的截面配准，回贴原袖暗纹与手的可见部分。"
+    },
+    {
+      "role": "右肩前发",
+      "by": "Codex",
+      "files": [
+        "layers/hair_front_right.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: The SHORT single blue tapered front lock hanging over the shoulder on SCREEN RIGHT, from the jaw on that side to the top of the sleeve near chest. It is a thin descending indigo C-shaped tress with a slightly lighter tip curving left. Fill root under the jaw; no head or face or other hair.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 画面右肩前发覆盖远袖，发梢可随发根摆动。"
+    },
+    {
+      "role": "左肩前发",
+      "by": "Codex",
+      "files": [
+        "layers/hair_front_left.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the SHORT front tress that drapes over the shoulder ON SCREEN LEFT (near side, in front of sleeve). A slim curved indigo lock from under the cheek at screen left to the upper left chest, narrow lighter hooked tip curling LEFT, exactly as master. Paint the upper connection fully. No back curtain, other hair or clothes.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 画面左肩前的垂发盖过近侧袖顶，与左下回卷分层。"
+    },
+    {
+      "role": "远侧耳鳍",
+      "by": "Codex",
+      "files": [
+        "layers/fin_far.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the SINGLE small whale ear fin from SCREEN RIGHT with its little blue ribbon at its root. Root on the LEFT, rounded tip points DOWN AND RIGHT. Navy upper fin and the cream scalloped underside. Complete the base under the hair and ribbon right through to a rounded solid attachment. No hair/face, no other fin.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 远侧鳍根补进发内，保留外侧浅色反面。"
+    },
+    {
+      "role": "鬓发",
+      "by": "Codex",
+      "files": [
+        "layers/sidelocks.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: The soft head-side HAIR LOCKS immediately beside the ears and behind the face; two short layered rounded navy pieces as a pair at cheek height, tapering at jaw and just below, surrounding empty central space. Only the lateral tufts, no forehead fringe, no long strands on chest, no face.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 两侧面颊发片独立于肩前长发，保持侧脸原有遮挡。"
+    },
+    {
+      "role": "脸与额头",
+      "by": "Codex",
+      "files": [
+        "layers/face.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the COMPLETE plain anime head skin with the same softly pointed jaw, full forehead, small ears and temples, naturally shaded light skin. Absolutely featureless face plate for animation, no eyes, lashes, brows, mouth, nose marks, hair, collar or accessories. Fill the entire forehead hidden by master bangs, up to the natural hairline under the headband.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 生成完整净脸与额头，按 A 下颌描线，脸颊按原肤色局部柔化。"
+    },
+    {
+      "role": "主图五官（审图用）",
+      "by": "Codex",
+      "files": [
+        "layers/neutral_ink.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Pillow",
+      "prompt": null,
+      "notes": "从主图原位置提取睫毛、眼、眉和嘴的静态校样，叠在净脸上审图。"
+    },
+    {
+      "role": "近侧耳鳍",
+      "by": "Codex",
+      "files": [
+        "layers/fin_near.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the SINGLE larger whale ear fin on SCREEN LEFT, with the little blue bow at its root: base on RIGHT, fin sticks outward and diagonally DOWN-LEFT, deep indigo top and ivory scalloped underside. Paint a full rounded fin root extending to the right underneath hair and ribbon. No hair, face or other fin.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 近侧根部补进蝴蝶结后与侧发覆盖区。"
+    },
+    {
+      "role": "女仆头饰",
+      "by": "Codex",
+      "files": [
+        "layers/headdress.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single ivory RUFFLED MAID HEADBAND arch from the head, asymmetric high arch in three-quarter-right perspective, open center and open below, around the upper crown. Preserve its small folds, pale violet shadows, thin stitched trim and full continuous band beneath the hair overlap. No blue ribbons or hair.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 以头顶弧线与左右侧装饰定位，保留两端叠入头发的区域。"
+    },
+    {
+      "role": "刘海",
+      "by": "Codex",
+      "files": [
+        "layers/bangs.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the thick indigo FRONT BANGS hair cap across the crown and forehead; three main soft panels with the long pointed center lock and cheek-length side framing ends. Preserve the subtle periwinkle highlight shapes, fill crown under headband. No back hair, face, fin, headband, ahoge or hair flowing below the jaw.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 保留定稿刘海线稿，被发饰遮住的顶部使用同一部件的生成纹理。"
+    },
+    {
+      "role": "呆毛",
+      "by": "Codex",
+      "files": [
+        "layers/ahoge.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single narrow hook-shaped flyaway hair atop the crown. Its root points down at lower left, arches up and right then tapered tip curves down. Indigo curved stroke with two tapered ends, matching the master. No mass of hair at base.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 以挂接点对齐独立呆毛，整条线条沿用定稿走向。"
     }
-  ]
+  ],
+  "pivots": {
+    "body": [
+      1024,
+      1984
+    ],
+    "waist": [
+      1087,
+      1084
+    ],
+    "neck": [
+      1072,
+      790
+    ],
+    "armNear": [
+      918,
+      876
+    ],
+    "armFar": [
+      1244,
+      877
+    ],
+    "legBack": [
+      919,
+      1658
+    ],
+    "legFront": [
+      1106,
+      1653
+    ],
+    "tail": [
+      990,
+      1149
+    ],
+    "finNear": [
+      823,
+      568
+    ],
+    "finFar": [
+      1321,
+      565
+    ],
+    "ahoge": [
+      1079,
+      258
+    ]
+  },
+  "head": [
+    666,
+    199,
+    1359,
+    795
+  ],
+  "parts": {
+    "hair_back": {
+      "z": 1
+    },
+    "tail": {
+      "z": 0.8
+    },
+    "hair_back_curl": {
+      "z": 1.75
+    },
+    "leg_front": {
+      "z": 3
+    },
+    "leg_back": {
+      "z": 4
+    },
+    "arm_far": {
+      "z": 5.65
+    },
+    "body": {
+      "z": 5
+    },
+    "hair_front_right": {
+      "z": 6.15
+    },
+    "skirt": {
+      "z": 5.2
+    },
+    "hair_front_left": {
+      "z": 6.2
+    },
+    "waist_bow": {
+      "z": 5.5
+    },
+    "arm_near": {
+      "z": 6
+    },
+    "fin_far": {
+      "z": 7
+    },
+    "sidelocks": {
+      "z": 7.5
+    },
+    "face": {
+      "z": 8
+    },
+    "fin_near": {
+      "z": 11
+    },
+    "headdress": {
+      "z": 12.5
+    },
+    "bangs": {
+      "z": 13
+    },
+    "ahoge": {
+      "z": 14
+    }
+  },
+  "review_layers": {
+    "neutral_ink": {
+      "z": 8.3,
+      "deformer": "headFeat",
+      "note": "来自主图，仅现有中性五官的静态配准校样。表情分层待第 3 步。"
+    }
+  }
 }
