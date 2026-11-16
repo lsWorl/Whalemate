@@ -49,7 +49,10 @@
         "偷笑": "giggle"
       }
     },
-    "animation": "animation-aboutme/animations.json"
+    "animation": "animation-video/animations.json",
+    "animation_alternatives": {
+      "aboutme": "animation-aboutme/animations.json"
+    }
   },
   "voice": {
     "language": "zh",

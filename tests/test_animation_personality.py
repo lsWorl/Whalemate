@@ -80,9 +80,11 @@ class PersonalityViewTests(unittest.TestCase):
         self.view.direction=1
         picture=QImage(64,64,QImage.Format.Format_ARGB32_Premultiplied);picture.fill('red')
         picture.setPixelColor(5,10,'blue');self.view._display=picture
-        self.view.set_walking_vector(-100,0)
-        self.assertEqual(self.view.direction,-1)
-        self.assertEqual(self.view._display.mirrored(True,False),picture)
+        self.view.resize(64, 64)
+        before = self.view.grab().toImage()
+        self.view.set_walking_vector(-100, 0)
+        self.assertEqual(self.view.direction, -1)
+        self.assertEqual(self.view.grab().toImage(), before)
         self.assertFalse(self.view.walking_ready)
 
     def test_retarget_keeps_old_foot_position_until_new_gait_is_ready(self):

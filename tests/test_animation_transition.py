@@ -50,7 +50,11 @@ class TransitionPackTests(unittest.TestCase):
     def test_invalid_transition_endpoints_paths_and_duration_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path,data=make_pack(Path(directory))
-            for update in ({'from':'absent'},{'to':'idle'},{'image':'../outside.webp'},{'fps':1}):
+            # 过渡上限 3 秒：4 帧按 1 fps 播放为 4 秒，应被拒绝。
+            long=QImage(64*4,64,QImage.Format.Format_ARGB32_Premultiplied);long.fill(Qt.GlobalColor.transparent)
+            assert long.save(str(Path(directory)/'long.webp'),'WEBP',100)
+            too_long={'image':'long.webp','columns':4,'frameCount':4,'fps':1}
+            for update in ({'from':'absent'},{'to':'idle'},{'image':'../outside.webp'},too_long):
                 bad=json.loads(json.dumps(data));bad['transitions'][0].update(update);path.write_text(json.dumps(bad),encoding='utf-8')
                 with self.subTest(update=update),self.assertRaises(CharacterPackError):load_animation_pack(path)
             data['transitions'].append(dict(data['transitions'][0]));path.write_text(json.dumps(data),encoding='utf-8')
