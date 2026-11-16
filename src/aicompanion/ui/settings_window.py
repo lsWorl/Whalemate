@@ -297,7 +297,10 @@ class SettingsWindow(TaskbarDialog):
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+('；'.join(f"{r['kind']} {r['amount']}" for r in rows) or '暂无')+'\nKey 在“模型与 Key”页加密保存（Windows DPAPI），不以明文写入数据库。')
         other.setWordWrap(True); other.setObjectName('Hint')
-        usage_page=Page('用量','每天的模型和语音用量，以及额度上限。'); usage_page.add(self.usage_page); usage_page.add(other); usage_page.finish()
+        from aicompanion.ui.quota_badge import QuotaBadge
+        self.quota_badge=QuotaBadge(self.database,controller.router); self.quota_badge.setWordWrap(True)
+        usage_page=Page('用量','每天的模型和语音用量、额度上限，以及支持查询的服务商账户余额（DeepSeek、Kimi；点一下刷新）。')
+        usage_page.add(self.quota_badge); usage_page.add(self.usage_page); usage_page.add(other); usage_page.finish()
 
         # ---- 概览（最后建：要读上面各页的状态） ------------------------------------------------------
         overview=self._overview_page(Page, Section)

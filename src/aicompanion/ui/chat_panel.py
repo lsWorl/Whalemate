@@ -152,6 +152,10 @@ def build(window):
     w.presence = QLabel()
     w.presence.setObjectName('Presence')
     names.addWidget(w.presence)
+    # T29：今日额度余量和服务商账户余额，一行小字。
+    from aicompanion.ui.quota_badge import QuotaBadge
+    w.quota_badge = QuotaBadge(w.database, w.controller.router)
+    names.addWidget(w.quota_badge)
     top.addLayout(names, 1)
     w._refresh_roles()
     w.conversations = QPushButton('会话')
