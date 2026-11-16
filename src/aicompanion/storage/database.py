@@ -224,6 +224,9 @@ class Database:
 
     def finish_turn(self, turn_id, character_id, content, status, error="", channel="desktop", source="text", *, on_complete=None) -> None:
         with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if self._reply_deleted(connection, character_id, turn_id):
+                return
             has_attachment=connection.execute("SELECT 1 FROM expression_deliveries WHERE turn_id=? AND character_id=? AND status IN ('pending','sending','displayed','accepted') LIMIT 1",(turn_id,character_id)).fetchone()
             if content.strip() or has_attachment:
                 row=connection.execute("SELECT id FROM chat_messages WHERE turn_id=? AND character_id=? AND role='assistant'",(turn_id,character_id)).fetchone()
@@ -237,11 +240,51 @@ class Database:
     def set_delivered_reply(self,turn_id,character_id,content,status):
         """上下文只保存用户已看见或已听见的文本，生成全文不等于已送达。"""
         with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if self._reply_deleted(connection, character_id, turn_id):
+                return
             row=connection.execute("SELECT id FROM chat_messages WHERE turn_id=? AND character_id=? AND role='assistant'", (turn_id,character_id)).fetchone()
             if row:
                 connection.execute("UPDATE chat_messages SET content=?,status=? WHERE id=?", (content,status,row['id']))
             elif content:
                 connection.execute("INSERT INTO chat_messages(role,content,character_id,turn_id,status) VALUES ('assistant',?,?,?,?)", (content,character_id,turn_id,status))
+
+    @staticmethod
+    def _reply_deleted(connection, character_id, turn_id):
+        return connection.execute("SELECT 1 FROM conversation_turns WHERE character_id=? AND id=? AND status='deleted'",
+                                  (character_id, turn_id)).fetchone() is not None
+
+    def delete_chat_messages(self, character_id, message_ids):
+        """只删除该角色私聊历史中选中的消息和有对应来源的派生记录。"""
+        with self.transaction() as c:
+            c.execute("BEGIN IMMEDIATE")
+            rows = c.execute("""SELECT id, role, turn_id FROM chat_messages WHERE character_id=? AND channel='desktop'
+                                AND id IN (SELECT value FROM json_each(?))""",
+                             (character_id, json.dumps(list(message_ids)))).fetchall()
+            if not rows:
+                return 0
+            selected = json.dumps([r['id'] for r in rows])
+            # 先收集相关记忆卡，移除以它们为来源的心事以及可能仍在本地的向量索引。
+            derived = """character_id=? AND EXISTS (SELECT 1 FROM json_each(source_ids)
+                         WHERE value IN (SELECT value FROM json_each(?)))"""
+            c.execute(f"""DELETE FROM purposes WHERE character_id=? AND EXISTS (SELECT 1 FROM json_each(memory_ids)
+                       WHERE value IN (SELECT id FROM memories WHERE {derived}))""", (character_id, character_id, selected))
+            c.execute(f"""DELETE FROM memory_vectors WHERE character_id=? AND fact_key IN
+                       (SELECT fact_key FROM memories WHERE {derived} UNION SELECT fact_key FROM memory_archive WHERE {derived})""",
+                      (character_id, character_id, selected, character_id, selected))
+            for table in ('memories', 'memory_archive', 'stage_summaries'):
+                c.execute(f'DELETE FROM {table} WHERE {derived}', (character_id, selected))
+            c.execute('DELETE FROM conversation_summaries WHERE character_id=? AND through_id>=?',
+                      (character_id, min(r['id'] for r in rows)))
+            for row in rows:
+                if row['role'] == 'assistant' and row['turn_id']:
+                    # 朗读回执和生成收尾可能在确认删除之后才到达。
+                    c.execute("""INSERT INTO conversation_turns(id,character_id,status) VALUES (?,?,'deleted')
+                                 ON CONFLICT(id) DO UPDATE SET status='deleted' WHERE character_id=excluded.character_id""",
+                              (row['turn_id'], character_id))
+                    c.execute("DELETE FROM expression_deliveries WHERE character_id=? AND turn_id=?", (character_id, row['turn_id']))
+            c.execute('DELETE FROM chat_messages WHERE id IN (SELECT value FROM json_each(?))', (selected,))
+            return len(rows)
 
     def load_summary(self,character_id):
         with self.transaction() as connection:
@@ -258,14 +301,19 @@ class Database:
         """guard(connection, key) → bool：在同一个写事务里、写入之前做的检查（公开来源的记忆用它按此刻的 private 状态把关，
         和设置页的 set_memory_scope 互斥，没有"检查完、写之前"的空隙）。"""
         key = fact_key or hashlib.sha256(content.strip().encode()).hexdigest()
+        sources = json.dumps(list(source_ids))
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT 1 FROM memory_tombstones WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone():
                 return False
+            if sources != '[]' and connection.execute("""SELECT 1 FROM json_each(?) AS source WHERE NOT EXISTS
+                    (SELECT 1 FROM chat_messages WHERE id=source.value AND character_id=?) LIMIT 1""",
+                    (sources, character_id)).fetchone():
+                return False
             if guard is not None and not guard(connection, key):
                 return False
             row = connection.execute("SELECT id,content FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
-            values = (content[:1000], category, max(1,min(5,importance)), max(0,min(1,confidence)), json.dumps(list(source_ids)))
+            values = (content[:1000], category, max(1,min(5,importance)), max(0,min(1,confidence)), sources)
             if row:
                 # 再次提到 = 重新记清楚
                 connection.execute("UPDATE memories SET content=?,category=?,importance=?,confidence=?,source_ids=?,updated_at=CURRENT_TIMESTAMP,clarity=1,recalled_at=CURRENT_TIMESTAMP WHERE id=?", (*values, row['id']))
@@ -286,19 +334,28 @@ class Database:
             return connection.execute("SELECT * FROM memories WHERE character_id=? ORDER BY importance DESC,updated_at DESC,id DESC LIMIT ?", (character_id, limit)).fetchall()
 
     def delete_memory(self, memory_id, character_id) -> None:
+        self.delete_memories([memory_id], character_id)
+
+    def delete_memories(self, memory_ids, character_id) -> None:
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT fact_key FROM memories WHERE id=? AND character_id=?", (memory_id,character_id)).fetchone()
-            if row:
-                connection.execute("INSERT OR IGNORE INTO memory_tombstones(character_id,fact_key) VALUES (?,?)", (character_id,row['fact_key']))
-                # 你主动删除 = 真的忘掉：全量存档里同一事实也一起删除
-                connection.execute("DELETE FROM memory_archive WHERE character_id=? AND fact_key=?", (character_id,row['fact_key']))
-                connection.execute("DELETE FROM memories WHERE id=? AND character_id=?", (memory_id,character_id))
-                connection.execute("DELETE FROM conversation_summaries WHERE character_id=?", (character_id,))
-                connection.execute("DELETE FROM stage_summaries WHERE character_id=?", (character_id,))
-                connection.execute("DELETE FROM memory_vectors WHERE character_id=? AND fact_key=?", (character_id,row['fact_key']))
-                last = connection.execute('SELECT MAX(id) FROM chat_messages WHERE character_id=?', (character_id,)).fetchone()[0]
-                self.set_setting_in(connection, f'context_after:{character_id}', last or 0)
+            rows = connection.execute("""SELECT id,fact_key FROM memories WHERE character_id=?
+                                      AND id IN (SELECT value FROM json_each(?))""", (character_id, json.dumps(list(memory_ids)))).fetchall()
+            if not rows:
+                return
+            for row in rows:
+                key = (character_id, row['fact_key'])
+                connection.execute("INSERT OR IGNORE INTO memory_tombstones(character_id,fact_key) VALUES (?,?)", key)
+                connection.execute("DELETE FROM memory_archive WHERE character_id=? AND fact_key=?", key)
+                connection.execute("DELETE FROM memory_vectors WHERE character_id=? AND fact_key=?", key)
+                connection.execute("DELETE FROM memories WHERE id=?", (row['id'],))
+            selected = json.dumps([r['id'] for r in rows])
+            connection.execute("""DELETE FROM purposes WHERE character_id=? AND EXISTS (SELECT 1 FROM json_each(memory_ids)
+                                  WHERE value IN (SELECT value FROM json_each(?)))""", (character_id, selected))
+            connection.execute("DELETE FROM conversation_summaries WHERE character_id=?", (character_id,))
+            connection.execute("DELETE FROM stage_summaries WHERE character_id=?", (character_id,))
+            last = connection.execute('SELECT MAX(id) FROM chat_messages WHERE character_id=?', (character_id,)).fetchone()[0]
+            self.set_setting_in(connection, f'context_after:{character_id}', last or 0)
 
     # ---- v2：记忆卡、存档、收件箱、目的 ----
     def memory_card(self, character_id):
@@ -341,10 +398,15 @@ class Database:
         with self.transaction() as connection:
             connection.executemany("UPDATE memory_inbox SET processed=1 WHERE id=?", [(i,) for i in ids])
 
-    def add_purpose(self, character_id, kind, content, opener, memory_ids, due_at) -> int:
+    def add_purpose(self, character_id, kind, content, opener, memory_ids, due_at) -> int | None:
         with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            sources = json.dumps(list(memory_ids))
+            if connection.execute("""SELECT 1 FROM json_each(?) AS source WHERE NOT EXISTS
+                    (SELECT 1 FROM memories WHERE id=source.value AND character_id=?) LIMIT 1""", (sources, character_id)).fetchone():
+                return None
             return connection.execute("INSERT INTO purposes(character_id,kind,content,opener,memory_ids,due_at) VALUES (?,?,?,?,?,?)",
-                                      (character_id, kind, content[:200], opener[:200], json.dumps(list(memory_ids)), due_at)).lastrowid
+                                      (character_id, kind, content[:200], opener[:200], sources, due_at)).lastrowid
 
     def purposes(self, character_id, status=None, limit=100):
         with self.transaction() as connection:

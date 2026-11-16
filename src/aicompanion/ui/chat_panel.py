@@ -1,6 +1,6 @@
 """聊天面板的展示层，发送、通话和角色切换沿用主窗口的入口。"""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QComboBox
+from PySide6.QtWidgets import QFileDialog, QComboBox, QMenu
 from aicompanion.agent import attachments
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
@@ -154,6 +154,12 @@ def build(window):
     names.addWidget(w.presence)
     top.addLayout(names, 1)
     w._refresh_roles()
+    w.conversations = QPushButton('会话')
+    menu = QMenu(w.conversations)
+    menu.addAction('聊天记录与记忆…', w._open_chat_records)
+    menu.addAction('人格试聊…', w._open_persona_trial)
+    w.conversations.setMenu(menu)
+    top.addWidget(w.conversations)
     w.speak_toggle = icon_button('voice', '回复时念出来')
     w.speak_toggle.setCheckable(True)
     w.speak_toggle.toggled.connect(w._toggle_speech)

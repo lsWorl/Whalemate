@@ -1,11 +1,12 @@
 from dataclasses import replace
 from uuid import uuid4
 from datetime import datetime, timezone
-from PySide6.QtCore import Qt,QDateTime,QTimeZone,QTimer,Signal
+from PySide6.QtCore import Qt,QDateTime,QTimeZone,QTimer,QSignalBlocker,Signal
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
     QFrame,QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
 from aicompanion.ui import theme
+from aicompanion.ui.taskbar_dialog import TaskbarDialog
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
 from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
@@ -14,7 +15,7 @@ def play_voice_preview(speech, target=None):
     speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。', uuid4().hex, target=target)
 
 
-class SettingsWindow(QDialog):
+class SettingsWindow(TaskbarDialog):
     """设置窗口。左侧按“她 / 能力 / 连接 / 系统”分组，第一页“概览”告诉用户还差哪几步、去哪里设置。
 
     页面键（open_page 参数、概览里的“去设置”按钮都用它）：overview、persona、memory、relationship、proactive、
@@ -330,7 +331,7 @@ class SettingsWindow(QDialog):
         layout.addWidget(footer)
         self._setup_autosave()
         self.refresh()
-        self.nav.page_changed.connect(lambda key: self._refresh_overview() if key == 'overview' else None)
+        self.nav.page_changed.connect(self._page_changed)
         self.open_page(page or 'overview')
         theme.prepare_controls(self)
 
@@ -342,6 +343,18 @@ class SettingsWindow(QDialog):
 
     def open_page(self, key):
         return self.nav.show_page(key)
+
+    def _page_changed(self, key):
+        if key == 'overview':
+            self._refresh_overview()
+        if key in ('voice', 'models') and self.model_page:
+            # 两页共享同一份语音绑定。先提交上一页的输入，再显示最新的选项。
+            if self.model_page.flush() and self.autosave.flush():
+                if key == 'voice':
+                    with QSignalBlocker(self.voice):
+                        self._voice_provider_changed()
+                else:
+                    self.model_page.refresh()
 
     def _overview_page(self, Page, Section):
         from PySide6.QtWidgets import QProgressBar
@@ -463,6 +476,7 @@ class SettingsWindow(QDialog):
 
     def _voice_provider_changed(self,*args):
         self.voice.clear()
+        self.voice.setEditable(self.provider.currentData() != 'breeze')
         if self.provider.currentData()=='qwen':
             current=self.database.get_setting(f'qwen_voice:{self.controller.character.id}',self.settings.qwen_tts_voice)
             self.voice.addItem('自定义声线（AI 合成，非官方）',self.settings.qwen_tts_voice)
@@ -471,14 +485,15 @@ class SettingsWindow(QDialog):
             self.voice.addItem('灵希：可爱甜美','longanlingxi')
             self.voice.addItem('风悦：自然亲切','longanfengyue')
         elif self.provider.currentData()=='breeze':
-            # 音色在“模型与 Key”页的“语音合成”里按角色设置；没设置时用角色自己的默认声线（MiniMax），可以在这里从候选里换
+            # 向导创建的绑定、模型页的自定义音色、角色默认声线都按实际供应商展示。
             cid=self.controller.character.id
             target=self.controller.router.tts_target(cid)
-            from aicompanion.domain.voice_profile import profile_for
-            profile=profile_for(cid)
-            if target and target.label.endswith('（默认声线）') and profile:
-                for voice,label in profile.minimax_candidates: self.voice.addItem(label,'choice:'+voice)
+            from aicompanion.domain.voice_profile import WHALE
+            if target and target.provider_kind == 'minimax':
+                for voice,label in WHALE.minimax_candidates: self.voice.addItem(label,'choice:'+voice)
                 current='choice:'+target.voice
+                if self.voice.findData(current) < 0:
+                    self.voice.addItem('自定义音色 · '+target.voice, current)
             else:
                 current=target.cache_id if target else ''
                 self.voice.addItem(target.label if target else '未配置：在“模型与 Key”页添加 MiniMax 账户（鲸鲸默认声线）或设置 Breeze Blue 音色',current)
@@ -515,9 +530,10 @@ class SettingsWindow(QDialog):
         return value[len('choice:'):] if value.startswith('choice:') else None
 
     def _save_voice_choice(self,cid):
-        """默认声线的候选音色按角色保存，路由用它选择 MiniMax 音色。"""
+        """按角色保存候选音色，由路由保留原有账户和合成参数。"""
         choice=self._voice_choice()
-        if choice is not None: self.database.set_setting(f'voice_choice:{cid}',choice)
+        if choice is not None:
+            self.controller.router.save_minimax_voice(cid, choice)
 
     def preview_voice(self):
         if not self.speech_output: return
@@ -599,7 +615,8 @@ class SettingsWindow(QDialog):
 
     def delete_memory(self):
         selected={index.row() for index in self.table.selectedIndexes()}
-        for row in selected: self.database.delete_memory(self.table.item(row,0).data(Qt.ItemDataRole.UserRole),self.controller.character.id)
+        ids = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) for row in selected]
+        self.database.delete_memories(ids, self.controller.character.id)
         self.refresh()
 
     def queue_setting(self, group, save):

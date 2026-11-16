@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from aicompanion.providers.credentials import CredentialStore
 from aicompanion.providers.models import (DEFAULT_MAX_OUTPUT_WHEN_THINKING, DEFAULT_THINKING, PURPOSE_KIND,
@@ -177,24 +177,41 @@ class ModelRouter:
                 return SearchTarget('wikipedia')
         return SearchTarget('wikipedia')
 
-    def tts_target(self, character_id: str, voice_choice: str | None = None) -> TtsTarget | None:
-        """这个角色的语音合成配置（音色可以按角色单独设置）。没配置或没有 Key 返回 None。
-        voice_choice 只影响默认声线的候选音色：设置页试听用它，不写数据库（Codex PR #41 审查 3）。"""
-        if self.offline: return None
-        config = self.store.load()
+    def _tts_binding(self, config, character_id):
         for binding in (config.binding('tts', character_id), config.binding('tts', None)):
             if not (binding and binding.model in config.models and binding.voice): continue
             model = config.models[binding.model]
             provider = config.providers.get(model.provider)
-            if not provider: continue
+            if provider:
+                return binding, model, provider
+        return None
+
+    def save_minimax_voice(self, character_id, voice):
+        """显式绑定沿用模型页的配置结构；只在用户选了不同音色时创建角色级选择。"""
+        route = self._tts_binding(self.store.load(), character_id)
+        if route:
+            binding, _, provider = route
+            if provider.kind == 'minimax' and voice != binding.voice:
+                self.store.bind(replace(binding, character_id=character_id, voice=voice))
+        else:
+            self.store.db.set_setting(f'voice_choice:{character_id}', voice)
+
+    def tts_target(self, character_id: str, voice_choice: str | None = None) -> TtsTarget | None:
+        """解析本轮合成配置。试听可临时覆盖 MiniMax 音色，不修改已保存的绑定。"""
+        if self.offline: return None
+        config = self.store.load()
+        route = self._tts_binding(config, character_id)
+        if route:
+            binding, model, provider = route
+            voice = voice_choice if voice_choice and provider.kind == 'minimax' else binding.voice
             key = self.credentials.get(provider.credential, endpoint=provider.base_url)
             if not key: return None
             revision = self.credentials.revision(provider.credential)
-            cache_id = '|'.join((provider.kind, provider.base_url, model.model_id, binding.voice, binding.language,
+            cache_id = '|'.join((provider.kind, provider.base_url, model.model_id, voice, binding.language,
                                  f'{binding.speed:g}', f'{binding.volume:g}', binding.instructions, revision))
-            return TtsTarget(provider.kind, provider.base_url.rstrip('/'), key, model.model_id, binding.voice, binding.language,
+            return TtsTarget(provider.kind, provider.base_url.rstrip('/'), key, model.model_id, voice, binding.language,
                              binding.speed, binding.volume, binding.instructions, cache_id,
-                             f'{provider.label} · {model.model_id} · {binding.voice}')
+                             f'{provider.label} · {model.model_id} · {voice}')
         return self.default_voice(character_id, config, voice_choice)
 
     def default_voice(self, character_id: str, config=None, voice_choice: str | None = None) -> TtsTarget | None:

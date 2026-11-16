@@ -160,6 +160,33 @@ class WindowTests(Base):
         self.assertEqual(self.db.get_setting(f'voice_choice:{WHALE_ID}'), 'Arrogant_Miss')
         self.assertEqual(self.router.tts_target(WHALE_ID).voice, 'Arrogant_Miss')             # 保存后才是 B
 
+    def test_explicit_minimax_and_inherited_custom_voice_can_be_changed(self):
+        from aicompanion.providers.models import Binding, MODEL_PRESETS
+        self.add_minimax()
+        self.db.set_setting('tts_provider', 'breeze')
+        store = self.router.store
+        model = MODEL_PRESETS['minimax-speech-2.8-turbo']
+        store.put_model(model)
+        original = Binding('tts', model.id, voice='my-custom-voice', speed=1.15)
+        store.bind(original)
+        dialog = self.settings_window()
+        try:
+            self.assertEqual(dialog.voice.currentData(), 'choice:my-custom-voice')
+            choice = 'Chinese (Mandarin)_Radio_Host'
+            self.assertGreaterEqual(dialog.voice.count(), 14)
+            dialog.voice.setCurrentIndex(dialog.voice.findData('choice:'+choice))
+            preview = self.router.tts_target(WHALE_ID, dialog._voice_choice())
+            self.assertEqual((preview.voice, preview.speed), (choice, 1.15))
+            self.assertEqual(self.router.tts_target(WHALE_ID).voice, original.voice)
+            dialog.open_page('models')
+            self.assertEqual(store.load().binding('tts', None), original)
+            self.assertEqual(store.load().binding('tts', WHALE_ID), replace(original, character_id=WHALE_ID, voice=choice))
+            dialog.open_page('voice')
+            self.assertEqual(dialog.voice.currentData(), 'choice:'+choice)
+        finally:
+            dialog.reject()
+            dialog.deleteLater()
+
     def test_saving_untouched_provider_keeps_it_unset(self):
         # 没存过朗读方式、用户也没改：保存别的设置不应把它写成“明确选了本地朗读”，否则之后加 MiniMax 账户也用不上默认声线
         dialog = self.settings_window()
