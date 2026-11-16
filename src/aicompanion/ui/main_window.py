@@ -289,6 +289,10 @@ class MainWindow(QMainWindow):
         if kind == 'spritesheet':
             if self._show_pack_view(kind, resource, pack):
                 return
+            # 备选动画（本机安装的 Aboutme）图集损坏时，先回到随程序发布的默认动画，再退到骨骼或立绘。
+            fallback = choose_renderer(pack, None, '', animation_enabled=animation_enabled)
+            if fallback[0] == 'spritesheet' and fallback[1] != resource and self._show_pack_view(*fallback, pack):
+                return
             kind, resource = choose_renderer(pack, None, '', animation_enabled=False)
         if kind in ('sprites', 'rig'):
             prefer_sprites = kind == 'sprites' and not self.database.get_setting('rig_enabled', True)
