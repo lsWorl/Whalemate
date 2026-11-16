@@ -45,6 +45,7 @@ class QuotaBadge(QLabel):
         super().__init__(parent)
         self.database, self.router = database, router
         self.setObjectName('Presence')
+        self.setWordWrap(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip('本地额度是按价目表估算的今日花费；账户余额来自服务商接口。点一下立即刷新余额。')
         self.balances: list = []

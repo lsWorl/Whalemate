@@ -39,6 +39,17 @@ class QuotaBadgeTests(unittest.TestCase):
             badge.refresh(force=True)
         worker.assert_not_called()
 
+    def test_multiple_balances_fit_the_narrow_chat_header(self):
+        badge = quota_badge.QuotaBadge(self.db, self.router)
+        self.addCleanup(badge.deleteLater)
+        self.db.set_setting('quota_daily_total', 5)
+        badge._balances_ready([Balance('DeepSeek', 12.34), Balance('Kimi', 56.78)])
+        # 420 像素聊天窗口的额度区域只有 258 像素宽，完整文字需要多行。
+        required_height = badge.heightForWidth(258)
+        self.assertGreater(required_height, badge.fontMetrics().height())
+        self.assertIn('DeepSeek 余额 12.34元', badge.text())
+        self.assertIn('Kimi 余额 56.78元', badge.text())
+
 
 if __name__ == '__main__':
     unittest.main()
