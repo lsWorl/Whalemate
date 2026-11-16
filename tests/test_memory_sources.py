@@ -38,6 +38,38 @@ class MemorySourceTests(unittest.TestCase):
         self.assertFalse(self.db.memory_card(CID))
         self.assertFalse(self.db.memory_archive(CID))
 
+    def test_deleting_either_mention_keeps_card_and_archive_in_step(self):
+        for doomed in (0, 1):
+            with self.subTest(deleted='first' if doomed == 0 else 'second'):
+                ids = [self.db.add_message('user', f'我喜欢松果{doomed}{i}') for i in range(2)]
+                key = f'like:pine{doomed}'
+                for mid in ids:
+                    self.db.upsert_memory('用户喜欢松果', fact_key=key, source_ids=[mid])
+                self.db.delete_chat_messages(CID, [ids[doomed]])
+                survivor = [ids[1 - doomed]]
+                self.assertEqual(self.sources(key), survivor)
+                archived = [json.loads(r['source_ids']) for r in self.db.memory_archive(CID) if r['fact_key'] == key]
+                self.assertEqual(archived, [survivor])
+
+    def test_correction_does_not_inherit_old_sources(self):
+        shanghai = self.db.add_message('user', '我住上海')
+        hangzhou = self.db.add_message('user', '搬家了，现在住杭州')
+        self.db.upsert_memory('用户住在上海', fact_key='home', source_ids=[shanghai])
+        self.db.upsert_memory('用户住在杭州', fact_key='home', source_ids=[hangzhou])
+        self.assertEqual(self.sources('home'), [hangzhou])
+        self.db.delete_chat_messages(CID, [hangzhou])
+        self.assertFalse([r for r in self.db.memory_card(CID) if '杭州' in r['content']])
+        self.assertFalse([r for r in self.db.memory_archive(CID) if '杭州' in r['content']])
+
+    def test_iterator_sources_are_kept(self):
+        first = self.db.add_message('user', '我喜欢松果')
+        second = self.db.add_message('user', '我还是喜欢松果')
+        self.db.upsert_memory('用户喜欢松果', fact_key='pine', source_ids=iter([first]))
+        self.db.upsert_memory('用户喜欢松果', fact_key='pine', source_ids=iter([second]))
+        self.assertEqual(self.sources('pine'), [first, second])
+        self.db.delete_chat_messages(CID, [first, second])
+        self.assertFalse(self.db.memory_card(CID))
+
     def test_sources_from_another_channel_are_not_mixed(self):
         desktop = self.db.add_message('user', '我喜欢松果')
         group = self.db.add_message('user', '我喜欢松果', channel='qq:group:12')

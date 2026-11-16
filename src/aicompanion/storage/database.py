@@ -315,7 +315,8 @@ class Database:
         """guard(connection, key) → bool：在同一个写事务里、写入之前做的检查（公开来源的记忆用它按此刻的 private 状态把关，
         和设置页的 set_memory_scope 互斥，没有"检查完、写之前"的空隙）。"""
         key = fact_key or hashlib.sha256(content.strip().encode()).hexdigest()
-        sources = json.dumps(list(source_ids))
+        source_ids = list(source_ids)   # 可能是迭代器；校验、合并、写入都用同一份（Codex #69 审查 3）
+        sources = json.dumps(source_ids)
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT 1 FROM memory_tombstones WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone():
@@ -327,17 +328,25 @@ class Database:
             if guard is not None and not guard(connection, key):
                 return False
             row = connection.execute("SELECT id,content,source_ids FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
-            if row and sources != '[]':
-                sources = self._merged_sources(connection, character_id, row['source_ids'], list(source_ids))
+            # 只有同一版本（内容没变）才合并来源；内容改了是更正，新版本只认这次的原话，
+            # 删掉更正那条消息时更正后的内容一起消失，不会挂在旧原话上（Codex #69 审查 1）。
+            same_version = row is not None and row['content'] == content[:1000]
+            if same_version and sources != '[]':
+                sources = self._merged_sources(connection, character_id, row['source_ids'], source_ids)
             values = (content[:1000], category, max(1,min(5,importance)), max(0,min(1,confidence)), sources)
             if row:
                 # 再次提到 = 重新记清楚
                 connection.execute("UPDATE memories SET content=?,category=?,importance=?,confidence=?,source_ids=?,updated_at=CURRENT_TIMESTAMP,clarity=1,recalled_at=CURRENT_TIMESTAMP WHERE id=?", (*values, row['id']))
             else:
                 connection.execute("INSERT INTO memories(content,category,importance,confidence,source_ids,character_id,fact_key,scope) VALUES (?,?,?,?,?,?,?,?)", (*values, character_id, key, scope))
-            if not row or row['content'] != content[:1000]:
+            if not same_version:
                 connection.execute("INSERT INTO memory_archive(character_id,content,category,fact_key,importance,scope,source_ids,reason) VALUES (?,?,?,?,?,?,?,?)",
                                    (character_id, content[:1000], category, key, values[2], scope, values[4], 'updated' if row else 'created'))
+            elif sources != '[]':
+                # 同一版本再次提到：存档里这一版的来源和卡片保持一致，先删哪条原话结果都一样（Codex #69 审查 2）。
+                connection.execute("""UPDATE memory_archive SET source_ids=? WHERE id=(SELECT id FROM memory_archive
+                                      WHERE character_id=? AND fact_key=? AND content=? ORDER BY id DESC LIMIT 1)""",
+                                   (sources, character_id, key, content[:1000]))
             return True
 
     MAX_MEMORY_SOURCES = 50
