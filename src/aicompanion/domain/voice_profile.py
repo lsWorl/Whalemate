@@ -37,13 +37,16 @@ WHALE = VoiceProfile(
         ('Chinese (Mandarin)_Warm_Bestie', '暖心闺蜜'),
         ('Chinese (Mandarin)_IntellectualGirl', '知性女生'),
         ('Chinese (Mandarin)_Mature_Woman', '成熟女声'),
-        ('Chinese (Mandarin)_Gentle_Youth', '温柔青年'),
-        ('Chinese (Mandarin)_Unrestrained_Young_Man', '洒脱男声'),
-        ('Chinese (Mandarin)_Humorous_Elder', '幽默长者'),
-        ('Chinese (Mandarin)_Radio_Host', '电台主持'),
-        ('Chinese (Mandarin)_News_Anchor', '新闻主播'),
+        ('Chinese (Mandarin)_News_Anchor', '新闻女声'),
     ),
 )
+
+# 负责人 2026-11-16：鲸鲸是少女，候选里去掉男声。以前选过这些音色的，设置页会显示为“自定义音色”，
+# 默认声线的路由也不再采用（见 router.default_voice），回到软糯少女。
+REMOVED_MALE_VOICES = frozenset({
+    'Chinese (Mandarin)_Gentle_Youth', 'Chinese (Mandarin)_Unrestrained_Young_Man',
+    'Chinese (Mandarin)_Humorous_Elder', 'Chinese (Mandarin)_Radio_Host',
+})
 
 PROFILES = {'deepseek-whale': WHALE}
 

@@ -172,8 +172,8 @@ class WindowTests(Base):
         dialog = self.settings_window()
         try:
             self.assertEqual(dialog.voice.currentData(), 'choice:my-custom-voice')
-            choice = 'Chinese (Mandarin)_Radio_Host'
-            self.assertGreaterEqual(dialog.voice.count(), 14)
+            choice = 'Chinese (Mandarin)_Warm_Bestie'
+            self.assertGreaterEqual(dialog.voice.count(), 10)
             dialog.voice.setCurrentIndex(dialog.voice.findData('choice:'+choice))
             preview = self.router.tts_target(WHALE_ID, dialog._voice_choice())
             self.assertEqual((preview.voice, preview.speed), (choice, 1.15))

@@ -95,8 +95,9 @@ class ChatRecords(QDialog):
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
-        self.host.interrupt()
         if messages:
+            # 只有删消息会改动正在生成的上下文；忘掉记忆卡不打断她正在说的话，下一轮自然不再引用。
+            self.host.interrupt()
             self.db.delete_chat_messages(self.character.id, ids)
             self._load_memories()
         else:
