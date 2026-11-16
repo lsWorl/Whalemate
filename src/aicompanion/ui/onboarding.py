@@ -433,7 +433,7 @@ class Onboarding(QDialog):
         words = QVBoxLayout()
         words.addWidget(label('大肥鱼动画版', 'CardTitle'))
         words.addWidget(label('推荐', 'Status'))
-        words.addWidget(label('社区画师的逐帧动画：挥手、伸懒腰、喝奶茶、左右走。装好后优先显示它。'))
+        words.addWidget(label('社区画师的逐帧动画：挥手、伸懒腰、喝奶茶、左右走。装好后可在桌宠右键“形象”里切换。'))
         content.addLayout(words, 1)
         cards.addWidget(animated, 1)
         box.addLayout(cards)
@@ -492,7 +492,7 @@ class Onboarding(QDialog):
         if code == 0 and not self.cancelled:
             self.install.setEnabled(False)
             self.install.setText('已安装')
-            self.install_status.setText('动画已就绪。')
+            self.install_status.setText('动画已就绪。鲸鲸默认显示内置的视频动画，可在桌宠右键“形象”里换成大肥鱼。')
             self.preview.refresh()
         else:
             self.install.setText('安装')

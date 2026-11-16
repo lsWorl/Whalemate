@@ -49,6 +49,9 @@ class SettingsWindow(QDialog):
         self.avatar_mode=QComboBox()
         self.avatar_mode.addItem('角色包默认形象','sprites')
         self.avatar_mode.addItem('导入的 Live2D 模型','live2d')
+        from aicompanion.characters import installed_alternatives
+        if 'aboutme' in installed_alternatives(pack):
+            self.avatar_mode.addItem('Aboutme 大肥鱼（本机安装）','aboutme')
         self.avatar_mode.setCurrentIndex(max(0,self.avatar_mode.findData(self.database.get_setting(f'avatar_mode:{cid}','sprites'))))
         choose=QPushButton('选择 Live2D 模型…'); choose.clicked.connect(self.choose_model)
         new=QPushButton('用当前编辑的人格新建一个独立角色（不共享记忆）'); new.clicked.connect(self.create_character)
@@ -64,7 +67,7 @@ class SettingsWindow(QDialog):
         persona.add(Section('人格','同一个她可以有几种性格：新建、复制、切换、导入 SillyTavern 角色卡，每次保存都留一个版本可以回退。'
                                   '“设为当前”后下一句话就用新人格。',self.persona_editor))
         looks=QFormLayout(); looks.addRow('桌面形象',self.avatar_mode); looks.addRow('Live2D 模型',self.model); looks.addRow('',choose)
-        persona.add(Section('桌面形象','鲸鲸优先使用本机安装的 Aboutme 大肥鱼动画，未安装时显示内置的自绘鲸娘。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
+        persona.add(Section('桌面形象','鲸鲸默认显示随程序发布的视频逐帧动画。本机安装了 Aboutme 大肥鱼后，可以在这里或桌宠右键“形象”里切换。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
         pet = getattr(parent, 'pet', None)
         if pet is not None:
             more = QPushButton('更多')

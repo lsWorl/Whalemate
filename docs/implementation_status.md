@@ -2150,3 +2150,29 @@ Windows `tools\run_checks.bat` 退出码 0，运行 1372 项单测，用时 243.
 - 两次桌宠 smoke 的 `long_task_checkpoint`、`passed` 均为 true，`failed_checks` 均为空。离线模式跳过真实模型步骤。
 
 未使用线上 Harness、真实 QQ 账号或 NapCat/AstrBot 验证；跨日、异常退出和副作用重放使用可控时钟、临时库与模拟运行器验证。
+
+## 2026-11-14　T23 鲸鲸主图选定与 Windows Rive CLI 检查
+
+负责人选定长裙组 A 作为后续绘画的主图。与本轮最后贴出的第一张图逐像素比对，1254×1254 的生成原图一致。沿用负责人选中的较长身形，主组三张由内置 image_gen 按文字描述生成。蓝底图及其衍生备份仅保存在本机，来源待负责人向 Claude 核实。详细提示词、输入来源、原始图哈希和逐图配准参数见[生成记录](../art/deepseek-whale-q/prompts.json)。
+
+六张图均已导出为 2048×2048 的 8 位 sRGB RGBA 不透明 PNG，统一绿底 `#00FF00`。缩略图为整张画布等比缩到 300×300。程序逐张核对了缩略图像素、两脚之间的中线 x=1024、呆毛顶端 y=100 和两只鞋底 y=1984；选定的 `master.png` 与主组 A 的 SHA-256 一致。[主图](../art/deepseek-whale-q/master.png) · [长裙组](../art/deepseek-whale-q/candidates/)
+
+Windows x64 便携安装验证使用官方稳定版压缩包 `rive-windows-x64.tar.gz`，SHA-256 为 `469aa097fc2a665b5271ffad3537e792c06bc5b635c8e89eb90205ec92ea25ca`，与官方清单相符。解出 `rive.exe` 后，在此 worktree 中运行 `output\t23-cli\rive.exe --version` 得到 `rive 1.9.2`，`--help` 正常列出命令，两者退出码均为 0。命令行可直接在 Windows 运行。[Rive 官方下载](https://rive.app/downloads) · [版本清单](https://releases.rive.app/cli/v1.9.2/manifest.json)
+
+当前待 Claude 审图。分层补画、RML、骨骼绑定、运行时渲染和真机动作验收均待后续阶段。
+
+Windows `tools\run_checks.bat` 退出 0。单测 1383 项，1376 项通过、7 项跳过，用时 251.957 秒。桌宠 smoke 返回 `passed=true`、`failed_checks=[]`、`remaining_workers=0`。首次运行因独立虚拟环境漏载现有 pywin32 路径而失败，补齐该环境的路径后全量复跑通过。
+
+## 2026-11-14　T23 主图 A 第 2 步拆层与补画送审
+
+Claude 第 1 轮通过主图 A。本轮内置 image_gen 只输入 `master.png`，生成 19 个透明部件；中性五官另从 A 提取一张静态位置校样。前后发、远近袖、尾根、鳍根、净脸、裙下腿根已分层配准。蓝底参考及其备份留在本地，来源待负责人确认。[第 1 轮审图](../art/deepseek-whale-q/review-claude-r1.md) · [部件总览](../art/deepseek-whale-q/review-step2/layers-overview.png)
+
+回拼平均绝对色差为 2.3756 / 255，最明显的局部差异在远侧鳍根的窄缝。回拼偏绿像素为 0，16 张极限姿态共 26 个支点窗口均未出现透明像素。白底、深底、差分热图与极限姿态大图随报告交付。[审图报告与图集](../art/deepseek-whale-q/review-step2/report.md)
+
+Windows `tools\run_checks.bat` 退出 0，1386 项单测用时 262.926 秒，失败 0、跳过 7；桌宠 smoke 返回 `passed=true`、`failed_checks=[]`、`remaining_workers=0`。最终美术产物上另行复跑了分层自检和 3 项针对性测试。当前停在第 2 步待 Claude 审图；回拼阈值、Rive 实机动作和表情辨识度仍待后续审查和验证。
+
+## 2026-11-14　T24 视频路线第 1 步锚点帧送选
+
+内置 image_gen 以负责人自己的 AI 原画 `blue-original.png` 为唯一输入，生成 A、B、C 三张正面待机候选。三张均为 1920×1080 的纯绿幕 PNG，按两脚中线对齐 x=960，实测呆毛顶端 y=216、左右鞋底均为 y=918。每张附 533×300 全幅缩略图。负责人选图和 Claude 审图待进行。[候选与缩略图](../art/deepseek-whale-video/anchor/) · [逐张提示词、输入与输出哈希](../art/deepseek-whale-video/prompts.json)
+
+在同一台 Windows 上用同一 Python 和缺少 Aboutme 的角色包运行 `tools/smoke_pet.py`，T23 分叉基线 `77d6d8d` 和 T23 暂停提交 `0a5c6f9` 的运行代码均通过，`mask_excludes_corner=true`、`center_alpha=253`。两提交之间的 `src/`、随包角色资源和 smoke 入口没有差异。单在基线进程中将首次发送模型 URL 延后至约 4.4 秒，固定约 3.4 秒的启动检查即记录 `ready=false`、空命中探测和 `center_alpha=0`，随后角色正常就绪；最终仅失败 `mask_excludes_corner` 和 `center_alpha`，与上一轮报告一致。基线已存在这一启动采样时序问题。
