@@ -3,7 +3,8 @@
 资料核对 2026-11-16：
 - DeepSeek：GET https://api.deepseek.com/user/balance，Bearer 鉴权，返回 is_available 和按币种的 balance_infos[].total_balance
   （https://api-docs.deepseek.com/zh-cn/api/get-user-balance）。
-- Kimi（月之暗面）：GET https://api.moonshot.cn/v1/users/me/balance，Bearer 鉴权，返回 data.available_balance（元）
+- Kimi（月之暗面）：GET https://api.moonshot.cn/v1/users/me/balance（国内站，人民币）或 api.moonshot.ai（国际站，美元），
+  Bearer 鉴权，返回 data.available_balance
   （https://platform.kimi.com/docs/api/balance）。
 - MiniMax、智谱、百炼：没有找到用 API Key 查询余额的官方接口，不查询，界面提示去控制台看。
 """
@@ -40,18 +41,29 @@ def _deepseek(data) -> tuple[float, str, bool]:
     return float(info['total_balance']), str(info.get('currency') or 'CNY'), bool(data.get('is_available', True))
 
 
-def _moonshot(data) -> tuple[float, str, bool]:
-    amount = float(data['data']['available_balance'])
-    return amount, 'CNY', amount > 0
+def _moonshot(currency):
+    """国内站 api.moonshot.cn 按人民币，国际站 api.moonshot.ai 按美元（Codex #71 审查）。"""
+    def parse(data) -> tuple[float, str, bool]:
+        amount = float(data['data']['available_balance'])
+        return amount, currency, amount > 0
+    return parse
 
 
 def endpoint(provider) -> tuple[str, object] | None:
-    """返回 (余额地址, 解析函数)；不支持的服务商返回 None。只认官方域名，自定义中转地址不查询。"""
-    host = (urlsplit(provider.base_url or '').hostname or '').lower()
-    if provider.kind == 'deepseek' or host == 'api.deepseek.com':
+    """返回 (余额地址, 解析函数)；不支持的服务商返回 None。
+
+    只看配置的地址是不是官方域名，不看服务商种类：种类是 DeepSeek、地址却是自定义中转时，
+    那把 Key 属于中转站，不能发给 DeepSeek 官方（Codex #71 审查）。"""
+    parts = urlsplit(provider.base_url or '')
+    host = (parts.hostname or '').lower()
+    if parts.scheme != 'https':
+        return None
+    if host == 'api.deepseek.com':
         return 'https://api.deepseek.com/user/balance', _deepseek
-    if host in ('api.moonshot.cn', 'api.moonshot.ai'):
-        return f'https://{host}/v1/users/me/balance', _moonshot
+    if host == 'api.moonshot.cn':
+        return 'https://api.moonshot.cn/v1/users/me/balance', _moonshot('CNY')
+    if host == 'api.moonshot.ai':
+        return 'https://api.moonshot.ai/v1/users/me/balance', _moonshot('USD')
     return None
 
 

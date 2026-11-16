@@ -36,6 +36,9 @@ class BalanceTests(unittest.TestCase):
         self.assertEqual(balance.endpoint(KIMI)[0], 'https://api.moonshot.cn/v1/users/me/balance')
         self.assertIsNone(balance.endpoint(MINIMAX))
         self.assertIsNone(balance.endpoint(RELAY))
+        # 种类是 DeepSeek 但地址是中转：Key 属于中转站，不能发给 DeepSeek 官方。
+        self.assertIsNone(balance.endpoint(ProviderProfile('ds-relay', '中转', 'deepseek', 'https://relay.example/v1', credential='x')))
+        self.assertIsNone(balance.endpoint(ProviderProfile('ds-http', 'DS', 'deepseek', 'http://api.deepseek.com', credential='x')))
         no_key = ProviderProfile('d2', 'DeepSeek 2', 'deepseek', 'https://api.deepseek.com')
         duplicate = ProviderProfile('d3', 'DeepSeek 3', 'deepseek', 'https://api.deepseek.com', credential='stored:ds')
         config = ModelConfig(providers={p.id: p for p in (DEEPSEEK, no_key, duplicate, MINIMAX)})
@@ -59,6 +62,16 @@ class BalanceTests(unittest.TestCase):
         opener = lambda request, timeout=None: FakeResponse(json.dumps({'data': {'available_balance': 0}}).encode())
         result, = balance.query(router([KIMI], {'stored:kimi': 'k'}), opener=opener)
         self.assertEqual(result.text(), 'Kimi 余额 0.00元（已不足以调用）')
+
+    def test_kimi_global_site_reports_usd(self):
+        global_kimi = ProviderProfile('kimi-global', 'Kimi 国际站', 'openai_compatible', 'https://api.moonshot.ai/v1', credential='stored:kg')
+        seen = []
+        def opener(request, timeout=None):
+            seen.append(request.full_url)
+            return FakeResponse(json.dumps({'data': {'available_balance': 3.5}}).encode())
+        result, = balance.query(router([global_kimi], {'stored:kg': 'k'}), opener=opener)
+        self.assertEqual(seen, ['https://api.moonshot.ai/v1/users/me/balance'])
+        self.assertEqual(result.text(), 'Kimi 国际站 余额 3.50 USD')
 
     def test_offline_and_missing_key_do_not_call_network(self):
         def opener(*args, **kwargs):
