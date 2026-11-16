@@ -138,17 +138,41 @@ def load_sprite_manifest(path: Path) -> dict:
     return data
 
 
+def alternative_animation(pack: CharacterPack | None, mode) -> str | None:
+    """角色包声明的备选逐帧动画清单（相对角色目录）；mode 不是备选名时返回 None。"""
+    alternatives = (pack.renderer.get('animation_alternatives') if pack else None) or {}
+    value = alternatives.get(mode) if isinstance(alternatives, dict) and isinstance(mode, str) else None
+    return value if isinstance(value, str) and value else None
+
+
+def installed_alternatives(pack: CharacterPack | None) -> list[str]:
+    """已经装在本机的备选动画名，按角色包里的顺序。"""
+    alternatives = (pack.renderer.get('animation_alternatives') if pack else None) or {}
+    if not isinstance(alternatives, dict):
+        return []
+    found = []
+    for mode in alternatives:
+        animation = alternative_animation(pack, mode)
+        try:
+            if animation and (pack.root / _safe_name(animation, '动画清单')).is_file():
+                found.append(mode)
+        except CharacterPackError:
+            continue
+    return found
+
+
 def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '', *, animation_enabled: bool = True) -> tuple[str, Path | str | None]:
     """显式选择的外部模型优先，选装动画缺失时尝试角色包自己的形象。"""
     if avatar_mode == 'live2d' and model_path:
         return 'cubism', model_path
     if pack and pack.ready:
         if pack.renderer_kind in ('spritesheet', 'sprites') and animation_enabled:
-            animation = pack.renderer.get('animation')
-            if animation:
-                manifest = pack.root / _safe_name(animation, '动画清单')
-                if manifest.is_file():
-                    return 'spritesheet', manifest
+            # 选了本机安装的备选动画（如 Aboutme）就先用它；没装好时回到随程序发布的默认动画。
+            for animation in (alternative_animation(pack, avatar_mode), pack.renderer.get('animation')):
+                if animation:
+                    manifest = pack.root / _safe_name(animation, '动画清单')
+                    if manifest.is_file():
+                        return 'spritesheet', manifest
         if pack.renderer_kind == 'sprites':
             return 'sprites', pack.sprite_manifest_path()
         if pack.renderer_kind == 'spritesheet':

@@ -353,7 +353,10 @@ class AnimationAvatar(QWidget):
         self.walking=(1 if dx>=0 else -1) if length else 0
         self._walk_vertical=dy/length if length else 0.
         direction=(1 if dx>=0 else -1) if abs(dx)>1e-6 else self.direction
-        if direction!=self.direction or (length and self._gait_loaded):
+        if not self._gait_loaded and direction!=self.direction:
+            # 从站姿起步：只换朝向，保留当前动作，好让 idle→walk 的转身过渡照常播放（镜像方向由绘制时处理）。
+            self.direction=direction
+        elif direction!=self.direction or (length and self._gait_loaded):
             # 转向 / 重规划先冻结当前脚位；新的路线相位不能覆盖仍在显示的旧步态。
             picture=self._display
             if direction!=self.direction and not self.using_reference:picture=picture.mirrored(True,False)

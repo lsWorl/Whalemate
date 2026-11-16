@@ -40,8 +40,9 @@ def walk_pace(pack, default=42.):
     if pack is None:
         return default
     poses = getattr(pack, 'poses', {}) or {}
-    key = poses.get('walking_right') or poses.get('walking')
-    clip = pack.actions.get(key) if key else None
+    actions = getattr(pack, 'actions', {}) or {}
+    key = poses.get('walking_right') or poses.get('walking') or ('walking_right' if 'walking_right' in actions else None)
+    clip = actions.get(key) if key else None
     if clip is None or not clip.count:
         return default
     return clip.cycle_distance * clip.fps / clip.count
@@ -696,6 +697,18 @@ class DesktopPetWindow(QWidget):
                 if dy and not getattr(self.view,'supports_vertical_walk',True):continue
                 walk.addAction(label,lambda checked=False,x=dx,y=dy:self.walk_to(self.x()+x*120*self.scale,self.y()+y*90*self.scale))
             walk.addSeparator();walk.addAction('停下来',self.stop_walking)
+        # 本机装了备选动画（Aboutme 大肥鱼）时，可以在默认的视频动画和它之间切换。
+        from aicompanion.characters import installed_alternatives
+        alternatives = installed_alternatives(self.pack) if self.pack is not None and self.view_kind == 'spritesheet' else []
+        if alternatives:
+            looks = menu.addMenu('形象'); group = QActionGroup(looks)
+            current = self.database.get_setting(f'avatar_mode:{self.active_id}', 'sprites')
+            labels = {'aboutme': 'Aboutme 大肥鱼'}
+            for mode, label in [('sprites', '默认动画')] + [(m, labels.get(m, m)) for m in alternatives]:
+                action = looks.addAction(label); action.setCheckable(True); group.addAction(action)
+                action.setChecked(current == mode or (mode == 'sprites' and current not in alternatives))
+                action.triggered.connect(lambda checked=False, m=mode: (
+                    self.database.set_setting(f'avatar_mode:{self.active_id}', m), self.appearance_changed.emit()))
         # 选装动画使用角色包的默认顺序；只在显示内置鲸娘时切换骨骼与立绘。
         if (self.pack is not None and self.pack.renderer.get('rig')
                 and (self.pack.renderer_kind != 'spritesheet' or self.view_kind in ('rig', 'sprites'))):

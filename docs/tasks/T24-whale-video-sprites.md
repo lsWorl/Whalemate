@@ -293,7 +293,7 @@ idle、talking、wave、sleepy 都能直接进出 phone 和 working。walk 进�
 负责人确认用视频逐帧动画替换原来的默认形象，交 Codex 审查合并。
 
 **素材**：
-- `output/t24-pack-b5` 复制到 `src/aicompanion/characters/deepseek-whale/animation-video/`，随程序发布。共 29 张 WebP 无损图集，31 MB，`source` 为 `jingjing-video`。
+- `output/t24-pack-b5` 复制到 `src/aicompanion/characters/deepseek-whale/animation-video/`，随程序发布。共 28 张无损 WebP 图集，加海报 PNG 和清单，合计 24.2 MiB。`source` 为 `jingjing-video`。
 - 为了不在不同图集之间重新引入色差，没有改用有损压缩。有损 q95 能减半，但需要重新验证首尾帧的色差。
 
 **接入**：
@@ -323,6 +323,26 @@ idle、talking、wave、sleepy 都能直接进出 phone 和 working。walk 进�
 - 包覆盖状态机的全部姿势，并有 `grabbed→idle`、`walk→idle` 过渡。
 - 发布清单收录了所有引用的图集。
 
-**待定（请 Codex 审查时一起看）**：
-- 向导和设置里的“Aboutme 大肥鱼”安装入口仍在。安装后文件会落到 `animation-aboutme/`，但角色清单已经不再指向它，所以装了也不会显示。
-- 建议在后续任务里二选一：删掉入口；或者在“形象”菜单里加“视频鲸鲸 / Aboutme”切换，这需要改 `ui/main_window.py` 的 `_apply_avatar`。
+#### PR #68 第一轮审查后的修复
+
+Codex 审查（`87e4cf9`）指出五个问题，都已修复：
+
+1. **松手后还在空中就播落地。**
+   - 原因：视频包没有 `falling` 姿势，`set_pose` 回落成 idle，于是立刻走 `grabbed→idle` 过渡。
+   - 修复：包里加 `falling → grabbed` 别名，落地后才播落地过渡。
+2. **反方向起步时跳过转身。**
+   - 原因：`set_walking_vector` 换向时清空了当前动作，`transition_route` 没有来源可查。
+   - 修复：从站姿起步只换朝向、保留当前动作，`idle→walk` 的转身照常播放，镜像由绘制时处理。走路途中换向仍冻结脚位，与原逻辑一致。
+3. **步速单测失败（期望 28，实测 42）。**
+   - 原因：测试替身只有 `walking_right` 动作，没有 `poses`。
+   - 修复：`walk_pace` 在没有姿势映射时回退到 `walking_right` 动作。
+4. **`smoke_pet.py --animation-pack` 预览仍显示内置视频。**
+   - 修复：预览素材改为放进角色清单实际读取的动画目录（`animation-video/`）。
+5. **装了 Aboutme 也无法切换。**
+   - 修复：`character.json` 新增 `renderer.animation_alternatives`（`aboutme → animation-aboutme/animations.json`）。
+   - `choose_renderer` 在 `avatar_mode` 选了已安装的备选时用它，没装好时回到默认动画。
+   - 桌宠右键“形象”、设置的“桌面形象”下拉框，只在装了 Aboutme 时出现“Aboutme 大肥鱼”。
+   - 全部复用已有的 `avatar_mode:{角色}` 设置，没有改 `ui/main_window.py`。
+   - 向导装完提示可以在“形象”里切换。
+
+另外改正了文档里的图集数量和体积。

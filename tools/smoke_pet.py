@@ -51,8 +51,10 @@ def configure_test_pack(registry, args, temp):
         from aicompanion.ui import aboutme_preview, icons
 
         clean = temp/whale.id
-        shutil.copytree(whale.root, clean, ignore=shutil.ignore_patterns('animation-aboutme'))
-        install_preview_animation(args.animation_pack, clean/'animation-aboutme')
+        # 预览素材放到角色清单实际读取的动画目录，桌宠显示的就是指定素材。
+        folder = Path(whale.renderer['animation']).parent.name
+        shutil.copytree(whale.root, clean, ignore=shutil.ignore_patterns('animation-aboutme', folder))
+        install_preview_animation(args.animation_pack, clean/folder)
         registry.packs[whale.id] = load_pack(clean)
         # 设置页和首次启动向导也可能打开动画预览，让两处都指向同一份临时素材。
         aboutme_preview.WHALE = icons.WHALE = clean

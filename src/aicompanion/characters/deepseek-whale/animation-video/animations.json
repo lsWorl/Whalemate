@@ -830,7 +830,8 @@
     "milk_tea": "idle",
     "stretch": "sleepy",
     "wait": "thinking",
-    "dizzy": "error"
+    "dizzy": "error",
+    "falling": "grabbed"
   },
   "transitions": [
     {

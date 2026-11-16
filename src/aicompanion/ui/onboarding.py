@@ -492,7 +492,7 @@ class Onboarding(QDialog):
         if code == 0 and not self.cancelled:
             self.install.setEnabled(False)
             self.install.setText('已安装')
-            self.install_status.setText('动画已就绪。')
+            self.install_status.setText('动画已就绪。鲸鲸默认显示内置的视频动画，可在桌宠右键“形象”里换成大肥鱼。')
             self.preview.refresh()
         else:
             self.install.setText('安装')
