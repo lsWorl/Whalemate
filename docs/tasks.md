@@ -4,8 +4,12 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| T29 | 界面显示剩余额度：今日本地额度剩余，以及支持查询的服务商账户余额 | Claude 实现（负责人委托）/ Codex 审查 | 进行中 | [任务说明](tasks/T29-quota-display.md) |
+| T28 | 按鲸鲸当前心情切换说话动画，并加强语气与语音情绪 | Claude 生成、处理与接入（负责人委托）/ Codex 审查 | 进行中：即梦生成开心、想撒娇、委屈、生气 4 段说话片段 | [任务说明](tasks/T28-mood-talking.md) |
+| T27 | 桌宠移动时出现黑色边框 | Claude 排查与修复（负责人委托）/ Codex 审查 | 进行中：先在 Windows 复现 | [任务说明](tasks/T27-pet-black-border.md) |
+| T26 | #67 审查跟进：记忆来源合并、整理期间删除、删记忆不打断、心情服务复用；去掉男声音色 | Claude 实现（负责人委托）/ Codex 审查 | 待 Codex 审查；依赖 #67 | [任务说明](tasks/T26-ui-followups.md) |
 | T25 | 看手机、花 Token 动画接上真实事件（QQ 来消息、词元用量超阈值） | 待定（需与 Codex 约定共享文件 `ui/main_window.py`） | 待开始，依赖 T24 合入 | [任务说明](tasks/T25-pet-event-animations.md) |
-| T24 | 鲸鲸视频生成序列帧，设为默认形象 | Claude 生成、后期处理与接入（负责人委托）/ Codex 审查 | 待 Codex 审查：14 个动作、39 段过渡，替换原默认形象 | [任务说明](tasks/T24-whale-video-sprites.md) |
+| T24 | 鲸鲸视频生成序列帧，设为默认形象 | Claude 生成、后期处理与接入（负责人委托）/ Codex 审查 | 已合入（#68） | [任务说明](tasks/T24-whale-video-sprites.md) |
 | T23 | Q 版鲸鲸分层骨骼形象试点 | Codex 出图与 Rive 接入、Claude 审查 | 骨骼路线暂停，保留作后备；视频路线见 T24 | [原任务说明](tasks/T23-q-whale-rig.md) · [暂停时的产物](../art/deepseek-whale-q/review-step3/) |
 | V4-UI-实测 | 在聊天窗口删除消息与记忆、人格试聊、向导和设置的任务栏图标、云端声线选择、心情自动更新 | Codex 实现，Claude 审查 | Claude 已复审，待负责人完成 5 步真机走查（可在合并后进行） | [任务说明](tasks/V4-ui-test-feedback.md) |
 | V4-7f | 跨天办事 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7f-long-tasks.md) |

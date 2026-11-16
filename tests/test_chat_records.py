@@ -104,6 +104,25 @@ class RecordsTests(unittest.TestCase):
         self.assertTrue(self.db.has_deleted_memories(CID))
         self.assertEqual(dialog.memories.count(), 0)
 
+    def test_forgetting_memory_does_not_interrupt_reply(self):
+        self.db.upsert_memory('独立记忆', fact_key='separate')
+        dialog = ChatRecords(self.host)
+        self.addCleanup(dialog.deleteLater)
+        dialog.tabs.setCurrentWidget(dialog.memories)
+        dialog.memories.item(0).setSelected(True)
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+            dialog.remove.click()
+        self.host.interrupt.assert_not_called()
+        self.assertFalse(self.db.memory_card(CID))
+        dialog.tabs.setCurrentWidget(dialog.messages)
+        self.db.add_message('user', '要删的消息')
+        dialog.before_id = None
+        dialog._load_messages()
+        dialog.messages.item(0).setSelected(True)
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+            dialog.remove.click()
+        self.host.interrupt.assert_called_once()
+
     def test_trial_switch_reset_and_close_keep_real_history_separate(self):
         service = PersonaService(self.db)
         active = service.ensure(DEFAULT_CHARACTER)

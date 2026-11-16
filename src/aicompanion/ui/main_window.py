@@ -485,8 +485,10 @@ class MainWindow(QMainWindow):
         self.pet.presence = text
 
     def _refresh_chat_mood(self):
-        from aicompanion.services.mood_service import MoodService
-        mood = MoodService(self.database).current(self.controller.character.id).label()
+        if getattr(self, '_mood_service', None) is None:
+            from aicompanion.services.mood_service import MoodService
+            self._mood_service = MoodService(self.database)
+        mood = self._mood_service.current(self.controller.character.id).label()
         if mood != self.mood:
             self.mood = mood
             self._refresh_presence()

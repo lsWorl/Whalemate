@@ -264,16 +264,30 @@ class Database:
             if not rows:
                 return 0
             selected = json.dumps([r['id'] for r in rows])
-            # 先收集相关记忆卡，移除以它们为来源的心事以及可能仍在本地的向量索引。
+            removed = {r['id'] for r in rows}
             derived = """character_id=? AND EXISTS (SELECT 1 FROM json_each(source_ids)
                          WHERE value IN (SELECT value FROM json_each(?)))"""
-            c.execute(f"""DELETE FROM purposes WHERE character_id=? AND EXISTS (SELECT 1 FROM json_each(memory_ids)
-                       WHERE value IN (SELECT id FROM memories WHERE {derived}))""", (character_id, character_id, selected))
-            c.execute(f"""DELETE FROM memory_vectors WHERE character_id=? AND fact_key IN
-                       (SELECT fact_key FROM memories WHERE {derived} UNION SELECT fact_key FROM memory_archive WHERE {derived})""",
-                      (character_id, character_id, selected, character_id, selected))
-            for table in ('memories', 'memory_archive', 'stage_summaries'):
-                c.execute(f'DELETE FROM {table} WHERE {derived}', (character_id, selected))
+            # 记忆卡和存档：去掉被删的来源；还有其他原话支撑就保留，没有了才删除。
+            gone_memories, gone_keys = [], set()
+            for table in ('memories', 'memory_archive'):
+                for row in c.execute(f'SELECT id, fact_key, source_ids FROM {table} WHERE {derived}', (character_id, selected)).fetchall():
+                    remaining = [i for i in json.loads(row['source_ids']) if i not in removed]
+                    if remaining:
+                        c.execute(f'UPDATE {table} SET source_ids=? WHERE id=?', (json.dumps(remaining), row['id']))
+                        continue
+                    c.execute(f'DELETE FROM {table} WHERE id=?', (row['id'],))
+                    gone_keys.add(row['fact_key'])
+                    if table == 'memories':
+                        gone_memories.append(row['id'])
+            # 删掉的卡片牵连的心事和本地向量一起清理。
+            if gone_memories:
+                c.execute("""DELETE FROM purposes WHERE character_id=? AND EXISTS (SELECT 1 FROM json_each(memory_ids)
+                             WHERE value IN (SELECT value FROM json_each(?)))""", (character_id, json.dumps(gone_memories)))
+            for key in gone_keys:
+                if not c.execute('SELECT 1 FROM memories WHERE character_id=? AND fact_key=?', (character_id, key)).fetchone():
+                    c.execute('DELETE FROM memory_vectors WHERE character_id=? AND fact_key=?', (character_id, key))
+            # 阶段摘要是一段对话的概括，任何一条原话被删都整段作废。
+            c.execute(f'DELETE FROM stage_summaries WHERE {derived}', (character_id, selected))
             c.execute('DELETE FROM conversation_summaries WHERE character_id=? AND through_id>=?',
                       (character_id, min(r['id'] for r in rows)))
             for row in rows:
@@ -301,7 +315,8 @@ class Database:
         """guard(connection, key) → bool：在同一个写事务里、写入之前做的检查（公开来源的记忆用它按此刻的 private 状态把关，
         和设置页的 set_memory_scope 互斥，没有"检查完、写之前"的空隙）。"""
         key = fact_key or hashlib.sha256(content.strip().encode()).hexdigest()
-        sources = json.dumps(list(source_ids))
+        source_ids = list(source_ids)   # 可能是迭代器；校验、合并、写入都用同一份（Codex #69 审查 3）
+        sources = json.dumps(source_ids)
         with self.transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT 1 FROM memory_tombstones WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone():
@@ -312,17 +327,45 @@ class Database:
                 return False
             if guard is not None and not guard(connection, key):
                 return False
-            row = connection.execute("SELECT id,content FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
+            row = connection.execute("SELECT id,content,source_ids FROM memories WHERE character_id=? AND fact_key=?", (character_id, key)).fetchone()
+            # 只有同一版本（内容没变）才合并来源；内容改了是更正，新版本只认这次的原话，
+            # 删掉更正那条消息时更正后的内容一起消失，不会挂在旧原话上（Codex #69 审查 1）。
+            same_version = row is not None and row['content'] == content[:1000]
+            if same_version and sources != '[]':
+                sources = self._merged_sources(connection, character_id, row['source_ids'], source_ids)
             values = (content[:1000], category, max(1,min(5,importance)), max(0,min(1,confidence)), sources)
             if row:
                 # 再次提到 = 重新记清楚
                 connection.execute("UPDATE memories SET content=?,category=?,importance=?,confidence=?,source_ids=?,updated_at=CURRENT_TIMESTAMP,clarity=1,recalled_at=CURRENT_TIMESTAMP WHERE id=?", (*values, row['id']))
             else:
                 connection.execute("INSERT INTO memories(content,category,importance,confidence,source_ids,character_id,fact_key,scope) VALUES (?,?,?,?,?,?,?,?)", (*values, character_id, key, scope))
-            if not row or row['content'] != content[:1000]:
+            if not same_version:
                 connection.execute("INSERT INTO memory_archive(character_id,content,category,fact_key,importance,scope,source_ids,reason) VALUES (?,?,?,?,?,?,?,?)",
                                    (character_id, content[:1000], category, key, values[2], scope, values[4], 'updated' if row else 'created'))
+            elif sources != '[]':
+                # 同一版本再次提到：存档里这一版的来源和卡片保持一致，先删哪条原话结果都一样（Codex #69 审查 2）。
+                connection.execute("""UPDATE memory_archive SET source_ids=? WHERE id=(SELECT id FROM memory_archive
+                                      WHERE character_id=? AND fact_key=? AND content=? ORDER BY id DESC LIMIT 1)""",
+                                   (sources, character_id, key, content[:1000]))
             return True
+
+    MAX_MEMORY_SOURCES = 50
+
+    @classmethod
+    def _merged_sources(cls, connection, character_id, old_json, new_ids):
+        """同一事实再次被提到时合并来源，删掉其中一条原话不会让整张卡片消失。
+        只合并与新来源同一频道的旧来源：混合频道会让语义召回判不出可见范围（services/semantic.origin_for）。"""
+        try:
+            old = [i for i in json.loads(old_json or '[]') if type(i) is int]
+        except (ValueError, TypeError):
+            old = []
+        ids = json.dumps(old + new_ids)
+        channels = dict(connection.execute("""SELECT id, channel FROM chat_messages WHERE character_id=?
+                                              AND id IN (SELECT value FROM json_each(?))""", (character_id, ids)).fetchall())
+        wanted = {channels.get(i) for i in new_ids}
+        keep = [i for i in old if len(wanted) == 1 and channels.get(i) in wanted]
+        merged = list(dict.fromkeys(keep + new_ids))
+        return json.dumps(merged[-cls.MAX_MEMORY_SOURCES:])
 
     def set_memory_scope(self, ids, character_id, scope) -> None:
         """记忆页里"只在私下用 / 共享"的切换。"""
