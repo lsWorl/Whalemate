@@ -56,6 +56,17 @@ class PersonalityViewTests(unittest.TestCase):
             self.view.perform(kind,key);self.assertEqual(self.view.action,key)
         self.view.perform('expression','neutral');self.assertEqual(self.view.action,'idle')
 
+    def test_talking_follows_mood_when_pack_has_mood_clips(self):
+        self.view.set_pose('talking');self.assertEqual(self.view.action,self.view.pack.poses['talking'])
+        # 包里没有 talking_sad：委屈时仍用普通说话。
+        self.view.set_state('sad');self.assertEqual(self.view.action,self.view.pack.poses['talking'])
+        self.view.pack.poses['talking_happy']='patted'
+        self.view.set_state('happy');self.assertEqual(self.view.action,'patted')
+        self.view.set_state('happy',0.5);self.assertEqual(self.view.action,'patted')
+        self.view.set_state('calm');self.assertEqual(self.view.action,self.view.pack.poses['talking'])
+        # 不在说话时，心情变化不换动作。
+        self.view.set_pose('idle');self.view.set_state('happy');self.assertEqual(self.view.action,'idle')
+
     def test_direction_selects_rear_gait_only_for_upward_routes(self):
         for vector,key,direction in [((1,-1),'walking_back_diagonal',1),((-1,-1),'walking_back_diagonal',-1),
                                      ((0,-1),'walking_back',-1),((0,1),'walking_front',-1),((1,0),'walking',1)]:
