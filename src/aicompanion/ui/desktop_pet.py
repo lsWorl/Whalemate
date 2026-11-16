@@ -30,6 +30,22 @@ SCALES = (0.7, 0.85, 1.0, 1.2, 1.45, 1.75)
 DEMO_POSES = [('庆祝', 'celebrate'), ('思考', 'thinking'), ('干活', 'working'), ('等待确认', 'wait'), ('犯困', 'sleepy'), ('出错', 'error')]
 
 
+
+def walk_pace(pack, default=42.):
+    """步行速度取自素材包的行走动作：每秒前进一个步态周期的距离，脚底才不打滑。
+
+    以前只对 Aboutme 和参考包这样算，其他帧动画包固定 42 px/s；鲸鲸视频包一个周期 109 px，
+    固定速度会让腿像慢放。没有素材包或没有行走动作时（自绘骨骼、立绘）仍用默认值。
+    """
+    if pack is None:
+        return default
+    poses = getattr(pack, 'poses', {}) or {}
+    key = poses.get('walking_right') or poses.get('walking')
+    clip = pack.actions.get(key) if key else None
+    if clip is None or not clip.count:
+        return default
+    return clip.cycle_distance * clip.fps / clip.count
+
 class DesktopPetWindow(QWidget):
     chat_requested = Signal()
     call_requested = Signal()
@@ -318,10 +334,7 @@ class DesktopPetWindow(QWidget):
             self._walk_target=clamp_target(self._walk_target,bounds,size)
             self._walk_position=clamp_target(self._walk_position,bounds,size)
         remaining=math.hypot(self._walk_target[0]-self._walk_position[0],self._walk_target[1]-self._walk_position[1])
-        pace=42.
-        if getattr(self.view,'using_reference',False) or getattr(self.view,'using_aboutme',False):
-            clip=self.view.pack.actions.get('walking_right')
-            if clip:pace=clip.cycle_distance*clip.fps/clip.count
+        pace=walk_pace(getattr(self.view,'pack',None))
         distance,self._walk_speed=braking_step(self._walk_speed,remaining,dt,self.scale,pace)
         position,distance,arrived=advance_walk(self._walk_position,self._walk_target,distance)
         self._walk_position=position

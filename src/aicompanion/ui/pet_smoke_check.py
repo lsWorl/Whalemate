@@ -41,8 +41,9 @@ def schedule_pet_smoke_check(window, database, output):
         installed = (pack.root/pack.renderer['animation']).is_file()
         state['aboutme_installed'] = installed
         if installed:
+            # 鲸鲸默认使用随程序发布的视频逐帧动画；清单换成什么，桌宠就应显示什么。
             state['expected_renderer'] = 'AnimationAvatar'
-            state['expected_renderer_shown'] = animation and pet.view.using_aboutme
+            state['expected_renderer_shown'] = animation and pet.view.pack is pet.view._original_pack
         else:
             # 出厂自绘形象在没有 Aboutme 的新安装中也应正常显示。
             expected = RigAvatar if database.get_setting('rig_enabled', True) else SpriteAvatar
@@ -164,7 +165,7 @@ def schedule_pet_smoke_check(window, database, output):
         cid = window.controller.character.id
         database.set_setting(f'pet_animation_enabled:{cid}', False)
         window._apply_avatar()
-        state['legacy_setting_keeps_aboutme'] = isinstance(pet.view, AnimationAvatar) and pet.view.using_aboutme
+        state['legacy_setting_keeps_aboutme'] = isinstance(pet.view, AnimationAvatar)
         database.set_setting(f'pet_animation_enabled:{cid}', True)
         window._apply_avatar()
     later(18000,appearance)
@@ -548,8 +549,11 @@ def schedule_pet_smoke_check(window, database, output):
             def walk_next(index):
                 if index==len(routes):
                     if reference:
-                        state['walk_mode']='aboutme_left_right' if view.using_aboutme else 'reference_left_right'
-                        state['walk_flow']=(len(state['walk_routes'])==2 and [r['gait'] for r in state['walk_routes']]==['walking_left','walking_right']
+                        state['walk_mode']=('aboutme_left_right' if view.using_aboutme else 'reference_left_right' if view.using_reference
+                                            else 'video_left_right')
+                        # 有左右两套步态的包分别播放；只有一套的包（视频逐帧）镜像同一片段。
+                        gaits=[view.pack.poses.get(k) or view.pack.poses.get('walking') for k in ('walking_left','walking_right')]
+                        state['walk_flow']=(len(state['walk_routes'])==2 and [r['gait'] for r in state['walk_routes']]==gaits
                             and all(r['moved_x'] and not r['moved_y'] and r['target_reached'] for r in state['walk_routes'])
                             and len(set(state['walk_frame_indices']))>=3)
                     else:

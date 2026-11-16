@@ -4,7 +4,8 @@
 
 | 编号 | 任务 | 负责 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| T24 | 鲸鲸视频生成序列帧试点 | Codex 出图、调用视频模型、后期处理与接入 / Claude 审片 | 进行中 | [任务说明](tasks/T24-whale-video-sprites.md) |
+| T25 | 看手机、花 Token 动画接上真实事件（QQ 来消息、词元用量超阈值） | 待定（需与 Codex 约定共享文件 `ui/main_window.py`） | 待开始，依赖 T24 合入 | [任务说明](tasks/T25-pet-event-animations.md) |
+| T24 | 鲸鲸视频生成序列帧，设为默认形象 | Claude 生成、后期处理与接入（负责人委托）/ Codex 审查 | 待 Codex 审查：14 个动作、39 段过渡，替换原默认形象 | [任务说明](tasks/T24-whale-video-sprites.md) |
 | T23 | Q 版鲸鲸分层骨骼形象试点 | Codex 出图与 Rive 接入、Claude 审查 | 骨骼路线暂停，保留作后备；视频路线见 T24 | [原任务说明](tasks/T23-q-whale-rig.md) · [暂停时的产物](../art/deepseek-whale-q/review-step3/) |
 | V4-7f | 跨天办事 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7f-long-tasks.md) |
 | V4-7d | 圈子长期话题 | Codex 实现、Claude 审查 | 待 Claude 审查 | [任务说明](tasks/V4-7d-circle-topics.md) |

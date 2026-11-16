@@ -74,6 +74,11 @@ def local_file(root, value):
     return path
 
 
+# 转身、掏手机这类带道具的起收动作需要 1 秒以上才自然；走路结束的“摔倒再爬起”约 2.5 秒。
+# 过渡可被新姿势打断（播放器直接截取当前画面续接），所以上限放宽到 3 秒不会让桌宠显得迟钝。
+MAX_TRANSITION_SECONDS = 3.0
+
+
 def integer(value, low, high):
     if type(value) is not int or not low<=value<=high:
         raise CharacterPackError('动画帧规格超出支持范围。')
@@ -130,8 +135,8 @@ def load_animation_pack(path):
             if source not in actions or target not in actions or source==target or (source,target) in transitions:
                 raise CharacterPackError('过渡端点不存在、相同或重复。')
             clip=animation_entry(path.parent,'@transition:'+json.dumps([source,target],ensure_ascii=False,separators=(',',':')),entry,size)
-            if clip.count<2 or clip.count/clip.fps>.75:
-                raise CharacterPackError('单段过渡应为 2 帧以上且不超过 0.75 秒。')
+            if clip.count<2 or clip.count/clip.fps>MAX_TRANSITION_SECONDS:
+                raise CharacterPackError(f'单段过渡应为 2 帧以上且不超过 {MAX_TRANSITION_SECONDS:g} 秒。')
             transitions[source,target]=Transition(source,target,clip)
         if any(not isinstance(p,str) or a not in actions for p,a in poses.items()):
             raise CharacterPackError('动画姿势指向不存在的动作。')
