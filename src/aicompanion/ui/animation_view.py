@@ -124,7 +124,15 @@ class AnimationAvatar(QWidget):
         self._gait_cycle_distance=None;self._select();self.update()
 
     def set_state(self,mood='calm',mouth=0):
+        previous=self.mood
         self.mood=mood or 'calm'; self.mouth=max(0.,min(1.,float(mouth)))
+        # T28：说话中心情变了，换成对应心情的说话动作（素材包有 talking_<心情> 时）。
+        if self.mood!=previous and self.pose=='talking' and self._talking_key()!=self.action:self._select()
+
+    def _talking_key(self):
+        """说话时按当前心情选动作：开心、想撒娇、委屈、生气各有一段；平静或包里没有对应片段时用普通说话。"""
+        base=self.pack.poses.get('talking',self.pack.poses['idle'])
+        return self.pack.poses.get(f'talking_{self.mood}',base) if self.mood!='calm' else base
 
     def set_voice_active(self,active): self.voice_active=bool(active)
     def set_surface(self,desktop): pass
@@ -142,6 +150,8 @@ class AnimationAvatar(QWidget):
             key=self._cue
         elif self.pose=='idle' and self.walking:
             key=self._walking_key()
+        elif self.pose=='talking':
+            key=self._talking_key()
         else:
             key=self.pack.poses.get(self.pose,self.pack.poses['idle'])
         self.action=key
