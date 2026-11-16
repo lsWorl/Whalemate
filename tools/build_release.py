@@ -59,11 +59,18 @@ def stage_napcat(bundle, archive, repo):
     (target/'NOTICE.txt').write_bytes(napcat_notice())
 
 
+# 默认视频形象随仓库以 MIT 分发；其他 animation-* 目录（如本机安装的 Aboutme）仍禁止进包。
+VIDEO_PACK = re.compile(r'(?:src|_internal)/aicompanion/characters/deepseek-whale/animation-video'
+                        r'(?:/[a-z0-9_-]+\.(?:webp|png|json))?')
+
+
 def check_member(relative):
     """同时检查文件和所有祖先。Aboutme 安装器和来源说明是允许分发的文本。"""
     if not str(relative).isascii():
         raise ValueError(f'发布目录和文件须使用英文命名：{relative}')
     path = PurePosixPath(str(relative).replace('\\', '/').lower())
+    if VIDEO_PACK.fullmatch(str(path)):
+        return
     for part in path.parts:
         if (part in {'data', 'logs', 'log', '__pycache__', 'coopanion', 'aboutme-cache', '.aicompanion-paths.json'}
                 or part.startswith(('animation-', 'private-'))

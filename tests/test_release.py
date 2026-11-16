@@ -30,6 +30,23 @@ class ReleaseTests(unittest.TestCase):
                        '_internal/aicompanion/characters/deepseek-whale/rig/idle.png'):
             check_member(member)
 
+    def test_only_default_video_pack_may_ship_webp(self):
+        for member in ('src/aicompanion/characters/deepseek-whale/animation-video',
+                       'src/aicompanion/characters/deepseek-whale/animation-video/animations.json',
+                       '_internal/aicompanion/characters/deepseek-whale/animation-video/idle.webp',
+                       '_internal/aicompanion/characters/deepseek-whale/animation-video/transition-turn-8-24-14.webp',
+                       '_internal/aicompanion/characters/deepseek-whale/animation-video/poster.png'):
+            check_member(member)
+        for member in ('_internal/aicompanion/characters/deepseek-whale/animation-aboutme/idle.webp',
+                       '_internal/aicompanion/characters/deepseek-whale/animation-video/sub/idle.webp',
+                       '_internal/aicompanion/characters/deepseek-whale/animation-video/.env',
+                       '_internal/aicompanion/characters/deepseek-whale/animation-video/cache.sqlite3',
+                       '_internal/aicompanion/characters/other/animation-video/idle.webp',
+                       'x/_internal/aicompanion/characters/deepseek-whale/animation-video/idle.webp',
+                       'output/idle.webp'):
+            with self.subTest(member=member), self.assertRaises(ValueError):
+                check_member(member)
+
     def test_release_rejects_non_english_file_and_directory_names(self):
         for path in ('卸载鲸伴.exe', '_internal/角色/idle.png'):
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, '英文命名'):

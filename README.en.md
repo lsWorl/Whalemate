@@ -24,7 +24,7 @@
 
 ---
 
-Whalemate (鲸伴, "whale companion") is an AI companion that lives on your Windows desktop. The default character, Jingjing (鲸鲸), uses the locally installed Aboutme Dafeiyu (大肥鱼) animations when available. Otherwise, she appears in the project’s own artwork inspired by the DeepSeek whale. She moves around your desktop, remembers
+Whalemate (鲸伴, "whale companion") is an AI companion that lives on your Windows desktop. The default character, Jingjing (鲸鲸), appears as a frame-by-frame video animation bundled with the app, based on the project’s own artwork inspired by the DeepSeek whale. You can switch to the locally installed Aboutme Dafeiyu (大肥鱼) animations if you have them. She moves around your desktop, remembers
 what you've talked about, answers in her own voice, gets a little moody, and actually does the tasks you hand her.
 
 Unlike a typical chat client, Whalemate cares about *who she is*: **switch the model and she is still herself.**
@@ -40,7 +40,9 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 
 ### 🐋 Desktop character
 - A transparent, frameless desktop pet. Only her own pixels catch the mouse: click to poke, drag to pick her up, double-click for quick input.
-- With the Aboutme animations installed locally, Jingjing can wave, stretch, drink milk tea and walk across the desktop. She steps aside when a fullscreen app is in front.
+- A bundled frame-by-frame video character: idle, talking, thinking, sleepy, celebrating, upset, checking her phone, working, spending tokens, waving, being poked, patted or picked up, with transitions between actions. She turns before walking, and at the end of a walk she trips on her skirt, gets up and stands again.
+- Her talking animation follows her current mood: happy, clingy, hurt and angry each have their own. She steps aside when a fullscreen app is in front.
+- With the Aboutme Dafeiyu animations installed locally, you can switch to them under 形象 (Look) in the right-click menu.
 - Characters are organised as *character packs* (persona, lines, model binding, art). Standard Live2D Cubism 3/4 models can also be imported (you need to download Live2D Cubism Core yourself; see "Optional components").
 
 ### 💬 Chat and expression
@@ -50,20 +52,24 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 
 ### 🔊 Voice and calls
 - Replies are spoken by default. "Smart reading" picks out the important parts of long replies and skips code, paths, tables and lists.
-- Speech synthesis via Breeze Blue, Qwen, Zhipu or Windows' built-in voices. If cloud synthesis fails she falls back to local speech and still finishes the reply.
+- Speech synthesis via MiniMax (Jingjing's default soft girl voice, 10 female voices in total), Breeze Blue, Qwen, Zhipu or Windows' built-in voices. If cloud synthesis fails she falls back to local speech and still finishes the reply.
 - Voice calls: WebRTC VAD segmentation, cloud (Qwen, Zhipu) or local SenseVoice recognition. Start speaking and she stops to listen.
 - Japanese dubbing: chat and subtitles stay in Chinese, only the spoken sentences are translated.
+- Long replies can come with a short spoken version that reads only the key points.
 
 ### 🧠 Memory and relationships
 - Decaying memory cards with an archive and sources. Anything you explicitly delete won't sneak back in reworded.
-- Older chats and past tasks are recalled with SQLite FTS5, and every request stays within a context budget.
+- Older chats and past tasks are recalled with hybrid full-text and semantic search (optional local Chinese embeddings). Long conversations get sourced stage summaries, and every request stays within a context budget.
+- In the chat window you can delete individual messages and memory cards; deleted messages are no longer used for memories, and what was learned from them is removed too.
 - Mood is driven by events and fades over time: ignore her and she sulks, comfort her and she calms down. Affection is long-term, so one argument doesn't reset it.
-- Persona packs can be created, edited, switched, rolled back, imported and exported (compatible with common SillyTavern character-card fields). Switching persona keeps her memories.
+- Persona packs can be created, edited, switched, rolled back, imported and exported (compatible with common SillyTavern character-card fields). Switching persona keeps her memories, and you can try a new persona in a trial chat first.
+- She remembers promises and reminds you on the right channel when they're due, and keeps up with long-running topics in QQ groups.
 
 ### 🛠️ Getting things done
 - Tasks are planned by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and executed by the pet's own tools; sensitive actions ask you first.
 - Tools are exposed over MCP on the local loopback only, with a fresh random token per run.
 - Works with both DeepSeek and MiniMax.
+- Hand files to her directly; multi-day tasks save their progress and resume later. Tasks can also be assigned from your bound QQ private chat and approved from either the desktop or QQ.
 
 ### 💬 QQ integration
 - Connects to QQ through [AstrBot](https://github.com/AstrBotDevs/AstrBot) + [NapCat](https://github.com/NapNeko/NapCatQQ). The bridge plugin lives in [integrations/astrbot_plugin_aicompanion](integrations/astrbot_plugin_aicompanion).
@@ -73,7 +79,7 @@ and talk to the same her on the desktop and on QQ without losing your shared his
 ### 🔐 Security and privacy
 - Model profiles reference a key for each provider. Keys saved in Settings are encrypted with Windows DPAPI and stored in the local database. Removing the database also removes those keys.
 - Chats, memories and settings live in a local SQLite database, backed up automatically before migrations.
-- Daily usage and quotas are tracked locally.
+- Daily usage and quotas are tracked locally. The chat panel shows how much of today's quota is left, plus DeepSeek and Kimi account balances (queried only from their official endpoints).
 
 ## 📦 Download and install
 
@@ -82,14 +88,14 @@ No Python or command line needed.
 > [!IMPORTANT]
 > **Turn off Windows Smart App Control before downloading.** Whalemate is not code-signed, so with Smart App Control on, `AICompanion.exe` is blocked and will not start (or shows "This app has been blocked"). To turn it off, open Windows Security → App & browser control → Smart App Control settings and choose Off. On some Windows 11 versions it cannot simply be switched back on afterwards without resetting Windows, so decide before you change it. Windows 10 and PCs without this setting need no change.
 
-1. Open the [Releases page](https://github.com/lsWorl/AICompanion/releases/latest) and download `Whalemate-v<version>-windows-x64.zip`. You can check the file against `SHA256SUMS.txt` on the same page.
+1. Open the [Releases page](https://github.com/lsWorl/Whalemate/releases/latest) and download `Whalemate-v<version>-windows-x64.zip`. You can check the file against `SHA256SUMS.txt` on the same page.
 2. Extract it to a folder on a **non-system drive**, e.g. `D:\Apps`. Chats and memories are kept off drive C where possible.
 3. Open the extracted `Whalemate` folder (`D:\Apps\Whalemate` in this example) and double-click `AICompanion.exe`.
 4. A setup guide appears on first launch (about 3 minutes). It helps you connect a chat model (you need a key from a service such as DeepSeek; the guide shows how to get one), pick a voice and a look. Every step can be skipped; without a model she runs on an offline mock so you can look around first.
 
 Requirements: Windows 10 / 11 (x64). Headphones are recommended for voice calls (speaker echo cancellation is not implemented yet).
 
-The Dafeiyu animation can be installed in step 4 of the guide or under Settings → 角色与形象; for the packaged build see the [Aboutme guide](docs/aboutme-pet.md) (Chinese). The animation is community artwork for personal, non-commercial use and is not included in the zip.
+The Dafeiyu animation can be installed in step 4 of the guide or under Settings → 角色与形象, then selected under 形象 in the pet's right-click menu; for the packaged build see the [Aboutme guide](docs/aboutme-pet.md) (Chinese). The animation is community artwork for personal, non-commercial use and is not included in the zip.
 
 > [!NOTE]
 > Windows may say "Windows protected your PC" because the program is not code-signed. If you downloaded it from this repository's Releases, choose "More info → Run anyway".
@@ -117,8 +123,8 @@ Two things are **kept by default** and only deleted if you tick them: **your own
 ### Install and run
 
 ```powershell
-git clone https://github.com/lsWorl/AICompanion.git
-cd AICompanion
+git clone https://github.com/lsWorl/Whalemate.git
+cd Whalemate
 
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -127,7 +133,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Jingjing appears in the bundled whale artwork on a fresh install. To use the Aboutme animations, follow the instructions below and restart. A placeholder appears only if both sets of artwork are unavailable. Right-click her or double-click the tray icon to open the chat panel and settings.
+Jingjing appears as the bundled video animation on a fresh install. After installing the Aboutme assets below, you can switch to them under 形象 in the pet's right-click menu. If the video animation is missing she falls back to the bundled whale artwork; a placeholder appears only if nothing is available. Right-click her or double-click the tray icon to open the chat panel and settings.
 Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1` to force it.
 
 ### Optional components
@@ -137,7 +143,7 @@ Without a configured model the offline mock is used; set `AICOMPANION_OFFLINE=1`
 | Agent | DeepSeek Harness and the official MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt`, then `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`, or run `tools\setup_dsh.bat` |
 | Local speech recognition | Offline SenseVoice (sherpa-onnx) | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`, or run `tools\setup_local_asr.bat` |
 | Importing external Live2D models | Live2D Cubism Core (Live2D proprietary license, not included) | `.\.venv\Scripts\python.exe tools\fetch_avatar.py` downloads it from Live2D to your machine |
-| Aboutme Dafeiyu | Install desktop animations for Jingjing | Run `.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt`, then `.\.venv\Scripts\python.exe tools\install_aboutme_pet.py`. See the [installation guide](docs/aboutme-pet.md) (Chinese) for packaged builds and offline reinstalls. |
+| Aboutme Dafeiyu | Install the switchable Dafeiyu animations for Jingjing | Run `.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt`, then `.\.venv\Scripts\python.exe tools\install_aboutme_pet.py`. See the [installation guide](docs/aboutme-pet.md) (Chinese) for packaged builds and offline reinstalls. |
 | Art pack tools | Build and annotate character art packs | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
 Basic chat and the desktop pet don't need any of these. The Aboutme animations run without Live2D Cubism Core.
@@ -173,13 +179,16 @@ into **a companion with her own life and moods, who reaches out to you, and whos
 | 3 | Lasting moods and little tempers: sulking, being clingy, talking back, and calming down | ✅ Shipped |
 | 4 | A life of her own: explores her interests, shares interesting finds, then waits for your reply | ✅ Shipped (unified proactive scheduler + sharing loop); long-term hands-on testing pending |
 | 5 | Really leaving: closes herself when the mood calls for it, and picks up again next launch | ✅ Shipped (farewell exit, restart greeting, paused tasks resume) |
-| 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | 🚧 Part one shipped (full-text recall, request budgets); semantic recall and summaries to do |
-| 7 | Circles and long-running work: recurring group topics, promises, multi-day tasks, file hand-off | 📋 Planned |
-| 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | ✅ Shipped (smart reading, default whale voice); QQ voice messages to do |
+| 6 | Remembering and recalling: hybrid recall, sourced summaries, whole-request budgets | ✅ Shipped (full-text + semantic recall, optional local embeddings, sourced stage summaries, request budgets) |
+| 7 | Circles and long-running work: recurring group topics, promises, multi-day tasks, file hand-off | ✅ Shipped (promise reminders, circle topics, multi-day tasks, file hand-off, QQ private-chat tasks with approval on both ends) |
+| 8 | Spoken replies: Dafeiyu's own voice, long replies trimmed and split | ✅ Shipped (smart reading, spoken summaries, default whale voice); QQ voice messages to do |
 | 9 | Companion dates: days since you met, anniversaries she brings up on the day | ✅ Basic version shipped |
 | — | UI redesign: whale theme, first-run guide, settings autosave | ✅ Shipped |
 | — | Ready-to-run Windows build and uninstaller | ✅ Released (v0.1.0) |
 | — | QQ setup ships NapCat in the zip: scan the QR code to log in, no online download needed | ✅ Released (v0.1.0); real-account messaging awaits hands-on testing |
+| — | Video character: action transitions, trip at the end of a walk, being picked up, mood-dependent talking | ✅ Released (v0.2.0) |
+| — | Per-message deletion of chats and memories, persona trial chat, remaining quota and account balance | ✅ Released (v0.2.0) |
+| — | Phone and token-spending animations triggered by QQ messages and usage thresholds | 📋 Planned (T25) |
 
 "Shipped" means merged into the main line and passing automated tests; real-model, QQ and voice behaviour is confirmed by the owner's hands-on testing.
 
@@ -252,6 +261,9 @@ tools\run_agent_checks.bat
 
 # Build the Windows release (folder-style PyInstaller)
 .\.venv\Scripts\python.exe tools\build_windows.py
+
+# Build the release zip and SHA256SUMS.txt (written under dist)
+.\.venv\Scripts\python.exe tools\build_release.py
 ```
 
 Self-checks use a temporary database, never read your chats, and stay offline.
@@ -306,6 +318,7 @@ Whalemate stands on the shoulders of many open-source projects and community cre
 | [Graphiti](https://github.com/getzep/graphiti) | Facts with validity time and provenance |
 | [LangGraph](https://github.com/langchain-ai/langgraph) | Checkpoints, waiting for approval, pause and resume |
 | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS), [CosyVoice](https://github.com/FunAudioLLM/CosyVoice) | How to call a self-hosted voice service (API only; no models bundled) |
+| [Jimeng Seedance 2.0](https://jimeng.jianying.com/) | Generated Jingjing's action clips from the owner's artwork as first/last frames; `tools/video_pet/` keys and packs them into frame animations. Generation settings are in `art/deepseek-whale-video/prompts.json` |
 
 ### AstrBot community plugins
 
@@ -323,7 +336,7 @@ Special thanks to the creators in the Dafeiyu fan community — her personality,
 
 | Project | What we learned from it |
 | --- | --- |
-| [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets) · [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) | Aboutme prepared the dsh / dsh1 animation sheets from dsh-pet artwork. Jingjing uses these locally installed animations. |
+| [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets) · [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) | Aboutme prepared the dsh / dsh1 animation sheets from dsh-pet artwork. They are the optional, locally installed Dafeiyu animations for Jingjing. |
 | [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) | Source attribution for Dafeiyu stickers and the knowledge base (artwork by 可以叫我云大人 / 雾雪) |
 | [bluedafeiyu](https://github.com/lmy414/bluedafeiyu) | The Dafeiyu archive site and its image-rights notes |
 | [astrbot_plugin_feiyu_voice](https://github.com/Esmerubphire/astrbot_plugin_feiyu_voice), [WhaleTalk](https://github.com/Tokimorphling/WhaleTalk-) | The feel of her voice, pre-synthesised fixed lines, volume-driven lip sync |
@@ -340,7 +353,7 @@ If you are an author of one of these projects and something here is inaccurate o
 
 ## 📄 License and notices
 
-The [MIT License](LICENSE) covers Whalemate's code, documentation, the bundled original whale artwork (sprites and rig textures), application icons (`src/aicompanion/assets/icons/`) and six original sticker images (`src/aicompanion/assets/expression/`).
+The [MIT License](LICENSE) covers Whalemate's code, documentation, Jingjing's bundled artwork (the video animation atlases, sprites and rig textures), application icons (`src/aicompanion/assets/icons/`) and six original sticker images (`src/aicompanion/assets/expression/`).
 
 - **Aboutme Dafeiyu** artwork and locally generated animation sheets follow the [upstream asset notice](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt). Use them only for noncommercial purposes and credit PC2005-cloud/dsh-pet in public derivatives. The repository and release packages exclude these assets.
 - **NapCatQQ v4.18.41** is for non-commercial use under the Limited Redistribution License for NapCat (Copyright © 2024 Mlikiowa). QQ setup checks the bundled archive, the original ZIP or its containing directory selected in QQ advanced settings, then the download cache and official URL. The zip on Releases ships the unmodified official NapCat Windows archive with its full license and attribution in `third-party/napcat/`, so QQ setup no longer downloads it from GitHub. NapCat, the Tencent QQ runtime and Node.js have their own licenses and are outside Whalemate’s MIT license.
