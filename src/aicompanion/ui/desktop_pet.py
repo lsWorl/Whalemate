@@ -525,9 +525,12 @@ class DesktopPetWindow(QWidget):
         self._set_input_transparent(not (busy or self.view.cursor_hit))
 
     def _set_input_transparent(self, transparent):
+        # T27：Windows 上直接改 WS_EX_TRANSPARENT 一位，不让 Qt 重算窗口样式（那会让整个窗口闪一下黑框）。
+        # 每次都对照实际样式，Qt 因为置顶等标志变化重设样式后也能补回来。
+        if desktop.set_click_through(self, transparent):
+            self._input_transparent = transparent; return
         if transparent == self._input_transparent: return
         self._input_transparent = transparent
-        # 只改原生窗口的输入标志（WS_EX_TRANSPARENT），不重建窗口、不影响绘制
         self.windowHandle().setFlag(Qt.WindowType.WindowTransparentForInput, transparent)
 
     def _update_mask(self, *args):
