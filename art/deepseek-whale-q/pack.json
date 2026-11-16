@@ -1,0 +1,631 @@
+{
+  "format": "AICompanionPackSource",
+  "version": 1,
+  "id": "deepseek-whale-q",
+  "name": "鲸鲸 · T23 长裙与九种表情送审稿",
+  "canvas": [
+    2048,
+    2048
+  ],
+  "origin": {
+    "center_x": 1024,
+    "ground_y": 1984
+  },
+  "credits": [
+    {
+      "role": "候选主图",
+      "by": "Codex",
+      "tool": "Codex 内置 image_gen",
+      "files": [
+        "candidates/a.png",
+        "candidates/a-300.png",
+        "master.png"
+      ],
+      "input_images": [],
+      "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 A。眼神自然平视，小嘴轻轻收圆；发梢沿裙侧落下，再向外轻轻回钩。裙褶柔和，奶白蕾丝和精巧金绣清楚可辨。人物像一位安静站在桌角的小女仆。",
+      "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+      "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    },
+    {
+      "role": "候选主图",
+      "by": "Codex",
+      "tool": "Codex 内置 image_gen",
+      "files": [
+        "candidates/b.png",
+        "candidates/b-300.png"
+      ],
+      "input_images": [],
+      "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 B。保持同一张小脸与同一套服装，眼神稍稍抬起，针尖小嘴轻轻抿出极浅的笑意。长发下半段松散向画面左侧拂开一点，使小鲸尾和发梢之间留一线背景。裙褶张开一点，看得清双腕。",
+      "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+      "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    },
+    {
+      "role": "候选主图",
+      "by": "Codex",
+      "tool": "Codex 内置 image_gen",
+      "files": [
+        "candidates/c.png",
+        "candidates/c-300.png"
+      ],
+      "input_images": [],
+      "prompt": "画一张用于桌宠的精致手绘日系二头半身鲸娘全身立绘。请照下面这一位角色的具体长相画，同一人物同一服装。画面要有小巧、清秀、安静的动画少女感。约 2.3～2.5 头身。脸是短短的小椭圆，脸颊在眼底自然向极小下巴收拢；脸窄于圆润的头发外轮廓，下颌不外凸。两只眼睛清亮，纵向的椭圆形，眼距适中，有深色上睫线和极少的细睫毛；虹膜上半深海蓝、下半柔和水蓝，各一粒主高光和一点细光，眼白可见。表情平静、一点点无辜，只有针尖大的淡粉小嘴，几乎看不到鼻子。不要横向扁宽的团子脸、巨大圆眼、腮红圆点或夸张笑容。头发为沉静的烟靛蓝（近似 #465986），头顶圆，一根细而有弹性的钩形呆毛，额前三瓣柔软的厚刘海，中间一瓣稍长。耳侧一对横展的鲸鳍，上表面深靛蓝，下面一小条扇贝边乳白。在耳鳍根各系一颗很小的蓝蝴蝶结。白色碎褶女仆发箍沿头顶弧线紧贴，不做蓬松帽子。鬓发垂至肩，体积自然的深蓝长发从头后垂到脚踝，低处过渡到柔和海蓝，发梢收成几束柔软波浪，线条纤细。服装是一条墨海军蓝的古典长袖女仆连衣裙，奶白荷叶袖口、深蓝色领结和很小的椭圆浅蓝胸针，白色窄胸襟接一片小白围裙，围裙绣一只清楚的蓝鲸侧影和小水花。裙摆呈小钟形，宽度略窄于头部，盖住胯部和腿根，褶边露出一点白衬裙。深蓝裙摆有一圈细金色卷枝绣线，裙边两处袖珍深蓝金色蝴蝶结。白袜和两只朴素的小圆头深蓝玛丽珍鞋，袜子只露一小截。小手在袖口外可见，手臂在身体两边放松，略与裙子分开。墨蓝细外轮廓，线条有轻重，有柔软阴影和不喧宾夺主的布料细节；色彩低饱和，精致的手绘动画赛璐璐上色。不要荧光青色、粗马克笔、塑胶高光、大号装饰或贴纸白边。\n构图必须是单人完整立姿，身体和脸略向画面右侧三分之四，两个眼睛都看得清；画面左边的眼睛、耳鳍、手臂离观众较近，远眼稍窄。腰后的分叉小鲸尾和大片后发在画面左后方，尾鳍轮廓完整且与发梢分开。身头正直，双脚分开一丝，同一高度落地。2048×2048方形画布，双脚之间的角色中线 x=1024，双脚底 y=1984，呆毛顶端约 y=100；头发头饰加头部约占上方六成。角色尽量画大、四周保留净边，不裁切。背景为完全均匀的不透明纯色绿 #00FF00，发间隙和脚间也是同一色；不画地板、投影、背景渐变、地平线、文字、版式、水印、其他角色或道具。\n待机方案 C。保持同一张小脸与同一套服装，上眼睑轻轻放低一点，神情安宁若有所思，两眼都睁开。两撮发梢沿裙面往内卷，裙子安静垂成一个略收拢的钟形，左侧小鲸尾向外略翘。",
+      "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+      "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    },
+    {
+      "role": "呆毛",
+      "by": "Codex",
+      "files": [
+        "layers/ahoge.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. One isolated top cowlick hair strand, exactly the single hook silhouette in A, stem rises from lower left in a long arch then hooks down and points back left at the far right. Dark navy purple with violet highlight and smoothly tapered organic tip and smoothly curved root; all edges delicately anti-aliased. No hair mass. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+      "notes": "将新生成呆毛定位到 A 的顶部弧线；沿可见部分对原画覆盖率做中值去噪和亚像素平滑，保留完整收尖。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "远侧手臂",
+      "by": "Codex",
+      "files": [
+        "layers/arm_far.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the full small ARM ON SCREEN RIGHT, from the hidden shoulder through its long dark-indigo puff sleeve, to the ivory ruffled cuff and bare hand with relaxed fingers pointing down and a little outward RIGHT. Complete the shoulder as a rounded closed sleeve cap. Visible hand and sleeve join continuously. No torso, dress, hair or second arm.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 依远侧肩、肘、袖口和手的截面配准，分出前发盖住的袖山。 按主图重划远侧手指与门襟的遮挡边界。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "近侧手臂",
+      "by": "Codex",
+      "files": [
+        "layers/arm_near.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the full ARM ON SCREEN LEFT, anatomical near arm, its long navy puff sleeve, cream ruffled cuff and hand with gently extended fingers angled down and to image LEFT. Complete the upper shoulder region UNDER the white apron strap and the hidden sleeve side. Rounded sleeve shoulder cap, continuous arm from shoulder to hand, no torso, hair or skirt.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 依近侧袖从肩头到手指的截面配准，回贴原袖暗纹与手的可见部分。 按主图复位近袖与手指间隙。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "刘海",
+      "by": "Codex",
+      "files": [
+        "layers/bangs.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the thick indigo FRONT BANGS hair cap across the crown and forehead; three main soft panels with the long pointed center lock and cheek-length side framing ends. Preserve the subtle periwinkle highlight shapes, fill crown under headband. No back hair, face, fin, headband, ahoge or hair flowing below the jaw.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 保留定稿刘海线稿，被发饰遮住的顶部使用同一部件的生成纹理。  清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "上身",
+      "by": "Codex",
+      "files": [
+        "layers/body.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only sleeveless compact UPPER TORSO together with its actual ivory neckline, white ruffles of the two apron straps on shoulders, narrow white button placket, large dark chest bow and blue brooch. Include neck skin and complete rounded shoulder caps and hidden sides underneath both detached arm sleeves. Lower edge extends just below waist into skirt by several centimeters. No head, arms, hands, hips, skirt, waist bow or hair. Draw precisely the same fitted bodice under the hair.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 胸针、原领口和门襟按 A 复位，隐蔽肩顶和衣身由单件补画承接。 可见门襟归到衣身，保留抬臂后露出的胸部和肩饰。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "脸与额头",
+      "by": "Codex",
+      "files": [
+        "layers/face.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. An entirely FEATURELESS bald face base, an anime doll faceplate in same skin color and slightly right-facing jaw silhouette with both ears; paint unbroken blank complexion with subtle blush and gentle skin gradients. Absolutely NO eyes, sockets, nose, mouth, brows, guide lines or eyelids even faintly. No hair, neck or accessories. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+      "notes": "使用新的无五官净脸生成稿和原主图下颌轮廓配准，在整片皮肤上做低频色调匹配。耳、腮、额头保留，脸上不烙原中性五官。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "远侧耳鳍",
+      "by": "Codex",
+      "files": [
+        "layers/fin_far.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. One isolated screen RIGHT whale ear-fin, dark muted indigo upper surface and scalloped pale lavender underside, soft BLUE bow at its concealed LEFT root. Outside tip points right and slightly down. Paint the hidden left edge as a continuous organic round fin outline merging with the bow, a flowing diagonal, no straight crop edges. Whole component only. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+      "notes": "新生成的完整蓝结和鳍根与主图鳍尖配准，按弧线收合下缘。根部色边、结外的发隙按 A 清理。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "近侧耳鳍",
+      "by": "Codex",
+      "files": [
+        "layers/fin_near.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the SINGLE larger whale ear fin on SCREEN LEFT, with the little blue bow at its root: base on RIGHT, fin sticks outward and diagonally DOWN-LEFT, deep indigo top and ivory scalloped underside. Paint a full rounded fin root extending to the right underneath hair and ribbon. No hair, face or other fin.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 近侧根部补进蝴蝶结后与侧发覆盖区。  清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "后发",
+      "by": "Codex",
+      "files": [
+        "layers/hair_back.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: The ONE complete curtain of BACK HAIR hanging behind the head AND entire body. Reconstruct the middle now covered by the head, dress and arms as continuous shaded indigo long hair from crown to lower ends. A large single uninterrupted swathe with narrow cascading strands, soft blue tips and the same asymmetric sweep to screen left. Exclude forelocks, bangs, detachable outer curled tip, face, headband and ALL clothing. No central head-shaped or body-shaped hole.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 补全颅后、身后中央大块后发，保留尾鳍外露空隙。 在右肩和尾干后补回 A 原有的后发发丝与暗色，修整极限姿态中会分离的小碎片。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "左后发卷",
+      "by": "Codex",
+      "files": [
+        "layers/hair_back_curl.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: A single long curling terminal lock from the lower LEFT of the back hair. Isolate a graceful downward S shaped tapered indigo-to-pale-blue lock, curling back on its tip, with a fully painted continuous upper root that disappears into the rear hair curtain. Nothing else.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 左下回卷沿暗部纹理接回后发，在尾干上方。 按主图修复尾干与左后发卷交界的发纹。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "左肩前发",
+      "by": "Codex",
+      "files": [
+        "layers/hair_front_left.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the SHORT front tress that drapes over the shoulder ON SCREEN LEFT (near side, in front of sleeve). A slim curved indigo lock from under the cheek at screen left to the upper left chest, narrow lighter hooked tip curling LEFT, exactly as master. Paint the upper connection fully. No back curtain, other hair or clothes.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 画面左肩前的垂发盖过近侧袖顶，与左下回卷分层。  清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "右肩前发",
+      "by": "Codex",
+      "files": [
+        "layers/hair_front_right.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. Just the SINGLE narrow S-curled dark indigo shoulder-front lock on the screen RIGHT of A, from hidden root by jaw to tapered inward-pointing tip. Restore all its boundaries, especially gently bowed screen-left edge and curved tip. Avoid flat cut lines; fully isolated single lock, no body, face or ribbon. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+      "notes": "用新生成的发束纹理填入渐变宽度的 S 形轮廓，按主图回贴可见发纹和末端暗色线条。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "女仆头饰",
+      "by": "Codex",
+      "files": [
+        "layers/headdress.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single ivory RUFFLED MAID HEADBAND arch from the head, asymmetric high arch in three-quarter-right perspective, open center and open below, around the upper crown. Preserve its small folds, pale violet shadows, thin stitched trim and full continuous band beneath the hair overlap. No blue ribbons or hair.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 以头顶弧线与左右侧装饰定位，保留两端叠入头发的区域。  清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "左腿",
+      "by": "Codex",
+      "files": [
+        "layers/leg_back.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single separate leg on SCREEN LEFT, with its little ruffled white ankle sock and the navy Mary Jane with side buckle matching master. Draw a continuous complete leg from upper thigh beneath skirt to shoe sole, slight turn to screen right. No skirt, other leg or body.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 腿根补到 y=1637，向下接原腿的裙底投影、袜与鞋。"
+    },
+    {
+      "role": "右腿",
+      "by": "Codex",
+      "files": [
+        "layers/leg_front.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the single separate leg on SCREEN RIGHT, its tiny white ruffled ankle sock and dark Mary Jane shoe, all in one piece. Draw skin from under the skirt at upper thigh down to ankle, same standing pose, toes slightly towards screen right, same small lack of foreshortening. Complete the covered upper leg; no skirt or second leg.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 腿根补到 y=1631，向下接原腿的裙底投影、袜与鞋。"
+    },
+    {
+      "role": "鬓发",
+      "by": "Codex",
+      "files": [
+        "layers/sidelocks.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: The soft head-side HAIR LOCKS immediately beside the ears and behind the face; two short layered rounded navy pieces as a pair at cheek height, tapering at jaw and just below, surrounding empty central space. Only the lateral tufts, no forehead fringe, no long strands on chest, no face.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 两侧面颊发片独立于肩前长发，保持侧脸原有遮挡。 清理回拼及极限姿态中会脱离主体的细边。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "裙与围裙",
+      "by": "Codex",
+      "files": [
+        "layers/skirt.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the complete bell-shaped dark-indigo SKIRT from the waist to the ivory ruffled lower hem, including the full attached white front pinafore panel bearing the blue whale and water spout, gold vine embroidery and BOTH small navy/gold bows sewn at the lower hem. Fill the side panels that the hanging sleeves/arms cover. Include full back left silhouette behind the arms and hair. No waist sash, blouse, arms, legs or hair. Waistline at top and full hem at bottom.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 保存鲸标、刺绣和裙褶，按裙摆下缘复位蕾丝线稿。  清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "鲸尾",
+      "by": "Codex",
+      "files": [
+        "layers/tail.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Edit using only master.png. Hand-painted layered sprite for exactly this character, one fully self-contained cutout on transparent RGBA with empty margin, matching A's angle, ink, natural shading and colors. Whale tail only. EXACT identity and geometry of A: on the screen LEFT a pair of deeply forked flukes arch up, navy with lavender underside; after the fork the thick stem sweeps DOWN and to the RIGHT then gently up toward the body's waist on the far right. The tail's stem is uninterrupted and longer than the flukes, with muted all-indigo shadow at the far RIGHT root. No blocky highlights or vertical joining line; tip of the root softly rounded. Isolate with no hair/body. No background, guide, text, checkerboard, other parts or shadows outside cutout.",
+      "notes": "左右尾鳍沿 A 的轮廓，重新生成的尾干延长到腰后，以连续截面过渡阴影、压暗远端腹面。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "腰带与后腰结",
+      "by": "Codex",
+      "files": [
+        "layers/waist_bow.png"
+      ],
+      "input_images": [
+        "master.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "prompt": "Image editing • isolated 2D game character part for skeletal animation. The attached approved master is the sole source. Extract and restore exactly the one element described below in precisely the master artwork's ink, muted blue/ivory palette, original perspective, facing, proportions, orientation and lighting. Maintain its recognizable visible outline and recreate hidden areas naturally in the same hand-painted style. Provide ONE COMPLETE isolated cutout on real transparent RGBA with no shadow, background, outline sticker, checkerboard, green, guides or labels. Give a small breathing margin all around the part so no fragment touches an edge; use the picture area for detail. Do not show a model, silhouette, mannequin or any other object. The result is a texture, not a character concept sheet.\nPart: Only the IVORY HORIZONTAL WAIST SASH with the small BACK BOW peeking from behind the near sleeve to the left, simple silk band that wraps the waist above the apron. Reconstruct its hidden bow loops and center knot at image LEFT. Do not draw the blue brooch bow at neck, the navy decorative hem bows, skirt, apron panel or any clothing other than this horizontal waist bow/sash.",
+      "notes": "真透明生成稿按角色实际位置配准。沿主图线稿划分可见区域，保留原画颜色并去除绿溢色；遮挡区使用生成纹理。 分别配准后腰结与腰带，以同一层接合。 将左端系带沿褶线收成软尖，复位腰带可见的亮色折痕。 清理 alpha 微屑与面积小于 16 px 的孤立块。"
+    },
+    {
+      "role": "表情 neutral",
+      "by": "Codex",
+      "files": [
+        "layers/face/neutral/brows.png",
+        "layers/face/neutral/eyeL_ball.png",
+        "layers/face/neutral/eyeL_hl.png",
+        "layers/face/neutral/eyeL_iris.png",
+        "layers/face/neutral/eyeL_lash.png",
+        "layers/face/neutral/eyeR_ball.png",
+        "layers/face/neutral/eyeR_hl.png",
+        "layers/face/neutral/eyeR_iris.png",
+        "layers/face/neutral/eyeR_lash.png",
+        "layers/face/neutral/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Neutral attentive. Reproduce A's original rich indigo-to-pale-blue anime irises, dark pupil, white catchlights, broad tapered upper lash. Include open whites around irises so gaze can move. Small neutral mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。 眼白按 A 的真实眼裂补齐，虹膜与高光配合主图同位纹理分出、补底和内收，按编译器的实际视线活动范围收边。上眼线按 A 配准。"
+    },
+    {
+      "role": "表情 happy",
+      "by": "Codex",
+      "files": [
+        "layers/face/happy/brows.png",
+        "layers/face/happy/eyeL.png",
+        "layers/face/happy/eyeR.png",
+        "layers/face/happy/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Joyful closed crescent eyes rising in two bold smiling arches, open warm coral smiling mouth with small pink tongue. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 love",
+      "by": "Codex",
+      "files": [
+        "layers/face/love/brows.png",
+        "layers/face/love/eyeL.png",
+        "layers/face/love/eyeR.png",
+        "layers/face/love/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Adoring big open blue anime eyes with clearly visible coral-pink heart-shaped pupils; delighted small open smile. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 surprised",
+      "by": "Codex",
+      "files": [
+        "layers/face/surprised/brows.png",
+        "layers/face/surprised/eyeL.png",
+        "layers/face/surprised/eyeR.png",
+        "layers/face/surprised/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Startled wide round outlined eyes, small dark blue pupils surrounded by lots of white, raised brows, round open O mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 sleep",
+      "by": "Codex",
+      "files": [
+        "layers/face/sleep/brows.png",
+        "layers/face/sleep/eyeL.png",
+        "layers/face/sleep/eyeR.png",
+        "layers/face/sleep/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Peaceful closed eyes. Two gracefully tapered dark curved single lash lines sloping subtly down toward inner corners, soft quiet closed mouth. No iris, whites or upper lid second lines. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。 两侧闭眼上沿与各自 neutral/lash 共用定稿曲线；厚度、下缘和嘴型单独处理。"
+    },
+    {
+      "role": "表情 drag",
+      "by": "Codex",
+      "files": [
+        "layers/face/drag/brows.png",
+        "layers/face/drag/eyeL.png",
+        "layers/face/drag/eyeR.png",
+        "layers/face/drag/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Panicky tightly squeezed bold > and < angle eyes, worried wavy mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 dizzy",
+      "by": "Codex",
+      "files": [
+        "layers/face/dizzy/brows.png",
+        "layers/face/dizzy/eyeL.png",
+        "layers/face/dizzy/eyeR.png",
+        "layers/face/dizzy/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Dazed: two bold hand-inked indigo SPIRALS as eyes, easy to read at small size, slack asymmetrical open mouth. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 shy",
+      "by": "Codex",
+      "files": [
+        "layers/face/shy/brows.png",
+        "layers/face/shy/eyeL.png",
+        "layers/face/shy/eyeR.png",
+        "layers/face/shy/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Bashful gaze clearly averted toward screen left, pupils very distinctly off centre, worried brows and small pressed mouth; no cheek or blush patches. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 smug",
+      "by": "Codex",
+      "files": [
+        "layers/face/smug/brows.png",
+        "layers/face/smug/eyeL.png",
+        "layers/face/smug/eyeR.png",
+        "layers/face/smug/mouth.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Smug half-lidded blue eyes with graphic lowered upper lashes and glancing irises, asymmetric brow lift and lopsided upturned smirk. Place screen-left eye and screen-right eye clearly apart in a horizontal row, left eye a little wider; separate eyebrows in their own row well ABOVE eyes; mouth separately well below eye row slightly rightward. All components separated by wide transparent gutters. No face outline, skin, nose, cheeks, ears, hair, words, shadow, panel grid or accessory. Eye ink must be bold and legible on a 300px-high character. Leave entire features uncropped.",
+      "notes": "从真实透明的单表情生成稿分出双眼、眉和嘴，按主图眼角、嘴中心分别配准；交付每个贴片为同一张 2048 方形画布，去除孤立块。"
+    },
+    {
+      "role": "表情 talk",
+      "by": "Codex",
+      "files": [
+        "layers/face/talk/mouth_open.png"
+      ],
+      "tool": "Codex 内置 image_gen（编辑）",
+      "input_images": [
+        "master.png"
+      ],
+      "prompt": "Production facial expression decal for the exact girl in master.png, only identity reference. Draw ONLY an isolated set of facial features on TRUE transparent RGBA, as a single close-up spacious decal, same A's gently right-facing anime ink and navy/lavender palette. Only one isolated small vertically open speaking anime mouth, gentle almond-shaped opening, coral tongue inside a deep rose outline, no eyes or other features. ",
+      "notes": "从单独生成的说话口型提取张嘴，保持原画嘴中心，显示时复用默认眼、眉。"
+    },
+    {
+      "role": "Q 版备份的身份参考",
+      "by": "负责人提供",
+      "tool": "负责人上传原画",
+      "files": [
+        "references/blue-original.png"
+      ],
+      "notes": "负责人确认由本人使用 AI 生成，允许随本项目提交。"
+    },
+    {
+      "role": "大头 Q 版备份",
+      "by": "Codex",
+      "tool": "Codex 内置 image_gen",
+      "files": [
+        "backup-q/a.png",
+        "backup-q/a-300.png"
+      ],
+      "input_images": [
+        "references/blue-original.png"
+      ],
+      "prompt": "EDIT THE SUPPLIED BLUE-BACKGROUND DRAWING. Preserve THIS EXACT character: make the same artist's next on-model still of Jingjing. The one attached image is the identity and rendering model sheet. Extremely important: match the reference as literally as possible. Retain exact face/head shape, little blue eyes with the upper dark and lower blue highlights, tiny mouth, the same muted indigo chunky three-part bangs and highlights, her height and the same tiny torso and tiny feet, thin curled ahoge, drooping fin ears with their white undersides, small teal bows and white maid headband. Match the brushwork, line widths, restrained shading, colors, and small details; keep the same navy dress, thin gold hem motif, small gold-dark bows, white lace apron with the reference's blue whale, white socks and Mary Janes. Maintain the very chibi silhouette and exact visual age. Neither stretch her torso/legs nor widen her cheeks/eyes. This is a pose adjustment of the existing illustration, not a style transformation. \nPose: lower both arms naturally just beside the dress, visible relaxed small hands at the cuffs, elbows slightly apart. Set BOTH feet flat on the same ground, a little gap between the shoes, toes slightly right. Spine upright, no leap or waving. Turn head AND body to a gentle but readable THREE-QUARTER VIEW FACING SCREEN RIGHT (show both eyes, a larger near eye and ear on image left); swing her separate blue whale tail gently out to SCREEN LEFT behind the waist with both flukes visible in negative space; long back hair hangs toward image left. Retain both long sidelocks; skirt covers hips and almost all of her short shins as on the reference. At desktop size she looks like the supplied illustrated character. \nReplace the blue background and floor shadow completely with uniform opaque solid key green #00FF00 everywhere outside the figure. Full body single character in a square 2048×2048 composition, between-feet midline x=1024, feet y=1984, top of ahoge y≈100. Enough margin for all hair and tail. Exact reference head proportion, about top 60% including ahoge and headband. No ground line, floor, shadow, props, lettering or guides.\nA: faithful neutral model-sheet pose; same tiny slightly parted mouth and calm straight gaze as reference. Keep soft pendulous hair tips and the skirt hanging naturally.",
+      "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+      "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    },
+    {
+      "role": "大头 Q 版备份",
+      "by": "Codex",
+      "tool": "Codex 内置 image_gen",
+      "files": [
+        "backup-q/b.png",
+        "backup-q/b-300.png"
+      ],
+      "input_images": [
+        "references/blue-original.png"
+      ],
+      "prompt": "EDIT THE SUPPLIED BLUE-BACKGROUND DRAWING. Preserve THIS EXACT character: make the same artist's next on-model still of Jingjing. The one attached image is the identity and rendering model sheet. Extremely important: match the reference as literally as possible. Retain exact face/head shape, little blue eyes with the upper dark and lower blue highlights, tiny mouth, the same muted indigo chunky three-part bangs and highlights, her height and the same tiny torso and tiny feet, thin curled ahoge, drooping fin ears with their white undersides, small teal bows and white maid headband. Match the brushwork, line widths, restrained shading, colors, and small details; keep the same navy dress, thin gold hem motif, small gold-dark bows, white lace apron with the reference's blue whale, white socks and Mary Janes. Maintain the very chibi silhouette and exact visual age. Neither stretch her torso/legs nor widen her cheeks/eyes. This is a pose adjustment of the existing illustration, not a style transformation. \nPose: lower both arms naturally just beside the dress, visible relaxed small hands at the cuffs, elbows slightly apart. Set BOTH feet flat on the same ground, a little gap between the shoes, toes slightly right. Spine upright, no leap or waving. Turn head AND body to a gentle but readable THREE-QUARTER VIEW FACING SCREEN RIGHT (show both eyes, a larger near eye and ear on image left); swing her separate blue whale tail gently out to SCREEN LEFT behind the waist with both flukes visible in negative space; long back hair hangs toward image left. Retain both long sidelocks; skirt covers hips and almost all of her short shins as on the reference. At desktop size she looks like the supplied illustrated character. \nReplace the blue background and floor shadow completely with uniform opaque solid key green #00FF00 everywhere outside the figure. Full body single character in a square 2048×2048 composition, between-feet midline x=1024, feet y=1984, top of ahoge y≈100. Enough margin for all hair and tail. Exact reference head proportion, about top 60% including ahoge and headband. No ground line, floor, shadow, props, lettering or guides.\nB: the exact same girl and outfit in the same three-quarter-right idle pose, a very slight, closed-mouth smile and eyes looking a touch higher. Let the ends of her back hair gently drift to screen left, exposing the near wrist and tail tip. Keep the changes subtle.",
+      "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+      "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    },
+    {
+      "role": "大头 Q 版备份",
+      "by": "Codex",
+      "tool": "Codex 内置 image_gen",
+      "files": [
+        "backup-q/c.png",
+        "backup-q/c-300.png"
+      ],
+      "input_images": [
+        "references/blue-original.png"
+      ],
+      "prompt": "EDIT THE SUPPLIED BLUE-BACKGROUND DRAWING. Preserve THIS EXACT character: make the same artist's next on-model still of Jingjing. The one attached image is the identity and rendering model sheet. Extremely important: match the reference as literally as possible. Retain exact face/head shape, little blue eyes with the upper dark and lower blue highlights, tiny mouth, the same muted indigo chunky three-part bangs and highlights, her height and the same tiny torso and tiny feet, thin curled ahoge, drooping fin ears with their white undersides, small teal bows and white maid headband. Match the brushwork, line widths, restrained shading, colors, and small details; keep the same navy dress, thin gold hem motif, small gold-dark bows, white lace apron with the reference's blue whale, white socks and Mary Janes. Maintain the very chibi silhouette and exact visual age. Neither stretch her torso/legs nor widen her cheeks/eyes. This is a pose adjustment of the existing illustration, not a style transformation. \nPose: lower both arms naturally just beside the dress, visible relaxed small hands at the cuffs, elbows slightly apart. Set BOTH feet flat on the same ground, a little gap between the shoes, toes slightly right. Spine upright, no leap or waving. Turn head AND body to a gentle but readable THREE-QUARTER VIEW FACING SCREEN RIGHT (show both eyes, a larger near eye and ear on image left); swing her separate blue whale tail gently out to SCREEN LEFT behind the waist with both flukes visible in negative space; long back hair hangs toward image left. Retain both long sidelocks; skirt covers hips and almost all of her short shins as on the reference. At desktop size she looks like the supplied illustrated character. \nReplace the blue background and floor shadow completely with uniform opaque solid key green #00FF00 everywhere outside the figure. Full body single character in a square 2048×2048 composition, between-feet midline x=1024, feet y=1984, top of ahoge y≈100. Enough margin for all hair and tail. Exact reference head proportion, about top 60% including ahoge and headband. No ground line, floor, shadow, props, lettering or guides.\nC: the exact same girl and outfit in three-quarter-right idle, upper lids subtly lowered while eyes remain open and her tiny mouth is relaxed. Hair tips curl gently inward closer to the sides of the hanging skirt; give the tail fin on screen left a slight upward curl. No other redesign.",
+      "postprocess": "使用 G−max(R,B)≥168 识别并统一生成图的绿色背景（含发隙）。在最低点上方 22 像素处取两只鞋之间的中点为中线。从底部 32 像素范围内微调两只鞋底的高差，按前景外接框将整个人等比缩放到 1885 像素高，再贴到 x 中线 1024、首行 100、末行 1984 的 2048 方形绿底画布。主图与缩略图均使用 Lanczos 重采样，缩略图为整幅画布缩到 300×300。画布坐标从左上角起，记录的裁切及放置框为左闭右开。",
+      "notes": "逐图的生成文件 SHA-256、配准参数和输出 SHA-256 见 prompts.json 对应的 drawings 记录。"
+    }
+  ],
+  "pivots": {
+    "body": [
+      1024,
+      1984
+    ],
+    "waist": [
+      1087,
+      1084
+    ],
+    "neck": [
+      1072,
+      790
+    ],
+    "armNear": [
+      918,
+      876
+    ],
+    "armFar": [
+      1244,
+      877
+    ],
+    "legBack": [
+      919,
+      1658
+    ],
+    "legFront": [
+      1106,
+      1653
+    ],
+    "tail": [
+      990,
+      1149
+    ],
+    "finNear": [
+      823,
+      568
+    ],
+    "finFar": [
+      1321,
+      565
+    ],
+    "ahoge": [
+      1079,
+      258
+    ]
+  },
+  "head": [
+    666,
+    199,
+    1359,
+    795
+  ],
+  "parts": {
+    "hair_back": {
+      "z": 1
+    },
+    "tail": {
+      "z": 0.8
+    },
+    "hair_back_curl": {
+      "z": 1.75
+    },
+    "leg_front": {
+      "z": 3
+    },
+    "leg_back": {
+      "z": 4
+    },
+    "arm_far": {
+      "z": 5.65
+    },
+    "body": {
+      "z": 5
+    },
+    "hair_front_right": {
+      "z": 6.15
+    },
+    "skirt": {
+      "z": 5.2
+    },
+    "hair_front_left": {
+      "z": 6.2
+    },
+    "waist_bow": {
+      "z": 5.5
+    },
+    "arm_near": {
+      "z": 6
+    },
+    "fin_far": {
+      "z": 7
+    },
+    "sidelocks": {
+      "z": 7.5
+    },
+    "face": {
+      "z": 8
+    },
+    "fin_near": {
+      "z": 11
+    },
+    "headdress": {
+      "z": 12.5
+    },
+    "bangs": {
+      "z": 13
+    },
+    "ahoge": {
+      "z": 14
+    }
+  }
+}

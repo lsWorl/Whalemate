@@ -90,7 +90,7 @@ class AnimationAvatar(QWidget):
         self.pose='idle'; self.action='idle'; self.mood='calm'; self.mouth=0.; self.voice_active=False
         self.dragging=False; self.walking=0; self._walk_vertical=0.; self._gait_distance=0.; self.direction=1 if self.pack.actions[self.pack.poses['idle']].facing=='right' else -1; self._cue=None; self._cue_until=0.; self._cue_duration=0.; self._cue_started=False
         self._sheet=QImage(); self._frame=self.poster; self._previous=QImage(); self._display=self.poster
-        self._frame_facing=self.pack.actions[self.pack.poses['idle']].facing
+        self._frame_facing=self.pack.actions[self.pack.poses['idle']].facing;self._shown_direction=None;self._outgoing_flipped=False
         self._gait_cycle_distance=None; self._gait_loaded=False; self._bridge=None; self._bridge_sheet=QImage(); self._bridge_started=0.; self._bridge_index=-1
         self._queue=[]; self._ready_next=None; self._fade_duration=FADE; self._outgoing=None
         self._loaded=None; self._requested=None; self._loading=None; self._index=-1
@@ -124,7 +124,15 @@ class AnimationAvatar(QWidget):
         self._gait_cycle_distance=None;self._select();self.update()
 
     def set_state(self,mood='calm',mouth=0):
+        previous=self.mood
         self.mood=mood or 'calm'; self.mouth=max(0.,min(1.,float(mouth)))
+        # T28：说话中心情变了，换成对应心情的说话动作（素材包有 talking_<心情> 时）。
+        if self.mood!=previous and self.pose=='talking' and self._talking_key()!=self.action:self._select()
+
+    def _talking_key(self):
+        """说话时按当前心情选动作：开心、想撒娇、委屈、生气各有一段；平静或包里没有对应片段时用普通说话。"""
+        base=self.pack.poses.get('talking',self.pack.poses['idle'])
+        return self.pack.poses.get(f'talking_{self.mood}',base) if self.mood!='calm' else base
 
     def set_voice_active(self,active): self.voice_active=bool(active)
     def set_surface(self,desktop): pass
@@ -142,6 +150,8 @@ class AnimationAvatar(QWidget):
             key=self._cue
         elif self.pose=='idle' and self.walking:
             key=self._walking_key()
+        elif self.pose=='talking':
+            key=self._talking_key()
         else:
             key=self.pack.poses.get(self.pose,self.pack.poses['idle'])
         self.action=key
@@ -189,6 +199,11 @@ class AnimationAvatar(QWidget):
             outgoing=(old,self._sheet,self._started,elapsed,gait)
         previous=self._display.copy()
         if not self.using_reference and self._frame_facing!=clip.facing:previous=previous.mirrored(True,False)
+        # 起步换向的画面在此生效；上一张画面反向保存，交叉淡化时仍按原朝向显示。
+        # 参考包左右步态各有图集、不做镜像，无需处理。
+        flipped=(not self.using_reference and self._shown_direction is not None and self._shown_direction!=self.direction)
+        if flipped:previous=previous.mirrored(True,False)
+        self._shown_direction=None;self._outgoing_flipped=flipped
         was_bridge=self._bridge is not None
         self._previous=previous; self._outgoing=outgoing; self._frame_facing=clip.facing
         self._fade_started=now
@@ -226,6 +241,7 @@ class AnimationAvatar(QWidget):
             cell=clip.cell_at(index)
             self._previous=sheet.copy(cell%clip.columns*w,cell//clip.columns*h,w,h)
             if not self.using_reference and clip.facing!=self._frame_facing:self._previous=self._previous.mirrored(True,False)
+            if self._outgoing_flipped:self._previous=self._previous.mirrored(True,False)
         self._display=mix_frames(self._previous,self._frame,amount)
         if progress>=1:self._previous=QImage();self._outgoing=None
 
@@ -272,7 +288,8 @@ class AnimationAvatar(QWidget):
             t.translate(0,-math.sin(age*math.pi)*self._hop_height*rect.height())
         age=now-self._bounce_started
         squash=math.sin(age*25)*math.exp(-age*10)*.045*self._bounce_strength if 0<=age<.4 else 0.
-        mirror=not self.using_reference and self.direction!=(1 if self._frame_facing=='right' else -1)
+        shown=self.direction if self._shown_direction is None else self._shown_direction
+        mirror=not self.using_reference and shown!=(1 if self._frame_facing=='right' else -1)
         t.scale((-1 if mirror else 1)*(1+squash),1-squash)
         t.translate(-rect.center().x(),-rect.bottom())
         return t
@@ -314,7 +331,7 @@ class AnimationAvatar(QWidget):
         return QPointF(rect.x()+(hx+hw/2)*rect.width(),rect.y()+hy*rect.height()).toPoint()
 
     def face(self,direction):
-        self.direction=1 if direction>=0 else -1; self.update()
+        self.direction=1 if direction>=0 else -1; self._shown_direction=None; self.update()
 
     def set_drag(self,active,velocity_x=0.):
         self.dragging=bool(active); self._select()
@@ -353,7 +370,13 @@ class AnimationAvatar(QWidget):
         self.walking=(1 if dx>=0 else -1) if length else 0
         self._walk_vertical=dy/length if length else 0.
         direction=(1 if dx>=0 else -1) if abs(dx)>1e-6 else self.direction
-        if direction!=self.direction or (length and self._gait_loaded):
+        if not self._gait_loaded and direction!=self.direction:
+            # 从站姿起步：保留当前动作，好让 idle→walk 的转身过渡照常播放。
+            # 朝向立即更新，画面等转身第一帧就绪时再翻，否则解码期间待机图会先水平翻转一下。
+            if self._shown_direction is None:self._shown_direction=self.direction
+            self.direction=direction
+            if self._shown_direction==direction:self._shown_direction=None
+        elif direction!=self.direction or (length and self._gait_loaded):
             # 转向 / 重规划先冻结当前脚位；新的路线相位不能覆盖仍在显示的旧步态。
             picture=self._display
             if direction!=self.direction and not self.using_reference:picture=picture.mirrored(True,False)
@@ -361,7 +384,7 @@ class AnimationAvatar(QWidget):
             self._sheet=QImage();self._loaded=None;self._gait_loaded=False
             self._previous=QImage();self._outgoing=None
             self._bridge=None;self._bridge_sheet=QImage();self._ready_next=None;self._queue=[]
-            self._requested=None;self.direction=direction
+            self._requested=None;self.direction=direction;self._shown_direction=None
         if length:self._gait_cycle_distance=None;self._gait_distance=0.
         self._select();self.update()
 

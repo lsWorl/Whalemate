@@ -201,6 +201,8 @@ class MemoryService:
             importance, confidence = item.get('importance',2), item.get('confidence',0.8)
             if not isinstance(importance,int) or not isinstance(confidence,(float,int)):
                 continue
+            # 等模型回复时有人删了原话：upsert_memory 在写事务里核对这条记忆自己的来源，
+            # 来源被删的记忆不写入；同一批里其他仍有原话支撑的记忆照常保存。
             self.database.upsert_memory(content,character_id,key,category,importance,confidence,sources,scope='qq' if public else 'pet',
                                         guard=self.public_guard(content,character_id,channel) if public else None)
         self.database.set_setting(marker,last_id)

@@ -1,11 +1,12 @@
 from dataclasses import replace
 from uuid import uuid4
 from datetime import datetime, timezone
-from PySide6.QtCore import Qt,QDateTime,QTimeZone,QTimer,Signal
+from PySide6.QtCore import Qt,QDateTime,QTimeZone,QTimer,QSignalBlocker,Signal
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QWidget,QFormLayout,QLineEdit,
     QFrame,QPlainTextEdit,QPushButton,QCheckBox,QComboBox,QSpinBox,QTableWidget,QTableWidgetItem,QLabel,QFileDialog,QMessageBox,QDateTimeEdit,QScrollArea)
 from aicompanion.ui import theme
+from aicompanion.ui.taskbar_dialog import TaskbarDialog
 from aicompanion.speech.qwen_client import DEFAULT_STYLE
 from aicompanion.avatar.model_package import validate_model_package, require_cubism_core, ModelPackageError
 
@@ -14,7 +15,7 @@ def play_voice_preview(speech, target=None):
     speech.enqueue('你回来啦。今天辛苦了，你可以慢慢说，我会认真听着的。', uuid4().hex, target=target)
 
 
-class SettingsWindow(QDialog):
+class SettingsWindow(TaskbarDialog):
     """设置窗口。左侧按“她 / 能力 / 连接 / 系统”分组，第一页“概览”告诉用户还差哪几步、去哪里设置。
 
     页面键（open_page 参数、概览里的“去设置”按钮都用它）：overview、persona、memory、relationship、proactive、
@@ -49,6 +50,9 @@ class SettingsWindow(QDialog):
         self.avatar_mode=QComboBox()
         self.avatar_mode.addItem('角色包默认形象','sprites')
         self.avatar_mode.addItem('导入的 Live2D 模型','live2d')
+        from aicompanion.characters import installed_alternatives
+        if 'aboutme' in installed_alternatives(pack):
+            self.avatar_mode.addItem('Aboutme 大肥鱼（本机安装）','aboutme')
         self.avatar_mode.setCurrentIndex(max(0,self.avatar_mode.findData(self.database.get_setting(f'avatar_mode:{cid}','sprites'))))
         choose=QPushButton('选择 Live2D 模型…'); choose.clicked.connect(self.choose_model)
         new=QPushButton('用当前编辑的人格新建一个独立角色（不共享记忆）'); new.clicked.connect(self.create_character)
@@ -64,7 +68,7 @@ class SettingsWindow(QDialog):
         persona.add(Section('人格','同一个她可以有几种性格：新建、复制、切换、导入 SillyTavern 角色卡，每次保存都留一个版本可以回退。'
                                   '“设为当前”后下一句话就用新人格。',self.persona_editor))
         looks=QFormLayout(); looks.addRow('桌面形象',self.avatar_mode); looks.addRow('Live2D 模型',self.model); looks.addRow('',choose)
-        persona.add(Section('桌面形象','鲸鲸优先使用本机安装的 Aboutme 大肥鱼动画，未安装时显示内置的自绘鲸娘。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
+        persona.add(Section('桌面形象','鲸鲸默认显示随程序发布的视频逐帧动画。本机安装了 Aboutme 大肥鱼后，可以在这里或桌宠右键“形象”里切换。也可以导入自己的 Live2D 模型（.model3.json）。',looks))
         pet = getattr(parent, 'pet', None)
         if pet is not None:
             more = QPushButton('更多')
@@ -293,7 +297,10 @@ class SettingsWindow(QDialog):
         rows=self.database.usage_summary()
         other=QLabel('本月其他用量：'+('；'.join(f"{r['kind']} {r['amount']}" for r in rows) or '暂无')+'\nKey 在“模型与 Key”页加密保存（Windows DPAPI），不以明文写入数据库。')
         other.setWordWrap(True); other.setObjectName('Hint')
-        usage_page=Page('用量','每天的模型和语音用量，以及额度上限。'); usage_page.add(self.usage_page); usage_page.add(other); usage_page.finish()
+        from aicompanion.ui.quota_badge import QuotaBadge
+        self.quota_badge=QuotaBadge(self.database,controller.router); self.quota_badge.setWordWrap(True)
+        usage_page=Page('用量','每天的模型和语音用量、额度上限，以及支持查询的服务商账户余额（DeepSeek、Kimi；点一下刷新）。')
+        usage_page.add(self.quota_badge); usage_page.add(self.usage_page); usage_page.add(other); usage_page.finish()
 
         # ---- 概览（最后建：要读上面各页的状态） ------------------------------------------------------
         overview=self._overview_page(Page, Section)
@@ -327,7 +334,7 @@ class SettingsWindow(QDialog):
         layout.addWidget(footer)
         self._setup_autosave()
         self.refresh()
-        self.nav.page_changed.connect(lambda key: self._refresh_overview() if key == 'overview' else None)
+        self.nav.page_changed.connect(self._page_changed)
         self.open_page(page or 'overview')
         theme.prepare_controls(self)
 
@@ -339,6 +346,18 @@ class SettingsWindow(QDialog):
 
     def open_page(self, key):
         return self.nav.show_page(key)
+
+    def _page_changed(self, key):
+        if key == 'overview':
+            self._refresh_overview()
+        if key in ('voice', 'models') and self.model_page:
+            # 两页共享同一份语音绑定。先提交上一页的输入，再显示最新的选项。
+            if self.model_page.flush() and self.autosave.flush():
+                if key == 'voice':
+                    with QSignalBlocker(self.voice):
+                        self._voice_provider_changed()
+                else:
+                    self.model_page.refresh()
 
     def _overview_page(self, Page, Section):
         from PySide6.QtWidgets import QProgressBar
@@ -460,6 +479,7 @@ class SettingsWindow(QDialog):
 
     def _voice_provider_changed(self,*args):
         self.voice.clear()
+        self.voice.setEditable(self.provider.currentData() != 'breeze')
         if self.provider.currentData()=='qwen':
             current=self.database.get_setting(f'qwen_voice:{self.controller.character.id}',self.settings.qwen_tts_voice)
             self.voice.addItem('自定义声线（AI 合成，非官方）',self.settings.qwen_tts_voice)
@@ -468,14 +488,15 @@ class SettingsWindow(QDialog):
             self.voice.addItem('灵希：可爱甜美','longanlingxi')
             self.voice.addItem('风悦：自然亲切','longanfengyue')
         elif self.provider.currentData()=='breeze':
-            # 音色在“模型与 Key”页的“语音合成”里按角色设置；没设置时用角色自己的默认声线（MiniMax），可以在这里从候选里换
+            # 向导创建的绑定、模型页的自定义音色、角色默认声线都按实际供应商展示。
             cid=self.controller.character.id
             target=self.controller.router.tts_target(cid)
-            from aicompanion.domain.voice_profile import profile_for
-            profile=profile_for(cid)
-            if target and target.label.endswith('（默认声线）') and profile:
-                for voice,label in profile.minimax_candidates: self.voice.addItem(label,'choice:'+voice)
+            from aicompanion.domain.voice_profile import WHALE
+            if target and target.provider_kind == 'minimax':
+                for voice,label in WHALE.minimax_candidates: self.voice.addItem(label,'choice:'+voice)
                 current='choice:'+target.voice
+                if self.voice.findData(current) < 0:
+                    self.voice.addItem('自定义音色 · '+target.voice, current)
             else:
                 current=target.cache_id if target else ''
                 self.voice.addItem(target.label if target else '未配置：在“模型与 Key”页添加 MiniMax 账户（鲸鲸默认声线）或设置 Breeze Blue 音色',current)
@@ -512,9 +533,10 @@ class SettingsWindow(QDialog):
         return value[len('choice:'):] if value.startswith('choice:') else None
 
     def _save_voice_choice(self,cid):
-        """默认声线的候选音色按角色保存，路由用它选择 MiniMax 音色。"""
+        """按角色保存候选音色，由路由保留原有账户和合成参数。"""
         choice=self._voice_choice()
-        if choice is not None: self.database.set_setting(f'voice_choice:{cid}',choice)
+        if choice is not None:
+            self.controller.router.save_minimax_voice(cid, choice)
 
     def preview_voice(self):
         if not self.speech_output: return
@@ -596,7 +618,8 @@ class SettingsWindow(QDialog):
 
     def delete_memory(self):
         selected={index.row() for index in self.table.selectedIndexes()}
-        for row in selected: self.database.delete_memory(self.table.item(row,0).data(Qt.ItemDataRole.UserRole),self.controller.character.id)
+        ids = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) for row in selected]
+        self.database.delete_memories(ids, self.controller.character.id)
         self.refresh()
 
     def queue_setting(self, group, save):

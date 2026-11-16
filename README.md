@@ -20,7 +20,7 @@
 
 ---
 
-Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色鲸鲸是以 DeepSeek 鲸鱼为原型的二创少女，桌面形象优先采用本机安装的 Aboutme 大肥鱼，未安装时使用自带的自绘鲸娘。
+Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色鲸鲸是以 DeepSeek 鲸鱼为原型的二创少女，桌面形象是随程序附带的视频逐帧动画；也可以换成本机安装的 Aboutme 大肥鱼。
 她在桌面上动来动去，记得你们聊过的事，用自己的声音回话，会闹点小脾气，你交代的事情她也会动手去做。
 
 和普通的聊天客户端不同，Whalemate 关心的是“她是谁”：**换了模型，她还是她**。人格、记忆、关系和渠道彼此独立，
@@ -34,7 +34,9 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 
 ### 🐋 桌面角色
 - 透明无边框的桌宠，只有角色本身响应鼠标：单击戳她、拖动拎起、双击快速输入。
-- 本机安装 Aboutme 动画后，鲸鲸会挥手、伸懒腰、喝奶茶并左右走动。全屏应用在前台时自动让开。
+- 自带视频逐帧形象：待机、说话、思考、犯困、庆祝、沮丧、看手机、办公、花 Token、挥手、被戳、被摸头、被拎起都有对应动作，动作之间有过渡。走路先转身再迈步，走完会被裙摆绊一下、爬起来再站好。
+- 说话动作跟着当前心情走：开心、想撒娇、委屈、生气各有一套。全屏应用在前台时自动让开。
+- 本机装了 Aboutme 大肥鱼动画后，可以在右键菜单“形象”里切换。
 - 角色以“角色包”的形式组织（人设、台词、模型绑定、形象），也支持导入标准 Live2D Cubism 3/4 模型（需要自己下载 Live2D Cubism Core，见下方“可选组件”）。
 
 ### 💬 聊天与表达
@@ -44,20 +46,24 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 
 ### 🔊 语音与通话
 - 回复默认带语音。“智能朗读”会挑重点念长回复，代码、路径、表格和清单不照着念。
-- 语音合成可选 Breeze Blue、千问、智谱或 Windows 系统朗读；云端合成失败时自动退回本地朗读，回复照常完成。
+- 语音合成可选 MiniMax（鲸鲸默认软糯少女声，共 10 种女声可选）、Breeze Blue、千问、智谱或 Windows 系统朗读；云端合成失败时自动退回本地朗读，回复照常完成。
+- 长回复可以附带一段简短的口播版，只念要点。
 - 语音通话：WebRTC VAD 断句，云端（千问、智谱）或本地 SenseVoice 识别，你一开口她就停下来听。
 - 支持日语配音：聊天和字幕保持中文，只把念出来的句子翻译成日语。
 
 ### 🧠 记忆与关系
 - 带衰减的记忆卡和归档，记得来源；你明确删除的内容不会被改个说法再记回来。
-- 用 SQLite FTS5 召回更早的聊天和以前办过的事，每次请求的上下文大小有预算控制。
+- 全文与语义混合召回更早的聊天和以前办过的事（可选本地中文向量），长对话有带来源的阶段摘要，每次请求的上下文大小有预算控制。
+- 聊天窗口里可以按条删除聊天记录和记忆卡；删掉的原话不会再被用来记事，由它记下的内容也一并清掉。
 - 情绪由事件推动并慢慢回落：被冷落会委屈，被哄会消气。好感是长期关系，一次吵架不会清零。
-- 人格包可以新建、编辑、切换、回退版本，也能导入导出（兼容 SillyTavern 角色卡的常用字段）。换人格不会清空记忆。
+- 人格包可以新建、编辑、切换、回退版本，也能导入导出（兼容 SillyTavern 角色卡的常用字段）。换人格不会清空记忆，还可以先在试聊窗口里试试新人格。
+- 记得你们的约定，到时间按渠道提醒；QQ 群里的长期话题会持续跟进。
 
 ### 🛠️ 帮你干活
 - 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 规划任务，由桌宠自己的工具执行，敏感操作先问你。
 - 通过 MCP 协议对接工具，服务只监听本机回环地址，令牌每次随机生成。
 - 支持 DeepSeek 和 MiniMax 两条路线。
+- 可以把文件直接交给她处理；跨天的长任务会保存进度，下次接着做。绑定主人的 QQ 私聊也能交办，桌面和 QQ 两边都能审批。
 
 ### 💬 QQ 接入
 - 用 [AstrBot](https://github.com/AstrBotDevs/AstrBot) + [NapCat](https://github.com/NapNeko/NapCatQQ) 接入 QQ，桥接插件见 [integrations/astrbot_plugin_aicompanion](integrations/astrbot_plugin_aicompanion)。
@@ -67,7 +73,7 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 ### 🔐 安全与隐私
 - 模型配置按服务引用密钥。设置页保存的 API Key 经 Windows DPAPI 加密后存入本机数据库，卸载清理数据库时也会删除其中的密钥。
 - 聊天记录、记忆和设置都存在本地 SQLite，升级迁移前会自动备份。
-- 每天的用量和额度在本地统计。
+- 每天的用量和额度在本地统计。聊天面板顶部会显示今日额度还剩多少，以及 DeepSeek、Kimi 账户余额（只向官方地址查询）。
 
 ## 📦 下载安装
 
@@ -76,14 +82,14 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 > [!IMPORTANT]
 > **下载前请先关闭 Windows 的“智能应用控制”。** 鲸伴的程序没有代码签名，开着智能应用控制时，`AICompanion.exe` 会被直接拦下，双击后打不开或提示“此应用已被阻止”。关闭方法：打开“Windows 安全中心 → 应用和浏览器控制 → 智能应用控制设置”，选“关闭”。在部分 Windows 11 版本上，关闭后不能直接再打开，需要重置系统才能恢复，请先想清楚再操作。Windows 10 和没有这个选项的电脑不用处理。
 
-1. 打开 [Releases 页面](https://github.com/lsWorl/AICompanion/releases/latest)，下载 `Whalemate-v<version>-windows-x64.zip`。可以用同一页的 `SHA256SUMS.txt` 核对文件是否完整。
+1. 打开 [Releases 页面](https://github.com/lsWorl/Whalemate/releases/latest)，下载 `Whalemate-v<version>-windows-x64.zip`。可以用同一页的 `SHA256SUMS.txt` 核对文件是否完整。
 2. 把压缩包解压到**非系统盘**的文件夹，例如 `D:\Apps`。程序会把聊天和记忆存在非系统盘上，尽量不占 C 盘。
 3. 打开解压出来的 `Whalemate` 文件夹（本例为 `D:\Apps\Whalemate`），双击 `AICompanion.exe`。
 4. 第一次打开会出现新手向导，大约 3 分钟。向导会带你连接聊天模型（需要一个 DeepSeek 等服务的密钥，里面有申请步骤）、选择声音和形象。每一步都可以跳过，跳过模型这一步时用离线模拟回复先体验。
 
 运行环境：Windows 10 / 11（x64）。语音通话时建议戴耳机，外放回声消除还没做。
 
-想看大肥鱼动画版，可以在向导第 4 步或“设置 → 角色与形象”里安装；打包版的安装方法见 [Aboutme 接入说明](docs/aboutme-pet.md)。动画素材是社区作品，只能个人非商用，不随压缩包分发。
+想换成大肥鱼动画版，可以在向导第 4 步或“设置 → 角色与形象”里安装，装好后在桌宠右键“形象”里切换；打包版的安装方法见 [Aboutme 接入说明](docs/aboutme-pet.md)。动画素材是社区作品，只能个人非商用，不随压缩包分发。
 
 > [!NOTE]
 > Windows 可能提示“已保护你的电脑”，因为这个程序没有购买代码签名证书。确认是从本仓库 Releases 下载的，再点“更多信息 → 仍要运行”。
@@ -110,8 +116,8 @@ Whalemate（鲸伴）是一个常驻 Windows 桌面的 AI 伙伴。默认角色�
 ### 安装与运行
 
 ```powershell
-git clone https://github.com/lsWorl/AICompanion.git
-cd AICompanion
+git clone https://github.com/lsWorl/Whalemate.git
+cd Whalemate
 
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -120,7 +126,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-首次启动时，鲸鲸使用程序自带的自绘鲸娘形象。按下方说明安装 Aboutme 素材并重启后，鲸鲸会改用大肥鱼动画。只有两套素材都无法使用时才显示占位形象。右键角色或双击托盘图标可以打开聊天面板和设置。
+首次启动时，鲸鲸使用程序自带的视频逐帧形象。按下方说明安装 Aboutme 素材后，可以在桌宠右键“形象”里换成大肥鱼动画。视频形象缺失时退回自绘鲸娘，都无法使用时才显示占位形象。右键角色或双击托盘图标可以打开聊天面板和设置。
 没配置模型时自动使用离线模拟回复；想强制离线，可以设置环境变量 `AICOMPANION_OFFLINE=1`。
 
 ### 可选组件
@@ -130,7 +136,7 @@ python -m venv .venv
 | 干活（Agent） | DeepSeek Harness 与官方 MCP SDK | `.\.venv\Scripts\python.exe -m pip install -r requirements-agent-lock.txt` 然后 `.\.venv\Scripts\python.exe -m pip install -e ".[agent]"`，或运行 `tools\setup_dsh.bat` |
 | 本地语音识别 | 离线 SenseVoice（sherpa-onnx） | `.\.venv\Scripts\python.exe -m pip install -e ".[local-asr]"`，或运行 `tools\setup_local_asr.bat` |
 | 导入外部 Live2D 模型 | Live2D Cubism Core（适用 Live2D 专有许可，本项目不附带） | `.\.venv\Scripts\python.exe tools\fetch_avatar.py`，从 Live2D 官网下载到本机 |
-| Aboutme 大肥鱼 | 在本机为鲸鲸安装桌面动画 | 先运行 `.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt`，再运行 `.\.venv\Scripts\python.exe tools\install_aboutme_pet.py`。打包版安装与离线重装见[接入说明](docs/aboutme-pet.md)。 |
+| Aboutme 大肥鱼 | 在本机为鲸鲸安装可切换的大肥鱼动画 | 先运行 `.\.venv\Scripts\python.exe -m pip install -r tools\aboutme-requirements.txt`，再运行 `.\.venv\Scripts\python.exe tools\install_aboutme_pet.py`。打包版安装与离线重装见[接入说明](docs/aboutme-pet.md)。 |
 | 形象包工具 | 编译、标注角色形象包 | `.\.venv\Scripts\python.exe -m pip install -e ".[studio]"` |
 
 基础聊天和桌宠不需要安装这些可选依赖。Aboutme 帧动画无需 Live2D Cubism Core。
@@ -165,13 +171,16 @@ Key 用 Windows DPAPI 加密保存，`.env` 里的 `LLM_*` 已经不再读取。
 | 3 | 持续情绪与小脾气：委屈、撒娇、回怼，也会消气 | ✅ 已上线 |
 | 4 | 自己的生活：按兴趣去看、去做，有趣的事主动分享，然后等你回应 | ✅ 已上线（统一主动调度 + 分享循环），等待真机长时间体验 |
 | 5 | 真正退出：情绪合适时真的关掉自己，下次启动能接上 | ✅ 已上线（告别退出、重启问候、暂停的办事可接续） |
-| 6 | 记得住、想得起：混合召回、阶段摘要、整份请求的预算 | 🚧 第一部分已上线（全文召回、请求预算）；语义召回和阶段摘要待做 |
-| 7 | 圈子与长期事务：群里的长期话题、约定、跨天办事、把文件交给她 | 📋 计划中 |
-| 8 | 回复带语音：大肥鱼声线，长回复分段取舍 | ✅ 已上线（智能朗读、鲸鲸默认声线）；QQ 语音消息待做 |
+| 6 | 记得住、想得起：混合召回、阶段摘要、整份请求的预算 | ✅ 已上线（全文 + 语义召回、可选本地向量、带来源的阶段摘要、请求预算） |
+| 7 | 圈子与长期事务：群里的长期话题、约定、跨天办事、把文件交给她 | ✅ 已上线（约定提醒、圈子话题、跨天办事、交文件、QQ 私聊交办与双端审批） |
+| 8 | 回复带语音：大肥鱼声线，长回复分段取舍 | ✅ 已上线（智能朗读、口播版、鲸鲸默认声线）；QQ 语音消息待做 |
 | 9 | 陪伴日期：认识第几天、纪念日，到了那天自己提起 | ✅ 基础版已上线 |
 | — | 界面重构：鲸鲸主题、首次启动向导、设置自动保存 | ✅ 已上线 |
 | — | 解压即用的 Windows 版和卸载程序 | ✅ 已上线（v0.1.0） |
 | — | QQ 接入随包附带 NapCat，扫码即可登录，不再依赖在线下载 | ✅ 已上线（v0.1.0），真实账号收发待真机验收 |
+| — | 视频逐帧形象：动作过渡、走路摔倒、被拎起、按心情切换说话动画 | ✅ 已上线（v0.2.0） |
+| — | 聊天记录与记忆按条删除、人格试聊、剩余额度与账户余额显示 | ✅ 已上线（v0.2.0） |
+| — | 看手机、花 Token 动画接上 QQ 来消息和用量阈值 | 📋 计划中（T25） |
 
 “已上线”指已经合入主线并通过自动测试；真实模型、QQ 和语音服务的体验以负责人真机验收为准。
 
@@ -243,6 +252,9 @@ tools\run_agent_checks.bat
 
 # 打包 Windows 版本（目录式 PyInstaller）
 .\.venv\Scripts\python.exe tools\build_windows.py
+
+# 生成发布用压缩包和 SHA256SUMS.txt（输出到 dist）
+.\.venv\Scripts\python.exe tools\build_release.py
 ```
 
 自检脚本使用临时数据库，不读取你的聊天记录，不联网。
@@ -296,6 +308,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 | [Graphiti](https://github.com/getzep/graphiti) | 带有效时间和来源的事实建模 |
 | [LangGraph](https://github.com/langchain-ai/langgraph) | 检查点、等待审批与暂停恢复的思路 |
 | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)、[CosyVoice](https://github.com/FunAudioLLM/CosyVoice) | 本地声线服务的接入方式（只调用接口，不打包模型） |
+| [即梦 Seedance 2.0](https://jimeng.jianying.com/) | 以负责人原画为首尾帧生成鲸鲸动作视频，再由 `tools/video_pet/` 抠图打包成逐帧动画；生成参数见 `art/deepseek-whale-video/prompts.json` |
 
 ### AstrBot 社区插件
 
@@ -313,7 +326,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 | 项目 | 参考了什么 |
 | --- | --- |
-| [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets) · [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) | 鲸鲸的桌面动画取自 Aboutme 整理的 dsh / dsh1 图集，原始素材来自 dsh-pet。 |
+| [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets) · [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) | 可选的大肥鱼桌面动画取自 Aboutme 整理的 dsh / dsh1 图集，原始素材来自 dsh-pet。 |
 | [dsh-nekowhale-stickers](https://github.com/Loping151/dsh-nekowhale-stickers) | 大肥鱼表情素材与知识库的来源标注（素材作者：可以叫我云大人 / 雾雪） |
 | [bluedafeiyu](https://github.com/lmy414/bluedafeiyu) | 大肥鱼档案站与图片权利说明 |
 | [astrbot_plugin_feiyu_voice](https://github.com/Esmerubphire/astrbot_plugin_feiyu_voice)、[WhaleTalk](https://github.com/Tokimorphling/WhaleTalk-) | 大肥鱼声线的听感、固定台词预合成、按音量驱动口型 |
@@ -329,7 +342,7 @@ Whalemate 站在许多开源项目和社区创作者的肩膀上，在此一并�
 
 ## 📄 许可与声明
 
-本项目代码、文档、自绘鲸娘的运行素材（角色包中的立绘和骨骼纹理）、应用图标（`src/aicompanion/assets/icons/`）及六张原创表情图片（`src/aicompanion/assets/expression/`）采用 [MIT License](LICENSE)。
+本项目代码、文档、鲸鲸的运行素材（角色包中的视频逐帧动画图集、立绘和骨骼纹理）、应用图标（`src/aicompanion/assets/icons/`）及六张原创表情图片（`src/aicompanion/assets/expression/`）采用 [MIT License](LICENSE)。
 
 - **Aboutme 大肥鱼**素材和据此生成的本机动画图集适用[上游素材声明](https://github.com/hunmer/aboutme-pets/blob/1221697ec20c2057829f9d7fcbd316fee8b3df65/pets/dsh1/NOTICE.txt)。禁止商用，公开二创须署名 PC2005-cloud/dsh-pet。上游图集仅在本机安装，仓库和发布包均不附带。
 - **Live2D Cubism Core**：适用 [Live2D Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_cn.html)。本项目的仓库和打包版本都**不包含** Core，只有导入外部 Live2D 模型时才需要，由用户运行 `tools/fetch_avatar.py` 从 Live2D 官网自行下载，下载即表示同意该许可。因为能导入任意模型，带着 Core 分发本项目的构建版本可能属于 Live2D 定义的[可扩展应用](https://www.live2d.com/en/sdk/license/expandable/)，需要先经 Live2D 审核并签订专门的出版许可协议，个人和小规模企业的豁免不适用。`tools/build_windows.py` 默认会把 Core 从构建结果里去掉；`--keep-cubism-core` 只供自己电脑使用，不要对外分发。

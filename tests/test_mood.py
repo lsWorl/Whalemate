@@ -146,6 +146,26 @@ class CardTests(ServiceTests):
         finally:
             card.deleteLater()
 
+    def test_visible_card_follows_external_events_and_resumes_after_hiding(self):
+        from PySide6.QtTest import QSignalSpy
+        from aicompanion.ui.mood_card import MoodCard
+        card = MoodCard(self.db, self.cid, clock=lambda: self.now[0])
+        try:
+            card.timer.setInterval(20)
+            card.show()
+            tick = QSignalSpy(card.timer.timeout)
+            self.mood.event(self.cid, 'insulted', reason='测试里的误会')
+            self.assertTrue(tick.wait(2000))
+            self.assertIn('测试里的误会', card.summary.text())
+            card.hide()
+            self.assertFalse(card.timer.isActive())
+            self.mood.soothe(self.cid)
+            card.show()
+            self.assertIn('平静', card.summary.text())
+        finally:
+            card.close()
+            card.deleteLater()
+
 
 if __name__ == '__main__':
     unittest.main()

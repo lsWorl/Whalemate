@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt
 from PySide6.QtGui import QAction
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QWidget
 
 from aicompanion.characters.registry import CharacterRegistry
@@ -373,11 +373,11 @@ class RedesignTests(unittest.TestCase):
         wizard.script.write_text("import time\nprint('已安装 idle', flush=True)\ntime.sleep(20)\n", encoding='utf-8')
         (folder / 'aboutme-pet.lock.json').write_text(json.dumps({'actions': [{}, {}]}), encoding='utf-8')
         wizard.install_or_cancel()
-        self.assertTrue(wizard.process.waitForStarted(3000))
-        for _ in range(60):
-            if wizard.progress.value() == 1:
-                break
-            QTest.qWait(50)
+        self.addCleanup(wizard.reject)
+        progress = QSignalSpy(wizard.progress.valueChanged)
+        self.assertTrue(wizard.process.waitForStarted(10000))
+        if wizard.progress.value() != 1:
+            self.assertTrue(progress.wait(10000), '合成安装器未报告第一项进度')
         self.assertEqual(wizard.progress.value(), 1)
         self.assertEqual(wizard.progress.maximum(), 2)
         wizard.install_or_cancel()

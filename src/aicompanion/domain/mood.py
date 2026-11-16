@@ -91,10 +91,11 @@ def describe(mood: Mood, reason: str = '') -> str:
     if label == 'angry':
         text += ('可以带点小脾气：语气冲一点、回得短一点，或者说暂时不太想说话；' if strong else '语气里可以带点不爽，不用装作没事；')
     elif label == 'sad':
-        text += '可以表现得委屈一点、想被安慰，但不指责对方；'
+        text += ('很委屈：话少一点、声音小一点，可以直说想被哄，但不指责对方；' if strong
+                 else '可以表现得委屈一点、想被安慰，但不指责对方；')
     elif label == 'shy':
-        text += '可以撒撒娇、黏人一点；'
+        text += ('很想撒娇：可以软软地拖长语气、黏着对方要陪；' if strong else '可以撒撒娇、黏人一点；')
     elif label == 'happy':
-        text += '心情不错，语气可以轻快一些；'
+        text += ('心情特别好：语气轻快雀跃，可以多接几句、主动分享开心的事；' if strong else '心情不错，语气可以轻快一些；')
     text += '对方真心道歉或哄你时，可以慢慢消气，不用一下子就好。不管心情如何，对方求助、让你办事或涉及安全的事照常认真回应。'
     return text

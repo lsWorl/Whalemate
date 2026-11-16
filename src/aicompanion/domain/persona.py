@@ -134,6 +134,14 @@ def normalize(data: dict) -> dict:
 
 
 # ---- 提示词 ----------------------------------------------------------------------------------
+def trial_prompt(persona: Persona, name: str, question: str) -> str:
+    """试聊只用选定的人格卡和角色名字构建提示词。"""
+    bond = persona.relation()
+    return bond.fill(
+        f'你正在扮演 {name}。\n人设：{persona.description}\n{bond.prompt()}\n说话风格：{persona.speaking_style}\n'
+        + prompt_extras(persona, question) + '\n这是一次说话风格的预览，像平时聊天那样自然地回复。', name)
+
+
 def prompt_extras(persona: Persona | None, text: str) -> str:
     """角色设定和说话风格之外、要带进提示词的部分：背景、示例、匹配到的世界书。text 是这一轮相关的对话文字。"""
     if persona is None: return ''

@@ -67,3 +67,5 @@ desktop.ini
 
 # Aboutme 第三方贴图只安装到本机，不随 PR 分发。
 /src/aicompanion/characters/deepseek-whale/animation-aboutme/
+# 即梦源视频体积大，只留在本机；prompts.json 记录了每段的 sha256。
+/art/deepseek-whale-video/clips/
