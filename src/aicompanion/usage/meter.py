@@ -150,6 +150,12 @@ class Quota:
                 self.warned.add((day, key)); worst = ('warn', f'{name}已用 {used/limit:.0%}（{used:.2f}/{limit:.2f} 元）')
         return worst
 
+    def remaining(self, now=None) -> dict:
+        """设了上限的各项今日余量：{用途: (上限, 已用, 剩余)}，'*' 是总额。剩余不低于 0。"""
+        limits = self.limits(); spent = self.spent(now)
+        return {key: (limit, spent.get(key, 0.0), max(0.0, limit - spent.get(key, 0.0)))
+                for key, limit in limits.items() if limit > 0}
+
     def allowed(self, purpose: str, now=None) -> bool:
         return self.check_silent(purpose, now) != 'stop'
 
