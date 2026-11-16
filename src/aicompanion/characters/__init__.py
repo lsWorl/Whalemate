@@ -150,15 +150,23 @@ def installed_alternatives(pack: CharacterPack | None) -> list[str]:
     alternatives = (pack.renderer.get('animation_alternatives') if pack else None) or {}
     if not isinstance(alternatives, dict):
         return []
-    found = []
-    for mode in alternatives:
-        animation = alternative_animation(pack, mode)
-        try:
-            if animation and (pack.root / _safe_name(animation, '动画清单')).is_file():
-                found.append(mode)
-        except CharacterPackError:
-            continue
-    return found
+    return [mode for mode in alternatives if _usable_alternative(pack, mode) is not None]
+
+
+def _usable_alternative(pack, mode):
+    """备选动画清单能完整加载才算可用；装坏了就当没装，回到默认动画而不是退回骨骼或立绘。"""
+    animation = alternative_animation(pack, mode)
+    if not animation:
+        return None
+    from aicompanion.characters.animation_pack import load_animation_pack
+    try:
+        manifest = pack.root / _safe_name(animation, '动画清单')
+        if not manifest.is_file():
+            return None
+        load_animation_pack(manifest)
+    except (CharacterPackError, ValueError, OSError):
+        return None
+    return animation
 
 
 def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '', *, animation_enabled: bool = True) -> tuple[str, Path | str | None]:
@@ -168,7 +176,7 @@ def choose_renderer(pack: CharacterPack | None, avatar_mode, model_path: str = '
     if pack and pack.ready:
         if pack.renderer_kind in ('spritesheet', 'sprites') and animation_enabled:
             # 选了本机安装的备选动画（如 Aboutme）就先用它；没装好时回到随程序发布的默认动画。
-            for animation in (alternative_animation(pack, avatar_mode), pack.renderer.get('animation')):
+            for animation in (_usable_alternative(pack, avatar_mode), pack.renderer.get('animation')):
                 if animation:
                     manifest = pack.root / _safe_name(animation, '动画清单')
                     if manifest.is_file():

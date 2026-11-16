@@ -90,7 +90,7 @@ class AnimationAvatar(QWidget):
         self.pose='idle'; self.action='idle'; self.mood='calm'; self.mouth=0.; self.voice_active=False
         self.dragging=False; self.walking=0; self._walk_vertical=0.; self._gait_distance=0.; self.direction=1 if self.pack.actions[self.pack.poses['idle']].facing=='right' else -1; self._cue=None; self._cue_until=0.; self._cue_duration=0.; self._cue_started=False
         self._sheet=QImage(); self._frame=self.poster; self._previous=QImage(); self._display=self.poster
-        self._frame_facing=self.pack.actions[self.pack.poses['idle']].facing
+        self._frame_facing=self.pack.actions[self.pack.poses['idle']].facing;self._pending_direction=None;self._outgoing_flipped=False
         self._gait_cycle_distance=None; self._gait_loaded=False; self._bridge=None; self._bridge_sheet=QImage(); self._bridge_started=0.; self._bridge_index=-1
         self._queue=[]; self._ready_next=None; self._fade_duration=FADE; self._outgoing=None
         self._loaded=None; self._requested=None; self._loading=None; self._index=-1
@@ -189,6 +189,10 @@ class AnimationAvatar(QWidget):
             outgoing=(old,self._sheet,self._started,elapsed,gait)
         previous=self._display.copy()
         if not self.using_reference and self._frame_facing!=clip.facing:previous=previous.mirrored(True,False)
+        # 起步换向在此生效；上一张画面反向保存，交叉淡化时仍按原朝向显示。
+        flipped=self._pending_direction is not None and self._pending_direction!=self.direction
+        if flipped:self.direction=self._pending_direction;previous=previous.mirrored(True,False)
+        self._pending_direction=None;self._outgoing_flipped=flipped
         was_bridge=self._bridge is not None
         self._previous=previous; self._outgoing=outgoing; self._frame_facing=clip.facing
         self._fade_started=now
@@ -226,6 +230,7 @@ class AnimationAvatar(QWidget):
             cell=clip.cell_at(index)
             self._previous=sheet.copy(cell%clip.columns*w,cell//clip.columns*h,w,h)
             if not self.using_reference and clip.facing!=self._frame_facing:self._previous=self._previous.mirrored(True,False)
+            if self._outgoing_flipped:self._previous=self._previous.mirrored(True,False)
         self._display=mix_frames(self._previous,self._frame,amount)
         if progress>=1:self._previous=QImage();self._outgoing=None
 
@@ -314,7 +319,7 @@ class AnimationAvatar(QWidget):
         return QPointF(rect.x()+(hx+hw/2)*rect.width(),rect.y()+hy*rect.height()).toPoint()
 
     def face(self,direction):
-        self.direction=1 if direction>=0 else -1; self.update()
+        self.direction=1 if direction>=0 else -1; self._pending_direction=None; self.update()
 
     def set_drag(self,active,velocity_x=0.):
         self.dragging=bool(active); self._select()
@@ -350,12 +355,14 @@ class AnimationAvatar(QWidget):
 
     def set_walking_vector(self,dx,dy):
         length=math.hypot(dx,dy)
+        self._pending_direction=None
         self.walking=(1 if dx>=0 else -1) if length else 0
         self._walk_vertical=dy/length if length else 0.
         direction=(1 if dx>=0 else -1) if abs(dx)>1e-6 else self.direction
         if not self._gait_loaded and direction!=self.direction:
-            # 从站姿起步：只换朝向，保留当前动作，好让 idle→walk 的转身过渡照常播放（镜像方向由绘制时处理）。
-            self.direction=direction
+            # 从站姿起步：保留当前动作，好让 idle→walk 的转身过渡照常播放。
+            # 朝向等转身第一帧就绪时再换，否则解码期间待机图会先水平翻转一下。
+            self._pending_direction=direction
         elif direction!=self.direction or (length and self._gait_loaded):
             # 转向 / 重规划先冻结当前脚位；新的路线相位不能覆盖仍在显示的旧步态。
             picture=self._display

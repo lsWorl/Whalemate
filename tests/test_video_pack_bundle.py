@@ -32,7 +32,12 @@ class VideoPackBundleTests(unittest.TestCase):
             # 没装 Aboutme 时，即使设置里选了它也回到默认动画。
             self.assertEqual(choose_renderer(pack, 'aboutme', '')[1], root/'animation-video/animations.json')
             (root/'animation-aboutme').mkdir()
+            # 装坏的备选包（清单读不出来）当作没装，不能让鲸鲸退回骨骼或立绘。
             (root/'animation-aboutme/animations.json').write_text('{}', encoding='utf-8')
+            self.assertEqual(installed_alternatives(pack), [])
+            self.assertEqual(choose_renderer(pack, 'aboutme', '')[1], root/'animation-video/animations.json')
+            shutil.rmtree(root/'animation-aboutme')
+            shutil.copytree(WHALE/'animation-video', root/'animation-aboutme')
             self.assertEqual(installed_alternatives(pack), ['aboutme'])
             self.assertEqual(choose_renderer(pack, 'aboutme', '')[1], root/'animation-aboutme/animations.json')
             self.assertEqual(choose_renderer(pack, 'sprites', '')[1], root/'animation-video/animations.json')

@@ -433,7 +433,7 @@ class Onboarding(QDialog):
         words = QVBoxLayout()
         words.addWidget(label('大肥鱼动画版', 'CardTitle'))
         words.addWidget(label('推荐', 'Status'))
-        words.addWidget(label('社区画师的逐帧动画：挥手、伸懒腰、喝奶茶、左右走。装好后优先显示它。'))
+        words.addWidget(label('社区画师的逐帧动画：挥手、伸懒腰、喝奶茶、左右走。装好后可在桌宠右键“形象”里切换。'))
         content.addLayout(words, 1)
         cards.addWidget(animated, 1)
         box.addLayout(cards)
