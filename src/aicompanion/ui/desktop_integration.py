@@ -37,6 +37,10 @@ if IS_WINDOWS:
     user32.GetForegroundWindow.restype = wintypes.HWND
     user32.MonitorFromWindow.restype = wintypes.HANDLE
     user32.GetShellWindow.restype = wintypes.HWND
+    user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+    user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+    user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
     kernel32.GetTickCount.restype = wintypes.DWORD
 
 
@@ -55,6 +59,29 @@ def remove_window_frame(widget) -> None:
             dwmapi.DwmSetWindowAttribute(hwnd, wintypes.DWORD(attribute), ctypes.byref(data), ctypes.sizeof(data))
     except Exception:
         pass
+
+
+GWL_EXSTYLE, WS_EX_TRANSPARENT, WS_EX_LAYERED = -20, 0x00000020, 0x00080000
+
+
+def set_click_through(widget, enabled: bool) -> bool:
+    """只改原生窗口的 WS_EX_TRANSPARENT，让鼠标穿透或停止穿透；返回 True 表示已处理。
+
+    T27：以前用 QWindow.setFlag(WindowTransparentForInput) 切换。Qt 会按新标志重算整套扩展样式，
+    分层窗口在重新上屏前会有一帧露出黑底，表现为整个桌宠窗口闪一下黑色方框。这里直接改一位，
+    不碰 WS_EX_LAYERED 和其他样式。窗口还不是分层窗口时（例如没有透明背景）返回 False，交给 Qt 处理。
+    """
+    if not IS_WINDOWS: return False
+    try:
+        hwnd = wintypes.HWND(int(widget.winId()))
+        style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+        if not style & WS_EX_LAYERED: return False
+        wanted = (style | WS_EX_TRANSPARENT) if enabled else (style & ~WS_EX_TRANSPARENT)
+        if wanted != style:
+            user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted)
+        return True
+    except Exception:
+        return False
 
 
 def ensure_topmost(widget) -> None:
